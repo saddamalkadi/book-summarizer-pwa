@@ -2,7 +2,9 @@ const CACHE_NAME = 'book-summarizer-cache-v1';
 const ASSETS = [
   './',
   './index.html',
-  './manifest.webmanifest'
+  './index_ocr.html',  // دعم للصفحة التي تحوي OCR
+  './manifest.webmanifest',
+  './app_ocr.js'       // ملف الجافاسكريبت الجديد
 ];
 
 self.addEventListener('install', (event) => {
