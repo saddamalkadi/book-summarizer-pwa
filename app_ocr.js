@@ -7,7 +7,6 @@ function setStatus(msg, show = true) {
 }
 
 function sanitizeApiKey(k) {
-  // إزالة مسافات/أسطر + محارف غير مرئية شائعة
   return (k || '')
     .replace(/\s+/g, '')
     .replace(/[\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g, '');
@@ -15,6 +14,12 @@ function sanitizeApiKey(k) {
 
 function isAsciiOnly(str) {
   return /^[\x00-\x7F]+$/.test(str);
+}
+
+function escapeHtml(s) {
+  return (s || '').replace(/[&<>"']/g, (m) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[m]));
 }
 
 // ========= تحميل/حفظ الإعدادات =========
@@ -32,17 +37,14 @@ function isAsciiOnly(str) {
   if (savedOcrLang && document.getElementById('ocrLang')) document.getElementById('ocrLang').value = savedOcrLang;
 })();
 
-// ========= تهيئة pdf.js و jsPDF =========
+// ========= تهيئة pdf.js =========
 const pdfjsLib = window.pdfjsLib;
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
-const { jsPDF } = window.jspdf;
 
 // ========= OCR Language Selection =========
 function getOcrLangSelection() {
   const sel = document.getElementById('ocrLang');
   const v = (sel && sel.value ? sel.value : 'auto').trim();
-
-  // AUTO = ara+eng (عملياً يقرأ الاثنين ويعطي أفضل “اكتشاف”)
   if (v === 'auto') return 'ara+eng';
   return v; // ara أو eng أو ara+eng أو eng+ara
 }
@@ -59,7 +61,7 @@ async function extractTextFromPDF(file, useOcr = false) {
     const page = await pdf.getPage(pageNum);
 
     if (useOcr) {
-      setStatus(`OCR جاري تنفيذ التعرف... صفحة ${pageNum}/${pdf.numPages}`, true);
+      setStatus(`OCR جاري... صفحة ${pageNum}/${pdf.numPages}`, true);
 
       const viewport = page.getViewport({ scale: 2 });
       const canvas = document.createElement('canvas');
@@ -69,30 +71,24 @@ async function extractTextFromPDF(file, useOcr = false) {
 
       await page.render({ canvasContext: ctx, viewport }).promise;
 
-      try {
-        const result = await Tesseract.recognize(canvas, ocrLangs, {
-          logger: (m) => {
-            // تحديث خفيف للحالة
-            if (m && m.status) {
-              const pct = m.progress ? Math.round(m.progress * 100) : null;
-              setStatus(`OCR: ${m.status}${pct !== null ? ` (${pct}%)` : ''} — صفحة ${pageNum}/${pdf.numPages}`, true);
-            }
+      const result = await Tesseract.recognize(canvas, ocrLangs, {
+        logger: (m) => {
+          if (m && m.status) {
+            const pct = m.progress ? Math.round(m.progress * 100) : null;
+            setStatus(`OCR: ${m.status}${pct !== null ? ` (${pct}%)` : ''} — صفحة ${pageNum}/${pdf.numPages}`, true);
           }
-        });
+        }
+      });
 
-        const text = (result && result.data && result.data.text) ? result.data.text : '';
-        fullText += text + '\n\n';
-      } catch (err) {
-        console.error('OCR error:', err);
-        throw new Error('فشل OCR: ' + err.message);
-      }
+      const text = (result && result.data && result.data.text) ? result.data.text : '';
+      fullText += text + '\n\n';
+
     } else {
-      setStatus(`استخراج نص عادي... صفحة ${pageNum}/${pdf.numPages}`, true);
+      setStatus(`استخراج نص... صفحة ${pageNum}/${pdf.numPages}`, true);
 
       const content = await page.getTextContent();
       const strings = content.items.map(it => it.str);
       const pageText = strings.join(' ').trim();
-
       fullText += pageText + '\n\n';
     }
   }
@@ -104,13 +100,11 @@ async function extractTextFromPDF(file, useOcr = false) {
 // ========= تقسيم النص =========
 function chunkText(text, maxLength = 8000) {
   const chunks = [];
-  for (let i = 0; i < text.length; i += maxLength) {
-    chunks.push(text.slice(i, i + maxLength));
-  }
+  for (let i = 0; i < text.length; i += maxLength) chunks.push(text.slice(i, i + maxLength));
   return chunks;
 }
 
-// ========= استدعاء OpenAI (تلخيص/دردشة) =========
+// ========= استدعاء API =========
 async function callChatCompletions({ apiKey, baseUrl, model, messages, max_tokens = 2048, temperature = 0.3 }) {
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
@@ -138,26 +132,14 @@ async function summarizeText(text, apiKey, baseUrl, model, language) {
   for (let i = 0; i < chunks.length; i++) {
     setStatus(`تلخيص... جزء ${i + 1}/${chunks.length}`, true);
 
-    const chunk = chunks[i];
     const messages = [
-      {
-        role: 'system',
-        content:
-          'أنت مساعد ذكي تلخص النصوص بدقة. أنشئ ملخصًا قويًا ومنظمًا: ملخص تنفيذي، نقاط رئيسية، مخطط/هيكل، أفكار وتطبيقات عملية، ومصطلحات مهمة. لا تكثر الحشو.'
-      },
-      {
-        role: 'user',
-        content:
-          `النص:\n${chunk}\n\nاكتب الملخص باللغة: ${language === 'ar' ? 'العربية' : 'English'}.`
-      }
+      { role: 'system', content: 'لخّص النص بدقة وبشكل منظم: ملخص تنفيذي، نقاط رئيسية، أفكار وتطبيقات، مصطلحات مهمة.' },
+      { role: 'user', content: `النص:\n${chunks[i]}\n\nاكتب باللغة: ${language === 'ar' ? 'العربية' : 'English'}.` }
     ];
 
     const part = await callChatCompletions({
-      apiKey,
-      baseUrl,
-      model,
-      messages,
-      max_tokens: 4096,
+      apiKey, baseUrl, model, messages,
+      max_tokens: 3500,
       temperature: 0.25
     });
 
@@ -171,32 +153,19 @@ async function summarizeText(text, apiKey, baseUrl, model, language) {
 async function chatWithPdf(question, text, apiKey, baseUrl, model, language) {
   setStatus('جاري إرسال السؤال...', true);
 
-  // إذا كان النص طويل جدًا، نرسل آخر جزء + أول جزء (حل بسيط)
   const maxContext = 12000;
   let ctx = text;
   if (ctx.length > maxContext) {
-    const head = ctx.slice(0, 6000);
-    const tail = ctx.slice(-6000);
-    ctx = head + '\n\n...\n\n' + tail;
+    ctx = ctx.slice(0, 6000) + '\n\n...\n\n' + ctx.slice(-6000);
   }
 
   const messages = [
-    {
-      role: 'system',
-      content: 'أجب عن أسئلة المستخدم اعتمادًا على النص فقط. إذا لم تجد الإجابة في النص قل ذلك بوضوح.'
-    },
-    {
-      role: 'user',
-      content:
-        `السؤال: ${question}\n\nالنص المرجعي:\n${ctx}\n\nاللغة المطلوبة: ${language === 'ar' ? 'العربية' : 'English'}.`
-    }
+    { role: 'system', content: 'أجب اعتماداً على النص فقط. إن لم تجد الإجابة داخل النص قل ذلك بوضوح.' },
+    { role: 'user', content: `السؤال: ${question}\n\nالنص المرجعي:\n${ctx}\n\nاللغة: ${language === 'ar' ? 'العربية' : 'English'}.` }
   ];
 
   const ans = await callChatCompletions({
-    apiKey,
-    baseUrl,
-    model,
-    messages,
+    apiKey, baseUrl, model, messages,
     max_tokens: 1200,
     temperature: 0.25
   });
@@ -205,37 +174,73 @@ async function chatWithPdf(question, text, apiKey, baseUrl, model, language) {
   return ans;
 }
 
-// ========= PDF Export =========
-function exportToPdf(filename, text) {
-  const doc = new jsPDF({ orientation: 'p', unit: 'pt', format: 'a4' });
-  const lines = doc.splitTextToSize(text, 520);
-  let y = 48;
-  doc.setFontSize(12);
+// ========= تصدير PDF الصحيح عبر Print =========
+function exportPdfViaPrint(title, text, rtl = true) {
+  const dir = rtl ? 'rtl' : 'ltr';
+  const w = window.open('', '_blank');
+  w.document.open();
+  w.document.write(`<!doctype html>
+<html lang="ar" dir="${dir}">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${escapeHtml(title)}</title>
+<style>
+  body{font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; padding:24px;}
+  h1{margin:0 0 12px; font-size:18px;}
+  pre{white-space:pre-wrap; line-height:1.7; font-size:14px;}
+</style>
+</head>
+<body>
+  <h1>${escapeHtml(title)}</h1>
+  <pre>${escapeHtml(text)}</pre>
+  <script>
+    setTimeout(()=>window.print(), 400);
+  </script>
+</body>
+</html>`);
+  w.document.close();
+}
 
-  lines.forEach((line) => {
-    if (y > 790) {
-      doc.addPage();
-      y = 48;
-    }
-    doc.text(line, 40, y);
-    y += 16;
-  });
+// ========= تصدير Word (DOCX) =========
+function downloadBlob(filename, blob) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+}
 
-  doc.save(filename);
+async function exportDocx(filename, title, text, rtl = true) {
+  const dir = rtl ? 'rtl' : 'ltr';
+  const html = `
+    <div dir="${dir}" style="font-family: Arial; line-height:1.8;">
+      <h2>${escapeHtml(title)}</h2>
+      <div style="white-space:pre-wrap; font-size:14px;">${escapeHtml(text)}</div>
+    </div>
+  `;
+  if (!window.htmlToDocx) throw new Error('مكتبة DOCX لم تُحمّل. تأكد من script html-to-docx-rtl في index.html');
+  const blob = await window.htmlToDocx(html, { direction: dir });
+  downloadBlob(filename, blob);
 }
 
 // ========= ربط الأزرار =========
 const extractBtn = document.getElementById('extractPdfBtn');
 const summarizeBtn = document.getElementById('summarizeBtn');
-const exportPdfBtn = document.getElementById('exportPdfBtn');
-const exportTextBtn = document.getElementById('exportTextBtn');
 const saveSettingsBtn = document.getElementById('saveSettingsBtn');
 const chatSendBtn = document.getElementById('chatSendBtn');
 const chatLog = document.getElementById('chatLog');
 
+const exportTextPdfBtn = document.getElementById('exportTextPdfBtn');
+const exportSummaryPdfBtn = document.getElementById('exportSummaryPdfBtn');
+
+const exportTextDocxBtn = document.getElementById('exportTextDocxBtn');
+const exportSummaryDocxBtn = document.getElementById('exportSummaryDocxBtn');
+
 function getSettingsOrThrow() {
-  const apiKeyRaw = document.getElementById('apiKey')?.value || '';
-  const apiKey = sanitizeApiKey(apiKeyRaw);
+  const apiKey = sanitizeApiKey(document.getElementById('apiKey')?.value || '');
   const baseUrl = (document.getElementById('baseUrl')?.value || '').trim();
   const model = (document.getElementById('model')?.value || '').trim();
   const language = document.getElementById('language')?.value || 'ar';
@@ -260,7 +265,6 @@ extractBtn?.addEventListener('click', async () => {
     extractBtn.textContent = 'جارٍ الاستخراج...';
 
     const text = await extractTextFromPDF(file, useOcr);
-
     document.getElementById('textInput').value = text;
 
     alert(useOcr ? 'اكتمل OCR.' : 'تم استخراج النص.');
@@ -271,13 +275,6 @@ extractBtn?.addEventListener('click', async () => {
     extractBtn.disabled = false;
     extractBtn.textContent = 'إستخراج نص PDF';
   }
-});
-
-// تصدير النص المستخرج
-exportTextBtn?.addEventListener('click', () => {
-  const text = (document.getElementById('textInput')?.value || '').trim();
-  if (!text) return alert('لا يوجد نص لتصديره');
-  exportToPdf('extracted_text.pdf', text);
 });
 
 // تلخيص
@@ -303,13 +300,6 @@ summarizeBtn?.addEventListener('click', async () => {
   }
 });
 
-// تصدير الملخص
-exportPdfBtn?.addEventListener('click', () => {
-  const summary = (document.getElementById('result')?.textContent || '').trim();
-  if (!summary) return alert('لا يوجد ملخص للتصدير');
-  exportToPdf('summary.pdf', summary);
-});
-
 // حفظ الإعدادات
 saveSettingsBtn?.addEventListener('click', () => {
   const apiKeyVal = sanitizeApiKey(document.getElementById('apiKey')?.value || '');
@@ -327,6 +317,40 @@ saveSettingsBtn?.addEventListener('click', () => {
   alert('تم حفظ الإعدادات.');
 });
 
+// تصدير PDF (Print)
+exportTextPdfBtn?.addEventListener('click', () => {
+  const text = (document.getElementById('textInput')?.value || '').trim();
+  if (!text) return alert('لا يوجد نص لتصديره');
+  exportPdfViaPrint('Extracted Text', text, true);
+});
+
+exportSummaryPdfBtn?.addEventListener('click', () => {
+  const summary = (document.getElementById('result')?.textContent || '').trim();
+  if (!summary) return alert('لا يوجد ملخص لتصديره');
+  exportPdfViaPrint('Summary', summary, true);
+});
+
+// تصدير Word
+exportTextDocxBtn?.addEventListener('click', async () => {
+  try {
+    const text = (document.getElementById('textInput')?.value || '').trim();
+    if (!text) return alert('لا يوجد نص لتصديره');
+    await exportDocx('extracted_text.docx', 'Extracted Text', text, true);
+  } catch (e) {
+    alert(e.message || String(e));
+  }
+});
+
+exportSummaryDocxBtn?.addEventListener('click', async () => {
+  try {
+    const summary = (document.getElementById('result')?.textContent || '').trim();
+    if (!summary) return alert('لا يوجد ملخص لتصديره');
+    await exportDocx('summary.docx', 'Summary', summary, true);
+  } catch (e) {
+    alert(e.message || String(e));
+  }
+});
+
 // الدردشة
 chatSendBtn?.addEventListener('click', async () => {
   try {
@@ -338,7 +362,6 @@ chatSendBtn?.addEventListener('click', async () => {
     const text = (document.getElementById('textInput')?.value || '').trim();
     if (!text) return alert('لا يوجد نص للرجوع إليه. استخرج النص أو الصقه أولاً.');
 
-    // عرض سؤال المستخدم
     chatLog.textContent += `أنت: ${question}\n`;
     document.getElementById('chatInput').value = '';
 
