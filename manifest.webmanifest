@@ -1,0 +1,12 @@
+{
+  "name": "Book Summarizer Pro",
+  "short_name": "Summarizer",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0b1020",
+  "theme_color": "#0b1020",
+  "lang": "ar",
+  "dir": "rtl",
+  "description": "OCR + تلخيص + دردشة + تصدير Word/PDF",
+  "icons": []
+}
