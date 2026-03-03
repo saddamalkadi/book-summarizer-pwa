@@ -20,13 +20,13 @@ async function extractTextFromPDF(file, useOcr = false) {
   const typedarray = new Uint8Array(await file.arrayBuffer());
   const pdf = await pdfjsLib.getDocument({ data: typedarray }).promise;
   let fullText = '';
-  // تحديد لغة OCR بناء على اللغة المختارة (ara للغة العربية، eng للإنجليزية)
+  // تحديد لغة OCR: ara للغة العربية، eng للإنجليزية
   const langSelect = document.getElementById('language');
   const ocrLang = langSelect && langSelect.value === 'ar' ? 'ara' : 'eng';
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
     const page = await pdf.getPage(pageNum);
     if (useOcr) {
-      // عرض الصفحة على canvas
+      // رسم الصفحة على Canvas
       const viewport = page.getViewport({ scale: 2 });
       const canvas = document.createElement('canvas');
       canvas.width = viewport.width;
@@ -51,7 +51,7 @@ async function extractTextFromPDF(file, useOcr = false) {
   return fullText;
 }
 
-// تقسيم النص إلى أجزاء لتجنب تجاوز الحد الأقصى للطول
+// تقسيم النص إلى أجزاء لتجنّب تجاوز الحد الأقصى للطول
 function chunkText(text, maxLength = 8000) {
   const chunks = [];
   for (let i = 0; i < text.length; i += maxLength) {
@@ -60,7 +60,7 @@ function chunkText(text, maxLength = 8000) {
   return chunks;
 }
 
-// دالة تلخيص النص باستخدام API
+// دالة تلخيص النص باستخدام OpenAI API
 async function summarizeText(text, apiKey, baseUrl, model, language) {
   const chunks = chunkText(text, 8000);
   let summary = '';
@@ -102,8 +102,51 @@ async function summarizeText(text, apiKey, baseUrl, model, language) {
   return summary;
 }
 
-// التعامل مع الضغط على زر استخراج النص
+// دالة للدردشة مع النص: ترسل سؤال المستخدم والنص الكامل إلى الموديل
+async function chatWithPdf(question, text, apiKey, baseUrl, model, language) {
+  const messages = [
+    {
+      role: 'system',
+      content:
+        'أنت مساعد ذكي يجيب على الأسئلة بناءً على النص المقدم. اعطِ إجابة واضحة وداعمة، واستخدم اللغة المطلوبة.'
+    },
+    {
+      role: 'user',
+      content:
+        `السؤال: ${question}\n\nالنص:\n${text}\n\nاللغة: ${language === 'ar' ? 'العربية' : 'English'}. أجب عن السؤال استنادًا إلى النص.`
+    }
+  ];
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: model,
+      messages: messages,
+      max_tokens: 2048,
+      temperature: 0.3
+    })
+  });
+  if (!response.ok) {
+    throw new Error('خطأ في استدعاء API: ' + response.statusText);
+  }
+  const data = await response.json();
+  const choice = data.choices && data.choices[0];
+  return choice && choice.message ? choice.message.content.trim() : '';
+}
+
+// واجهات المستخدم: أزرار وأحداث
 const extractBtn = document.getElementById('extractPdfBtn');
+const summarizeBtn = document.getElementById('summarizeBtn');
+const exportPdfBtn = document.getElementById('exportPdfBtn');
+const exportTextBtn = document.getElementById('exportTextBtn');
+const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+const chatSendBtn = document.getElementById('chatSendBtn');
+const chatLog = document.getElementById('chatLog');
+
+// معالجة الضغط على زر استخراج النص
 extractBtn.addEventListener('click', async () => {
   const fileInput = document.getElementById('pdfFile');
   const file = fileInput.files[0];
@@ -117,11 +160,7 @@ extractBtn.addEventListener('click', async () => {
   try {
     const text = await extractTextFromPDF(file, useOcr);
     document.getElementById('textInput').value = text;
-    if (useOcr) {
-      alert('اكتمل التعرف على النص بواسطة OCR. يمكنك الآن تلخيصه.');
-    } else {
-      alert('تم استخراج النص من ملف PDF. يمكنك الآن تلخيصه.');
-    }
+    alert(useOcr ? 'اكتمل التعرف على النص بواسطة OCR.' : 'تم استخراج النص من ملف PDF.');
   } catch (err) {
     alert('فشل استخراج النص: ' + err.message);
   } finally {
@@ -130,44 +169,30 @@ extractBtn.addEventListener('click', async () => {
   }
 });
 
-// التعامل مع الضغط على زر التلخيص
-const summarizeBtn = document.getElementById('summarizeBtn');
-summarizeBtn.addEventListener('click', async () => {
-  const apiKey = document.getElementById('apiKey').value.trim();
-  const baseUrl = document.getElementById('baseUrl').value.trim();
-  const model = document.getElementById('model').value.trim();
-  const language = document.getElementById('language').value;
+// تصدير النص الأصلى إلى PDF
+exportTextBtn.addEventListener('click', () => {
   const text = document.getElementById('textInput').value.trim();
-  if (!apiKey) {
-    alert('يرجى إدخال API key');
-    return;
-  }
-  // التحقق من أن الـ API key يتكون من أحرف وأرقام لاتينية فقط
-  if (!/^[\x00-\x7F]+$/.test(apiKey)) {
-    alert('الـ API key يجب أن يكون مكوَّناً من أحرف وأرقام إنجليزية فقط بدون مسافات أو أحرف عربية.');
-    return;
-  }
   if (!text) {
-    alert('يرجى لصق نص أو رفع ملف');
+    alert('لا يوجد نص لتصديره');
     return;
   }
-  summarizeBtn.disabled = true;
-  summarizeBtn.innerText = 'جارٍ التلخيص...';
-  try {
-    const summary = await summarizeText(text, apiKey, baseUrl, model, language);
-    document.getElementById('result').innerText = summary;
-    alert('تم التلخيص بنجاح');
-  } catch (err) {
-    alert('حدث خطأ أثناء التلخيص: ' + err.message);
-  } finally {
-    summarizeBtn.disabled = false;
-    summarizeBtn.innerText = 'تلخيص قوي';
-  }
+  const doc = new jsPDF({ orientation: 'p', unit: 'pt', format: 'a4' });
+  const lines = doc.splitTextToSize(text, 520);
+  let y = 40;
+  doc.setFontSize(12);
+  lines.forEach((line) => {
+    if (y > 780) {
+      doc.addPage();
+      y = 40;
+    }
+    doc.text(line, 40, y, { lang: 'ar' });
+    y += 16;
+  });
+  doc.save('extracted_text.pdf');
 });
 
-// التعامل مع الضغط على زر تصدير الملخص PDF
-const exportBtn = document.getElementById('exportPdfBtn');
-exportBtn.addEventListener('click', () => {
+// تصدير الملخص إلى PDF
+exportPdfBtn.addEventListener('click', () => {
   const result = document.getElementById('result').innerText.trim();
   if (!result) {
     alert('لا يوجد ملخص للتصدير');
@@ -188,16 +213,87 @@ exportBtn.addEventListener('click', () => {
   doc.save('summary.pdf');
 });
 
-// التعامل مع الضغط على زر حفظ الإعدادات
-const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+// معالجة الضغط على زر التلخيص
+summarizeBtn.addEventListener('click', async () => {
+  const apiKey = document.getElementById('apiKey').value.trim();
+  const baseUrl = document.getElementById('baseUrl').value.trim();
+  const model = document.getElementById('model').value.trim();
+  const language = document.getElementById('language').value;
+  const text = document.getElementById('textInput').value.trim();
+  if (!apiKey) {
+    alert('يرجى إدخال API key');
+    return;
+  }
+  // التأكد من أن مفتاح API يضم أحرفًا وأرقامًا إنجليزية فقط
+  if (!/^[\x00-\x7F]+$/.test(apiKey)) {
+    alert('الـ API key يجب أن يكون مكوّنًا من أحرف وأرقام إنجليزية فقط بدون مسافات أو أحرف عربية.');
+    return;
+  }
+  if (!text) {
+    alert('يرجى لصق نص أو رفع ملف');
+    return;
+  }
+  summarizeBtn.disabled = true;
+  summarizeBtn.innerText = 'جارٍ التلخيص...';
+  try {
+    const summary = await summarizeText(text, apiKey, baseUrl, model, language);
+    document.getElementById('result').innerText = summary;
+    alert('تم التلخيص بنجاح');
+  } catch (err) {
+    alert('حدث خطأ أثناء التلخيص: ' + err.message);
+  } finally {
+    summarizeBtn.disabled = false;
+    summarizeBtn.innerText = 'تلخيص قوي';
+  }
+});
+
+// حفظ الإعدادات
 saveSettingsBtn.addEventListener('click', () => {
-  const apiKeyVal = document.getElementById('apiKey').value.trim();
-  const baseUrlVal = document.getElementById('baseUrl').value.trim();
-  const modelVal = document.getElementById('model').value.trim();
-  const langVal = document.getElementById('language').value;
-  localStorage.setItem('apiKey', apiKeyVal);
-  localStorage.setItem('baseUrl', baseUrlVal);
-  localStorage.setItem('model', modelVal);
-  localStorage.setItem('language', langVal);
+  localStorage.setItem('apiKey', document.getElementById('apiKey').value.trim());
+  localStorage.setItem('baseUrl', document.getElementById('baseUrl').value.trim());
+  localStorage.setItem('model', document.getElementById('model').value.trim());
+  localStorage.setItem('language', document.getElementById('language').value);
   alert('تم حفظ الإعدادات.');
+});
+
+// الدردشة مع النص
+chatSendBtn.addEventListener('click', async () => {
+  const question = document.getElementById('chatInput').value.trim();
+  const text = document.getElementById('textInput').value.trim();
+  const apiKey = document.getElementById('apiKey').value.trim();
+  const baseUrl = document.getElementById('baseUrl').value.trim();
+  const model = document.getElementById('model').value.trim();
+  const language = document.getElementById('language').value;
+  if (!question) {
+    alert('اكتب سؤالك أولاً');
+    return;
+  }
+  if (!apiKey) {
+    alert('يرجى إدخال API key');
+    return;
+  }
+  // التأكد من أن المفتاح صحيح الشكل
+  if (!/^[\x00-\x7F]+$/.test(apiKey)) {
+    alert('الـ API key يجب أن يكون مكوّنًا من أحرف وأرقام إنجليزية فقط.');
+    return;
+  }
+  if (!text) {
+    alert('لا يوجد نص للرجوع إليه. يرجى استخراج النص أولاً أو لصقه.');
+    return;
+  }
+  // عرض السؤال في سجل الدردشة
+  chatLog.innerText += `أنت: ${question}\n`;
+  document.getElementById('chatInput').value = '';
+  chatSendBtn.disabled = true;
+  chatSendBtn.innerText = 'جارٍ الإرسال...';
+  try {
+    const answer = await chatWithPdf(question, text, apiKey, baseUrl, model, language);
+    chatLog.innerText += `النظام: ${answer}\n`;
+    chatLog.scrollTop = chatLog.scrollHeight;
+  } catch (err) {
+    alert('حدث خطأ أثناء الدردشة: ' + err.message);
+  } finally {
+    chatSendBtn.disabled = false;
+    chatSendBtn.innerText = 'إرسال السؤال';
+  }
 });
