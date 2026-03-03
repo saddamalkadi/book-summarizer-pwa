@@ -1,76 +1,24 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Book Summarizer Pro (OCR)</title>
   <link rel="manifest" href="manifest.webmanifest">
-  <meta name="theme-color" content="#0b1020" />
+  <meta name="theme-color" content="#0b1020">
   <style>
-    body {
-      font-family: sans-serif;
-      margin: 0;
-      padding: 1rem;
-      background-color: #f7f7f7;
-      color: #222;
-    }
-    header {
-      background-color: #0b1020;
-      color: #fff;
-      padding: 1rem;
-      border-radius: 0.5rem;
-    }
-    main {
-      margin-top: 1rem;
-    }
-    .section {
-      background-color: #fff;
-      padding: 1rem;
-      border-radius: 0.5rem;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-      margin-bottom: 1rem;
-    }
-    label {
-      display: block;
-      margin-bottom: 0.5rem;
-    }
-    input[type="file"],
-    input[type="text"],
-    input[type="password"],
-    textarea,
-    select {
-      width: 100%;
-      padding: 0.5rem;
-      margin-bottom: 1rem;
-      border: 1px solid #ccc;
-      border-radius: 0.25rem;
-      font-size: 1rem;
-    }
-    button {
-      background-color: #007acc;
-      color: #fff;
-      border: none;
-      padding: 0.5rem 1rem;
-      border-radius: 0.25rem;
-      cursor: pointer;
-    }
-    button:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-    .result-section {
-      white-space: pre-wrap;
-    }
-    .field-group {
-      margin-bottom: 1rem;
-    }
-    .toggle-group {
-      display: flex;
-      align-items: center;
-    }
-    .toggle-group label {
-      margin-left: 0.5rem;
-    }
+    body {font-family: sans-serif;margin: 0;padding: 1rem;background-color: #f7f7f7;color: #222;}
+    header {background-color: #0b1020;color: #fff;padding: 1rem;border-radius: 0.5rem;}
+    main {margin-top: 1rem;}
+    .section {background-color: #fff;padding: 1rem;border-radius: 0.5rem;box-shadow: 0 2px 4px rgba(0,0,0,0.1);margin-bottom: 1rem;}
+    label {display: block;margin-bottom: 0.5rem;}
+    input[type="file"],input[type="text"],input[type="password"],textarea,select {width: 100%;padding: 0.5rem;margin-bottom: 1rem;border: 1px solid #ccc;border-radius: 0.25rem;font-size: 1rem;}
+    button {background-color: #007acc;color: #fff;border: none;padding: 0.5rem 1rem;border-radius: 0.25rem;cursor: pointer;}
+    button:disabled {opacity: 0.6;cursor: not-allowed;}
+    .result-section, .chat-log {white-space: pre-wrap;max-height: 300px;overflow-y: auto;border: 1px solid #ccc;border-radius: 0.25rem;padding: 0.5rem;}
+    .field-group {margin-bottom: 1rem;}
+    .toggle-group {display: flex;align-items: center;}
+    .toggle-group label {margin-left: 0.5rem;}
   </style>
 </head>
 <body>
@@ -86,11 +34,11 @@
     </div>
     <div class="field-group">
       <label for="baseUrl">Base URL</label>
-      <input type="text" id="baseUrl" value="https://api.openai.com/v1" placeholder="https://api.openai.com/v1">
+      <input type="text" id="baseUrl" value="https://api.openai.com/v1">
     </div>
     <div class="field-group">
       <label for="model">Model</label>
-      <input type="text" id="model" value="gpt-3.5-turbo" placeholder="اسم الموديل">
+      <input type="text" id="model" value="gpt-3.5-turbo">
     </div>
     <div class="field-group">
       <label for="language">لغة الملخص</label>
@@ -117,27 +65,32 @@
       <textarea id="textInput" rows="6" placeholder="الصق نص الكتاب..."></textarea>
     </div>
     <button id="extractPdfBtn">إستخراج نص PDF</button>
+    <button id="exportTextBtn">تصدير النص PDF</button>
     <button id="summarizeBtn">تلخيص قوي</button>
   </div>
 
   <div class="section">
     <h2>الملخص</h2>
-    <div id="result" class="result-section">
-      <!-- سيتم إظهار الملخص هنا -->
-    </div>
+    <div id="result" class="result-section"></div>
     <button id="exportPdfBtn">تصدير الملخص PDF</button>
+  </div>
+
+  <div class="section">
+    <h2>الدردشة مع النص</h2>
+    <div id="chatLog" class="chat-log"></div>
+    <div class="field-group">
+      <input type="text" id="chatInput" placeholder="اكتب سؤالك هنا...">
+    </div>
+    <button id="chatSendBtn">إرسال السؤال</button>
   </div>
 </main>
 
-<!-- تحميل مكتبة pdf.js والعامل -->
+<!-- مكتبات خارجية -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js"></script>
-<!-- تحميل مكتبة jsPDF -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<!-- تحميل مكتبة OCR تيسيراكت -->
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
-
-<!-- تحميل ملف الجافاسكريبت الخارجي المحدث -->
+<!-- ملف الجافاسكريبت الخاص بالتطبيق -->
 <script src="app_ocr.js"></script>
 </body>
 </html>
