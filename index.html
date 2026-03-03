@@ -8,152 +8,212 @@
   <meta name="theme-color" content="#0b1020">
   <style>
     body {
-      font-family: sans-serif;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
       margin: 0;
       padding: 1rem;
-      background-color: #f7f7f7;
-      color: #222;
+      background: #f6f7fb;
+      color: #0b1020;
     }
     header {
-      background-color: #0b1020;
+      background: linear-gradient(135deg, #0b1020, #14214a);
       color: #fff;
-      padding: 1rem;
-      border-radius: 0.5rem;
+      padding: 1rem 1.25rem;
+      border-radius: 14px;
     }
-    main {
-      margin-top: 1rem;
-    }
+    header h1 { margin: 0; font-size: 1.2rem; }
+    main { margin-top: 1rem; }
     .section {
-      background-color: #fff;
+      background: #fff;
       padding: 1rem;
-      border-radius: 0.5rem;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      border-radius: 14px;
+      box-shadow: 0 10px 25px rgba(10, 20, 60, 0.08);
       margin-bottom: 1rem;
+      border: 1px solid rgba(10, 20, 60, 0.06);
     }
-    label {
-      display: block;
-      margin-bottom: 0.5rem;
-    }
+    .section h2 { margin: 0 0 0.75rem; font-size: 1.05rem; }
+    label { display: block; margin-bottom: 0.4rem; font-weight: 600; }
     input[type="file"],
     input[type="text"],
     input[type="password"],
     textarea,
     select {
       width: 100%;
-      padding: 0.5rem;
-      margin-bottom: 1rem;
-      border: 1px solid #ccc;
-      border-radius: 0.25rem;
+      padding: 0.7rem 0.75rem;
+      margin-bottom: 0.9rem;
+      border: 1px solid #d7dbea;
+      border-radius: 12px;
       font-size: 1rem;
+      background: #fbfcff;
+      outline: none;
+    }
+    input:focus, textarea:focus, select:focus { border-color: #7aa7ff; box-shadow: 0 0 0 3px rgba(122, 167, 255, 0.18); }
+    textarea { min-height: 140px; resize: vertical; }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.75rem;
+    }
+    @media (min-width: 900px) {
+      .row.two { grid-template-columns: 1fr 1fr; }
+      .row.three { grid-template-columns: 1fr 1fr 1fr; }
+    }
+    .btns {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      margin-top: 0.25rem;
     }
     button {
-      background-color: #007acc;
+      background: #1b66ff;
       color: #fff;
       border: none;
-      padding: 0.5rem 1rem;
-      border-radius: 0.25rem;
+      padding: 0.65rem 1rem;
+      border-radius: 12px;
       cursor: pointer;
+      font-weight: 700;
     }
-    button:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-    .result-section,
-    .chat-log {
-      white-space: pre-wrap;
-      max-height: 300px;
-      overflow-y: auto;
-      border: 1px solid #ccc;
-      border-radius: 0.25rem;
-      padding: 0.5rem;
-    }
-    .field-group {
-      margin-bottom: 1rem;
-    }
-    .toggle-group {
+    button.secondary { background: #0b1020; }
+    button.ghost { background: #eef3ff; color: #1b66ff; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .toggle {
       display: flex;
       align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+      font-weight: 600;
     }
-    .toggle-group label {
-      margin-left: 0.5rem;
+    .result-box, .chat-log {
+      white-space: pre-wrap;
+      border: 1px solid #d7dbea;
+      border-radius: 12px;
+      padding: 0.75rem;
+      background: #fbfcff;
+      max-height: 340px;
+      overflow-y: auto;
+    }
+    .hint { color: #556; font-size: 0.9rem; margin-top: -0.5rem; margin-bottom: 0.9rem; }
+    .status {
+      font-size: 0.92rem;
+      color: #2d3b66;
+      background: #eef3ff;
+      border: 1px solid #d7e4ff;
+      padding: 0.6rem 0.75rem;
+      border-radius: 12px;
+      margin-bottom: 0.9rem;
+      display: none;
     }
   </style>
 </head>
+
 <body>
 <header>
   <h1>Book Summarizer Pro</h1>
 </header>
+
 <main>
-  <!-- قسم الإعدادات -->
+  <!-- الإعدادات -->
   <div class="section">
     <h2>الإعدادات</h2>
-    <div class="field-group">
-      <label for="apiKey">API Key</label>
-      <input type="password" id="apiKey" placeholder="أدخل API key...">
+
+    <div class="row two">
+      <div>
+        <label for="apiKey">API Key</label>
+        <input type="password" id="apiKey" placeholder="أدخل API key...">
+        <div class="hint">ملاحظة: المفتاح يجب أن يكون إنجليزي فقط (بدون أحرف عربية/رموز مخفية).</div>
+      </div>
+
+      <div>
+        <label for="baseUrl">Base URL</label>
+        <input type="text" id="baseUrl" value="https://api.openai.com/v1">
+      </div>
     </div>
-    <div class="field-group">
-      <label for="baseUrl">Base URL</label>
-      <input type="text" id="baseUrl" value="https://api.openai.com/v1">
+
+    <div class="row three">
+      <div>
+        <label for="model">Model</label>
+        <input type="text" id="model" value="gpt-3.5-turbo">
+      </div>
+
+      <div>
+        <label for="language">لغة الملخص</label>
+        <select id="language">
+          <option value="ar">العربية</option>
+          <option value="en">English</option>
+        </select>
+      </div>
+
+      <div>
+        <label for="ocrLang">لغة OCR (التعرف داخل PDF)</label>
+        <select id="ocrLang">
+          <option value="auto" selected>AUTO (Arabic + English)</option>
+          <option value="ara">Arabic فقط</option>
+          <option value="eng">English فقط</option>
+          <option value="ara+eng">Arabic + English</option>
+          <option value="eng+ara">English + Arabic</option>
+        </select>
+      </div>
     </div>
-    <div class="field-group">
-      <label for="model">Model</label>
-      <input type="text" id="model" value="gpt-3.5-turbo">
+
+    <div class="btns">
+      <button id="saveSettingsBtn" class="secondary">حفظ الإعدادات</button>
     </div>
-    <div class="field-group">
-      <label for="language">لغة الملخص</label>
-      <select id="language">
-        <option value="ar">العربية</option>
-        <option value="en">English</option>
-      </select>
-    </div>
-    <button id="saveSettingsBtn">حفظ الإعدادات</button>
   </div>
 
-  <!-- قسم المحتوى -->
+  <!-- المحتوى -->
   <div class="section">
     <h2>المحتوى</h2>
-    <div class="field-group">
-      <label for="pdfFile">رفع ملف PDF</label>
-      <input type="file" id="pdfFile" accept=".pdf">
+
+    <div class="row two">
+      <div>
+        <label for="pdfFile">رفع ملف PDF</label>
+        <input type="file" id="pdfFile" accept=".pdf">
+      </div>
+
+      <div class="toggle">
+        <input type="checkbox" id="ocrToggle">
+        <label for="ocrToggle">تفعيل OCR للـ PDF المصوّر</label>
+      </div>
     </div>
-    <div class="toggle-group">
-      <input type="checkbox" id="ocrToggle">
-      <label for="ocrToggle">تفعيل OCR للـ PDF المصوّر (تجريبي)</label>
+
+    <div id="statusBox" class="status"></div>
+
+    <label for="textInput">النص (سيتم وضع النص المستخرج هنا)</label>
+    <textarea id="textInput" placeholder="الصق نص الكتاب هنا أو استخرج النص من PDF..."></textarea>
+
+    <div class="btns">
+      <button id="extractPdfBtn">إستخراج نص PDF</button>
+      <button id="exportTextBtn" class="ghost">تصدير النص PDF</button>
+      <button id="summarizeBtn">تلخيص قوي</button>
     </div>
-    <div class="field-group">
-      <label for="textInput">أو الصق النص هنا</label>
-      <textarea id="textInput" rows="6" placeholder="الصق نص الكتاب..."></textarea>
-    </div>
-    <button id="extractPdfBtn">إستخراج نص PDF</button>
-    <button id="exportTextBtn">تصدير النص PDF</button>
-    <button id="summarizeBtn">تلخيص قوي</button>
   </div>
 
-  <!-- قسم الملخص -->
+  <!-- الملخص -->
   <div class="section">
     <h2>الملخص</h2>
-    <div id="result" class="result-section"><!-- سيتم وضع الملخص هنا --></div>
-    <button id="exportPdfBtn">تصدير الملخص PDF</button>
+    <div id="result" class="result-box"></div>
+    <div class="btns">
+      <button id="exportPdfBtn" class="ghost">تصدير الملخص PDF</button>
+    </div>
   </div>
 
-  <!-- قسم الدردشة -->
+  <!-- الدردشة -->
   <div class="section">
     <h2>الدردشة مع النص</h2>
     <div id="chatLog" class="chat-log"></div>
-    <div class="field-group">
+    <div class="row two" style="margin-top: .75rem;">
       <input type="text" id="chatInput" placeholder="اكتب سؤالك هنا...">
+      <button id="chatSendBtn" class="secondary">إرسال السؤال</button>
     </div>
-    <button id="chatSendBtn">إرسال السؤال</button>
   </div>
 </main>
 
-<!-- تحميل مكتبات الطرف الثالث -->
+<!-- مكتبات الطرف الثالث -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 
-<!-- تحميل ملف الجافا سكريبت الخاص بالتطبيق -->
+<!-- كود التطبيق -->
 <script src="app_ocr.js"></script>
 </body>
 </html>
