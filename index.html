@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Book Summarizer Pro</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0b1020" />
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      padding: 1rem;
+      background-color: #f7f7f7;
+      color: #222;
+    }
+    header {
+      background-color: #0b1020;
+      color: #fff;
+      padding: 1rem;
+      border-radius: 0.5rem;
+    }
+    main {
+      margin-top: 1rem;
+    }
+    .section {
+      background-color: #fff;
+      padding: 1rem;
+      border-radius: 0.5rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      margin-bottom: 1rem;
+    }
+    label {
+      display: block;
+      margin-bottom: 0.5rem;
+    }
+    input[type="file"],
+    input[type="text"],
+    input[type="password"],
+    textarea,
+    select {
+      width: 100%;
+      padding: 0.5rem;
+      margin-bottom: 1rem;
+      border: 1px solid #ccc;
+      border-radius: 0.25rem;
+      font-size: 1rem;
+    }
+    button {
+      background-color: #007acc;
+      color: #fff;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 0.25rem;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .result-section {
+      white-space: pre-wrap;
+    }
+    .field-group {
+      margin-bottom: 1rem;
+    }
+    .toggle-group {
+      display: flex;
+      align-items: center;
+    }
+    .toggle-group label {
+      margin-left: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Book Summarizer Pro</h1>
+</header>
+<main>
+  <div class="section">
+    <h2>الإعدادات</h2>
+    <div class="field-group">
+      <label for="apiKey">API Key</label>
+      <input type="password" id="apiKey" placeholder="أدخل API key...">
+    </div>
+    <div class="field-group">
+      <label for="baseUrl">Base URL</label>
+      <input type="text" id="baseUrl" value="https://api.openai.com/v1" placeholder="https://api.openai.com/v1">
+    </div>
+    <div class="field-group">
+      <label for="model">Model</label>
+      <input type="text" id="model" value="gpt-3.5-turbo" placeholder="اسم الموديل">
+    </div>
+    <div class="field-group">
+      <label for="language">لغة الملخص</label>
+      <select id="language">
+        <option value="ar">العربية</option>
+        <option value="en">English</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>المحتوى</h2>
+    <div class="field-group">
+      <label for="pdfFile">رفع ملف PDF</label>
+      <input type="file" id="pdfFile" accept=".pdf">
+    </div>
+    <div class="toggle-group">
+      <input type="checkbox" id="ocrToggle">
+      <label for="ocrToggle">تفعيل OCR للـ PDF المصوّر (تجريبي)</label>
+    </div>
+    <div class="field-group">
+      <label for="textInput">أو الصق النص هنا</label>
+      <textarea id="textInput" rows="6" placeholder="الصق نص الكتاب..."></textarea>
+    </div>
+    <button id="extractPdfBtn">إستخراج نص PDF</button>
+    <button id="summarizeBtn">تلخيص قوي</button>
+  </div>
+
+  <div class="section">
+    <h2>الملخص</h2>
+    <div id="result" class="result-section">
+      <!-- سيتم إظهار الملخص هنا -->
+    </div>
+    <button id="exportPdfBtn">تصدير الملخص PDF</button>
+  </div>
+</main>
+
+<script type="module">
+import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdfjs-dist/3.11.174/pdf.mjs';
+import { jsPDF } from 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/+esm';
+
+// إعداد عامل PDF.js
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdfjs-dist/3.11.174/pdf.worker.mjs';
+
+async function extractTextFromPDF(file, useOcr = false) {
+  const typedarray = new Uint8Array(await file.arrayBuffer());
+  const pdf = await pdfjsLib.getDocument({ data: typedarray }).promise;
+  let fullText = '';
+  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+    const page = await pdf.getPage(pageNum);
+    const content = await page.getTextContent();
+    const strings = content.items.map(item => item.str);
+    fullText += strings.join(' ') + '\n\n';
+  }
+  if (useOcr) {
+    alert('OCR غير مدعوم حالياً. سيتم استخدام النص المستخرج فقط.');
+  }
+  return fullText;
+}
+
+function chunkText(text, maxLength = 8000) {
+  const chunks = [];
+  for (let i = 0; i < text.length; i += maxLength) {
+    chunks.push(text.slice(i, i + maxLength));
+  }
+  return chunks;
+}
+
+async function summarizeText(text, apiKey, baseUrl, model, language) {
+  const chunks = chunkText(text, 8000);
+  let summary = '';
+  for (const chunk of chunks) {
+    const messages = [
+      {
+        role: 'system',
+        content:
+          'أنت مساعد ذكي تلخص النصوص بشكل دقيق. قم بإنشاء ملخص قوي ومنظم للكتاب مع: ملخص تنفيذي، نقاط رئيسية، مخطط للفصول، توصيات عملية، مصطلحات رئيسية، ودليل بأمثلة أو اقتباسات داعمة. يجب أن تكون النتائج باللغة المحددة.'
+      },
+      {
+        role: 'user',
+        content:
+          `نص الكتاب:\n\n${chunk}\n\nاللغة المطلوبة للملخص: ${language === 'ar' ? 'العربية' : 'English'}\n\nالرجاء إنشاء الملخص.`
+      }
+    ];
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: messages,
+        max_tokens: 4096,
+        temperature: 0.3
+      })
+    });
+    if (!response.ok) {
+      throw new Error('خطأ في استدعاء API: ' + response.statusText);
+    }
+    const data = await response.json();
+    const choice = data.choices && data.choices[0];
+    if (choice && choice.message) {
+      summary += choice.message.content.trim() + '\n\n';
+    }
+  }
+  return summary;
+}
+
+document.getElementById('extractPdfBtn').addEventListener('click', async () => {
+  const fileInput = document.getElementById('pdfFile');
+  const file = fileInput.files[0];
+  if (!file) {
+    alert('يرجى اختيار ملف PDF أولاً');
+    return;
+  }
+  const useOcr = document.getElementById('ocrToggle').checked;
+  document.getElementById('extractPdfBtn').disabled = true;
+  document.getElementById('extractPdfBtn').innerText = 'جارٍ استخراج النص...';
+  try {
+    const text = await extractTextFromPDF(file, useOcr);
+    document.getElementById('textInput').value = text;
+    alert('تم استخراج النص من ملف PDF. يمكنك الآن تلخيصه.');
+  } catch (err) {
+    alert('فشل استخراج النص: ' + err.message);
+  } finally {
+    document.getElementById('extractPdfBtn').disabled = false;
+    document.getElementById('extractPdfBtn').innerText = 'إستخراج نص PDF';
+  }
+});
+
+document.getElementById('summarizeBtn').addEventListener('click', async () => {
+  const apiKey = document.getElementById('apiKey').value.trim();
+  const baseUrl = document.getElementById('baseUrl').value.trim();
+  const model = document.getElementById('model').value.trim();
+  const language = document.getElementById('language').value;
+  const text = document.getElementById('textInput').value.trim();
+  if (!apiKey) {
+    alert('يرجى إدخال API key');
+    return;
+  }
+  if (!text) {
+    alert('يرجى لصق نص أو رفع ملف');
+    return;
+  }
+  document.getElementById('summarizeBtn').disabled = true;
+  document.getElementById('summarizeBtn').innerText = 'جارٍ التلخيص...';
+  try {
+    const summary = await summarizeText(text, apiKey, baseUrl, model, language);
+    document.getElementById('result').innerText = summary;
+    alert('تم التلخيص بنجاح');
+  } catch (err) {
+    alert('حدث خطأ أثناء التلخيص: ' + err.message);
+  } finally {
+    document.getElementById('summarizeBtn').disabled = false;
+    document.getElementById('summarizeBtn').innerText = 'تلخيص قوي';
+  }
+});
+
+document.getElementById('exportPdfBtn').addEventListener('click', async () => {
+  const result = document.getElementById('result').innerText.trim();
+  if (!result) {
+    alert('لا يوجد ملخص للتصدير');
+    return;
+  }
+  const doc = new jsPDF({ orientation: 'p', unit: 'pt', format: 'a4' });
+  const lines = doc.splitTextToSize(result, 520);
+  let y = 40;
+  doc.setFontSize(12);
+  lines.forEach((line) => {
+    if (y > 780) {
+      doc.addPage();
+      y = 40;
+    }
+    doc.text(line, 40, y, { lang: 'ar' });
+    y += 16;
+  });
+  doc.save('summary.pdf');
+});
+</script>
+</body>
+</html>
