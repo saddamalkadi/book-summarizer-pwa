@@ -1,4 +1,4 @@
-const CACHE_NAME = "book-summarizer-cache-v6";
+const CACHE_NAME = "book-summarizer-cache-v7";
 const CORE_ASSETS = [
   "./",
   "./index.html",
@@ -44,21 +44,17 @@ async function networkFirst(request) {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
-
   const url = new URL(event.request.url);
 
-  // صفحات التنقل
   if (event.request.mode === "navigate") {
     event.respondWith(networkFirst(event.request));
     return;
   }
 
-  // ملفات التطبيق (تحديث أسرع)
   if (url.pathname.endsWith(".js") || url.pathname.endsWith(".html") || url.pathname.endsWith(".webmanifest")) {
     event.respondWith(staleWhileRevalidate(event.request));
     return;
   }
 
-  // باقي الملفات
   event.respondWith(staleWhileRevalidate(event.request));
 });
