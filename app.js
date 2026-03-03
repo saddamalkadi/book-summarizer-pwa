@@ -38,13 +38,11 @@ async function summarizeText(text, apiKey, baseUrl, model, language) {
     const messages = [
       {
         role: 'system',
-        content:
-          'أنت مساعد ذكي تلخص النصوص بشكل دقيق. قم بإنشاء ملخص قوي ومنظم للكتاب مع: ملخص تنفيذي، نقاط رئيسية، مخطط للفصول، توصيات عملية، مصطلحات رئيسية، ودليل بأمثلة أو اقتباسات داعمة. يجب أن تكون النتائج باللغة المحددة.'
+        content: 'أنت مساعد ذكي تلخص النصوص بشكل دقيق. قم بإنشاء ملخص قوي ومنظم للكتاب مع: ملخص تنفيذي، نقاط رئيسية، مخطط للفصول، توصيات عملية، مصطلحات رئيسية، ودليل بأمثلة أو اقتباسات داعمة. يجب أن تكون النتائج باللغة المحددة.'
       },
       {
         role: 'user',
-        content:
-          `نص الكتاب:\n\n${chunk}\n\nاللغة المطلوبة للملخص: ${language === 'ar' ? 'العربية' : 'English'}\n\nالرجاء إنشاء الملخص.`
+        content: `نص الكتاب:\n\n${chunk}\n\nاللغة المطلوبة للملخص: ${language === 'ar' ? 'العربية' : 'English'}\n\nالرجاء إنشاء الملخص.`
       }
     ];
     const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -104,6 +102,11 @@ document.getElementById('summarizeBtn').addEventListener('click', async () => {
   const text = document.getElementById('textInput').value.trim();
   if (!apiKey) {
     alert('يرجى إدخال API key');
+    return;
+  }
+  // التحقق من أن الـ API Key يحتوي على أحرف وأرقام لاتينية فقط
+  if (!/^[\x00-\x7F]+$/.test(apiKey)) {
+    alert('الـ API key يجب أن يكون مكوَّناً من أحرف وأرقام إنجليزية فقط بدون مسافات أو أحرف عربية.');
     return;
   }
   if (!text) {
