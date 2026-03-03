@@ -15,34 +15,32 @@ const pdfjsLib = window.pdfjsLib;
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 const { jsPDF } = window.jspdf;
 
-// دالة استخراج النص من PDF مع خيار OCR
+// دالة استخراج النص من PDF مع خيار OCR متعدد اللغات
 async function extractTextFromPDF(file, useOcr = false) {
   const typedarray = new Uint8Array(await file.arrayBuffer());
   const pdf = await pdfjsLib.getDocument({ data: typedarray }).promise;
   let fullText = '';
-  // تحديد لغة OCR: ara للغة العربية، eng للإنجليزية
-  const langSelect = document.getElementById('language');
-  const ocrLang = langSelect && langSelect.value === 'ar' ? 'ara' : 'eng';
+  // استخدم ara+eng لاكتشاف العربية والإنجليزية معًا
+  const ocrLangs = 'ara+eng';
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
     const page = await pdf.getPage(pageNum);
     if (useOcr) {
-      // رسم الصفحة على Canvas
+      // رسم الصفحة على Canvas للتعرف الضوئي
       const viewport = page.getViewport({ scale: 2 });
       const canvas = document.createElement('canvas');
       canvas.width = viewport.width;
       canvas.height = viewport.height;
       const context = canvas.getContext('2d');
       await page.render({ canvasContext: context, viewport: viewport }).promise;
-      // التعرف على النص باستخدام Tesseract.js
       try {
-        const result = await Tesseract.recognize(canvas, ocrLang);
+        const result = await Tesseract.recognize(canvas, ocrLangs);
         fullText += (result.data && result.data.text ? result.data.text : '') + '\n\n';
       } catch (err) {
         console.error('OCR error:', err);
         alert('حدث خطأ أثناء عملية OCR: ' + err.message);
       }
     } else {
-      // استخراج النص مباشرة باستخدام pdf.js
+      // استخراج النص مباشرة إذا كان PDF يحتوي نصاً
       const content = await page.getTextContent();
       const strings = content.items.map(item => item.str);
       fullText += strings.join(' ') + '\n\n';
@@ -137,7 +135,7 @@ async function chatWithPdf(question, text, apiKey, baseUrl, model, language) {
   return choice && choice.message ? choice.message.content.trim() : '';
 }
 
-// واجهات المستخدم: أزرار وأحداث
+// واجهات المستخدم: أزرار وعناصر
 const extractBtn = document.getElementById('extractPdfBtn');
 const summarizeBtn = document.getElementById('summarizeBtn');
 const exportPdfBtn = document.getElementById('exportPdfBtn');
@@ -224,7 +222,7 @@ summarizeBtn.addEventListener('click', async () => {
     alert('يرجى إدخال API key');
     return;
   }
-  // التأكد من أن مفتاح API يضم أحرفًا وأرقامًا إنجليزية فقط
+  // التأكد من أن المفتاح يتكون من أحرف وأرقام لاتينية فقط
   if (!/^[\x00-\x7F]+$/.test(apiKey)) {
     alert('الـ API key يجب أن يكون مكوّنًا من أحرف وأرقام إنجليزية فقط بدون مسافات أو أحرف عربية.');
     return;
@@ -272,7 +270,6 @@ chatSendBtn.addEventListener('click', async () => {
     alert('يرجى إدخال API key');
     return;
   }
-  // التأكد من أن المفتاح صحيح الشكل
   if (!/^[\x00-\x7F]+$/.test(apiKey)) {
     alert('الـ API key يجب أن يكون مكوّنًا من أحرف وأرقام إنجليزية فقط.');
     return;
