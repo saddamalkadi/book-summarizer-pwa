@@ -7,100 +7,55 @@
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#0b1020">
   <style>
-    body {
+    body{
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      margin: 0;
-      padding: 1rem;
-      background: #f6f7fb;
-      color: #0b1020;
+      margin:0; padding:1rem; background:#f6f7fb; color:#0b1020;
     }
-    header {
-      background: linear-gradient(135deg, #0b1020, #14214a);
-      color: #fff;
-      padding: 1rem 1.25rem;
-      border-radius: 14px;
+    header{
+      background:linear-gradient(135deg,#0b1020,#14214a);
+      color:#fff; padding:1rem 1.25rem; border-radius:14px;
     }
-    header h1 { margin: 0; font-size: 1.2rem; }
-    main { margin-top: 1rem; }
-    .section {
-      background: #fff;
-      padding: 1rem;
-      border-radius: 14px;
-      box-shadow: 0 10px 25px rgba(10, 20, 60, 0.08);
-      margin-bottom: 1rem;
-      border: 1px solid rgba(10, 20, 60, 0.06);
+    header h1{margin:0; font-size:1.2rem;}
+    main{margin-top:1rem;}
+    .section{
+      background:#fff; padding:1rem; border-radius:14px;
+      box-shadow:0 10px 25px rgba(10,20,60,0.08);
+      margin-bottom:1rem; border:1px solid rgba(10,20,60,0.06);
     }
-    .section h2 { margin: 0 0 0.75rem; font-size: 1.05rem; }
-    label { display: block; margin-bottom: 0.4rem; font-weight: 600; }
-    input[type="file"],
-    input[type="text"],
-    input[type="password"],
-    textarea,
-    select {
-      width: 100%;
-      padding: 0.7rem 0.75rem;
-      margin-bottom: 0.9rem;
-      border: 1px solid #d7dbea;
-      border-radius: 12px;
-      font-size: 1rem;
-      background: #fbfcff;
-      outline: none;
+    .section h2{margin:0 0 .75rem; font-size:1.05rem;}
+    label{display:block; margin-bottom:.4rem; font-weight:700;}
+    input[type="file"], input[type="text"], input[type="password"], textarea, select{
+      width:100%; padding:.7rem .75rem; margin-bottom:.9rem;
+      border:1px solid #d7dbea; border-radius:12px;
+      font-size:1rem; background:#fbfcff; outline:none;
     }
-    input:focus, textarea:focus, select:focus { border-color: #7aa7ff; box-shadow: 0 0 0 3px rgba(122, 167, 255, 0.18); }
-    textarea { min-height: 140px; resize: vertical; }
-    .row {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 0.75rem;
+    input:focus, textarea:focus, select:focus{
+      border-color:#7aa7ff; box-shadow:0 0 0 3px rgba(122,167,255,.18);
     }
-    @media (min-width: 900px) {
-      .row.two { grid-template-columns: 1fr 1fr; }
-      .row.three { grid-template-columns: 1fr 1fr 1fr; }
+    textarea{min-height:150px; resize:vertical;}
+    .row{display:grid; grid-template-columns:1fr; gap:.75rem;}
+    @media (min-width:900px){
+      .row.two{grid-template-columns:1fr 1fr;}
+      .row.three{grid-template-columns:1fr 1fr 1fr;}
     }
-    .btns {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.6rem;
-      margin-top: 0.25rem;
+    .btns{display:flex; flex-wrap:wrap; gap:.6rem; margin-top:.25rem;}
+    button{
+      background:#1b66ff; color:#fff; border:none;
+      padding:.65rem 1rem; border-radius:12px; cursor:pointer; font-weight:800;
     }
-    button {
-      background: #1b66ff;
-      color: #fff;
-      border: none;
-      padding: 0.65rem 1rem;
-      border-radius: 12px;
-      cursor: pointer;
-      font-weight: 700;
+    button.secondary{background:#0b1020;}
+    button.ghost{background:#eef3ff; color:#1b66ff;}
+    button:disabled{opacity:.6; cursor:not-allowed;}
+    .toggle{display:flex; align-items:center; gap:.5rem; margin-bottom:.75rem; font-weight:700;}
+    .result-box, .chat-log{
+      white-space:pre-wrap; border:1px solid #d7dbea; border-radius:12px;
+      padding:.75rem; background:#fbfcff; max-height:360px; overflow-y:auto;
     }
-    button.secondary { background: #0b1020; }
-    button.ghost { background: #eef3ff; color: #1b66ff; }
-    button:disabled { opacity: 0.6; cursor: not-allowed; }
-    .toggle {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      margin-bottom: 0.75rem;
-      font-weight: 600;
-    }
-    .result-box, .chat-log {
-      white-space: pre-wrap;
-      border: 1px solid #d7dbea;
-      border-radius: 12px;
-      padding: 0.75rem;
-      background: #fbfcff;
-      max-height: 340px;
-      overflow-y: auto;
-    }
-    .hint { color: #556; font-size: 0.9rem; margin-top: -0.5rem; margin-bottom: 0.9rem; }
-    .status {
-      font-size: 0.92rem;
-      color: #2d3b66;
-      background: #eef3ff;
-      border: 1px solid #d7e4ff;
-      padding: 0.6rem 0.75rem;
-      border-radius: 12px;
-      margin-bottom: 0.9rem;
-      display: none;
+    .hint{color:#556; font-size:.9rem; margin-top:-.5rem; margin-bottom:.9rem;}
+    .status{
+      font-size:.92rem; color:#2d3b66; background:#eef3ff;
+      border:1px solid #d7e4ff; padding:.6rem .75rem; border-radius:12px;
+      margin-bottom:.9rem; display:none;
     }
   </style>
 </head>
@@ -111,6 +66,7 @@
 </header>
 
 <main>
+
   <!-- الإعدادات -->
   <div class="section">
     <h2>الإعدادات</h2>
@@ -119,7 +75,7 @@
       <div>
         <label for="apiKey">API Key</label>
         <input type="password" id="apiKey" placeholder="أدخل API key...">
-        <div class="hint">ملاحظة: المفتاح يجب أن يكون إنجليزي فقط (بدون أحرف عربية/رموز مخفية).</div>
+        <div class="hint">المفتاح يجب أن يكون إنجليزي فقط (بدون أحرف عربية/رموز مخفية).</div>
       </div>
 
       <div>
@@ -182,8 +138,20 @@
 
     <div class="btns">
       <button id="extractPdfBtn">إستخراج نص PDF</button>
-      <button id="exportTextBtn" class="ghost">تصدير النص PDF</button>
+
+      <!-- تصدير PDF الصحيح عبر Print -->
+      <button id="exportTextPdfBtn" class="ghost">تصدير النص PDF (Print)</button>
+      <button id="exportSummaryPdfBtn" class="ghost">تصدير الملخص PDF (Print)</button>
+
+      <!-- تصدير Word -->
+      <button id="exportTextDocxBtn" class="ghost">تصدير النص Word</button>
+      <button id="exportSummaryDocxBtn" class="ghost">تصدير الملخص Word</button>
+
       <button id="summarizeBtn">تلخيص قوي</button>
+    </div>
+
+    <div class="hint">
+      ملاحظة: تصدير PDF هنا يتم عبر نافذة الطباعة لضمان العربية بدون رموز. اختر: Print → Save as PDF.
     </div>
   </div>
 
@@ -191,27 +159,27 @@
   <div class="section">
     <h2>الملخص</h2>
     <div id="result" class="result-box"></div>
-    <div class="btns">
-      <button id="exportPdfBtn" class="ghost">تصدير الملخص PDF</button>
-    </div>
   </div>
 
   <!-- الدردشة -->
   <div class="section">
     <h2>الدردشة مع النص</h2>
     <div id="chatLog" class="chat-log"></div>
-    <div class="row two" style="margin-top: .75rem;">
+    <div class="row two" style="margin-top:.75rem;">
       <input type="text" id="chatInput" placeholder="اكتب سؤالك هنا...">
       <button id="chatSendBtn" class="secondary">إرسال السؤال</button>
     </div>
   </div>
+
 </main>
 
 <!-- مكتبات الطرف الثالث -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+
+<!-- مكتبة Word (DOCX) تدعم RTL -->
+<script src="https://cdn.jsdelivr.net/npm/html-to-docx-rtl@1.13.0/dist/html-to-docx.umd.js"></script>
 
 <!-- كود التطبيق -->
 <script src="app_ocr.js"></script>
