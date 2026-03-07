@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Book Summarizer Pro v36</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#0b1020" />
+
+  <style>
+    :root{
+      --bg:#f6f7fb; --card:#ffffff; --text:#0b1020; --muted:#5c6782;
+      --pri:#1b66ff; --pri2:#0b1020; --line:#d7dbea;
+      --shadow: 0 12px 30px rgba(10,20,60,0.09);
+      --r:16px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; background:var(--bg); color:var(--text);
+      font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      overflow:hidden;
+    }
+    .app{height:100%; display:flex; flex-direction:column;}
+    .topbar{
+      height:56px; display:flex; align-items:center; justify-content:space-between;
+      padding:0 12px;
+      background:linear-gradient(135deg,#0b1020,#14214a);
+      color:#fff;
+    }
+    .topbar .title{font-weight:900; letter-spacing:.2px}
+    .iconbtn{
+      border:none; background:rgba(255,255,255,.12); color:#fff;
+      width:40px; height:40px; border-radius:14px;
+      display:inline-flex; align-items:center; justify-content:center;
+      cursor:pointer; font-size:18px;
+    }
+    .main{
+      flex:1; min-height:0;
+      display:flex; flex-direction:column;
+      padding:10px;
+      gap:10px;
+      overflow:hidden;
+    }
+    .tabs{
+      display:flex; gap:8px;
+      background:var(--card);
+      border:1px solid rgba(10,20,60,0.06);
+      border-radius:var(--r);
+      box-shadow:var(--shadow);
+      padding:6px;
+    }
+    .tab{
+      flex:1;
+      border:none; cursor:pointer;
+      padding:10px 12px;
+      border-radius:14px;
+      background:#eef3ff; color:var(--pri);
+      font-weight:900;
+    }
+    .tab.active{background:var(--pri); color:#fff;}
+    .page{
+      flex:1; min-height:0;
+      background:var(--card);
+      border:1px solid rgba(10,20,60,0.06);
+      border-radius:var(--r);
+      box-shadow:var(--shadow);
+      overflow:hidden;
+      display:none;
+    }
+    .page.active{display:flex; flex-direction:column;}
+    .toolbar{
+      display:flex; flex-wrap:wrap; gap:8px;
+      padding:10px;
+      border-bottom:1px solid var(--line);
+      align-items:center;
+    }
+    .pill{
+      border:1px solid var(--line);
+      background:#fbfcff;
+      border-radius:14px;
+      padding:10px 12px;
+      font-weight:900;
+      cursor:pointer;
+    }
+    .btn{
+      border:none; border-radius:14px;
+      padding:10px 12px;
+      font-weight:900;
+      cursor:pointer;
+      background:var(--pri); color:#fff;
+    }
+    .btn.dark{background:var(--pri2)}
+    .btn.ghost{background:#eef3ff; color:var(--pri)}
+    .btn.danger{background:#ff3b30}
+    .btn:disabled{opacity:.6; cursor:not-allowed}
+    .switch{
+      display:flex; align-items:center; gap:8px;
+      padding:10px 12px;
+      border:1px solid var(--line);
+      border-radius:14px;
+      background:#fbfcff;
+      font-weight:900;
+      user-select:none;
+    }
+    .area{
+      flex:1; min-height:0;
+      padding:10px;
+      display:flex; flex-direction:column;
+      gap:10px;
+    }
+    textarea.big{
+      width:100%;
+      flex:1; min-height:0;
+      resize:none;
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:12px;
+      background:#fbfcff;
+      font-size:15px;
+      line-height:1.75;
+      outline:none;
+    }
+    textarea.big:focus{border-color:#7aa7ff; box-shadow:0 0 0 3px rgba(122,167,255,.18);}
+    .hint{color:var(--muted); font-size:12.5px; margin-top:-4px}
+    .status{
+      display:none;
+      margin:10px;
+      border-radius:14px;
+      padding:10px 12px;
+      border:1px solid #d7e4ff;
+      background:#eef3ff;
+      color:#2d3b66;
+      font-size:13px;
+    }
+    .chatlog{
+      flex:1; min-height:0;
+      border:1px solid var(--line);
+      border-radius:14px;
+      background:#fbfcff;
+      padding:12px;
+      overflow:auto;
+      white-space:pre-wrap;
+      line-height:1.75;
+    }
+    .bubble{padding:10px 12px; border-radius:14px; margin:0 0 10px; max-width: 920px;}
+    .bubble.user{background:#e9f0ff; border:1px solid #d2e2ff;}
+    .bubble.assistant{background:#ffffff; border:1px solid #e5e7f2;}
+    .bubble .meta{font-size:12px; color:var(--muted); margin-bottom:6px; font-weight:800;}
+    .bubble .actions{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
+    .btn.sm{height:32px; padding:0 10px; border-radius:12px; font-size:12px;}
+    .md{font-size:14px; line-height:1.85; white-space:normal;}
+    .md h1,.md h2,.md h3{margin:10px 0 6px;}
+    .md ul{margin:8px 0 8px 18px; padding:0;}
+    .md ol{margin:8px 0 8px 22px; padding:0;}
+    .md pre{position:relative; overflow:auto; padding:12px; border-radius:12px; border:1px solid rgba(255,255,255,.14); background:rgba(0,0,0,.25);}
+    .md code{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px;}
+    .copycode{position:absolute; top:10px; left:10px; height:30px; padding:0 10px; border-radius:12px; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.06); color:#eef2ff; cursor:pointer; font-weight:800;}
+    .copycode:hover{background:rgba(255,255,255,.10)}
+    .streaming{opacity:.8; font-size:12px; margin-top:6px}
+
+
+    .chatbar{display:flex; gap:8px;}
+    .chatbar input{
+      flex:1;
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:10px 12px;
+      font-size:15px;
+      outline:none;
+      background:#fbfcff;
+    }
+    .chatbar input:focus{border-color:#7aa7ff; box-shadow:0 0 0 3px rgba(122,167,255,.18);}
+    .list{flex:1; min-height:0; overflow:auto; padding:10px; display:flex; flex-direction:column; gap:10px;}
+    .card{
+      border:1px solid rgba(10,20,60,0.10);
+      border-radius:14px;
+      background:#fff;
+      box-shadow: 0 10px 25px rgba(10,20,60,0.06);
+      padding:12px;
+    }
+    .card .row{display:flex; gap:8px; align-items:center; justify-content:space-between;}
+    .tag{font-size:12px; font-weight:900; padding:4px 10px; border-radius:999px; background:#eef3ff; color:#1b66ff;}
+    .card .title{font-weight:1000}
+    .card .sub{color:var(--muted); font-size:12.5px; margin-top:6px}
+    .card .actions{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px}
+    .overlay{position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; z-index:50;}
+    .overlay.show{display:block;}
+    .drawer{
+      position:fixed; top:0; bottom:0; right:0;
+      width:min(460px, 92vw);
+      background:#fff;
+      box-shadow:-20px 0 50px rgba(0,0,0,.2);
+      border-radius: 18px 0 0 18px;
+      transform: translateX(110%);
+      transition: transform .22s ease;
+      z-index:60;
+      display:flex; flex-direction:column;
+    }
+    .drawer.show{transform: translateX(0);}
+    .drawer header{padding:12px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; font-weight:1000;}
+    .drawer .body{padding:12px; overflow:auto; flex:1;}
+    .field label{font-weight:1000; font-size:13px; display:block; margin:10px 0 6px;}
+    .field input, .field select, .field textarea{
+      width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:14px; background:#fbfcff; font-size:14px; outline:none;
+    }
+    .xbtn{border:none; background:#eef3ff; color:var(--pri); border-radius:14px; width:40px; height:40px; cursor:pointer;}
+    .sheet{
+      position:fixed; left:0; right:0; bottom:0;
+      background:#fff;
+      border-radius:18px 18px 0 0;
+      box-shadow:0 -20px 60px rgba(0,0,0,.2);
+      transform: translateY(110%);
+      transition: transform .22s ease;
+      z-index:70;
+      padding:12px;
+    }
+    .sheet.show{transform: translateY(0);}
+    .sheet .head{display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; font-weight:1000;}
+    .sheet .row{display:flex; gap:8px; flex-wrap:wrap;}
+    .sheet .row button{flex:1; min-width:170px;}
+    .filename{font-size:12.5px; color:var(--muted); font-weight:900;}
+    .kbchip{font-size:12px; font-weight:900; padding:6px 10px; border-radius:999px; background:#f2f5ff; color:#1b66ff; border:1px solid #dbe6ff;}
+    .chips{display:flex; flex-wrap:wrap; gap:8px;}
+    .chip{display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; background:#0b1020; color:#fff; font-size:12px;}
+    .chip .x{border:none; background:rgba(255,255,255,.18); color:#fff; width:22px; height:22px; border-radius:999px; cursor:pointer;}
+    .chip .meta{opacity:.9}
+
+  
+    .hit{background:rgba(245,158,11,.25); padding:0 2px; border-radius:6px;}
+    .chatHidden{display:none !important;}
+
+
+/* Chat full-width + side menus */
+#page-chat{position:relative;}
+.chatLayout{position:relative; height:100%; min-height:0; display:flex;}
+.chatMain{flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; gap:10px; padding:10px;}
+.chatTop{display:flex; gap:10px; align-items:center;}
+.chatTop .status{flex:1; margin:0;}
+.chatMenuBtn{height:36px; padding:0 12px; border-radius:12px; font-weight:900;}
+.chatBackdrop{position:absolute; inset:0; background:rgba(0,0,0,.28); z-index:40; display:none;}
+.chatBackdrop.show{display:block;}
+.chatSidebar{position:absolute; top:0; right:0; bottom:0; width:320px; max-width:86vw; background:var(--card); border-right:1px solid var(--line);
+  box-shadow: 0 18px 60px rgba(0,0,0,.18); z-index:50; transform:translateX(0); transition:transform .18s ease;
+  padding:10px; overflow:auto;}
+.chatSidebar.hidden{transform:translateX(110%);}
+.sideHeader{display:flex; align-items:center; justify-content:space-between; gap:10px; padding-bottom:8px; border-bottom:1px solid rgba(10,20,60,0.08); margin-bottom:10px;}
+.sideTitle{font-weight:900;}
+.sideBlock{display:flex; flex-wrap:wrap; gap:10px; padding:10px 0;}
+.sideBlock .btn{flex: 0 0 auto;}
+.sideInput{width:100%;}
+details{border:1px solid rgba(10,20,60,0.08); border-radius:14px; padding:8px 10px; background:#fbfcff;}
+details + details{margin-top:10px;}
+summary{cursor:pointer; font-weight:900; color:var(--pri2);}
+summary::-webkit-details-marker{display:none;}
+@media (min-width: 1100px){
+  /* docked sidebar on desktop */
+  .chatSidebar{position:relative; transform:none; z-index:1; width:340px; max-width:340px; border-right:1px solid var(--line); box-shadow:none;}
+  .chatSidebar.hidden{display:none;}
+  .chatBackdrop{display:none !important;}
+}
+
+</style>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+
+<body>
+  <div class="app">
+    <header class="topbar">
+      <button id="btnSettings" class="iconbtn" title="الإعدادات">⚙️</button>
+      <div class="title">Book Summarizer Pro</div>
+      <button id="btnExport" class="iconbtn" title="تصدير">⬇️</button>
+    </header>
+
+    <div class="main">
+      <div class="tabs">
+        <button class="tab active" data-tab="text">OCR / التفريغ</button>
+        <button class="tab" data-tab="summary">الملخص</button>
+        <button class="tab" data-tab="chat">الدردشة</button>
+        <button class="tab" data-tab="downloads">التحميلات</button>
+        <button class="tab" data-tab="history">الأرشيف</button>
+      </div>
+
+      <section class="page active" id="page-text">
+        <div id="statusBox" class="status"></div>
+        <div class="toolbar">
+          <input id="pdfFile" type="file" hidden accept=".pdf,.docx,.txt,.md,.csv,.json,.xml,.html,.htm,.rtf,.xlsx,.xls,.pptx,.ppt,.epub,.zip,.png,.jpg,.jpeg,.webp" />
+          <button id="btnPickPdf" class="pill">رفع PDF</button>
+          <span id="pdfName" class="filename">لم يتم اختيار ملف</span>
+
+          <label class="switch" title="فعّل OCR إذا كان الـPDF صور/سكان">
+            <input id="ocrToggle" type="checkbox" />
+            OCR
+          </label>
+
+          <label class="switch" title="تحسين صورة الصفحة قبل OCR">
+            <input id="enhanceToggle" type="checkbox" checked />
+            تحسين
+          </label>
+
+          <button id="extractPdfBtn" class="btn">استخراج</button>
+          <button id="aiFixBtn" class="btn dark">تصحيح بالذكاء</button>
+          <button id="saveExtractionBtn" class="btn dark">حفظ التفريغ</button>
+          <button id="clearTextBtn" class="btn ghost">مسح</button>
+        </div>
+
+        <div class="area">
+          <textarea id="textInput" class="big" dir="auto" placeholder="سيظهر النص المستخرج هنا... أو الصق نصًا يدويًا."></textarea>
+          <div class="hint">المرحلتان: (1) استخراج/ OCR ثم (2) تصحيح بالذكاء لإصلاح أخطاء OCR قبل التصدير.</div>
+        </div>
+      </section>
+
+      <section class="page" id="page-summary">
+        <div id="statusBox2" class="status"></div>
+        <div class="toolbar">
+          <button id="summarizeBtn" class="btn">تلخيص قوي</button>
+          <button id="saveSummaryBtn" class="btn dark">حفظ الملخص</button>
+          <button id="clearSummaryBtn" class="btn ghost">مسح</button>
+        </div>
+
+        <div class="area">
+          <textarea id="summaryOutput" class="big" dir="auto" placeholder="سيظهر الملخص هنا..."></textarea>
+          <div class="hint">التصدير PDF/Word من زر ⬇️ بالأعلى.</div>
+        </div>
+      </section>
+
+      <section class="page" id="page-chat">
+  <div class="chatLayout">
+
+    <div id="chatBackdrop" class="chatBackdrop"></div>
+
+    <aside id="chatSidebar" class="chatSidebar hidden" aria-label="قائمة الدردشة">
+      <div class="sideHeader">
+        <div class="sideTitle">القوائم</div>
+        <button id="chatMenuCloseBtn" class="btn ghost sm" type="button">✕</button>
+      </div>
+
+      <details open>
+        <summary>قاعدة المعرفة</summary>
+        <div class="sideBlock">
+          <input id="kbFiles" type="file" multiple hidden
+            accept=".pdf,.docx,.txt,.md,.csv,.json,.xml,.html,.htm,.rtf,.xlsx,.xls,.pptx,.ppt,.epub,.zip,.png,.jpg,.jpeg,.webp" />
+          <button id="kbAddBtn" class="btn ghost" type="button">إضافة ملفات</button>
+          <button id="kbManageBtn" class="btn ghost" type="button">إدارة الملفات</button>
+          <span id="kbStats" class="kbchip">قاعدة المعرفة: 0 ملف</span>
+        </div>
+      </details>
+
+      <details open>
+        <summary>إدارة المحادثة</summary>
+        <div class="sideBlock">
+          <button id="newChatBtn" class="btn" type="button">محادثة جديدة</button>
+          <button id="saveChatBtn" class="btn dark" type="button">حفظ المحادثة</button>
+          <button id="clearChatBtn" class="btn ghost" type="button">مسح الدردشة</button>
+        </div>
+      </details>
+
+      <details>
+        <summary>بحث / قوالب / تصدير</summary>
+        <div class="sideBlock" style="flex-direction:column; align-items:stretch;">
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <input id="chatSearchInput" class="sideInput" type="text" placeholder="بحث داخل المحادثة..." />
+            <button id="chatSearchClearBtn" class="btn ghost sm" type="button">مسح</button>
+          </div>
+
+          <select id="promptLibrary" class="sideInput" style="margin-top:8px">
+            <option value="">قوالب جاهزة…</option>
+            <option value="report_ar">📄 تقرير احترافي</option>
+            <option value="email_ar">✉️ بريد رسمي</option>
+            <option value="policy_ar">📌 سياسة/إجراء</option>
+            <option value="cv_ar">🧑‍💼 سيرة ذاتية (ATS)</option>
+            <option value="analysis_ar">📊 تحليل + توصيات</option>
+            <option value="json_schema">🧩 JSON منظم</option>
+          </select>
+
+          <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px">
+            <button id="chatExportTxtBtn" class="btn ghost sm" type="button">تصدير TXT</button>
+            <button id="chatExportDocxBtn" class="btn primary sm" type="button">تصدير DOCX</button>
+            <button id="chatExportPdfBtn" class="btn ghost sm" type="button">تصدير PDF</button>
+          </div>
+        </div>
+      </details>
+
+      <div class="hint" style="margin-top:10px">
+        تلميح: يمكنك إخفاء هذه القائمة لإعطاء مساحة أكبر للدردشة.
+      </div>
+    </aside>
+
+    <main class="chatMain">
+      <div class="chatTop">
+        <button id="chatMenuBtn" class="btn ghost sm chatMenuBtn" type="button" title="إظهار/إخفاء القوائم">☰</button>
+        <div id="statusBox3" class="status"></div>
+      </div>
+
+      <div id="chatLog" class="chatlog"></div>
+
+      <div class="chatbar">
+        <input id="chatFiles" type="file" multiple hidden accept=".pdf,.docx,.txt,.md,.csv,.json,.xml,.html,.htm,.rtf,.xlsx,.xls,.pptx,.ppt,.epub,.zip,.png,.jpg,.jpeg,.webp" />
+        <button id="chatAttachBtn" class="btn ghost" title="إرفاق ملفات/صور للدردشة" type="button">📎</button>
+        <input id="chatInput" dir="auto" placeholder="اكتب سؤالك… ويمكنك إرفاق ملفات/صور للدردشة." />
+        <button id="chatRegenBtn" class="btn ghost" title="إعادة توليد آخر رد" type="button">↻</button>
+        <button id="chatStopBtn" class="btn danger" style="display:none" title="إيقاف التوليد" type="button">إيقاف</button>
+        <button id="chatSendBtn" class="btn dark" type="button">إرسال</button>
+      </div>
+
+      <div id="chatAttachments" class="chips" style="margin-top:8px;"></div>
+      <div class="hint">يدعم الدردشة مع الملفات مباشرة (PDF/Word/صور وغيرها) + قاعدة معرفة (Embeddings) لاستيعاب كمية كبيرة.</div>
+    </main>
+
+  </div>
+</section>
+
+      
+      <section class="page" id="page-downloads">
+        <div id="downloadsStatus" class="status" style="display:none"></div>
+        <div class="toolbar">
+          <button id="refreshDownloadsBtn" class="btn ghost">تحديث</button>
+          <button id="clearDownloadsBtn" class="btn danger">مسح التحميلات</button>
+        </div>
+        <div class="hint">
+          أي ملف يتم إنشاؤه (Word / TXT / HTML / JSON ...) سيظهر هنا كرابط تنزيل. الروابط تعمل داخل نفس الجهاز/المتصفح.
+        </div>
+        <div class="list" id="downloadsList"></div>
+      </section>
+
+      <section class="page" id="page-history">
+        <div class="toolbar">
+          <button id="refreshHistoryBtn" class="btn ghost">تحديث</button>
+          <button id="deleteAllBtn" class="btn danger">حذف كل البيانات</button>
+        </div>
+        <div class="list" id="historyList"></div>
+      </section>
+    </div>
+  </div>
+
+  <div id="overlay" class="overlay"></div>
+
+  <aside id="settingsDrawer" class="drawer" aria-hidden="true">
+    <header>
+      <div>الإعدادات</div>
+      <button id="btnCloseSettings" class="xbtn">✕</button>
+    </header>
+
+    <div class="body">
+      <div class="field">
+        <label for="apiKey">API Key</label>
+        <input id="apiKey" type="password" placeholder="أدخل API key..." />
+      </div>
+
+
+      <div class="field">
+        <label for="chatProvider">Chat Provider (تجريبي)</label>
+        <select id="chatProvider">
+          <option value="openai" selected>OpenAI (Chat/Responses)</option>
+          <option value="gemini">Gemini (متصفح/تجريبي)</option>
+        </select>
+        <div class="hint">ملاحظة: وضع مفتاح Gemini داخل المتصفح للاستخدام التجريبي فقط (المفتاح يمكن كشفه من أي شخص يفتح الموقع).</div>
+      </div>
+
+      <div class="field" id="geminiKeyField">
+        <label for="geminiKey">Gemini API Key</label>
+        <input id="geminiKey" type="password" placeholder="أدخل Gemini API key..." />
+      </div>
+
+      <div class="field" id="geminiModelField">
+        <label for="geminiModel">Gemini Model (Chat)</label>
+        <input id="geminiModel" type="text" value="gemini-2.5-flash" />
+        <div class="hint">مثال: gemini-2.0-flash — سيتم استخدام generateContent عبر generativelanguage.googleapis.com</div>
+      </div>
+
+      <div class="row" id="geminiWebSearchRow">
+        <div class="field" style="flex:1; min-width:240px">
+          <label class="tiny"><input type="checkbox" id="geminiWebSearch" /> بحث الويب (Grounding with Google Search)</label>
+          <div class="hint">سيستخدم Gemini أداة google_search للبحث في الإنترنت وإرجاع مصادر. قد يؤثر على الحصة/التكلفة حسب حسابك.</div>
+        </div>
+      </div>
+
+
+
+      <div class="row">
+        <div class="field" style="flex:1; min-width:220px">
+          <label for="chatMaxOutTokens">أقصى طول للرد (Max output tokens)</label>
+          <input id="chatMaxOutTokens" type="number" min="256" step="256" placeholder="مثال: 4096" />
+          <div class="hint">ارفعه لردود أطول. إذا ظهر خطأ من الموديل قلّله.</div>
+        </div>
+        <div class="field" style="flex:1; min-width:220px">
+          <label for="chatMaxParts">Auto‑Continue (عدد الأجزاء)</label>
+          <input id="chatMaxParts" type="number" min="1" max="12" step="1" placeholder="مثال: 6" />
+          <div class="hint">إذا توقف الرد بسبب الطول، سيكمل تلقائيًا حتى هذا العدد.</div>
+        </div>
+        <div class="field" style="flex:1; min-width:220px">
+          <label for="chatHistoryTurns">ذاكرة الدردشة (آخر رسائل)</label>
+          <input id="chatHistoryTurns" type="number" min="4" max="60" step="1" placeholder="مثال: 14" />
+          <div class="hint">عدد الرسائل السابقة التي تُرسل للسياق.</div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field" style="flex:1; min-width:220px">
+          <label class="tiny"><input type="checkbox" id="chatStreaming" /> Streaming (إظهار الرد أثناء التوليد)</label>
+          <div class="hint">يعرض الرد تدريجيًا مثل تطبيقات الدردشة القوية. زر "إيقاف" يعمل فورًا.</div>
+        </div>
+      </div>
+
+
+
+
+
+
+      <div class="field">
+        <label for="baseUrl">Base URL</label>
+        <input id="baseUrl" type="text" value="https://api.openai.com/v1" />
+      
+      <div class="field">
+        <label for="ccWorkerUrl">CloudConvert Worker URL (PDF → Word)</label>
+        <input id="ccWorkerUrl" type="text" placeholder="مثال: https://bspro-convert.yourname.workers.dev" />
+        <div class="hint">اكتب رابط Cloudflare Worker الذي سيقوم بتحويل PDF → Word مع OCR (بدون كشف مفتاح CloudConvert داخل GitHub Pages).</div>
+      </div>
+
+      <div class="row" id="openrouterWebSearchRow" style="display:none;">
+        <div class="field" style="flex:1; min-width:240px">
+          <label class="tiny"><input type="checkbox" id="openrouterWebSearch" /> بحث الويب (OpenRouter Web Search)</label>
+          <div class="hint">يُفعّل البحث عبر OpenRouter باستخدام لاحقة <span class="kbd">:online</span> وإرجاع مصادر.</div>
+        </div>
+      </div>
+
+
+
+      <div class="field">
+        <label for="ccCloudOcr">OCR سحابي</label>
+        <select id="ccCloudOcr">
+          <option value="on" selected>ON (ara + eng)</option>
+          <option value="off">OFF</option>
+        </select>
+      </div>
+
+</div>
+
+      <div class="field">
+        <label for="model">Model (Chat/Summary)</label>
+        <input id="model" type="text" value="gpt-3.5-turbo" />
+      </div>
+
+      <div class="field">
+        <label for="apiMode">API Mode</label>
+        <select id="apiMode">
+          <option value="chat" selected>Chat Completions (متوافق)</option>
+          <option value="responses">Responses (Reasoning + File Inputs)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="reasoningEffort">Reasoning Effort (للـ Responses)</label>
+        <select id="reasoningEffort">
+          <option value="low">low (أسرع)</option>
+          <option value="medium" selected>medium</option>
+          <option value="high">high (أعمق)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="reasoningSummary">Reasoning Summary (للـ Responses)</label>
+        <select id="reasoningSummary">
+          <option value="off" selected>Off</option>
+          <option value="auto">Auto</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="chatDirectFiles">رفع الملفات للدردشة</label>
+        <select id="chatDirectFiles">
+          <option value="auto" selected>Auto (يرفع للـ API إن أمكن)</option>
+          <option value="off">Off (نص/‏OCR فقط)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="visionMode">الصور في الدردشة</label>
+        <select id="visionMode">
+          <option value="auto" selected>AUTO (إرسال الصورة إن أمكن)</option>
+          <option value="ocr">OCR فقط (بدون Vision)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="embedModel">Embedding Model (Knowledge Base)</label>
+        <input id="embedModel" type="text" value="text-embedding-3-small" />
+      </div>
+
+      <div class="field">
+        <label for="language">لغة الملخص</label>
+        <select id="language">
+          <option value="ar">العربية</option>
+          <option value="en">English</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="ocrLang">لغة OCR</label>
+        <select id="ocrLang">
+          <option value="auto" selected>AUTO (Arabic + English)</option>
+          <option value="ara">Arabic فقط</option>
+          <option value="eng">English فقط</option>
+          <option value="ara+eng">Arabic + English</option>
+          <option value="eng+ara">English + Arabic</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="aiFixMode">تصحيح OCR بالذكاء</label>
+        <select id="aiFixMode">
+          <option value="safe" selected>آمن (يحافظ على الأسطر)</option>
+          <option value="strong">قوي (يحسن اللغة أكثر)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="chatUseDoc">الدردشة: استخدام التفريغ الحالي كمرجع</label>
+        <select id="chatUseDoc">
+          <option value="on" selected>تشغيل</option>
+          <option value="off">إيقاف</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="chatUseKB">الدردشة: استخدام قاعدة المعرفة (RAG)</label>
+        <select id="chatUseKB">
+          <option value="on" selected>تشغيل</option>
+          <option value="off">إيقاف</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="chatSystemPrompt">System Prompt (اختياري)</label>
+        <textarea id="chatSystemPrompt" rows="4" placeholder="مثال: أنت مساعد احترافي يجيب بدقة وبأسلوب منظم..."></textarea>
+      </div>
+
+      <div class="field" style="margin-top:12px;">
+        <button id="saveSettingsBtn" class="btn dark" style="width:100%;">حفظ الإعدادات</button>
+        <div class="hint" style="margin-top:8px;">إذا واجهت مشكلة كاش: احذف الـPWA وأعد تثبيته أو امسح بيانات الموقع مرة واحدة.</div>
+      </div>
+    </div>
+  </aside>
+
+  <aside id="kbDrawer" class="drawer" aria-hidden="true" style="right:0;">
+    <header>
+      <div>إدارة قاعدة المعرفة</div>
+      <button id="kbCloseBtn" class="xbtn">✕</button>
+    </header>
+    <div class="body">
+      <div id="kbStatus" class="status" style="display:block;">جاهز.</div>
+      <div class="field">
+        <button id="kbReindexBtn" class="btn dark" style="width:100%;">إعادة فهرسة (Embeddings)</button>
+      </div>
+      <div class="field">
+        <button id="kbClearBtn" class="btn danger" style="width:100%;">حذف كل ملفات قاعدة المعرفة</button>
+      </div>
+      <div class="hint">⚠️ الفهرسة قد تستهلك API Tokens لأنها تُنشئ Embeddings لكل أجزاء الملفات الكبيرة.</div>
+      <div id="kbList" style="margin-top:12px;"></div>
+    </div>
+  </aside>
+
+  <div id="exportSheet" class="sheet" aria-hidden="true">
+    <div class="head">
+      <div>تصدير</div>
+      <button id="btnCloseExport" class="xbtn">✕</button>
+    </div>
+    <div class="row">
+      <button id="exportTextPdfBtn" class="btn ghost">تفريغ → PDF</button>
+      <button id="exportSummaryPdfBtn" class="btn ghost">ملخص → PDF</button>
+      <button id="chatExportPdfBtn" class="btn ghost">دردشة → PDF</button>
+      <button id="exportTextDocxBtn" class="btn ghost">تفريغ → Word</button>
+      <button id="exportTemplateDocxBtn" class="btn ghost">PDF → Word (أوفلاين — صور)</button>
+      <button id="exportCloudDocxBtn" class="btn ghost">PDF → Word (سحابي — الأفضل)</button>
+      <button id="exportSummaryDocxBtn" class="btn ghost">ملخص → Word</button>
+      <button id="chatExportDocxBtn" class="btn ghost">دردشة → Word</button>
+    </div>
+    <div class="hint" style="margin-top:8px;">PDF يتم عبر نافذة الطباعة لضمان العربية بدون رموز.</div>
+  </div>
+
+  <!-- Libraries -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+
+  <!-- More formats -->
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <!-- DOCX polyfills -->
+  <script>
+    if (typeof global === 'undefined') window.global = window;
+    if (typeof process === 'undefined') window.process = { env: {} };
+    if (typeof Buffer === 'undefined') {
+      window.Buffer = {
+        from: function(data, encoding) {
+          if (typeof data === 'string') {
+            if (encoding === 'base64') {
+              var binary = atob(data);
+              var bytes = new Uint8Array(binary.length);
+              for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+              return bytes;
+            }
+            return new TextEncoder().encode(data);
+          }
+          return new Uint8Array(data);
+        },
+        isBuffer: function() { return false; }
+      };
+    }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/@turbodocx/html-to-docx@1.20.1/dist/html-to-docx.browser.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.9.0/mammoth.browser.min.js"></script>
+
+  <script src="app_ocr.js?v=36"></script>
+
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./sw.js?v=10").catch(()=>{});
+      });
+    }
+  </script>
+</body>
+</html>
