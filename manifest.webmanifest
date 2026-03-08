@@ -1,7 +1,7 @@
 {
-  "name": "AI Workspace Studio v6.2",
+  "name": "AI Workspace Studio v7",
   "short_name": "AI Studio",
-  "description": "Chat • Canvas • KB/RAG • Secure Gateway • Tools/Agent Loop • Workflows • Chat Attachments • Deep Search",
+  "description": "Secure Gateway + R2 Files + Browser Agent Runner (Playwright) + Chat/KB/Canvas",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

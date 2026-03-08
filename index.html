@@ -160,6 +160,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
         <button class="navbtn" data-page="canvas"><span>📝 كانفس</span><span class="meta" id="navCanvasMeta">—</span></button>
         <button class="navbtn" data-page="files"><span>📎 الملفات</span><span class="meta" id="navFilesMeta">—</span></button>
         <button class="navbtn" data-page="workflows"><span>⚡ Workflows</span><span class="meta" id="navWorkMeta">—</span></button>
+        <button class="navbtn" data-page="agent"><span>🧭 الوكيل</span><span class="meta" id="navAgentMeta">—</span></button>
         <button class="navbtn" data-page="downloads"><span>⬇️ التحميلات</span><span class="meta" id="navDlMeta">—</span></button>
         <button class="navbtn" data-page="projects"><span>🗂️ المشاريع</span><span class="meta" id="navProjMeta">—</span></button>
         <button class="navbtn" data-page="settings"><span>⚙️ الإعدادات</span><span class="meta" id="navSetMeta">—</span></button>
@@ -435,6 +436,69 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
           </div>
         </div>
 
+
+<!-- AGENT (Browser-like) -->
+<div class="page" id="page-agent">
+  <div class="toolbar">
+    <span class="hint">وكيل متصفح يعمل عبر Agent Runner (Playwright) في السحابة — مناسب للهاتف. يتعامل مع الملفات عبر Gateway + R2.</span>
+  </div>
+
+  <div class="panel" style="margin:10px; min-height:0; flex:1;">
+    <div class="head">
+      <span>🧭 الوكيل (متصفح)</span>
+      <span class="hint" id="agentStatus">جاهز.</span>
+    </div>
+    <div class="body" style="display:flex; flex-direction:column; gap:12px; min-height:0;">
+      <div class="grid2">
+        <div>
+          <div class="label">🎯 الهدف (Goal)</div>
+          <textarea id="agentGoal" class="textarea" rows="4" placeholder="مثال: افتح ويكيبيديا وابحث عن ... ثم لخص النتائج في ملف."></textarea>
+        </div>
+        <div>
+          <div class="label">Start URL (اختياري)</div>
+          <input id="agentStartUrl" class="input" placeholder="https://..." />
+          <div class="label" style="margin-top:10px;">Allowed Domains (اختياري)</div>
+          <input id="agentDomains" class="input" placeholder="example.com, github.com" />
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div>
+          <div class="label">Max steps</div>
+          <input id="agentMaxSteps" class="input" type="number" min="3" max="30" value="12" />
+        </div>
+        <div>
+          <div class="label">Mode</div>
+          <select id="agentMode" class="input">
+            <option value="auto" selected>Auto (ينفّذ تلقائيًا)</option>
+            <option value="safe">Safe (يتوقف عند تسجيل دخول/تحذير)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row" style="gap:10px; flex-wrap:wrap;">
+        <input id="agentUpload" type="file" multiple hidden />
+        <button id="agentUploadBtn" class="btn ghost sm" type="button">📎 رفع ملفات للوكيل</button>
+        <button id="agentRefreshFilesBtn" class="btn ghost sm" type="button">🔄 تحديث قائمة الملفات</button>
+        <button id="agentRunBtn" class="btn sm" type="button">▶️ تشغيل الوكيل</button>
+        <button id="agentStopBtn" class="btn danger sm" type="button" style="display:none">⛔ إيقاف</button>
+      </div>
+
+      <div class="hint">سيتم رفع الملفات بشكل آمن عبر Gateway إلى R2. سيتم تمرير معرفات الملفات للوكيل لاستخدامها (مثلاً رفعها داخل مواقع).</div>
+
+      <div id="agentFilesBox" class="chips" style="min-height:40px;"></div>
+
+      <div class="panel" style="min-height:0; flex:1;">
+        <div class="head"><span>النتائج</span><span class="hint">Steps + Screenshots</span></div>
+        <div class="body" style="min-height:0;">
+          <div id="agentResult" class="chatlog" style="min-height:280px;"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
 <!-- SETTINGS -->
         <div class="page" id="page-settings">
           <div class="toolbar">
@@ -575,11 +639,11 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     </div>
   </div>
 
-  <script src="app.js?v=62"></script>
+  <script src="app.js?v=70"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js?v=62").catch(()=>{});
+        navigator.serviceWorker.register("./sw.js?v=70").catch(()=>{});
       });
     }
   </script>

@@ -1771,6 +1771,7 @@ async function runResearchAgent(topicOverride){
     ]);
 
     $('navWorkMeta') && ($('navWorkMeta').textContent = '4');
+    $('navAgentMeta') && ($('navAgentMeta').textContent = '—');
   }
 
 
@@ -1888,7 +1889,229 @@ async function runResearchAgent(topicOverride){
   }
 
 let pinOnly = false;
-  function renderDownloads(){
+  
+  // ---------------------------
+  // Agent (Browser) via Gateway + Runner
+  // ---------------------------
+  let agentAbort = null;
+
+  function setAgentStatus(msg, isErr=false){
+    const el = $('agentStatus');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.style.color = isErr ? '#b42318' : '';
+  }
+
+  function renderAgent(){
+    const box = $('agentFilesBox');
+    const res = $('agentResult');
+    if (box) box.innerHTML = '';
+    if (res) res.innerHTML = '<div class="hint">قم برفع ملفات (اختياري) ثم اكتب الهدف واضغط تشغيل.</div>';
+    setAgentStatus('جاهز.');
+
+    const upBtn = $('agentUploadBtn');
+    const upInp = $('agentUpload');
+    const refBtn = $('agentRefreshFilesBtn');
+    const runBtn = $('agentRunBtn');
+    const stopBtn = $('agentStopBtn');
+
+    if (upBtn && upInp){
+      upBtn.onclick = () => upInp.click();
+      upInp.onchange = async () => {
+        const files = Array.from(upInp.files || []);
+        if (!files.length) return;
+        await agentUploadFiles(files);
+        upInp.value = '';
+      };
+    }
+    if (refBtn) refBtn.onclick = () => agentRefreshRemoteFiles();
+    if (runBtn) runBtn.onclick = () => agentRun();
+    if (stopBtn) stopBtn.onclick = () => agentStop();
+
+    // initial list
+    agentRefreshRemoteFiles().catch(()=>{});
+  }
+
+  async function gatewayFetch(path, opts={}){
+    const settings = loadSettings();
+    const base = normalizeUrl(settings.gatewayUrl || settings.baseUrl || '');
+    const url = base.replace(/\/+$/,'') + path;
+    const headers = Object.assign({}, buildAuthHeaders(settings), opts.headers||{});
+    // always json by default
+    return fetch(url, Object.assign({}, opts, { headers }));
+  }
+
+  async function agentRefreshRemoteFiles(){
+    const box = $('agentFilesBox');
+    if (!box) return;
+    box.innerHTML = '';
+    const settings = loadSettings();
+    if (settings.authMode !== 'gateway' || !(settings.gatewayUrl||'').trim()){
+      box.innerHTML = '<span class="hint">⚠️ فعّل Auth Mode = Gateway وضع Gateway URL ثم احفظ.</span>';
+      return;
+    }
+    try{
+      setAgentStatus('تحميل قائمة الملفات…');
+      const r = await gatewayFetch('/api/files/list', { method:'GET' });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || 'failed');
+      const files = j.files || [];
+      if (!files.length){
+        box.innerHTML = '<span class="hint">لا توجد ملفات مرفوعة للوكيل.</span>';
+        setAgentStatus('جاهز.');
+        return;
+      }
+      for (const f of files){
+        const chip = document.createElement('span');
+        chip.className = 'chip';
+        chip.dataset.id = f.id;
+        chip.innerHTML = `<span class="meta">📄</span><span>${escapeHtml(f.name || f.id)}</span>`;
+        const x = document.createElement('button');
+        x.className = 'x';
+        x.textContent = '✕';
+        x.title = 'حذف من السحابة';
+        x.onclick = async (e) => {
+          e.stopPropagation();
+          if (!confirm('حذف الملف من السحابة؟')) return;
+          await agentDeleteRemoteFile(f.id);
+        };
+        chip.appendChild(x);
+        chip.onclick = () => chip.classList.toggle('on');
+        box.appendChild(chip);
+      }
+      setAgentStatus('جاهز.');
+    }catch(e){
+      setAgentStatus('فشل تحميل الملفات', true);
+      $('agentFilesBox').innerHTML = `<span class="hint">❌ ${escapeHtml(e.message||String(e))}</span>`;
+    }
+  }
+
+  async function agentDeleteRemoteFile(id){
+    try{
+      setAgentStatus('حذف…');
+      const r = await gatewayFetch('/api/files/delete?id=' + encodeURIComponent(id), { method:'DELETE' });
+      const j = await r.json().catch(()=>({}));
+      if (!r.ok) throw new Error(j?.error || 'delete failed');
+      await agentRefreshRemoteFiles();
+      setAgentStatus('تم.');
+    }catch(e){
+      setAgentStatus('فشل الحذف', true);
+      toast('❌ ' + (e.message||e));
+    }
+  }
+
+  async function agentUploadFiles(files){
+    try{
+      setAgentStatus('رفع ملفات…');
+      for (const f of files){
+        const fd = new FormData();
+        fd.append('file', f, f.name);
+        const r = await gatewayFetch('/api/files/upload', { method:'POST', body: fd });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j?.error || 'upload failed');
+      }
+      await agentRefreshRemoteFiles();
+      setAgentStatus('تم رفع الملفات.');
+      toast('✅ تم رفع الملفات');
+    }catch(e){
+      setAgentStatus('فشل الرفع', true);
+      toast('❌ ' + (e.message||e));
+    }
+  }
+
+  function agentSelectedFileIds(){
+    const box = $('agentFilesBox');
+    if (!box) return [];
+    return Array.from(box.querySelectorAll('.chip.on')).map(x => x.dataset.id).filter(Boolean);
+  }
+
+  async function agentRun(){
+    const goal = ($('agentGoal')?.value || '').trim();
+    if (!goal) return toast('⚠️ اكتب الهدف أولاً.');
+    const startUrl = ($('agentStartUrl')?.value || '').trim();
+    const domains = ($('agentDomains')?.value || '').trim();
+    const maxSteps = parseInt(($('agentMaxSteps')?.value || '12'), 10);
+    const mode = ($('agentMode')?.value || 'auto');
+
+    const fileIds = agentSelectedFileIds();
+
+    const runBtn = $('agentRunBtn');
+    const stopBtn = $('agentStopBtn');
+    if (runBtn) runBtn.disabled = true;
+    if (stopBtn) stopBtn.style.display = 'inline-flex';
+
+    setAgentStatus('تشغيل الوكيل…');
+    const resBox = $('agentResult');
+    if (resBox) resBox.innerHTML = '<div class="hint">⏳ جاري التنفيذ…</div>';
+
+    agentAbort = new AbortController();
+    try{
+      const payload = { goal, start_url: startUrl || null, allow_domains: domains || null, max_steps: Math.min(Math.max(maxSteps||12,3),30), mode, file_ids: fileIds };
+      const r = await gatewayFetch('/api/agent/run', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(payload),
+        signal: agentAbort.signal
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || 'agent failed');
+
+      renderAgentResult(j);
+      setAgentStatus('اكتمل.');
+      toast('✅ اكتمل الوكيل');
+    }catch(e){
+      if (String(e.name) === 'AbortError'){
+        setAgentStatus('تم الإيقاف.');
+        return;
+      }
+      setAgentStatus('فشل', true);
+      if (resBox) resBox.innerHTML = `<div class="hint">❌ ${escapeHtml(e.message||String(e))}</div>`;
+      toast('❌ ' + (e.message||e));
+    }finally{
+      if (runBtn) runBtn.disabled = false;
+      if (stopBtn) stopBtn.style.display = 'none';
+      agentAbort = null;
+    }
+  }
+
+  function agentStop(){
+    if (agentAbort){
+      agentAbort.abort();
+      toast('⛔ تم الإيقاف');
+    }
+  }
+
+  function renderAgentResult(data){
+    const box = $('agentResult');
+    if (!box) return;
+    const steps = data.steps || [];
+    const safe = (s) => escapeHtml(String(s||''));
+    let html = '';
+    html += `<div class="bubble assistant"><div class="meta">النتيجة</div><div class="md">${safe(data.result || '—')}</div></div>`;
+    if (data.final_url) html += `<div class="hint">Final URL: ${safe(data.final_url)}</div>`;
+    for (const st of steps){
+      html += `<div class="bubble assistant"><div class="meta">Step ${safe(st.step)} • ${safe(st.action_type)} • ${safe(st.status||'')}</div>`;
+      if (st.note) html += `<div class="md">${safe(st.note)}</div>`;
+      if (st.url) html += `<div class="hint">${safe(st.url)}</div>`;
+      if (st.screenshot_b64){
+        html += `<div style="margin-top:8px"><img src="data:image/jpeg;base64,${st.screenshot_b64}" style="max-width:100%; border-radius:12px; border:1px solid rgba(10,20,60,0.12)" /></div>`;
+      }
+      html += `</div>`;
+    }
+    box.innerHTML = html;
+
+    // also create a downloadable report
+    try{
+      const report = { when: new Date().toISOString(), final_url: data.final_url||null, result: data.result||'', steps };
+      addDownload({
+        name: `agent_report_${Date.now()}.json`,
+        mime: 'application/json',
+        content: JSON.stringify(report, null, 2)
+      });
+    }catch(_e){}
+  }
+
+function renderDownloads(){
     const box = $('downloadsList');
     const dl = loadDownloads();
     $('navDlMeta').textContent = String(dl.length);
@@ -2137,7 +2360,7 @@ let pinOnly = false;
   function setActiveNav(page){
     document.querySelectorAll('.navbtn').forEach(b => b.classList.toggle('active', b.dataset.page === page));
     document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === `page-${page}`));
-    const titles = { chat:'الدردشة', knowledge:'المعرفة (KB)', canvas:'كانفس', files:'الملفات', workflows:'Workflows', downloads:'التحميلات', projects:'المشاريع', settings:'الإعدادات' };
+    const titles = { chat:'الدردشة', knowledge:'المعرفة (KB)', canvas:'كانفس', files:'الملفات', workflows:'Workflows', agent:'الوكيل (متصفح)', downloads:'التحميلات', projects:'المشاريع', settings:'الإعدادات' };
     $('topTitle').textContent = titles[page] || 'AI Studio';
   }
 
@@ -2150,6 +2373,7 @@ let pinOnly = false;
     $('navDlMeta').textContent = String(loadDownloads().length);
     $('navProjMeta').textContent = String(loadProjects().length);
     $('navWorkMeta') && ($('navWorkMeta').textContent = '4');
+    $('navAgentMeta') && ($('navAgentMeta').textContent = '—');
     $('navSetMeta').textContent = 'OK';
   }
 
@@ -2335,6 +2559,7 @@ let pinOnly = false;
       closeSide();
       if (btn.dataset.page === 'downloads') renderDownloads();
       if (btn.dataset.page === 'workflows') renderWorkflows();
+      if (btn.dataset.page === 'agent') renderAgent();
       if (btn.dataset.page === 'projects') renderProjects();
       if (btn.dataset.page === 'settings') renderSettings();
     applyUiCollapse();
