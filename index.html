@@ -496,9 +496,10 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
         <div class="page" id="page-transcription">
           <div class="toolbar">
             <input id="transcribePdfPicker" type="file" hidden accept=".pdf,application/pdf" />
-            <button class="btn icon" id="transcribePickBtn" title="اختيار PDF" aria-label="اختيار PDF">📄</button>
-            <button class="btn ghost icon" id="transcribeExtractBtn" title="استخراج نص" aria-label="استخراج نص">🧠</button>
-            <button class="btn dark icon" id="transcribeConvertBtn" title="تحويل إلى DOCX" aria-label="تحويل إلى DOCX">📝</button>
+            <button class="btn with-label" id="transcribePickBtn" title="اختيار PDF" aria-label="اختيار PDF"><span class="icon">📄</span><span class="label">اختيار ملف</span></button>
+            <button class="btn ghost with-label" id="transcribeExtractBtn" title="استخراج نص (OCR)" aria-label="استخراج نص (OCR)"><span class="icon">🧠</span><span class="label">استخراج (OCR)</span></button>
+            <button class="btn ghost with-label" id="transcribeCloudBtn" title="تحسين سحابي للنص" aria-label="تحسين سحابي للنص"><span class="icon">☁️</span><span class="label">تحسين سحابي</span></button>
+            <button class="btn dark with-label" id="transcribeConvertBtn" title="تحويل إلى DOCX" aria-label="تحويل إلى DOCX"><span class="icon">📝</span><span class="label">تحويل DOCX</span></button>
             <span class="hint" id="transcribeFileName">لم يتم اختيار ملف بعد</span>
           </div>
           <div class="split">
