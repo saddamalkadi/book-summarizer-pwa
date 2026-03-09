@@ -44,11 +44,19 @@ function setCommonHeaders(res) {
 }
 
 function resolvePath(urlPath) {
-  const clean = decodeURIComponent(urlPath.split('?')[0]);
+  const clean = decodeURIComponent((urlPath || '/').split('?')[0]);
   const requested = clean === '/' ? '/index.html' : clean;
   const fullPath = normalize(join(ROOT, `.${requested}`));
 
   if (!fullPath.startsWith(ROOT)) return null;
+  if (existsSync(fullPath)) return fullPath;
+
+  // SPA fallback: unknown routes without file extension should serve index.html.
+  if (!extname(requested)) {
+    const fallback = normalize(join(ROOT, './index.html'));
+    if (fallback.startsWith(ROOT) && existsSync(fallback)) return fallback;
+  }
+
   return fullPath;
 }
 
