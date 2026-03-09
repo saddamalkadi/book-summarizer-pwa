@@ -178,10 +178,21 @@
     }
   
     /* v4 Scroll fixes (mobile/PWA) */
-    .chatlog, .panel .body, .nav {
+    .chatlog, .panel .body {
       -webkit-overflow-scrolling: touch;
-      overscroll-behavior: contain;
-      touch-action: pan-y;
+      overscroll-behavior-y: contain;
+      touch-action: auto;
+    }
+    .nav {
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-x: contain;
+      touch-action: pan-x;
+    }
+
+    @media (max-width:980px){
+      html, body{height:auto; min-height:100%; overflow-x:hidden; overflow-y:auto;}
+      .main{overflow:visible;}
+      .page{overscroll-behavior-y:contain;}
     }
     
 
