@@ -145,6 +145,28 @@
       .mainToolbar > *{flex:1 1 100%; max-width:100% !important;}
       .chatbar input{min-width:100%;}
     }
+
+    @media (max-width:640px){
+      .app{padding:0; gap:8px;}
+      .main{gap:8px; max-height:none;}
+      .topbar{border-radius:0 0 16px 16px; padding:8px; position:sticky; top:0;}
+      .topbar .left{align-items:center;}
+      .topbar .title{font-size:15px;}
+      .topbar #topSubtitle{display:none;}
+      .topbar-actions{padding-bottom:0; gap:6px;}
+      .topbar-actions .btn{height:34px; padding:0 10px; font-size:12px;}
+      .content{border-radius:0; border-left:none; border-right:none;}
+      .toolbar{padding:8px 8px 6px;}
+      .chatlog{padding:10px 8px;}
+      .bubble{margin-bottom:8px; border-radius:14px;}
+      .chatbar{position:sticky; bottom:0; background:var(--card); border-top:1px solid var(--line); padding:8px; padding-bottom:calc(8px + env(safe-area-inset-bottom)); z-index:8;}
+      .chatbar .btn{height:40px; padding:0 10px;}
+      .chatbar input{min-width:0; font-size:16px;}
+      .chips{padding:0 8px 8px;}
+      .hint{font-size:12px;}
+      .side{inset:0 auto 0 0; width:min(330px,90vw); max-height:100%; border-radius:0 18px 18px 0;}
+      .modal .panel{left:2vw; right:2vw; top:4vh; max-height:92vh;}
+    }
   
     /* v4 Scroll fixes (mobile/PWA) */
     .chatlog, .panel .body, .nav {
