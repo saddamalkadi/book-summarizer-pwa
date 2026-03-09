@@ -833,6 +833,37 @@ async function fileToText(file){
     return { text, blob, fileName: `${title || 'converted'}.docx` };
   }
 
+  async function cloudPolishText(rawText){
+    const source = String(rawText || '').trim();
+    if (!source) return '';
+    const settings = getSettings();
+    if (!hasAuthReady(settings)) throw new Error('المصادقة غير مكتملة (API Key أو Gateway URL)');
+
+    const prompt = [
+      'نظّف النص التالي المستخرج من OCR بدون تغيير المعنى.',
+      '- أصلح فواصل الأسطر وعلامات الترقيم.',
+      '- حافظ على نفس اللغة كما هي.',
+      '- لا تضف أي شرح أو مقدمة، أعد النص المنظف فقط.',
+      '',
+      source
+    ].join('\n');
+
+    if (settings.provider === 'gemini'){
+      const model = (settings.model || 'gemini-1.5-flash').trim();
+      return await callGemini({ apiKey: settings.geminiKey, model, prompt, maxOut: settings.maxOut || 2000 });
+    }
+
+    const baseUrl = effectiveBaseUrl(settings) || (settings.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1');
+    let model = settings.model || 'openai/gpt-4o-mini';
+    if (settings.provider === 'openrouter') model = maybeOnlineModel(model, { ...settings, webMode: 'off' });
+
+    const messages = [
+      { role: 'system', content: 'أنت مدقق OCR محترف. أعد النص نظيفًا فقط بدون أي تعليقات.' },
+      { role: 'user', content: prompt }
+    ];
+    return await callOpenAIChat({ apiKey: settings.apiKey, baseUrl, model, messages, max_tokens: clamp(Number(settings.maxOut||2000), 256, 8000) });
+  }
+
   async function fileToTextSmart(file){
     const name = (file?.name || '').toLowerCase();
     const type = (file?.type || '').toLowerCase();
@@ -2858,6 +2889,21 @@ ${e?.message||e}`, false);
       }catch(e){
         showStatus(`❌ فشل التحويل:
 ${e?.message||e}`, false);
+      }
+    });
+    $('transcribeCloudBtn')?.addEventListener('click', async () => {
+      const txt = String($('transcribeOutput')?.value || '').trim();
+      if (!txt) return toast('⚠️ استخرج النص أولاً ثم جرّب التحسين السحابي');
+      try{
+        showStatus('تحسين النص عبر السحابة…', true);
+        $('transcribeStats').textContent = 'جاري التحسين السحابي...';
+        const polished = await cloudPolishText(txt);
+        if (polished) $('transcribeOutput').value = polished.trim();
+        showStatus('', false);
+        $('transcribeStats').textContent = polished ? `تم التحسين (${polished.length} حرف)` : 'لم يرجع النص من المزود';
+        toast(polished ? '☁️ تم التحسين السحابي' : '⚠️ لم يتم إرجاع نص');
+      }catch(e){
+        showStatus(`❌ فشل التحسين السحابي:\n${e?.message||e}`, false);
       }
     });
 
