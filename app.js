@@ -350,7 +350,8 @@ async function buildRagContextIfEnabled(userText){
     const h = {};
     if (settings.authMode === 'gateway'){
       if (settings.gatewayToken) h['X-Client-Token'] = settings.gatewayToken;
-      // no Authorization header in browser when using gateway
+      // Cloudflare/OpenAI-compatible gateways may still require Bearer auth.
+      if (settings.apiKey) h['Authorization'] = `Bearer ${settings.apiKey}`;
     } else {
       if (settings.apiKey) h['Authorization'] = `Bearer ${settings.apiKey}`;
     }
