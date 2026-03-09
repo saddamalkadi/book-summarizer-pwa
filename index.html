@@ -105,6 +105,14 @@
     .modal .panel .head{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px; border-bottom:1px solid rgba(10,20,60,0.10);}
     .modal .panel .body{padding:12px; overflow:auto; min-height:0;}
     .tag{display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; border:1px solid rgba(10,20,60,0.10); background:rgba(10,20,60,0.04); font-weight:900; font-size:11px;}
+
+    .topbar .row{display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px;}
+    .mainToolbar > *{flex:1 1 160px;}
+    .mainToolbar .btn.sm,.mainToolbar .pill,.mainToolbar input,.mainToolbar select{min-height:38px;}
+    .mainToolbar #provider{flex:1 1 180px;}
+    .mainToolbar #baseUrl,.mainToolbar #model{flex:2 1 260px;}
+    .chatbar{flex-wrap:wrap; align-items:center;}
+    .chatbar input{min-width:220px;}
     /* Mobile */
     @media (max-width:980px){
       .app{grid-template-columns:1fr;}
@@ -113,6 +121,13 @@
       .backdrop2{display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:40;}
       .backdrop2.show{display:block;}
       .split{grid-template-columns:1fr;}
+      .main{padding:10px;}
+      .topbar{flex-wrap:wrap; align-items:flex-start;}
+      .topbar .left{width:100%;}
+      .topbar .row{width:100%; justify-content:flex-start;}
+      .toolbar{padding:8px; gap:6px;}
+      .mainToolbar > *{flex:1 1 100%; max-width:100% !important;}
+      .chatbar input{min-width:100%;}
     }
   
     /* v4 Scroll fixes (mobile/PWA) */
@@ -227,13 +242,12 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
               RAG
             </label>
 
-            <button class="btn ghost sm" id="researchBtn"
             <label class="pill" style="display:flex; align-items:center; gap:8px; user-select:none;">
               <input type="checkbox" id="toolsToggle" />
               Tools
             </label>
- title="بحث تفصيلي متعدد الخطوات">🧪 Research</button>
-            
+
+            <button class="btn ghost sm" id="researchBtn" type="button" title="بحث تفصيلي متعدد الخطوات">🧪 Research</button>
             <button class="btn ghost sm" id="deepSearchToggleBtn" type="button" title="تشغيل/إيقاف البحث العميق (الإرسال = Research)">🔬 Deep</button>
             <button class="btn dark sm" id="newChatBtn" type="button" title="محادثة جديدة">محادثة جديدة</button>
             <button class="btn ghost sm" id="clearChatBtn" type="button" title="مسح الدردشة الحالية">مسح</button>

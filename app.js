@@ -49,7 +49,7 @@
     geminiKey: '',
     systemPrompt: '',
     maxOut: 2000,
-    webMode: 'off',
+    webMode: 'openrouter_online',
     fileClip: 12000,
     streaming: true,
     rag: false,
@@ -2612,6 +2612,7 @@ $('sendBtn').addEventListener('click', sendMessage);
       }
     }catch(_){ }
  });
+    $('webMode').addEventListener('change', () => { saveSettingsFromUI(); refreshModeButtons(); });
     $('model').addEventListener('change', () => { saveSettingsFromUI(); applyUiCollapse();
     // Default collapse on mobile (first run)
     try{
@@ -2632,6 +2633,14 @@ $('sendBtn').addEventListener('click', sendMessage);
     $('curProjectName').textContent = getCurProject().name;
 
     renderSettings();
+
+    // Enable web search by default for first-time users
+    try{
+      if (localStorage.getItem(KEYS.webToggle) === null) setWebToggle(true);
+      const cur = getSettings();
+      if (!cur.webMode || cur.webMode === 'off') setSettings({ webMode: 'openrouter_online' });
+    }catch(_){ }
+
     applyUiCollapse();
     // Default collapse on mobile (first run)
     try{
