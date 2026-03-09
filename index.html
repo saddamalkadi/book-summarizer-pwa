@@ -476,7 +476,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
             <input id="filePicker" type="file" multiple hidden accept=".pdf,.docx,.txt,.md,.csv,.json,.xml,.html,.htm,.png,.jpg,.jpeg,.webp" />
             <button class="btn icon" id="addFilesBtn" title="إضافة ملفات" aria-label="إضافة ملفات">📎</button>
             <button class="btn ghost icon" id="clearFilesBtn" title="مسح" aria-label="مسح">🗑️</button>
-            <span class="hint">يدعم: PDF/DOCX/Text + Images (بدون OCR للصور).</span>
+            <span class="hint">يدعم: PDF/DOCX/Text + Images مع OCR محلي + سحابي اختياري.</span>
           </div>
           <div class="split">
             <div class="panel">
@@ -499,7 +499,8 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
             <button class="btn with-label" id="transcribePickBtn" title="اختيار PDF" aria-label="اختيار PDF"><span class="icon">📄</span><span class="label">اختيار ملف</span></button>
             <button class="btn ghost with-label" id="transcribeExtractBtn" title="استخراج نص (OCR)" aria-label="استخراج نص (OCR)"><span class="icon">🧠</span><span class="label">استخراج (OCR)</span></button>
             <button class="btn ghost with-label" id="transcribeCloudBtn" title="تحسين سحابي للنص" aria-label="تحسين سحابي للنص"><span class="icon">☁️</span><span class="label">تحسين سحابي</span></button>
-            <button class="btn dark with-label" id="transcribeConvertBtn" title="تحويل إلى DOCX" aria-label="تحويل إلى DOCX"><span class="icon">📝</span><span class="label">تحويل DOCX</span></button>
+            <button class="btn dark with-label" id="transcribeConvertBtn" title="تحويل PDF إلى DOCX قابل للتعديل" aria-label="تحويل PDF إلى DOCX قابل للتعديل"><span class="icon">📝</span><span class="label">PDF → DOCX</span></button>
+            <button class="btn ghost with-label" id="transcribeExportWordBtn" title="تصدير النص الحالي كملف Word" aria-label="تصدير النص الحالي كملف Word"><span class="icon">📤</span><span class="label">تصدير Word</span></button>
             <span class="hint" id="transcribeFileName">لم يتم اختيار ملف بعد</span>
           </div>
           <div class="split">
@@ -615,9 +616,20 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
                   <input id="gatewayToken" type="password" placeholder="إن فعلت حماية إضافية في الـWorker" />
                 </div>
                 <div class="col">
-                  <label class="hint">CloudConvert Worker Endpoint (اختياري)</label>
+                  <label class="hint">Cloud PDF→Word Endpoint (Primary)</label>
                   <input id="cloudConvertEndpoint" type="text" placeholder="مثال: https://your-worker.workers.dev/convert/pdf-to-docx" />
-                  <div class="hint" style="margin-top:6px">إذا ضُبط هذا الرابط سيتم التحويل إلى DOCX عبر الـWorker بدل التحويل المحلي.</div>
+                  <div class="hint" style="margin-top:6px">يُستخدم أولاً للتحويل السحابي عالي الدقة (PDF إلى Word).</div>
+                </div>
+              </div>
+              <div class="row" style="margin-top:10px">
+                <div class="col">
+                  <label class="hint">Cloud PDF→Word Endpoint (Fallback)</label>
+                  <input id="cloudConvertFallbackEndpoint" type="text" placeholder="اختياري: endpoint احتياطي عند فشل الرئيسي" />
+                </div>
+                <div class="col">
+                  <label class="hint">Cloud OCR Endpoint (اختياري)</label>
+                  <input id="ocrCloudEndpoint" type="text" placeholder="مثال: https://your-worker.workers.dev/ocr" />
+                  <div class="hint" style="margin-top:6px">يرفع الصورة للـOCR السحابي عند ضعف نتيجة OCR المحلي.</div>
                 </div>
               </div>
               <div class="row" style="margin-top:10px">

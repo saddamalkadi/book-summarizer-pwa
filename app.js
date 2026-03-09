@@ -59,7 +59,10 @@
     authMode: 'browser',          // browser | gateway
     gatewayUrl: '',               // https://your-worker.workers.dev
     gatewayToken: '',             // optional extra protection
-    cloudConvertEndpoint: '',     // optional worker endpoint for PDF->DOCX
+    cloudConvertEndpoint: '',     // primary worker endpoint for PDF->DOCX
+    cloudConvertFallbackEndpoint: '',
+    cloudRetryMax: 2,
+    ocrCloudEndpoint: '',
     ocrLang: 'ara+eng',
 
     orReferer: '',
@@ -779,24 +782,88 @@ async function fileToText(file){
     return (s.ocrLang || 'ara+eng').trim() || 'ara+eng';
   }
 
-  async function ocrDataUrl(dataUrl, lang){
+  async function preprocessImageDataUrl(dataUrl){
+    return new Promise((resolve) => {
+      try{
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth || img.width;
+          canvas.height = img.naturalHeight || img.height;
+          const ctx = canvas.getContext('2d', { willReadFrequently:true });
+          ctx.drawImage(img, 0, 0);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const d = imageData.data;
+          for (let i=0; i<d.length; i+=4){
+            const gray = Math.round(0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2]);
+            const bw = gray > 165 ? 255 : 0;
+            d[i] = d[i+1] = d[i+2] = bw;
+          }
+          ctx.putImageData(imageData, 0, 0);
+          resolve(canvas.toDataURL('image/png', 0.95));
+        };
+        img.onerror = () => resolve(dataUrl);
+        img.src = dataUrl;
+      }catch(_){ resolve(dataUrl); }
+    });
+  }
+
+  async function runTesseract(dataUrl, lang, psm){
+    const opts = { logger: () => {}, preserve_interword_spaces: '1' };
+    if (typeof psm !== 'undefined') opts.tessedit_pageseg_mode = psm;
+    const res = await window.Tesseract.recognize(dataUrl, lang, opts);
+    return String(res?.data?.text || '').trim();
+  }
+
+  async function cloudOcrDataUrl(dataUrl, meta={}){
+    const settings = getSettings();
+    const endpoint = String(settings.ocrCloudEndpoint || '').trim();
+    if (!endpoint) return '';
+    const b64 = String(dataUrl || '').split(',')[1] || '';
+    if (!b64) return '';
+    const r = await fetch(endpoint, {
+      method:'POST',
+      headers: { 'Content-Type':'application/json', ...buildAuthHeaders(settings) },
+      body: JSON.stringify({ imageBase64: b64, fileName: meta.fileName || 'page.png', page: meta.page || 1, lang: getOcrLang() })
+    });
+    if (!r.ok) return '';
+    const ct = (r.headers.get('content-type') || '').toLowerCase();
+    if (ct.includes('application/json')){
+      const j = await r.json();
+      return String(j?.text || j?.result || '').trim();
+    }
+    return String(await r.text()).trim();
+  }
+
+  async function ocrDataUrl(dataUrl, lang, meta={}){
     if (!dataUrl) return '';
     if (!window.Tesseract) throw new Error('Tesseract غير متاح');
     const usedLang = (lang || getOcrLang() || 'ara+eng').trim();
-    const opts = {
-      logger: () => {},
-      tessedit_pageseg_mode: window.Tesseract?.PSM?.AUTO,
-      preserve_interword_spaces: '1'
-    };
-    try{
-      const res = await window.Tesseract.recognize(dataUrl, usedLang, opts);
-      const text = String(res?.data?.text || '').trim();
-      if (text) return text;
-    }catch(_){
-      // fallback below
+    const enhanced = await preprocessImageDataUrl(dataUrl);
+    const psmList = [window.Tesseract?.PSM?.AUTO, window.Tesseract?.PSM?.SINGLE_BLOCK, window.Tesseract?.PSM?.SPARSE_TEXT].filter(v => typeof v !== 'undefined');
+    const candidates = [];
+    for (const src of [dataUrl, enhanced]){
+      for (const psm of psmList){
+        try{
+          const t = await runTesseract(src, usedLang, psm);
+          if (t) candidates.push(t);
+        }catch(_){ }
+      }
     }
-    const fallback = await window.Tesseract.recognize(dataUrl, 'eng', opts);
-    return String(fallback?.data?.text || '').trim();
+    if (!candidates.length){
+      try{
+        const fallback = await runTesseract(enhanced, 'eng', window.Tesseract?.PSM?.AUTO);
+        if (fallback) candidates.push(fallback);
+      }catch(_){ }
+    }
+    let best = candidates.sort((a,b)=>b.length-a.length)[0] || '';
+    if (best.length < 80){
+      try{
+        const cloud = await cloudOcrDataUrl(enhanced, meta);
+        if (cloud && cloud.length > best.length) best = cloud;
+      }catch(_){ }
+    }
+    return best.trim();
   }
 
   async function renderPdfPageToDataUrl(page, scale=2){
@@ -827,7 +894,7 @@ async function fileToText(file){
 
       if (!pageText || pageText.length < 25){
         const dataUrl = await renderPdfPageToDataUrl(page, 2);
-        const ocrText = await ocrDataUrl(dataUrl);
+        const ocrText = await ocrDataUrl(dataUrl, undefined, { fileName: file?.name || "document.pdf", page: p });
         if (ocrText) pageText = ocrText;
       }
 
@@ -862,33 +929,41 @@ async function fileToText(file){
 
   async function convertPdfToDocxByWorker(file){
     const settings = getSettings();
-    const endpoint = (settings.cloudConvertEndpoint || '').trim();
-    if (!endpoint) throw new Error('CloudConvert endpoint غير مضبوط في الإعدادات');
+    const endpoints = [String(settings.cloudConvertEndpoint||'').trim(), String(settings.cloudConvertFallbackEndpoint||'').trim()].filter(Boolean);
+    if (!endpoints.length) throw new Error('Cloud PDF→Word endpoint غير مضبوط في الإعدادات');
+    const tries = clamp(Number(settings.cloudRetryMax || 2), 1, 5);
     const ab = await file.arrayBuffer();
     const base64 = btoa(String.fromCharCode(...new Uint8Array(ab)));
-    const r = await fetch(endpoint, {
-      method:'POST',
-      headers: { 'Content-Type':'application/json', ...buildAuthHeaders(settings) },
-      body: JSON.stringify({
-        fileName: file.name,
-        mimeType: file.type || 'application/pdf',
-        fileBase64: base64
-      })
-    });
-    if (!r.ok){
-      const t = await r.text().catch(()=> '');
-      throw new Error(t || `HTTP ${r.status}`);
+    let lastErr = null;
+    for (const endpoint of endpoints){
+      for (let t=1; t<=tries; t++){
+        try{
+          const r = await fetch(endpoint, {
+            method:'POST',
+            headers: { 'Content-Type':'application/json', ...buildAuthHeaders(settings) },
+            body: JSON.stringify({ fileName: file.name, mimeType: file.type || 'application/pdf', fileBase64: base64 })
+          });
+          if (!r.ok){
+            const msg = await r.text().catch(()=> '');
+            throw new Error(msg || `HTTP ${r.status}`);
+          }
+          const ct = (r.headers.get('content-type') || '').toLowerCase();
+          if (ct.includes('application/json')){
+            const j = await r.json();
+            const b64 = String(j?.docxBase64 || '').trim();
+            if (!b64) throw new Error('استجابة تحويل سحابي غير صالحة');
+            const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+            return { blob: new Blob([bin], { type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), fileName: String(j?.fileName || file.name.replace(/\.pdf$/i, '.docx')) };
+          }
+          const blob = await r.blob();
+          return { blob: toDocxBlob(blob), fileName: file.name.replace(/\.pdf$/i, '.docx') };
+        }catch(err){
+          lastErr = err;
+          await new Promise(res => setTimeout(res, 500 * t));
+        }
+      }
     }
-    const ct = (r.headers.get('content-type') || '').toLowerCase();
-    if (ct.includes('application/json')){
-      const j = await r.json();
-      const b64 = String(j?.docxBase64 || '').trim();
-      if (!b64) throw new Error('استجابة CloudConvert غير صالحة');
-      const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-      return { blob: new Blob([bin], { type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), fileName: String(j?.fileName || file.name.replace(/\.pdf$/i, '.docx')) };
-    }
-    const blob = await r.blob();
-    return { blob: toDocxBlob(blob), fileName: file.name.replace(/\.pdf$/i, '.docx') };
+    throw new Error(`فشل التحويل السحابي بعد عدة محاولات: ${lastErr?.message || 'unknown'}`);
   }
 
   async function cloudPolishText(rawText){
@@ -928,7 +1003,7 @@ async function fileToText(file){
     const isImg = type.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif|tiff?)$/i.test(name);
     if (isImg){
       const dataUrl = await fileToDataUrl(file);
-      return await ocrDataUrl(dataUrl);
+      return await ocrDataUrl(dataUrl, undefined, { fileName: file?.name || "image", page: 1 });
     }
     return await fileToText(file);
   }
@@ -2398,6 +2473,8 @@ let pinOnly = false;
     if ($('gatewayUrl')) $('gatewayUrl').value = s.gatewayUrl || '';
     if ($('gatewayToken')) $('gatewayToken').value = s.gatewayToken || '';
     if ($('cloudConvertEndpoint')) $('cloudConvertEndpoint').value = s.cloudConvertEndpoint || '';
+    if ($('cloudConvertFallbackEndpoint')) $('cloudConvertFallbackEndpoint').value = s.cloudConvertFallbackEndpoint || '';
+    if ($('ocrCloudEndpoint')) $('ocrCloudEndpoint').value = s.ocrCloudEndpoint || '';
     if ($('ocrLang')) $('ocrLang').value = s.ocrLang || 'ara+eng';
     if ($('toolsDefault')) $('toolsDefault').checked = !!s.toolsEnabled;
     if ($('toolsToggle')) $('toolsToggle').checked = !!s.toolsEnabled;
@@ -2417,6 +2494,8 @@ let pinOnly = false;
     const gatewayUrl = $('gatewayUrl') ? $('gatewayUrl').value.trim() : '';
     const gatewayToken = $('gatewayToken') ? $('gatewayToken').value.trim() : '';
     const cloudConvertEndpoint = $('cloudConvertEndpoint') ? $('cloudConvertEndpoint').value.trim() : '';
+    const cloudConvertFallbackEndpoint = $('cloudConvertFallbackEndpoint') ? $('cloudConvertFallbackEndpoint').value.trim() : '';
+    const ocrCloudEndpoint = $('ocrCloudEndpoint') ? $('ocrCloudEndpoint').value.trim() : '';
     const ocrLang = $('ocrLang') ? $('ocrLang').value.trim() : 'ara+eng';
     const toolsEnabled = $('toolsDefault') ? !!$('toolsDefault').checked : (!!$('toolsToggle')?.checked);
 
@@ -2452,6 +2531,8 @@ let pinOnly = false;
       gatewayUrl,
       gatewayToken,
       cloudConvertEndpoint,
+      cloudConvertFallbackEndpoint,
+      ocrCloudEndpoint,
       ocrLang: ocrLang || 'ara+eng',
 
       orReferer: $('orReferer').value.trim(),
@@ -2960,6 +3041,20 @@ ${e?.message||e}`, false);
       }catch(e){
         showStatus(`❌ فشل التحويل:
 ${e?.message||e}`, false);
+      }
+    });
+    $('transcribeExportWordBtn')?.addEventListener('click', async () => {
+      const txt = String($('transcribeOutput')?.value || '').trim();
+      if (!txt) return toast('⚠️ لا يوجد نص لتصديره');
+      try{
+        const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;line-height:1.9;white-space:pre-wrap}</style></head><body>${escapeHtml(txt)}</body></html>`;
+        const fn = window.htmlToDocx || window.HTMLtoDOCX;
+        if (!fn) throw new Error('محول DOCX غير متاح');
+        const blob = toDocxBlob(await Promise.resolve(fn(html)));
+        downloadBlob('ocr-export.docx', blob);
+        toast('✅ تم تصدير Word');
+      }catch(e){
+        toast(`❌ ${e?.message || e}`);
       }
     });
     $('transcribeCloudBtn')?.addEventListener('click', async () => {
