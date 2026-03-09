@@ -253,6 +253,24 @@
           <button id="aiFixBtn" class="btn dark">تصحيح بالذكاء</button>
           <button id="saveExtractionBtn" class="btn dark">حفظ التفريغ</button>
           <button id="clearTextBtn" class="btn ghost">مسح</button>
+
+          <label class="switch" title="تفعيل التحويل السحابي عند الحاجة">
+            <input id="cloudConvertToggle" type="checkbox" checked />
+            Cloud Convert
+          </label>
+          <select id="conversionMode" class="pill">
+            <option value="auto" selected>auto</option>
+            <option value="local">local</option>
+            <option value="cloud">cloud</option>
+          </select>
+          <select id="editableOutputFormat" class="pill">
+            <option value="docx" selected>docx</option>
+            <option value="html">html</option>
+          </select>
+          <label class="switch"><input id="preserveLayoutToggle" type="checkbox" checked />حفظ التخطيط</label>
+          <label class="switch"><input id="keepImagesToggle" type="checkbox" checked />الصور</label>
+          <label class="switch"><input id="keepTablesToggle" type="checkbox" checked />الجداول</label>
+          <button id="convertEditableBtn" class="btn">تحويل قابل للتعديل</button>
         </div>
 
         <div class="area">
@@ -523,7 +541,17 @@
   <script src="https://cdn.jsdelivr.net/npm/@turbodocx/html-to-docx@1.20.1/dist/html-to-docx.browser.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mammoth@1.9.0/mammoth.browser.min.js"></script>
 
-  <script src="app_ocr.js?v=13"></script>
+  <script src="utils/textUtils.js"></script>
+  <script src="utils/fileUtils.js"></script>
+  <script src="utils/layoutUtils.js"></script>
+  <script src="services/storageService.js"></script>
+  <script src="services/extractionService.js"></script>
+  <script src="services/ocrService.js"></script>
+  <script src="services/aiFixService.js"></script>
+  <script src="services/exportService.js"></script>
+  <script src="services/cloudWorkerClient.js"></script>
+  <script src="services/cloudConversionService.js"></script>
+  <script src="app_ocr.js?v=14"></script>
 
   <script>
     if ("serviceWorker" in navigator) {
