@@ -764,6 +764,24 @@ async function fileToText(file){
     return '';
   }
 
+  async function ocrDataUrl(dataUrl, lang='ara+eng'){
+    if (!dataUrl) return '';
+    if (!window.Tesseract) throw new Error('Tesseract غير متاح');
+    const res = await window.Tesseract.recognize(dataUrl, lang);
+    return String(res?.data?.text || '').trim();
+  }
+
+  async function fileToTextSmart(file){
+    const name = (file?.name || '').toLowerCase();
+    const type = (file?.type || '').toLowerCase();
+    const isImg = type.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif|tiff?)$/i.test(name);
+    if (isImg){
+      const dataUrl = await fileToDataUrl(file);
+      return await ocrDataUrl(dataUrl, 'ara+eng');
+    }
+    return await fileToText(file);
+  }
+
   // ---------------- Downloads (```file blocks) ----------------
   function loadDownloads(){ return loadJSON(KEYS.downloads, []) || []; }
   function saveDownloads(arr){ saveJSON(KEYS.downloads, arr); }
@@ -1107,7 +1125,42 @@ async function maybeUpdateThreadSummary(pid, tid){
     return out.trim();
   }
 
-function buildMessagesForChat(userText, settings, filesText, ragCtx){
+  function modelSupportsVision(settings){
+    if (settings.provider === 'gemini') return true;
+    const id = String(settings.model || '').replace(/:online$/,'');
+    const models = loadJSON(KEYS.modelCache, {})?.models || [];
+    const hit = models.find(m => m.id === id);
+    if (hit) return !!hit.vision;
+    return /(vision|multimodal|gpt-4o|gemini|claude-3|llava|pixtral)/i.test(id);
+  }
+
+  function buildUserMessageWithAttachments(userText, settings, attachments){
+    const list = Array.isArray(attachments) ? attachments : [];
+    if (!list.length) return { role:'user', content: String(userText||'') };
+
+    const textParts = [];
+    const vision = modelSupportsVision(settings);
+    const content = [{ type:'text', text: String(userText||'') }];
+
+    list.forEach((a) => {
+      const label = `المرفق: ${a.name} (${a.kind})`;
+      if (a.text && a.text.trim()) textParts.push(`${label}\n${a.text}`);
+      else textParts.push(`${label}\n(لا يوجد نص مستخرج)`);
+
+      if (vision && a.kind === 'image' && a.dataUrl){
+        content.push({ type:'image_url', image_url:{ url: a.dataUrl } });
+      }
+    });
+
+    content.push({ type:'text', text: `\n\n[محتوى/وصف المرفقات]\n${textParts.join('\n\n')}` });
+
+    if (settings.provider === 'gemini'){
+      return { role:'user', content: String(userText||'') + "\n\n[محتوى/وصف المرفقات]\n" + textParts.join('\n\n') };
+    }
+    return { role:'user', content };
+  }
+
+function buildMessagesForChat(userText, settings, filesText, ragCtx, attachments){
     const sys = buildSystemPrompt(settings);
     const msgs = [{ role:'system', content: sys }];
     const thread = getCurThread();
@@ -1128,9 +1181,7 @@ ${clip}` });
     if (ragCtx && ragCtx.trim()){
       msgs.push({ role:'system', content: ragCtx });
     }
-        const attBlock = buildAttachmentsBlock(settings);
-    const finalUser = attBlock ? (String(userText||'') + "\n\n" + attBlock) : String(userText||'');
-    msgs.push({ role:'user', content: finalUser });
+    msgs.push(buildUserMessageWithAttachments(userText, settings, attachments));
     return msgs;
   }
 
@@ -1260,6 +1311,7 @@ ${clip}` });
         kind,
         type,
         size: file.size || 0,
+        dataUrl,
         text: clipText(text, maxPer),
         hasText: !!(text && text.trim())
       });
@@ -1326,10 +1378,10 @@ function updateChips(){
     renderChat();
 
     const filesText = buildAutoFilesContext(settings);
-    const attBlock = buildAttachmentsBlock(settings);
+    const attachmentsForRequest = pendingChatAttachments.slice();
     
     const rag = await buildRagContextIfEnabled(text);
-    const messages = buildMessagesForChat(text, settings, filesText, rag.ctx);
+    const messages = buildMessagesForChat(text, settings, filesText, rag.ctx, attachmentsForRequest);
 
     // clear pending attachments after being embedded into the request
     pendingChatAttachments = [];
