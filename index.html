@@ -99,6 +99,10 @@
     
     .page.active{display:flex; flex-direction:column;}
     .toolbar{display:flex; gap:8px; flex-wrap:wrap; align-items:center; padding:10px; border-bottom:1px solid var(--line); overflow:auto;}
+    .toolbar.has-collapse{position:relative;}
+    .toolbar-collapse-btn{margin-inline-start:auto;}
+    .toolbar.is-collapsed{overflow:visible;}
+    .toolbar.is-collapsed > :not(.toolbar-collapse-btn){display:none !important;}
     textarea,input[type="text"],input[type="password"],select{width:100%; border:1px solid var(--line); border-radius:14px; padding:10px 12px; font-size:14px; outline:none; background:#fbfcff;}
     .row{display:flex; gap:10px; flex-wrap:wrap;}
     .col{flex:1; min-width:220px;}

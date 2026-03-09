@@ -23,7 +23,8 @@
     ragToggle: 'aistudio_rag_toggle_v3',
     deepSearch: 'aistudio_mode_deepsearch_v6',
     headerCollapsed: 'aistudio_header_collapsed_v5',
-    chatToolbarCollapsed: 'aistudio_chat_toolbar_collapsed_v5'
+    chatToolbarCollapsed: 'aistudio_chat_toolbar_collapsed_v5',
+    toolbarCollapsedMap: 'aistudio_toolbar_collapsed_map_v1'
   };
 
   const nowTs = () => Date.now();
@@ -433,6 +434,57 @@ const getHeaderCollapsed = () => (localStorage.getItem(KEYS.headerCollapsed) || 
 const setHeaderCollapsed = (v) => localStorage.setItem(KEYS.headerCollapsed, v ? 'true' : 'false');
 const getChatToolbarCollapsed = () => (localStorage.getItem(KEYS.chatToolbarCollapsed) || 'false') === 'true';
 const setChatToolbarCollapsed = (v) => localStorage.setItem(KEYS.chatToolbarCollapsed, v ? 'true' : 'false');
+
+const getToolbarCollapsedMap = () => loadJSON(KEYS.toolbarCollapsedMap, {});
+const setToolbarCollapsedMap = (map) => saveJSON(KEYS.toolbarCollapsedMap, map || {});
+
+function isToolbarCollapsed(id){
+  const map = getToolbarCollapsedMap();
+  return !!map[id];
+}
+
+function setToolbarCollapsed(id, v){
+  const map = getToolbarCollapsedMap();
+  map[id] = !!v;
+  setToolbarCollapsedMap(map);
+}
+
+function applyToolbarCollapses(){
+  document.querySelectorAll('.toolbar.has-collapse[data-toolbar-id]').forEach((tb) => {
+    const id = tb.dataset.toolbarId;
+    const collapsed = isToolbarCollapsed(id);
+    tb.classList.toggle('is-collapsed', collapsed);
+    const btn = tb.querySelector('.toolbar-collapse-btn');
+    if (btn){
+      btn.textContent = collapsed ? '▴' : '▾';
+      btn.title = collapsed ? 'إظهار الشريط' : 'طي الشريط';
+      btn.setAttribute('aria-label', btn.title);
+    }
+  });
+}
+
+function setupCollapsibleToolbars(){
+  document.querySelectorAll('.page > .toolbar:not(#chatMiniToolbar):not(.mainToolbar)').forEach((tb, idx) => {
+    if (tb.dataset.collapseReady === 'true') return;
+    if (!tb.dataset.toolbarId) tb.dataset.toolbarId = tb.id || `toolbar-${idx+1}`;
+    tb.classList.add('has-collapse');
+    let btn = tb.querySelector('.toolbar-collapse-btn');
+    if (!btn){
+      btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn ghost sm with-label toolbar-collapse-btn';
+      btn.innerHTML = '<span class="icon">▾</span><span class="label">طي</span>';
+      tb.appendChild(btn);
+    }
+    btn.addEventListener('click', () => {
+      const id = tb.dataset.toolbarId;
+      setToolbarCollapsed(id, !isToolbarCollapsed(id));
+      applyToolbarCollapses();
+    });
+    tb.dataset.collapseReady = 'true';
+  });
+  applyToolbarCollapses();
+}
 
 function applyUiCollapse(){
   const collapsed = getHeaderCollapsed();
@@ -2412,13 +2464,16 @@ let pinOnly = false;
       if (btn.dataset.page === 'workflows') renderWorkflows();
       if (btn.dataset.page === 'projects') renderProjects();
       if (btn.dataset.page === 'settings') renderSettings();
+    setupCollapsibleToolbars();
     applyUiCollapse();
+    applyToolbarCollapses();
     // Default collapse on mobile (first run)
     try{
       if (window.innerWidth < 980){
         if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
         if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
         applyUiCollapse();
+    applyToolbarCollapses();
       }
     }catch(_){ }
 
@@ -2442,6 +2497,7 @@ $('headerCollapseBtn')?.addEventListener('click', () => {
         if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
         if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
         applyUiCollapse();
+    applyToolbarCollapses();
       }
     }catch(_){ }
 
@@ -2457,6 +2513,7 @@ $('chatToolbarCollapseBtn')?.addEventListener('click', () => {
         if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
         if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
         applyUiCollapse();
+    applyToolbarCollapses();
       }
     }catch(_){ }
 
@@ -2472,6 +2529,7 @@ $('chatToolbarExpandBtn')?.addEventListener('click', () => {
         if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
         if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
         applyUiCollapse();
+    applyToolbarCollapses();
       }
     }catch(_){ }
 
@@ -2657,12 +2715,14 @@ $('sendBtn').addEventListener('click', sendMessage);
     $('saveSettingsBtn').addEventListener('click', saveSettingsFromUI);
     $('resetSettingsBtn').addEventListener('click', () => { saveJSON(KEYS.settings, DEFAULT_SETTINGS); renderSettings();
     applyUiCollapse();
+    applyToolbarCollapses();
     // Default collapse on mobile (first run)
     try{
       if (window.innerWidth < 980){
         if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
         if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
         applyUiCollapse();
+    applyToolbarCollapses();
       }
     }catch(_){ }
  toast('✅ تم'); });
@@ -2677,6 +2737,7 @@ $('sendBtn').addEventListener('click', sendMessage);
         if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
         if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
         applyUiCollapse();
+    applyToolbarCollapses();
       }
     }catch(_){ }
  });
@@ -2687,6 +2748,7 @@ $('sendBtn').addEventListener('click', sendMessage);
         if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
         if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
         applyUiCollapse();
+    applyToolbarCollapses();
       }
     }catch(_){ }
  });
@@ -2698,6 +2760,7 @@ $('sendBtn').addEventListener('click', sendMessage);
         if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
         if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
         applyUiCollapse();
+    applyToolbarCollapses();
       }
     }catch(_){ }
  });
@@ -2719,13 +2782,17 @@ $('sendBtn').addEventListener('click', sendMessage);
       if (!cur.webMode || cur.webMode === 'off') setSettings({ webMode: 'openrouter_online' });
     }catch(_){ }
 
+    setupCollapsibleToolbars();
     applyUiCollapse();
+    applyToolbarCollapses();
     // Default collapse on mobile (first run)
     try{
       if (window.innerWidth < 980){
         if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
         if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
-        applyUiCollapse();
+        setupCollapsibleToolbars();
+    applyUiCollapse();
+    applyToolbarCollapses();
       }
     }catch(_){ }
 
