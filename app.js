@@ -343,6 +343,29 @@ async function buildRagContextIfEnabled(userText){
     return s.replace(/\/+$/,'');
   }
 
+  function normalizeEndpointUrl(u){
+    const s = String(u || '').trim();
+    if (!s) return '';
+    // بعض المستخدمين قد يلصقون الرابط مسبوقًا بشرطة مائلة "/https://..."
+    return normalizeUrl(s.replace(/^\/+((?:https?:)?\/\/)/i, '$1'));
+  }
+
+  function arrayBufferToBase64(ab){
+    const bytes = new Uint8Array(ab || new ArrayBuffer(0));
+    let binary = '';
+    const CHUNK = 0x8000;
+    for (let i = 0; i < bytes.length; i += CHUNK){
+      binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+    }
+    return btoa(binary);
+  }
+
+  function decodeBase64Bytes(raw){
+    const normalized = String(raw || '').trim().replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized + '='.repeat((4 - (normalized.length % 4 || 4)) % 4);
+    return Uint8Array.from(atob(padded), c => c.charCodeAt(0));
+  }
+
   function effectiveBaseUrl(settings){
     // Gateway uses a Worker URL and exposes /v1 compatible endpoints.
     if (settings.authMode === 'gateway' && settings.gatewayUrl){
@@ -929,11 +952,11 @@ async function fileToText(file){
 
   async function convertPdfToDocxByWorker(file){
     const settings = getSettings();
-    const endpoints = [String(settings.cloudConvertEndpoint||'').trim(), String(settings.cloudConvertFallbackEndpoint||'').trim()].filter(Boolean);
+    const endpoints = [normalizeEndpointUrl(settings.cloudConvertEndpoint), normalizeEndpointUrl(settings.cloudConvertFallbackEndpoint)].filter(Boolean);
     if (!endpoints.length) throw new Error('Cloud PDF→Word endpoint غير مضبوط في الإعدادات');
     const tries = clamp(Number(settings.cloudRetryMax || 2), 1, 5);
     const ab = await file.arrayBuffer();
-    const base64 = btoa(String.fromCharCode(...new Uint8Array(ab)));
+    const base64 = arrayBufferToBase64(ab);
     let lastErr = null;
     for (const endpoint of endpoints){
       for (let t=1; t<=tries; t++){
@@ -952,7 +975,7 @@ async function fileToText(file){
             const j = await r.json();
             const b64 = String(j?.docxBase64 || '').trim();
             if (!b64) throw new Error('استجابة تحويل سحابي غير صالحة');
-            const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+            const bin = decodeBase64Bytes(b64);
             return { blob: new Blob([bin], { type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), fileName: String(j?.fileName || file.name.replace(/\.pdf$/i, '.docx')) };
           }
           const blob = await r.blob();
@@ -2491,11 +2514,11 @@ let pinOnly = false;
 
   function saveSettingsFromUI(){
     const authMode = $('authMode') ? $('authMode').value : 'browser';
-    const gatewayUrl = $('gatewayUrl') ? $('gatewayUrl').value.trim() : '';
+    const gatewayUrl = $('gatewayUrl') ? normalizeEndpointUrl($('gatewayUrl').value) : '';
     const gatewayToken = $('gatewayToken') ? $('gatewayToken').value.trim() : '';
-    const cloudConvertEndpoint = $('cloudConvertEndpoint') ? $('cloudConvertEndpoint').value.trim() : '';
-    const cloudConvertFallbackEndpoint = $('cloudConvertFallbackEndpoint') ? $('cloudConvertFallbackEndpoint').value.trim() : '';
-    const ocrCloudEndpoint = $('ocrCloudEndpoint') ? $('ocrCloudEndpoint').value.trim() : '';
+    const cloudConvertEndpoint = $('cloudConvertEndpoint') ? normalizeEndpointUrl($('cloudConvertEndpoint').value) : '';
+    const cloudConvertFallbackEndpoint = $('cloudConvertFallbackEndpoint') ? normalizeEndpointUrl($('cloudConvertFallbackEndpoint').value) : '';
+    const ocrCloudEndpoint = $('ocrCloudEndpoint') ? normalizeEndpointUrl($('ocrCloudEndpoint').value) : '';
     const ocrLang = $('ocrLang') ? $('ocrLang').value.trim() : 'ara+eng';
     const toolsEnabled = $('toolsDefault') ? !!$('toolsDefault').checked : (!!$('toolsToggle')?.checked);
 
