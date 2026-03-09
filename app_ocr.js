@@ -1644,7 +1644,7 @@ async function exportPdfTemplateDocxFromFile(pdfFile, correctedText='', statusBo
 
       lastSourceFile = { kind: isDocx ? 'docx' : (isPdf ? 'pdf' : ((file.type || '').startsWith('image/') ? 'img' : 'other')), name: file.name, file };
 
-      const useOcr  = $('useOcrToggle')?.checked ?? true;
+      const useOcr  = document.getElementById('ocrToggle')?.checked ?? true;
       const enhance = $('enhanceToggle')?.checked ?? true;
 
       let t = '';
@@ -1700,6 +1700,62 @@ async function exportPdfTemplateDocxFromFile(pdfFile, correctedText='', statusBo
     });
 
     $('clearTextBtn')?.addEventListener('click', () => { $('textInput').value=''; persistDraft(); });
+
+    $('convertEditableBtn')?.addEventListener('click', async () => {
+      const file = lastSourceFile?.file || $('pdfFile')?.files?.[0];
+      if (!file) return alert('اختر ملفًا أولًا للتحويل القابل للتعديل.');
+
+      const modeRaw = $('conversionMode')?.value || 'auto';
+      const cloudEnabled = !!($('cloudConvertToggle')?.checked);
+      const mode = cloudEnabled ? modeRaw : (modeRaw === 'cloud' ? 'local' : modeRaw);
+      const outputFormat = $('editableOutputFormat')?.value || 'docx';
+      const preserveLayout = !!($('preserveLayoutToggle')?.checked);
+      const keepImages = !!($('keepImagesToggle')?.checked);
+      const keepTables = !!($('keepTablesToggle')?.checked);
+      const baseUrl = (($('ccWorkerUrl')?.value || localStorage.getItem('ccWorkerUrl') || localStorage.getItem('cloudWorkerBaseUrl') || '').trim()).replace(/\/+$/,'');
+
+      const btn = $('convertEditableBtn');
+      try{
+        if (btn){ btn.disabled = true; btn.textContent = 'جارٍ التحويل...'; }
+        setStatus('statusBox', mode === 'cloud' ? 'تحويل سحابي... انتظار رفع الملف' : 'تحويل محلي... تجهيز المستند', true);
+
+        const result = await (window.CloudConversionService
+          ? window.CloudConversionService.convertToEditableDocument(file, { mode, outputFormat, preserveLayout, keepImages, keepTables, baseUrl, statusBoxId: 'statusBox' })
+          : Promise.reject(new Error('CloudConversionService غير متاح')));
+
+        if (!result?.success && !result?.url && !result?.blob) throw new Error(result?.status || 'فشل التحويل');
+
+        if (result.url){
+          const a = document.createElement('a');
+          a.href = result.url;
+          a.target = '_blank';
+          a.rel = 'noopener';
+          a.click();
+        } else if (result.blob){
+          downloadBlob(result.filename || `${file.name.replace(/\.[^.]+$/,'')}.${outputFormat}`, result.blob);
+        }
+
+        await saveRecord('editable-conversion', 'تحويل قابل للتعديل', '', {
+          filename: file.name,
+          source: lastSourceFile?.kind || 'unknown',
+          mode: result.mode || mode,
+          kind: outputFormat,
+          fidelityScore: result.fidelityScore || null,
+          warnings: result.warnings || [],
+          preserveLayout,
+          keepImages,
+          keepTables,
+          ts: nowTs()
+        });
+
+        await renderHistory();
+        setStatus('statusBox', 'اكتمل التحويل بنجاح', false);
+      }catch(e){
+        setStatus('statusBox', `فشل التحويل: ${e.message || e}`, true);
+      } finally {
+        if (btn){ btn.disabled = false; btn.textContent = 'تحويل قابل للتعديل'; }
+      }
+    });
 
     $('summarizeBtn')?.addEventListener('click', async () => {
       try{
