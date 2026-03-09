@@ -201,7 +201,8 @@
 
 
 /* v5 Compact UI */
-body.headerCollapsed .topbar .row{display:none !important;}
+body.headerCollapsed .topbar .row{display:flex !important;}
+body.headerCollapsed .topbar .row > :not(#headerCollapseBtn){display:none !important;}
 body.headerCollapsed .topbar{padding:8px !important;}
 body.headerCollapsed .topbar .hint{display:none !important;}
 

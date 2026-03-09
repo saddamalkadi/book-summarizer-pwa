@@ -435,8 +435,14 @@ const getChatToolbarCollapsed = () => (localStorage.getItem(KEYS.chatToolbarColl
 const setChatToolbarCollapsed = (v) => localStorage.setItem(KEYS.chatToolbarCollapsed, v ? 'true' : 'false');
 
 function applyUiCollapse(){
-  document.body.classList.toggle('headerCollapsed', getHeaderCollapsed());
+  const collapsed = getHeaderCollapsed();
+  document.body.classList.toggle('headerCollapsed', collapsed);
   document.body.classList.toggle('chatToolbarCollapsed', getChatToolbarCollapsed());
+  const collapseBtn = $('headerCollapseBtn');
+  if (collapseBtn){
+    collapseBtn.textContent = collapsed ? '▴' : '▾';
+    collapseBtn.title = collapsed ? 'إظهار الشريط العلوي' : 'طي الشريط العلوي';
+  }
   const tag = document.getElementById('chatMiniModelTag');
   if (tag){ tag.textContent = (getSettings().model || '—'); }
 }
@@ -2411,7 +2417,7 @@ let pinOnly = false;
     try{
       if (window.innerWidth < 980){
         if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
-        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(true);
+        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
         applyUiCollapse();
       }
     }catch(_){ }
@@ -2434,7 +2440,7 @@ $('headerCollapseBtn')?.addEventListener('click', () => {
     try{
       if (window.innerWidth < 980){
         if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
-        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(true);
+        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
         applyUiCollapse();
       }
     }catch(_){ }
@@ -2449,7 +2455,7 @@ $('chatToolbarCollapseBtn')?.addEventListener('click', () => {
     try{
       if (window.innerWidth < 980){
         if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
-        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(true);
+        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
         applyUiCollapse();
       }
     }catch(_){ }
@@ -2464,7 +2470,7 @@ $('chatToolbarExpandBtn')?.addEventListener('click', () => {
     try{
       if (window.innerWidth < 980){
         if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
-        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(true);
+        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
         applyUiCollapse();
       }
     }catch(_){ }
@@ -2655,7 +2661,7 @@ $('sendBtn').addEventListener('click', sendMessage);
     try{
       if (window.innerWidth < 980){
         if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
-        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(true);
+        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
         applyUiCollapse();
       }
     }catch(_){ }
@@ -2669,7 +2675,7 @@ $('sendBtn').addEventListener('click', sendMessage);
     try{
       if (window.innerWidth < 980){
         if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
-        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(true);
+        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
         applyUiCollapse();
       }
     }catch(_){ }
@@ -2679,7 +2685,7 @@ $('sendBtn').addEventListener('click', sendMessage);
     try{
       if (window.innerWidth < 980){
         if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
-        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(true);
+        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
         applyUiCollapse();
       }
     }catch(_){ }
@@ -2690,7 +2696,7 @@ $('sendBtn').addEventListener('click', sendMessage);
     try{
       if (window.innerWidth < 980){
         if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
-        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(true);
+        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
         applyUiCollapse();
       }
     }catch(_){ }
@@ -2718,7 +2724,7 @@ $('sendBtn').addEventListener('click', sendMessage);
     try{
       if (window.innerWidth < 980){
         if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
-        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(true);
+        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
         applyUiCollapse();
       }
     }catch(_){ }
