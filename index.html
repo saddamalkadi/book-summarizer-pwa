@@ -89,6 +89,9 @@
     .btn.danger{background:#ff3b30}
     .btn.sm{height:30px; padding:0 8px; border-radius:10px; font-size:11px;}
     .btn.icon{width:30px; height:30px; min-width:30px; padding:0; display:inline-flex; align-items:center; justify-content:center; font-size:14px;}
+    .btn.with-label{display:inline-flex; align-items:center; gap:6px; min-height:34px;}
+    .btn.with-label .icon{font-size:14px; line-height:1;}
+    .btn.with-label .label{font-size:12px;}
     .title{font-weight:1000; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
     .status{display:none; border-radius:14px; padding:10px 12px; border:1px solid #d7e4ff; background:#eef3ff; color:#2d3b66; font-size:13px; white-space:pre-wrap;}
     .content{flex:1; min-height:0; background:var(--card); border:1px solid rgba(10,20,60,0.06); border-radius:var(--r); box-shadow:var(--shadow); overflow:hidden; display:flex; flex-direction:column; min-width:0; isolation:isolate;}
@@ -126,10 +129,13 @@
     .tag{display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; border:1px solid rgba(10,20,60,0.10); background:rgba(10,20,60,0.04); font-weight:900; font-size:11px;}
 
     .topbar .row{display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px;}
-    .mainToolbar{display:flex; flex-direction:column; align-items:stretch; gap:8px;}
+    .mainToolbar{display:flex; align-items:stretch; gap:10px;}
     .mainToolbar .toolbar-strip{display:flex; align-items:center; gap:8px; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px;}
     .mainToolbar .toolbar-strip > *{flex:0 0 auto;}
     .mainToolbar .btn.sm,.mainToolbar .pill,.mainToolbar input,.mainToolbar select{min-height:38px;}
+    .tool-group{display:flex; flex-direction:column; gap:6px; padding:8px; border:1px solid var(--line); border-radius:14px; background:#f8faff; min-width:0;}
+    .tool-group-title{font-size:11px; color:var(--muted); font-weight:900; padding-inline:4px;}
+    .topbar-actions{display:flex; align-items:center; gap:6px; padding:4px; border:1px solid var(--line); border-radius:14px; background:#f8faff;}
     .mainToolbar #provider{min-width:170px;}
     .mainToolbar #baseUrl,.mainToolbar #model{min-width:240px;}
     .mainToolbar #promptSelect,.mainToolbar #agentTaskTemplate{min-width:220px;}
@@ -156,7 +162,9 @@
       .nav{flex-direction:column; overflow-x:hidden; overflow-y:auto; padding:2px 2px 8px; scrollbar-width:none;}
       .nav::-webkit-scrollbar{display:none;}
       .navbtn{min-width:0;}
-      .mainToolbar .toolbar-strip{flex-wrap:nowrap; overflow-x:auto;}
+      .mainToolbar{flex-wrap:nowrap; overflow-x:auto;}
+      .mainToolbar .tool-group{flex:0 0 auto; min-width:max-content;}
+      .mainToolbar .toolbar-strip{flex-wrap:nowrap; overflow-x:visible;}
       .chatbar input{min-width:100%;}
     }
 
@@ -169,6 +177,7 @@
       .topbar #topSubtitle{display:none;}
       .topbar-actions{padding-bottom:0; gap:6px;}
       .topbar-actions .btn{height:34px; padding:0 10px; font-size:12px;}
+      .topbar-actions .btn.with-label .label{font-size:11px;}
       .content{border-radius:0; border-left:none; border-right:none;}
       .toolbar{padding:8px 8px 6px;}
       .chatlog{padding:10px 8px;}
@@ -259,12 +268,12 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
           <span class="hint" id="topSubtitle">مشروع: <b id="curProjectName">افتراضي</b></span>
         </div>
         <div class="row topbar-actions">
-          <button class="btn ghost sm icon" id="headerCollapseBtn" title="طي الشريط العلوي" aria-label="طي الشريط العلوي">▾</button>
-          <button class="btn ghost sm icon" id="modeDeepBtn" title="تفكير عميق" aria-label="تفكير عميق">🧠</button>
-          <button class="btn ghost sm icon" id="modeAgentBtn" title="وضع الوكيل" aria-label="وضع الوكيل">🤖</button>
-          <button class="btn ghost sm icon" id="webToggleBtn" title="بحث ويب" aria-label="بحث ويب">🔎</button>
-          <button class="btn ghost sm icon" id="modeOffBtn" title="إيقاف الأوضاع" aria-label="إيقاف الأوضاع">⛔</button>
-          <button class="btn dark sm icon" id="newThreadBtn" title="محادثة جديدة" aria-label="محادثة جديدة">✚</button>
+          <button class="btn ghost sm with-label" id="headerCollapseBtn" title="طي الشريط العلوي" aria-label="طي الشريط العلوي"><span class="icon">▾</span><span class="label">طي</span></button>
+          <button class="btn ghost sm with-label" id="modeDeepBtn" title="تفكير عميق" aria-label="تفكير عميق"><span class="icon">🧠</span><span class="label">عميق</span></button>
+          <button class="btn ghost sm with-label" id="modeAgentBtn" title="وضع الوكيل" aria-label="وضع الوكيل"><span class="icon">🤖</span><span class="label">وكيل</span></button>
+          <button class="btn ghost sm with-label" id="webToggleBtn" title="بحث ويب" aria-label="بحث ويب"><span class="icon">🔎</span><span class="label">ويب</span></button>
+          <button class="btn ghost sm with-label" id="modeOffBtn" title="إيقاف الأوضاع" aria-label="إيقاف الأوضاع"><span class="icon">⛔</span><span class="label">إيقاف</span></button>
+          <button class="btn dark sm with-label" id="newThreadBtn" title="محادثة جديدة" aria-label="محادثة جديدة"><span class="icon">✚</span><span class="label">محادثة</span></button>
         </div>
       </div>
 
@@ -280,7 +289,9 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
           </div>
 
 <div class="toolbar mainToolbar">
-            <div class="toolbar-strip">
+            <div class="tool-group">
+              <span class="tool-group-title">إعدادات النموذج</span>
+              <div class="toolbar-strip">
               <select id="provider" class="pill" style="max-width:220px">
                 <option value="openrouter">OpenRouter</option>
                 <option value="openai">OpenAI</option>
@@ -288,10 +299,13 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
               </select>
               <input id="baseUrl" type="text" value="https://openrouter.ai/api/v1" style="max-width:420px" />
               <input id="model" type="text" value="openai/gpt-4o-mini" style="max-width:420px" />
-              <button class="btn ghost sm icon" id="pickModelBtn" title="الموديلات" aria-label="الموديلات">🧩</button>
+              <button class="btn ghost sm with-label" id="pickModelBtn" title="الموديلات" aria-label="الموديلات"><span class="icon">🧩</span><span class="label">الموديلات</span></button>
+              </div>
             </div>
 
-            <div class="toolbar-strip">
+            <div class="tool-group">
+              <span class="tool-group-title">أنماط وميزات</span>
+              <div class="toolbar-strip">
               <select id="promptSelect" class="pill" style="max-width:260px">
                 <option value="">قوالب…</option>
                 <option value="report_ar">📄 تقرير احترافي</option>
@@ -316,21 +330,25 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
                 Tools
               </label>
 
-              <button class="btn ghost sm icon" id="researchBtn" type="button" title="بحث تفصيلي متعدد الخطوات" aria-label="بحث تفصيلي">🧪</button>
-              <button class="btn ghost sm icon" id="deepSearchToggleBtn" type="button" title="تشغيل/إيقاف البحث العميق" aria-label="البحث العميق">🔬</button>
+              <button class="btn ghost sm with-label" id="researchBtn" type="button" title="بحث تفصيلي متعدد الخطوات" aria-label="بحث تفصيلي"><span class="icon">🧪</span><span class="label">بحث</span></button>
+              <button class="btn ghost sm with-label" id="deepSearchToggleBtn" type="button" title="تشغيل/إيقاف البحث العميق" aria-label="البحث العميق"><span class="icon">🔬</span><span class="label">بحث عميق</span></button>
               <select id="agentTaskTemplate" class="pill" style="max-width:260px">
                 <option value="">🤖 مهمة وكيل…</option>
                 <option value="site_login_project">🌐 دخول موقع + إنشاء مشروع/حساب</option>
                 <option value="excel_process">📊 معالجة ملف Excel</option>
                 <option value="web_task_plan">🧭 تنفيذ مهمة ويب خطوة بخطوة</option>
               </select>
+              </div>
             </div>
-            <div class="toolbar-strip">
-              <button class="btn ghost sm icon" id="agentTaskApplyBtn" type="button" title="إدراج قالب مهمة الوكيل" aria-label="إدراج مهمة">➕</button>
-              <button class="btn ghost sm icon" id="scrollTopBtn" type="button" title="الانتقال للأعلى" aria-label="للأعلى">⬆️</button>
-              <button class="btn ghost sm icon" id="scrollBottomBtn" type="button" title="الانتقال للأسفل" aria-label="للأسفل">⬇️</button>
-              <button class="btn ghost sm icon" id="clearChatBtn" type="button" title="مسح الدردشة الحالية" aria-label="مسح الدردشة">🗑️</button>
-              <button class="btn ghost sm icon" id="chatToolbarCollapseBtn" type="button" title="طي الأدوات" aria-label="طي الأدوات">▾</button>
+            <div class="tool-group">
+              <span class="tool-group-title">إجراءات سريعة</span>
+              <div class="toolbar-strip">
+              <button class="btn ghost sm with-label" id="agentTaskApplyBtn" type="button" title="إدراج قالب مهمة الوكيل" aria-label="إدراج مهمة"><span class="icon">➕</span><span class="label">إدراج</span></button>
+              <button class="btn ghost sm with-label" id="scrollTopBtn" type="button" title="الانتقال للأعلى" aria-label="للأعلى"><span class="icon">⬆️</span><span class="label">للأعلى</span></button>
+              <button class="btn ghost sm with-label" id="scrollBottomBtn" type="button" title="الانتقال للأسفل" aria-label="للأسفل"><span class="icon">⬇️</span><span class="label">للأسفل</span></button>
+              <button class="btn ghost sm with-label" id="clearChatBtn" type="button" title="مسح الدردشة الحالية" aria-label="مسح الدردشة"><span class="icon">🗑️</span><span class="label">مسح</span></button>
+              <button class="btn ghost sm with-label" id="chatToolbarCollapseBtn" type="button" title="طي الأدوات" aria-label="طي الأدوات"><span class="icon">▾</span><span class="label">إخفاء</span></button>
+              </div>
             </div>
           </div>
 
