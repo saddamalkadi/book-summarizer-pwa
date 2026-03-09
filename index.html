@@ -615,6 +615,18 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
                   <input id="gatewayToken" type="password" placeholder="إن فعلت حماية إضافية في الـWorker" />
                 </div>
                 <div class="col">
+                  <label class="hint">CloudConvert Worker Endpoint (اختياري)</label>
+                  <input id="cloudConvertEndpoint" type="text" placeholder="مثال: https://your-worker.workers.dev/convert/pdf-to-docx" />
+                  <div class="hint" style="margin-top:6px">إذا ضُبط هذا الرابط سيتم التحويل إلى DOCX عبر الـWorker بدل التحويل المحلي.</div>
+                </div>
+              </div>
+              <div class="row" style="margin-top:10px">
+                <div class="col">
+                  <label class="hint">OCR Languages (Tesseract)</label>
+                  <input id="ocrLang" type="text" placeholder="ara+eng" />
+                  <div class="hint" style="margin-top:6px">مثال: <span class="kbd">ara+eng</span> أو <span class="kbd">ara</span> حسب اللغة.</div>
+                </div>
+                <div class="col">
                   <label class="hint">Tools (Agent Tools)</label>
                   <label class="pill" style="display:flex; align-items:center; gap:8px; max-width:260px">
                     <input type="checkbox" id="toolsDefault" />

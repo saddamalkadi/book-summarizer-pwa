@@ -59,6 +59,8 @@
     authMode: 'browser',          // browser | gateway
     gatewayUrl: '',               // https://your-worker.workers.dev
     gatewayToken: '',             // optional extra protection
+    cloudConvertEndpoint: '',     // optional worker endpoint for PDF->DOCX
+    ocrLang: 'ara+eng',
 
     orReferer: '',
     orTitle: 'AI Workspace Studio'
@@ -765,11 +767,36 @@ async function fileToText(file){
     return '';
   }
 
-  async function ocrDataUrl(dataUrl, lang='ara+eng'){
+  function toDocxBlob(out){
+    if (out instanceof Blob) return out;
+    if (out instanceof ArrayBuffer) return new Blob([out], { type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+    if (ArrayBuffer.isView(out)) return new Blob([out.buffer], { type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+    throw new Error('صيغة DOCX غير مدعومة');
+  }
+
+  function getOcrLang(){
+    const s = getSettings();
+    return (s.ocrLang || 'ara+eng').trim() || 'ara+eng';
+  }
+
+  async function ocrDataUrl(dataUrl, lang){
     if (!dataUrl) return '';
     if (!window.Tesseract) throw new Error('Tesseract غير متاح');
-    const res = await window.Tesseract.recognize(dataUrl, lang);
-    return String(res?.data?.text || '').trim();
+    const usedLang = (lang || getOcrLang() || 'ara+eng').trim();
+    const opts = {
+      logger: () => {},
+      tessedit_pageseg_mode: window.Tesseract?.PSM?.AUTO,
+      preserve_interword_spaces: '1'
+    };
+    try{
+      const res = await window.Tesseract.recognize(dataUrl, usedLang, opts);
+      const text = String(res?.data?.text || '').trim();
+      if (text) return text;
+    }catch(_){
+      // fallback below
+    }
+    const fallback = await window.Tesseract.recognize(dataUrl, 'eng', opts);
+    return String(fallback?.data?.text || '').trim();
   }
 
   async function renderPdfPageToDataUrl(page, scale=2){
@@ -800,7 +827,7 @@ async function fileToText(file){
 
       if (!pageText || pageText.length < 25){
         const dataUrl = await renderPdfPageToDataUrl(page, 2);
-        const ocrText = await ocrDataUrl(dataUrl, 'ara+eng');
+        const ocrText = await ocrDataUrl(dataUrl);
         if (ocrText) pageText = ocrText;
       }
 
@@ -829,8 +856,39 @@ async function fileToText(file){
 
     const fn = window.htmlToDocx || window.HTMLtoDOCX || null;
     if (!fn) throw new Error('محول DOCX غير متاح');
-    const blob = await Promise.resolve(fn(html));
+    const blob = toDocxBlob(await Promise.resolve(fn(html)));
     return { text, blob, fileName: `${title || 'converted'}.docx` };
+  }
+
+  async function convertPdfToDocxByWorker(file){
+    const settings = getSettings();
+    const endpoint = (settings.cloudConvertEndpoint || '').trim();
+    if (!endpoint) throw new Error('CloudConvert endpoint غير مضبوط في الإعدادات');
+    const ab = await file.arrayBuffer();
+    const base64 = btoa(String.fromCharCode(...new Uint8Array(ab)));
+    const r = await fetch(endpoint, {
+      method:'POST',
+      headers: { 'Content-Type':'application/json', ...buildAuthHeaders(settings) },
+      body: JSON.stringify({
+        fileName: file.name,
+        mimeType: file.type || 'application/pdf',
+        fileBase64: base64
+      })
+    });
+    if (!r.ok){
+      const t = await r.text().catch(()=> '');
+      throw new Error(t || `HTTP ${r.status}`);
+    }
+    const ct = (r.headers.get('content-type') || '').toLowerCase();
+    if (ct.includes('application/json')){
+      const j = await r.json();
+      const b64 = String(j?.docxBase64 || '').trim();
+      if (!b64) throw new Error('استجابة CloudConvert غير صالحة');
+      const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+      return { blob: new Blob([bin], { type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), fileName: String(j?.fileName || file.name.replace(/\.pdf$/i, '.docx')) };
+    }
+    const blob = await r.blob();
+    return { blob: toDocxBlob(blob), fileName: file.name.replace(/\.pdf$/i, '.docx') };
   }
 
   async function cloudPolishText(rawText){
@@ -870,7 +928,7 @@ async function fileToText(file){
     const isImg = type.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif|tiff?)$/i.test(name);
     if (isImg){
       const dataUrl = await fileToDataUrl(file);
-      return await ocrDataUrl(dataUrl, 'ara+eng');
+      return await ocrDataUrl(dataUrl);
     }
     return await fileToText(file);
   }
@@ -1886,7 +1944,7 @@ async function runResearchAgent(topicOverride){
       if (!fn) return toast('⚠️ DOCX غير متاح');
       const html = `<h1>${escapeHtml(title)}</h1><div>${renderMarkdown(content)}</div>`;
       Promise.resolve(fn(html)).then((blob) => {
-        downloadBlob(`${title}.docx`, blob);
+        downloadBlob(`${title}.docx`, toDocxBlob(blob));
         toast('⬇️ تم تصدير DOCX');
       }).catch((e)=> toast('DOCX فشل: ' + (e?.message||e)));
       return;
@@ -2339,6 +2397,8 @@ let pinOnly = false;
     if ($('authMode')) $('authMode').value = s.authMode || 'browser';
     if ($('gatewayUrl')) $('gatewayUrl').value = s.gatewayUrl || '';
     if ($('gatewayToken')) $('gatewayToken').value = s.gatewayToken || '';
+    if ($('cloudConvertEndpoint')) $('cloudConvertEndpoint').value = s.cloudConvertEndpoint || '';
+    if ($('ocrLang')) $('ocrLang').value = s.ocrLang || 'ara+eng';
     if ($('toolsDefault')) $('toolsDefault').checked = !!s.toolsEnabled;
     if ($('toolsToggle')) $('toolsToggle').checked = !!s.toolsEnabled;
 
@@ -2356,6 +2416,8 @@ let pinOnly = false;
     const authMode = $('authMode') ? $('authMode').value : 'browser';
     const gatewayUrl = $('gatewayUrl') ? $('gatewayUrl').value.trim() : '';
     const gatewayToken = $('gatewayToken') ? $('gatewayToken').value.trim() : '';
+    const cloudConvertEndpoint = $('cloudConvertEndpoint') ? $('cloudConvertEndpoint').value.trim() : '';
+    const ocrLang = $('ocrLang') ? $('ocrLang').value.trim() : 'ara+eng';
     const toolsEnabled = $('toolsDefault') ? !!$('toolsDefault').checked : (!!$('toolsToggle')?.checked);
 
     // if gateway is enabled and url provided, we force baseUrl to gateway/v1
@@ -2389,6 +2451,8 @@ let pinOnly = false;
       authMode,
       gatewayUrl,
       gatewayToken,
+      cloudConvertEndpoint,
+      ocrLang: ocrLang || 'ara+eng',
 
       orReferer: $('orReferer').value.trim(),
       orTitle: $('orTitle').value.trim()
@@ -2878,10 +2942,17 @@ ${e?.message||e}`, false);
       try{
         showStatus('تحويل PDF إلى DOCX قابل للتعديل…', true);
         $('transcribeStats').textContent = 'جاري التحويل...';
-        const result = await convertPdfToEditableDocx(transcribeSelectedFile, {
-          onProgress: (p, total) => { $('transcribeStats').textContent = `تحويل صفحة ${p}/${total}`; }
-        });
-        if ($('transcribeOutput') && result?.text) $('transcribeOutput').value = result.text;
+        const s = getSettings();
+        let result = null;
+        if ((s.cloudConvertEndpoint || '').trim()){
+          $('transcribeStats').textContent = 'تحويل عبر CloudConvert Worker...';
+          result = await convertPdfToDocxByWorker(transcribeSelectedFile);
+        } else {
+          result = await convertPdfToEditableDocx(transcribeSelectedFile, {
+            onProgress: (p, total) => { $('transcribeStats').textContent = `تحويل صفحة ${p}/${total}`; }
+          });
+          if ($('transcribeOutput') && result?.text) $('transcribeOutput').value = result.text;
+        }
         downloadBlob(result.fileName, result.blob);
         showStatus('', false);
         $('transcribeStats').textContent = 'اكتمل التحويل';
