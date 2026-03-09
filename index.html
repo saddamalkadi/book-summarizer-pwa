@@ -72,7 +72,7 @@
     .brand{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12); border-radius:16px;}
     .brand .name{font-weight:1000}
     .brand .sub{opacity:.85; font-size:12px; margin-top:2px}
-    .iconbtn{border:none; background:rgba(255,255,255,.12); color:#fff; width:40px; height:40px; border-radius:14px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; font-size:18px;}
+    .iconbtn{border:none; background:rgba(255,255,255,.12); color:#fff; width:34px; height:34px; border-radius:12px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; font-size:15px;}
     .nav{display:flex; flex-direction:column; gap:10px; overflow:auto; padding:4px;}
     .navbtn{border:none; cursor:pointer; padding:12px 14px; border-radius:16px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12); color:#fff; display:flex; align-items:center; justify-content:space-between; gap:10px; font-weight:1000; width:100%; -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); transition:transform .2s ease, background .2s ease, border-color .2s ease;}
     .navbtn:hover{transform:translateY(-1px); background:rgba(255,255,255,.15); border-color:rgba(255,255,255,.26);}
@@ -83,11 +83,12 @@
     .topbar{background:var(--card); border:1px solid rgba(10,20,60,0.06); border-radius:var(--r); box-shadow:var(--shadow); padding:10px; display:flex; align-items:center; justify-content:space-between; gap:10px; position:sticky; top:0; z-index:20;}
     .topbar .left{display:flex; align-items:center; gap:10px; min-width:0}
     .pill{border:1px solid var(--line); background:#fbfcff; border-radius:14px; padding:10px 12px; font-weight:900; cursor:pointer;}
-    .btn{border:none; border-radius:14px; padding:10px 12px; font-weight:900; cursor:pointer; background:var(--pri); color:#fff; white-space:nowrap;}
+    .btn{border:none; border-radius:12px; padding:8px 10px; font-weight:900; cursor:pointer; background:var(--pri); color:#fff; white-space:nowrap;}
     .btn.ghost{background:#eef3ff; color:var(--pri)}
     .btn.dark{background:var(--pri2)}
     .btn.danger{background:#ff3b30}
-    .btn.sm{height:34px; padding:0 10px; border-radius:12px; font-size:12px;}
+    .btn.sm{height:30px; padding:0 8px; border-radius:10px; font-size:11px;}
+    .btn.icon{width:30px; height:30px; min-width:30px; padding:0; display:inline-flex; align-items:center; justify-content:center; font-size:14px;}
     .title{font-weight:1000; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
     .status{display:none; border-radius:14px; padding:10px 12px; border:1px solid #d7e4ff; background:#eef3ff; color:#2d3b66; font-size:13px; white-space:pre-wrap;}
     .content{flex:1; min-height:0; background:var(--card); border:1px solid rgba(10,20,60,0.06); border-radius:var(--r); box-shadow:var(--shadow); overflow:hidden; display:flex; flex-direction:column; min-width:0; isolation:isolate;}
@@ -255,12 +256,12 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
           <span class="hint" id="topSubtitle">مشروع: <b id="curProjectName">افتراضي</b></span>
         </div>
         <div class="row topbar-actions">
-          <button class="btn ghost sm" id="headerCollapseBtn" title="طي الشريط العلوي">▾</button>
-          <button class="btn ghost sm" id="modeDeepBtn" title="تفكير عميق">🧠</button>
-          <button class="btn ghost sm" id="modeAgentBtn" title="وضع الوكيل">🤖</button>
-          <button class="btn ghost sm" id="webToggleBtn" title="Web Search (OpenRouter :online)">🔎 Web</button>
-          <button class="btn ghost sm" id="modeOffBtn" title="إيقاف الأوضاع">⛔</button>
-          <button class="btn dark sm" id="newThreadBtn">محادثة جديدة</button>
+          <button class="btn ghost sm icon" id="headerCollapseBtn" title="طي الشريط العلوي" aria-label="طي الشريط العلوي">▾</button>
+          <button class="btn ghost sm icon" id="modeDeepBtn" title="تفكير عميق" aria-label="تفكير عميق">🧠</button>
+          <button class="btn ghost sm icon" id="modeAgentBtn" title="وضع الوكيل" aria-label="وضع الوكيل">🤖</button>
+          <button class="btn ghost sm icon" id="webToggleBtn" title="بحث ويب" aria-label="بحث ويب">🔎</button>
+          <button class="btn ghost sm icon" id="modeOffBtn" title="إيقاف الأوضاع" aria-label="إيقاف الأوضاع">⛔</button>
+          <button class="btn dark sm icon" id="newThreadBtn" title="محادثة جديدة" aria-label="محادثة جديدة">✚</button>
         </div>
       </div>
 
@@ -271,7 +272,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
         <div class="page active" id="page-chat">
           
           <div class="toolbar" id="chatMiniToolbar" style="display:none">
-            <button class="btn ghost sm" id="chatToolbarExpandBtn" type="button">⚙️ إظهار الأدوات</button>
+            <button class="btn ghost sm icon" id="chatToolbarExpandBtn" type="button" title="إظهار الأدوات" aria-label="إظهار الأدوات">⚙️</button>
             <span class="tag" id="chatMiniModelTag">—</span>
           </div>
 
@@ -283,7 +284,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
             </select>
             <input id="baseUrl" type="text" value="https://openrouter.ai/api/v1" style="max-width:420px" />
             <input id="model" type="text" value="openai/gpt-4o-mini" style="max-width:420px" />
-            <button class="btn ghost sm" id="pickModelBtn">الموديلات</button>
+            <button class="btn ghost sm icon" id="pickModelBtn" title="الموديلات" aria-label="الموديلات">🧩</button>
 
             <select id="promptSelect" class="pill" style="max-width:260px">
               <option value="">قوالب…</option>
@@ -309,20 +310,19 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
               Tools
             </label>
 
-            <button class="btn ghost sm" id="researchBtn" type="button" title="بحث تفصيلي متعدد الخطوات">🧪 Research</button>
-            <button class="btn ghost sm" id="deepSearchToggleBtn" type="button" title="تشغيل/إيقاف البحث العميق (الإرسال = Research)">🔬 Deep</button>
+            <button class="btn ghost sm icon" id="researchBtn" type="button" title="بحث تفصيلي متعدد الخطوات" aria-label="بحث تفصيلي">🧪</button>
+            <button class="btn ghost sm icon" id="deepSearchToggleBtn" type="button" title="تشغيل/إيقاف البحث العميق" aria-label="البحث العميق">🔬</button>
             <select id="agentTaskTemplate" class="pill" style="max-width:260px">
               <option value="">🤖 مهمة وكيل…</option>
               <option value="site_login_project">🌐 دخول موقع + إنشاء مشروع/حساب</option>
               <option value="excel_process">📊 معالجة ملف Excel</option>
               <option value="web_task_plan">🧭 تنفيذ مهمة ويب خطوة بخطوة</option>
             </select>
-            <button class="btn ghost sm" id="agentTaskApplyBtn" type="button" title="إدراج قالب مهمة الوكيل">إدراج مهمة</button>
-            <button class="btn ghost sm" id="scrollTopBtn" type="button" title="الانتقال للأعلى">⬆️ أعلى</button>
-            <button class="btn ghost sm" id="scrollBottomBtn" type="button" title="الانتقال للأسفل">⬇️ أسفل</button>
-            <button class="btn dark sm" id="newChatBtn" type="button" title="محادثة جديدة">محادثة جديدة</button>
-            <button class="btn ghost sm" id="clearChatBtn" type="button" title="مسح الدردشة الحالية">مسح</button>
-<button class="btn ghost sm" id="chatToolbarCollapseBtn" type="button" title="طي الأدوات">▾</button>
+            <button class="btn ghost sm icon" id="agentTaskApplyBtn" type="button" title="إدراج قالب مهمة الوكيل" aria-label="إدراج مهمة">➕</button>
+            <button class="btn ghost sm icon" id="scrollTopBtn" type="button" title="الانتقال للأعلى" aria-label="للأعلى">⬆️</button>
+            <button class="btn ghost sm icon" id="scrollBottomBtn" type="button" title="الانتقال للأسفل" aria-label="للأسفل">⬇️</button>
+            <button class="btn ghost sm icon" id="clearChatBtn" type="button" title="مسح الدردشة الحالية" aria-label="مسح الدردشة">🗑️</button>
+<button class="btn ghost sm icon" id="chatToolbarCollapseBtn" type="button" title="طي الأدوات" aria-label="طي الأدوات">▾</button>
           </div>
 
           <div class="chatlog" id="chatLog"></div>
@@ -332,8 +332,8 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
             <button class="btn ghost" id="chatAttachBtn" type="button" title="إرفاق ملف/صورة للدردشة">📎</button>
             <input id="chatInput" dir="auto" placeholder="اكتب سؤالك… ويمكنك إرفاق ملفات هنا." />
             <button class="btn ghost" id="regenBtn" type="button">↻</button>
-            <button class="btn danger" id="stopBtn" type="button" style="display:none">إيقاف</button>
-            <button class="btn dark" id="sendBtn" type="button">إرسال</button>
+            <button class="btn danger icon" id="stopBtn" type="button" style="display:none" title="إيقاف" aria-label="إيقاف">⏹</button>
+            <button class="btn dark icon" id="sendBtn" type="button" title="إرسال" aria-label="إرسال">➤</button>
           </div>
 
           <div class="chips" id="chatAttachChips"></div>
@@ -345,8 +345,8 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
         <!-- KNOWLEDGE BASE -->
         <div class="page" id="page-knowledge">
           <div class="toolbar">
-            <button class="btn" id="kbBuildBtn">فهرسة KB (Embeddings)</button>
-            <button class="btn ghost" id="kbClearBtn">مسح KB</button>
+            <button class="btn icon" id="kbBuildBtn" title="فهرسة KB" aria-label="فهرسة KB">🧠</button>
+            <button class="btn ghost icon" id="kbClearBtn" title="مسح KB" aria-label="مسح KB">🗑️</button>
             <span class="tag" id="kbStats">—</span>
           </div>
 
@@ -356,8 +356,8 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
               <div class="body">
                 <div class="row" style="margin-bottom:10px">
                   <input id="kbQuery" type="text" placeholder="اكتب سؤالك للبحث في KB…" />
-                  <button class="btn ghost sm" id="kbSearchBtn">بحث</button>
-                  <button class="btn ghost sm" id="kbInsertBtn">إدراج في الدردشة</button>
+                  <button class="btn ghost sm icon" id="kbSearchBtn" title="بحث" aria-label="بحث">🔎</button>
+                  <button class="btn ghost sm icon" id="kbInsertBtn" title="إدراج في الدردشة" aria-label="إدراج في الدردشة">💬</button>
                 </div>
                 <div class="hint" style="margin-bottom:8px">سيُرجع أفضل المقاطع من الملفات داخل المشروع.</div>
                 <div id="kbResults" style="white-space:pre-wrap; line-height:1.7"></div>
@@ -409,16 +409,16 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
           <div class="toolbar">
             <select id="canvasDoc" class="pill" style="max-width:240px"></select>
             <input id="canvasTitle" type="text" placeholder="عنوان المستند" style="max-width:420px" />
-            <button class="btn ghost sm" id="canvasNewBtn">جديد</button>
-            <button class="btn sm" id="canvasSaveBtn">حفظ</button>
-            <button class="btn ghost sm" id="canvasVersionsBtn">الإصدارات</button>
-            <button class="btn ghost sm" id="canvasAiBtn">ذكاء</button>
+            <button class="btn ghost sm icon" id="canvasNewBtn" title="جديد" aria-label="جديد">✚</button>
+            <button class="btn sm icon" id="canvasSaveBtn" title="حفظ" aria-label="حفظ">💾</button>
+            <button class="btn ghost sm icon" id="canvasVersionsBtn" title="الإصدارات" aria-label="الإصدارات">🕘</button>
+            <button class="btn ghost sm icon" id="canvasAiBtn" title="ذكاء" aria-label="ذكاء">✨</button>
             <label class="pill" style="display:flex; align-items:center; gap:8px">
               <input type="checkbox" id="canvasPreviewToggle" />
               معاينة HTML
             </label>
-            <button class="btn ghost sm" id="canvasRefreshPreviewBtn">تحديث</button>
-            <button class="btn ghost sm" id="canvasExportBtn">تصدير</button>
+            <button class="btn ghost sm icon" id="canvasRefreshPreviewBtn" title="تحديث" aria-label="تحديث">🔄</button>
+            <button class="btn ghost sm icon" id="canvasExportBtn" title="تصدير" aria-label="تصدير">📤</button>
           </div>
 
           <div class="split">
@@ -442,8 +442,8 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
         <div class="page" id="page-files">
           <div class="toolbar">
             <input id="filePicker" type="file" multiple hidden accept=".pdf,.docx,.txt,.md,.csv,.json,.xml,.html,.htm,.png,.jpg,.jpeg,.webp" />
-            <button class="btn" id="addFilesBtn">إضافة ملفات</button>
-            <button class="btn ghost" id="clearFilesBtn">مسح</button>
+            <button class="btn icon" id="addFilesBtn" title="إضافة ملفات" aria-label="إضافة ملفات">📎</button>
+            <button class="btn ghost icon" id="clearFilesBtn" title="مسح" aria-label="مسح">🗑️</button>
             <span class="hint">يدعم: PDF/DOCX/Text + Images (بدون OCR للصور).</span>
           </div>
           <div class="split">
@@ -464,9 +464,9 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
         <div class="page" id="page-downloads">
           <div class="toolbar">
             <input id="dlSearch" type="text" placeholder="بحث في التحميلات..." style="max-width:320px"/>
-            <button class="btn ghost" id="refreshDlBtn">تحديث</button>
-            <button class="btn ghost" id="pinFilterBtn">📌 المثبت</button>
-            <button class="btn danger" id="clearDlBtn">مسح</button>
+            <button class="btn ghost icon" id="refreshDlBtn" title="تحديث" aria-label="تحديث">🔄</button>
+            <button class="btn ghost icon" id="pinFilterBtn" title="المثبت" aria-label="المثبت">📌</button>
+            <button class="btn danger icon" id="clearDlBtn" title="مسح" aria-label="مسح">🗑️</button>
           </div>
           <div class="hint" style="padding:10px">أي ملف يتم إنشاؤه من الذكاء عبر قالب <span class="kbd">```file</span> يظهر هنا. يمكنك إعادة التسمية والتثبيت.</div>
           <div class="panel" style="margin:0 10px 10px; min-height:0; flex:1">
@@ -477,9 +477,9 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
         <!-- PROJECTS -->
         <div class="page" id="page-projects">
           <div class="toolbar">
-            <button class="btn" id="newProjectBtn">مشروع جديد</button>
-            <button class="btn ghost" id="renameProjectBtn">إعادة تسمية</button>
-            <button class="btn danger" id="deleteProjectBtn">حذف</button>
+            <button class="btn icon" id="newProjectBtn" title="مشروع جديد" aria-label="مشروع جديد">✚</button>
+            <button class="btn ghost icon" id="renameProjectBtn" title="إعادة تسمية" aria-label="إعادة تسمية">✏️</button>
+            <button class="btn danger icon" id="deleteProjectBtn" title="حذف" aria-label="حذف">🗑️</button>
           </div>
           <div class="panel" style="margin:10px; min-height:0; flex:1">
             <div class="head"><span>المشاريع</span><span class="hint">محادثات + كانفس + ملفات + إعدادات</span></div>
@@ -505,9 +505,9 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
                 <option value="action_items">📌 Action Items → File</option>
                 <option value="canvas_app">🧩 Canvas → Build HTML App</option>
               </select>
-              <button class="btn sm" id="workflowRunBtn" type="button">تشغيل</button>
-              <button class="btn ghost sm" id="workflowLoadBtn" type="button">تحميل القالب</button>
-              <button class="btn ghost sm" id="workflowClearLogBtn" type="button">مسح السجل</button>
+              <button class="btn sm icon" id="workflowRunBtn" type="button" title="تشغيل" aria-label="تشغيل">▶</button>
+              <button class="btn ghost sm icon" id="workflowLoadBtn" type="button" title="تحميل القالب" aria-label="تحميل القالب">📥</button>
+              <button class="btn ghost sm icon" id="workflowClearLogBtn" type="button" title="مسح السجل" aria-label="مسح السجل">🗑️</button>
             </div>
             <div class="row" style="margin-top:10px">
               <textarea id="workflowEditor" rows="8" placeholder='Pipeline JSON (اختياري)...' style="width:100%"></textarea>
@@ -523,8 +523,8 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
 <!-- SETTINGS -->
         <div class="page" id="page-settings">
           <div class="toolbar">
-            <button class="btn dark" id="saveSettingsBtn">حفظ</button>
-            <button class="btn ghost" id="resetSettingsBtn">إعادة ضبط</button>
+            <button class="btn dark icon" id="saveSettingsBtn" title="حفظ" aria-label="حفظ">💾</button>
+            <button class="btn ghost icon" id="resetSettingsBtn" title="إعادة ضبط" aria-label="إعادة ضبط">↺</button>
           </div>
           <div class="panel" style="margin:10px; min-height:0; flex:1">
             <div class="head"><span>الإعدادات</span><span class="hint">BYOK + مزودات</span></div>
@@ -611,8 +611,8 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
               <div class="row" style="margin-top:10px">
                 <div class="col">
                   <label class="hint">Model Hub Cache</label>
-                  <button class="btn ghost" id="refreshModelsBtn">تحديث موديلات OpenRouter</button>
-                  <button class="btn ghost" id="clearModelsCacheBtn">مسح الكاش</button>
+                  <button class="btn ghost icon" id="refreshModelsBtn" title="تحديث موديلات OpenRouter" aria-label="تحديث موديلات OpenRouter">🔄</button>
+                  <button class="btn ghost icon" id="clearModelsCacheBtn" title="مسح الكاش" aria-label="مسح الكاش">🗑️</button>
                 </div>
                 <div class="col">
                   <label class="hint">Streaming Default</label>
@@ -638,9 +638,9 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       <div class="head">
         <div style="font-weight:1000">Model Hub</div>
         <div class="row" style="margin:0; align-items:center">
-          <button class="btn ghost sm" id="modelFavOnlyBtn">⭐ المفضلة</button>
-          <button class="btn ghost sm" id="modelRefreshBtn">تحديث</button>
-          <button class="btn ghost sm" id="modelModalClose">✕</button>
+          <button class="btn ghost sm icon" id="modelFavOnlyBtn" title="المفضلة" aria-label="المفضلة">⭐</button>
+          <button class="btn ghost sm icon" id="modelRefreshBtn" title="تحديث" aria-label="تحديث">🔄</button>
+          <button class="btn ghost sm icon" id="modelModalClose" title="إغلاق" aria-label="إغلاق">✕</button>
         </div>
       </div>
       <div class="body">
