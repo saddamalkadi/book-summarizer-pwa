@@ -253,6 +253,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
         <button class="navbtn" data-page="knowledge"><span>🧠 المعرفة (KB)</span><span class="meta" id="navKbMeta">—</span></button>
         <button class="navbtn" data-page="canvas"><span>📝 كانفس</span><span class="meta" id="navCanvasMeta">—</span></button>
         <button class="navbtn" data-page="files"><span>📎 الملفات</span><span class="meta" id="navFilesMeta">—</span></button>
+        <button class="navbtn" data-page="transcription"><span>🧾 التفريغ النصي</span><span class="meta" id="navTransMeta">—</span></button>
         <button class="navbtn" data-page="workflows"><span>⚡ Workflows</span><span class="meta" id="navWorkMeta">—</span></button>
         <button class="navbtn" data-page="downloads"><span>⬇️ التحميلات</span><span class="meta" id="navDlMeta">—</span></button>
         <button class="navbtn" data-page="projects"><span>🗂️ المشاريع</span><span class="meta" id="navProjMeta">—</span></button>
@@ -486,6 +487,37 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
               <div class="head"><span>سياق نصّي</span><span class="hint">يُرسل للمحادثة</span></div>
               <div class="body" style="padding:0">
                 <textarea id="filesText" style="height:100%; min-height:60vh; border:0; border-radius:0; background:#fbfcff; padding:12px;"></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TRANSCRIPTION -->
+        <div class="page" id="page-transcription">
+          <div class="toolbar">
+            <input id="transcribePdfPicker" type="file" hidden accept=".pdf,application/pdf" />
+            <button class="btn icon" id="transcribePickBtn" title="اختيار PDF" aria-label="اختيار PDF">📄</button>
+            <button class="btn ghost icon" id="transcribeExtractBtn" title="استخراج نص" aria-label="استخراج نص">🧠</button>
+            <button class="btn dark icon" id="transcribeConvertBtn" title="تحويل إلى DOCX" aria-label="تحويل إلى DOCX">📝</button>
+            <span class="hint" id="transcribeFileName">لم يتم اختيار ملف بعد</span>
+          </div>
+          <div class="split">
+            <div class="panel">
+              <div class="head"><span>النص المستخرج (AI + OCR)</span><span class="hint" id="transcribeStats">جاهز</span></div>
+              <div class="body" style="padding:0">
+                <textarea id="transcribeOutput" style="height:100%; min-height:60vh; border:0; border-radius:0; background:#fbfcff; padding:12px;" placeholder="سيظهر النص المستخرج هنا..."></textarea>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="head"><span>تحويل PDF إلى ملف قابل للتعديل</span><span class="hint">محافظة تنسيق (تجريبي)</span></div>
+              <div class="body">
+                <p class="hint" style="line-height:1.9">
+                  هذا القسم يحاول تحويل محتوى PDF مع الحفاظ على مواضع النصوص إلى تنسيق HTML قابل للتحرير، ثم تصديره إلى DOCX.
+                  للحصول على أفضل نتيجة استخدم ملفات PDF نصية واضحة، أما الملفات المصورة فسيُستخدم OCR متقدم لاستخراج النص.
+                </p>
+                <div class="tag">الخطوة 1: اختيار ملف PDF</div>
+                <div class="tag" style="margin-top:8px">الخطوة 2: استخراج نص ذكي</div>
+                <div class="tag" style="margin-top:8px">الخطوة 3: تنزيل DOCX قابل للتعديل</div>
               </div>
             </div>
           </div>
