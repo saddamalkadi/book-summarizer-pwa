@@ -126,10 +126,13 @@
     .tag{display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; border:1px solid rgba(10,20,60,0.10); background:rgba(10,20,60,0.04); font-weight:900; font-size:11px;}
 
     .topbar .row{display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px;}
-    .mainToolbar > *{flex:1 1 160px;}
+    .mainToolbar{display:flex; flex-direction:column; align-items:stretch; gap:8px;}
+    .mainToolbar .toolbar-strip{display:flex; align-items:center; gap:8px; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px;}
+    .mainToolbar .toolbar-strip > *{flex:0 0 auto;}
     .mainToolbar .btn.sm,.mainToolbar .pill,.mainToolbar input,.mainToolbar select{min-height:38px;}
-    .mainToolbar #provider{flex:1 1 180px;}
-    .mainToolbar #baseUrl,.mainToolbar #model{flex:2 1 260px;}
+    .mainToolbar #provider{min-width:170px;}
+    .mainToolbar #baseUrl,.mainToolbar #model{min-width:240px;}
+    .mainToolbar #promptSelect,.mainToolbar #agentTaskTemplate{min-width:220px;}
     .chatbar{flex-wrap:wrap; align-items:center;}
     .chatbar input{min-width:220px;}
     @media (prefers-reduced-motion: reduce){
@@ -153,7 +156,7 @@
       .nav{flex-direction:column; overflow-x:hidden; overflow-y:auto; padding:2px 2px 8px; scrollbar-width:none;}
       .nav::-webkit-scrollbar{display:none;}
       .navbtn{min-width:0;}
-      .mainToolbar > *{flex:1 1 100%; max-width:100% !important;}
+      .mainToolbar .toolbar-strip{flex-wrap:nowrap; overflow-x:auto;}
       .chatbar input{min-width:100%;}
     }
 
@@ -277,52 +280,58 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
           </div>
 
 <div class="toolbar mainToolbar">
-            <select id="provider" class="pill" style="max-width:220px">
-              <option value="openrouter">OpenRouter</option>
-              <option value="openai">OpenAI</option>
-              <option value="gemini">Gemini</option>
-            </select>
-            <input id="baseUrl" type="text" value="https://openrouter.ai/api/v1" style="max-width:420px" />
-            <input id="model" type="text" value="openai/gpt-4o-mini" style="max-width:420px" />
-            <button class="btn ghost sm icon" id="pickModelBtn" title="الموديلات" aria-label="الموديلات">🧩</button>
+            <div class="toolbar-strip">
+              <select id="provider" class="pill" style="max-width:220px">
+                <option value="openrouter">OpenRouter</option>
+                <option value="openai">OpenAI</option>
+                <option value="gemini">Gemini</option>
+              </select>
+              <input id="baseUrl" type="text" value="https://openrouter.ai/api/v1" style="max-width:420px" />
+              <input id="model" type="text" value="openai/gpt-4o-mini" style="max-width:420px" />
+              <button class="btn ghost sm icon" id="pickModelBtn" title="الموديلات" aria-label="الموديلات">🧩</button>
+            </div>
 
-            <select id="promptSelect" class="pill" style="max-width:260px">
-              <option value="">قوالب…</option>
-              <option value="report_ar">📄 تقرير احترافي</option>
-              <option value="email_ar">✉️ بريد رسمي</option>
-              <option value="policy_ar">📌 سياسة/إجراء</option>
-              <option value="analysis_ar">📊 تحليل + توصيات</option>
-              <option value="json_schema">🧩 JSON منظم</option>
-            </select>
+            <div class="toolbar-strip">
+              <select id="promptSelect" class="pill" style="max-width:260px">
+                <option value="">قوالب…</option>
+                <option value="report_ar">📄 تقرير احترافي</option>
+                <option value="email_ar">✉️ بريد رسمي</option>
+                <option value="policy_ar">📌 سياسة/إجراء</option>
+                <option value="analysis_ar">📊 تحليل + توصيات</option>
+                <option value="json_schema">🧩 JSON منظم</option>
+              </select>
 
-            <label class="pill" style="display:flex; align-items:center; gap:8px; user-select:none;">
-              <input type="checkbox" id="streamToggle" />
-              Streaming
-            </label>
+              <label class="pill" style="display:flex; align-items:center; gap:8px; user-select:none;">
+                <input type="checkbox" id="streamToggle" />
+                Streaming
+              </label>
 
-            <label class="pill" style="display:flex; align-items:center; gap:8px; user-select:none;">
-              <input type="checkbox" id="ragToggle" />
-              RAG
-            </label>
+              <label class="pill" style="display:flex; align-items:center; gap:8px; user-select:none;">
+                <input type="checkbox" id="ragToggle" />
+                RAG
+              </label>
 
-            <label class="pill" style="display:flex; align-items:center; gap:8px; user-select:none;">
-              <input type="checkbox" id="toolsToggle" />
-              Tools
-            </label>
+              <label class="pill" style="display:flex; align-items:center; gap:8px; user-select:none;">
+                <input type="checkbox" id="toolsToggle" />
+                Tools
+              </label>
 
-            <button class="btn ghost sm icon" id="researchBtn" type="button" title="بحث تفصيلي متعدد الخطوات" aria-label="بحث تفصيلي">🧪</button>
-            <button class="btn ghost sm icon" id="deepSearchToggleBtn" type="button" title="تشغيل/إيقاف البحث العميق" aria-label="البحث العميق">🔬</button>
-            <select id="agentTaskTemplate" class="pill" style="max-width:260px">
-              <option value="">🤖 مهمة وكيل…</option>
-              <option value="site_login_project">🌐 دخول موقع + إنشاء مشروع/حساب</option>
-              <option value="excel_process">📊 معالجة ملف Excel</option>
-              <option value="web_task_plan">🧭 تنفيذ مهمة ويب خطوة بخطوة</option>
-            </select>
-            <button class="btn ghost sm icon" id="agentTaskApplyBtn" type="button" title="إدراج قالب مهمة الوكيل" aria-label="إدراج مهمة">➕</button>
-            <button class="btn ghost sm icon" id="scrollTopBtn" type="button" title="الانتقال للأعلى" aria-label="للأعلى">⬆️</button>
-            <button class="btn ghost sm icon" id="scrollBottomBtn" type="button" title="الانتقال للأسفل" aria-label="للأسفل">⬇️</button>
-            <button class="btn ghost sm icon" id="clearChatBtn" type="button" title="مسح الدردشة الحالية" aria-label="مسح الدردشة">🗑️</button>
-<button class="btn ghost sm icon" id="chatToolbarCollapseBtn" type="button" title="طي الأدوات" aria-label="طي الأدوات">▾</button>
+              <button class="btn ghost sm icon" id="researchBtn" type="button" title="بحث تفصيلي متعدد الخطوات" aria-label="بحث تفصيلي">🧪</button>
+              <button class="btn ghost sm icon" id="deepSearchToggleBtn" type="button" title="تشغيل/إيقاف البحث العميق" aria-label="البحث العميق">🔬</button>
+              <select id="agentTaskTemplate" class="pill" style="max-width:260px">
+                <option value="">🤖 مهمة وكيل…</option>
+                <option value="site_login_project">🌐 دخول موقع + إنشاء مشروع/حساب</option>
+                <option value="excel_process">📊 معالجة ملف Excel</option>
+                <option value="web_task_plan">🧭 تنفيذ مهمة ويب خطوة بخطوة</option>
+              </select>
+            </div>
+            <div class="toolbar-strip">
+              <button class="btn ghost sm icon" id="agentTaskApplyBtn" type="button" title="إدراج قالب مهمة الوكيل" aria-label="إدراج مهمة">➕</button>
+              <button class="btn ghost sm icon" id="scrollTopBtn" type="button" title="الانتقال للأعلى" aria-label="للأعلى">⬆️</button>
+              <button class="btn ghost sm icon" id="scrollBottomBtn" type="button" title="الانتقال للأسفل" aria-label="للأسفل">⬇️</button>
+              <button class="btn ghost sm icon" id="clearChatBtn" type="button" title="مسح الدردشة الحالية" aria-label="مسح الدردشة">🗑️</button>
+              <button class="btn ghost sm icon" id="chatToolbarCollapseBtn" type="button" title="طي الأدوات" aria-label="طي الأدوات">▾</button>
+            </div>
           </div>
 
           <div class="chatlog" id="chatLog"></div>
