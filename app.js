@@ -587,6 +587,74 @@ function newThread(){
     $('promptSelect').value = '';
   }
 
+  const AGENT_TASK_TEMPLATES = {
+    site_login_project: `أنت تعمل الآن في "وضع الوكيل لتنفيذ المهام".
+
+المهمة: الدخول إلى موقع وتنفيذ إجراء (إنشاء مشروع أو حساب).
+
+بيانات الإدخال:
+- رابط الموقع: 
+- نوع العملية: (تسجيل دخول / إنشاء حساب / إنشاء مشروع)
+- البريد أو اسم المستخدم: 
+- كلمة المرور أو طريقة المصادقة: 
+- تفاصيل المشروع أو الحساب المطلوب إنشاؤه: 
+
+المطلوب منك:
+1) اعرض "الخطة" بخطوات قصيرة وواضحة.
+2) اعرض "قائمة البيانات الناقصة" قبل التنفيذ.
+3) بعد اكتمال البيانات، اعرض "تنفيذ محاكى" خطوة بخطوة (Step Log).
+4) في النهاية أعرض "النتيجة" + "تحقق" + "إجراءات التراجع" إن لزم.
+5) لا تعرض أي بيانات حساسة كاملة؛ أخفِها جزئيًا.
+`,
+    excel_process: `أنت تعمل الآن في "وضع الوكيل لمعالجة ملف Excel".
+
+المهمة: تحليل/تنظيف/تحويل ملف Excel وإجراء العمليات المطلوبة.
+
+المدخلات:
+- وصف الملف (أو ارفع الملف/ألصق عينة CSV):
+- الأوراق المطلوبة:
+- الأعمدة المهمة:
+- العمليات المطلوبة (مثال: حذف التكرار، توحيد التاريخ، Pivot، إجماليات، معادلات):
+
+المطلوب منك:
+1) فهم بنية البيانات وذكر الافتراضات.
+2) اقتراح خطة معالجة آمنة قبل التطبيق.
+3) إنتاج جدول "قبل/بعد" للتغييرات.
+4) تقديم صيغ Excel اللازمة (إن وجدت).
+5) إنشاء مخرجات نهائية: ملخص تنفيذي + قائمة تحقق جودة البيانات.
+`,
+    web_task_plan: `وضع الوكيل: تنفيذ مهمة ويب متعددة الخطوات.
+
+المطلوب:
+- حلل الطلب.
+- أنشئ خطة تنفيذ من 3-7 خطوات.
+- لكل خطوة: الهدف، المدخلات، المخرجات، معيار النجاح.
+- نفّذ بشكل محاكى (Execution Log).
+- أعطِ نتيجة نهائية + مخاطر + الخطوة التالية.
+`
+  };
+
+  function applyAgentTaskTemplate(){
+    const sel = $('agentTaskTemplate');
+    if (!sel) return;
+    const key = sel.value;
+    if (!key || !AGENT_TASK_TEMPLATES[key]) return;
+    setAgent(true);
+    refreshModeButtons();
+    const cur = String($('chatInput')?.value || '').trim();
+    $('chatInput').value = (cur ? (cur + '\n\n') : '') + AGENT_TASK_TEMPLATES[key];
+    $('chatInput').focus();
+    toast('🤖 تم إدراج مهمة الوكيل');
+    sel.value = '';
+  }
+
+  function scrollChat(direction){
+    const log = $('chatLog');
+    if (!log) return;
+    const top = direction === 'top';
+    log.scrollTo({ top: top ? 0 : log.scrollHeight, behavior: 'smooth' });
+  }
+
   // ---------------- Files ----------------
   function loadFiles(pid){ return loadJSON(KEYS.files(pid), []) || []; }
   function saveFiles(pid, arr){ saveJSON(KEYS.files(pid), arr); }
@@ -2418,6 +2486,10 @@ $('chatToolbarExpandBtn')?.addEventListener('click', () => {
     // New/Clear chat shortcuts in toolbar
     $('newChatBtn') && $('newChatBtn').addEventListener('click', () => { newThread(); setActiveNav('chat'); });
     $('clearChatBtn') && $('clearChatBtn').addEventListener('click', clearCurrentChat);
+    $('agentTaskApplyBtn') && $('agentTaskApplyBtn').addEventListener('click', applyAgentTaskTemplate);
+    $('agentTaskTemplate') && $('agentTaskTemplate').addEventListener('change', applyAgentTaskTemplate);
+    $('scrollTopBtn') && $('scrollTopBtn').addEventListener('click', () => scrollChat('top'));
+    $('scrollBottomBtn') && $('scrollBottomBtn').addEventListener('click', () => scrollChat('bottom'));
 
     // Deep Search toggle (send = Research)
     $('deepSearchToggleBtn') && $('deepSearchToggleBtn').addEventListener('click', () => {
