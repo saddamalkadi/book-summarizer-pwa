@@ -772,6 +772,67 @@ async function fileToText(file){
     return String(res?.data?.text || '').trim();
   }
 
+  async function renderPdfPageToDataUrl(page, scale=2){
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently:true });
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    return canvas.toDataURL('image/png', 0.92);
+  }
+
+  async function extractTextFromPdfSmart(file, opts={}){
+    const { onProgress } = opts;
+    if (!window.pdfjsLib) throw new Error('pdf.js غير متاح');
+    const pdfjsLib = window.pdfjsLib;
+    try{ pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }catch(_){ }
+
+    const ab = await file.arrayBuffer();
+    const doc = await pdfjsLib.getDocument({ data: ab }).promise;
+    let out = [];
+
+    for (let p=1; p<=doc.numPages; p++){
+      const page = await doc.getPage(p);
+      const content = await page.getTextContent();
+      const strings = (content.items||[]).map(it => String(it?.str || '').trim()).filter(Boolean);
+      let pageText = strings.join(' ').replace(/\s+/g, ' ').trim();
+
+      if (!pageText || pageText.length < 25){
+        const dataUrl = await renderPdfPageToDataUrl(page, 2);
+        const ocrText = await ocrDataUrl(dataUrl, 'ara+eng');
+        if (ocrText) pageText = ocrText;
+      }
+
+      if (pageText) out.push(`[Page ${p}]\n${pageText}`);
+      if (typeof onProgress === 'function') onProgress(p, doc.numPages, !!pageText);
+    }
+
+    return out.join('\n\n').trim();
+  }
+
+  async function convertPdfToEditableDocx(file, opts={}){
+    const { onProgress } = opts;
+    const text = await extractTextFromPdfSmart(file, { onProgress });
+    const title = String(file?.name || 'document').replace(/\.pdf$/i, '');
+    const sections = text
+      .split(/\n\n(?=\[Page\s+\d+\])/)
+      .filter(Boolean)
+      .map((chunk) => {
+        const marker = (chunk.match(/^\[Page\s+\d+\]/) || [''])[0];
+        const body = chunk.replace(/^\[Page\s+\d+\]\n?/, '');
+        return `<section class="page"><div class="marker">${escapeHtml(marker)}</div><div style="white-space:pre-wrap">${escapeHtml(body)}</div></section>`;
+      })
+      .join('');
+
+    const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8" /><title>${escapeHtml(title)}</title><style>body{font-family:Arial,sans-serif;line-height:1.8} .page{margin:0 0 18px 0;padding:0 0 12px 0;border-bottom:1px dashed #cfd5e6;} .marker{font-size:12px;color:#6a738f;margin-bottom:6px}</style></head><body>${sections}</body></html>`;
+
+    const fn = window.htmlToDocx || window.HTMLtoDOCX || null;
+    if (!fn) throw new Error('محول DOCX غير متاح');
+    const blob = await Promise.resolve(fn(html));
+    return { text, blob, fileName: `${title || 'converted'}.docx` };
+  }
+
   async function fileToTextSmart(file){
     const name = (file?.name || '').toLowerCase();
     const type = (file?.type || '').toLowerCase();
@@ -2317,7 +2378,7 @@ let pinOnly = false;
   function setActiveNav(page){
     document.querySelectorAll('.navbtn').forEach(b => b.classList.toggle('active', b.dataset.page === page));
     document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === `page-${page}`));
-    const titles = { chat:'الدردشة', knowledge:'المعرفة (KB)', canvas:'كانفس', files:'الملفات', workflows:'Workflows', downloads:'التحميلات', projects:'المشاريع', settings:'الإعدادات' };
+    const titles = { chat:'الدردشة', knowledge:'المعرفة (KB)', canvas:'كانفس', files:'الملفات', transcription:'التفريغ النصي', workflows:'Workflows', downloads:'التحميلات', projects:'المشاريع', settings:'الإعدادات' };
     $('topTitle').textContent = titles[page] || 'AI Studio';
   }
 
@@ -2327,6 +2388,7 @@ let pinOnly = false;
     $('navChatMeta').textContent = String((th.messages||[]).length);
     $('navCanvasMeta').textContent = String(loadCanvas(pid).length);
     $('navFilesMeta').textContent = String(loadFiles(pid).length);
+    $('navTransMeta') && ($('navTransMeta').textContent = 'PDF');
     $('navDlMeta').textContent = String(loadDownloads().length);
     $('navProjMeta').textContent = String(loadProjects().length);
     $('navWorkMeta') && ($('navWorkMeta').textContent = '4');
@@ -2751,6 +2813,52 @@ $('sendBtn').addEventListener('click', sendMessage);
       renderFiles();
       refreshNavMeta();
       toast('✅ تم مسح الملفات');
+    });
+
+
+    // transcription
+    let transcribeSelectedFile = null;
+    $('transcribePickBtn')?.addEventListener('click', () => $('transcribePdfPicker')?.click());
+    $('transcribePdfPicker')?.addEventListener('change', (e) => {
+      const f = e.target?.files?.[0] || null;
+      transcribeSelectedFile = f;
+      $('transcribeFileName').textContent = f ? `الملف: ${f.name}` : 'لم يتم اختيار ملف بعد';
+      $('transcribeStats').textContent = f ? 'جاهز للاستخراج' : 'جاهز';
+    });
+    $('transcribeExtractBtn')?.addEventListener('click', async () => {
+      if (!transcribeSelectedFile) return toast('⚠️ اختر ملف PDF أولاً');
+      try{
+        showStatus('استخراج النص من PDF…', true);
+        $('transcribeStats').textContent = 'جاري التحليل...';
+        const text = await extractTextFromPdfSmart(transcribeSelectedFile, {
+          onProgress: (p, total) => { $('transcribeStats').textContent = `صفحة ${p}/${total}`; }
+        });
+        $('transcribeOutput').value = text || '';
+        showStatus('', false);
+        $('transcribeStats').textContent = text ? `تم استخراج ${text.length} حرف` : 'لم يتم العثور على نص';
+        toast(text ? '✅ تم استخراج النص' : '⚠️ لم يتم العثور على نص واضح');
+      }catch(e){
+        showStatus(`❌ فشل استخراج النص:
+${e?.message||e}`, false);
+      }
+    });
+    $('transcribeConvertBtn')?.addEventListener('click', async () => {
+      if (!transcribeSelectedFile) return toast('⚠️ اختر ملف PDF أولاً');
+      try{
+        showStatus('تحويل PDF إلى DOCX قابل للتعديل…', true);
+        $('transcribeStats').textContent = 'جاري التحويل...';
+        const result = await convertPdfToEditableDocx(transcribeSelectedFile, {
+          onProgress: (p, total) => { $('transcribeStats').textContent = `تحويل صفحة ${p}/${total}`; }
+        });
+        if ($('transcribeOutput') && result?.text) $('transcribeOutput').value = result.text;
+        downloadBlob(result.fileName, result.blob);
+        showStatus('', false);
+        $('transcribeStats').textContent = 'اكتمل التحويل';
+        toast('⬇️ تم تنزيل ملف DOCX قابل للتعديل');
+      }catch(e){
+        showStatus(`❌ فشل التحويل:
+${e?.message||e}`, false);
+      }
     });
 
     // downloads
