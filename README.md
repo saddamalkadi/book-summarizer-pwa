@@ -75,3 +75,12 @@ HOST=0.0.0.0 PORT=9090 node server.mjs
 - تحسين OCR: اعتماد لغة OCR قابلة للتخصيص من الإعدادات (`ara+eng` افتراضيًا) مع fallback تلقائي.
 - إصلاح DOCX: توحيد تحويل ناتج html-to-docx إلى Blob قبل التنزيل لتفادي فشل التصدير في بعض المتصفحات.
 - إضافة: دعم تحويل PDF→DOCX عبر CloudConvert Worker Endpoint اختياري من الإعدادات (بديل للتحويل المحلي).
+
+## إعداد bspro-api.tntntt830.workers.dev
+تم تجهيز الإعدادات الافتراضية داخل التطبيق للعمل مباشرة مع بوابة:
+- Gateway URL: `https://bspro-api.tntntt830.workers.dev`
+- Cloud PDF→Word Endpoint: `https://bspro-api.tntntt830.workers.dev/convert/pdf-to-docx`
+- Cloud OCR Endpoint: `https://bspro-api.tntntt830.workers.dev/ocr`
+- Auth Mode الافتراضي: `gateway`
+
+إذا كان الـWorker يتطلب حماية إضافية، ضع قيمة **Gateway Client Token** من صفحة الإعدادات.

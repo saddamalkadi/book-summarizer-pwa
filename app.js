@@ -56,13 +56,13 @@
     rag: false,
     toolsEnabled: false,
 
-    authMode: 'browser',          // browser | gateway
-    gatewayUrl: '',               // https://your-worker.workers.dev
+    authMode: 'gateway',          // browser | gateway
+    gatewayUrl: 'https://bspro-api.tntntt830.workers.dev',
     gatewayToken: '',             // optional extra protection
-    cloudConvertEndpoint: '',     // primary worker endpoint for PDF->DOCX
+    cloudConvertEndpoint: 'https://bspro-api.tntntt830.workers.dev/convert/pdf-to-docx',
     cloudConvertFallbackEndpoint: '',
     cloudRetryMax: 2,
-    ocrCloudEndpoint: '',
+    ocrCloudEndpoint: 'https://bspro-api.tntntt830.workers.dev/ocr',
     ocrLang: 'ara+eng',
 
     orReferer: '',
