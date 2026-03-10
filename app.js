@@ -350,6 +350,18 @@ async function buildRagContextIfEnabled(userText){
     return normalizeUrl(s.replace(/^\/+((?:https?:)?\/\/)/i, '$1'));
   }
 
+  function buildEndpointCandidates(raw, paths=[]){
+    const base = normalizeEndpointUrl(raw);
+    if (!base) return [];
+    const out = [base];
+    for (const p of paths){
+      const path = String(p || '').trim();
+      if (!path) continue;
+      out.push(`${base}/${path.replace(/^\/+/, '')}`);
+    }
+    return [...new Set(out)];
+  }
+
   function arrayBufferToBase64(ab){
     const bytes = new Uint8Array(ab || new ArrayBuffer(0));
     let binary = '';
@@ -840,22 +852,50 @@ async function fileToText(file){
 
   async function cloudOcrDataUrl(dataUrl, meta={}){
     const settings = getSettings();
-    const endpoint = String(settings.ocrCloudEndpoint || '').trim();
-    if (!endpoint) return '';
+    const endpoints = buildEndpointCandidates(settings.ocrCloudEndpoint, ['ocr', 'ocr/image', 'api/ocr']).filter(Boolean);
+    if (!endpoints.length) return '';
     const b64 = String(dataUrl || '').split(',')[1] || '';
     if (!b64) return '';
-    const r = await fetch(endpoint, {
-      method:'POST',
-      headers: { 'Content-Type':'application/json', ...buildAuthHeaders(settings) },
-      body: JSON.stringify({ imageBase64: b64, fileName: meta.fileName || 'page.png', page: meta.page || 1, lang: getOcrLang() })
-    });
-    if (!r.ok) return '';
-    const ct = (r.headers.get('content-type') || '').toLowerCase();
-    if (ct.includes('application/json')){
-      const j = await r.json();
-      return String(j?.text || j?.result || '').trim();
+    for (const endpoint of endpoints){
+      try{
+        const r = await fetch(endpoint, {
+          method:'POST',
+          headers: { 'Content-Type':'application/json', ...buildAuthHeaders(settings) },
+          body: JSON.stringify({ imageBase64: b64, fileName: meta.fileName || 'page.png', page: meta.page || 1, lang: getOcrLang() })
+        });
+        if (!r.ok) continue;
+        const ct = (r.headers.get('content-type') || '').toLowerCase();
+        if (ct.includes('application/json')){
+          const j = await r.json();
+          const txt = String(j?.text || j?.result || j?.ocrText || '').trim();
+          if (txt) return txt;
+          continue;
+        }
+        const txt = String(await r.text()).trim();
+        if (txt) return txt;
+      }catch(_){ }
     }
-    return String(await r.text()).trim();
+    return '';
+  }
+
+  function scoreArabicQuality(txt){
+    const s = String(txt || '').trim();
+    if (!s) return 0;
+    const letters = (s.match(/[\p{L}]/gu) || []).length;
+    if (!letters) return 0;
+    const arabic = (s.match(/[\u0600-\u06FF]/g) || []).length;
+    const weird = (s.match(/[\\|_~`^]/g) || []).length;
+    return (arabic / letters) - (weird / Math.max(letters, 1));
+  }
+
+  function needsArabicOcrFallback(text, lang){
+    const s = String(text || '').trim();
+    if (!s) return true;
+    const usedLang = String(lang || '').toLowerCase();
+    if (!usedLang.includes('ara')) return false;
+    const letters = (s.match(/[\p{L}]/gu) || []).length;
+    if (letters < 20) return true;
+    return scoreArabicQuality(s) < 0.2;
   }
 
   async function ocrDataUrl(dataUrl, lang, meta={}){
@@ -915,10 +955,12 @@ async function fileToText(file){
       const strings = (content.items||[]).map(it => String(it?.str || '').trim()).filter(Boolean);
       let pageText = strings.join(' ').replace(/\s+/g, ' ').trim();
 
-      if (!pageText || pageText.length < 25){
+      if (!pageText || pageText.length < 25 || needsArabicOcrFallback(pageText, getOcrLang())){
         const dataUrl = await renderPdfPageToDataUrl(page, 2);
         const ocrText = await ocrDataUrl(dataUrl, undefined, { fileName: file?.name || "document.pdf", page: p });
-        if (ocrText) pageText = ocrText;
+        if (ocrText){
+          if (!pageText || scoreArabicQuality(ocrText) >= scoreArabicQuality(pageText)) pageText = ocrText;
+        }
       }
 
       if (pageText) out.push(`[Page ${p}]\n${pageText}`);
@@ -952,7 +994,10 @@ async function fileToText(file){
 
   async function convertPdfToDocxByWorker(file){
     const settings = getSettings();
-    const endpoints = [normalizeEndpointUrl(settings.cloudConvertEndpoint), normalizeEndpointUrl(settings.cloudConvertFallbackEndpoint)].filter(Boolean);
+    const endpoints = [
+      ...buildEndpointCandidates(settings.cloudConvertEndpoint, ['convert/pdf-to-docx', 'pdf-to-docx', 'api/convert/pdf-to-docx']),
+      ...buildEndpointCandidates(settings.cloudConvertFallbackEndpoint, ['convert/pdf-to-docx', 'pdf-to-docx', 'api/convert/pdf-to-docx'])
+    ].filter(Boolean);
     if (!endpoints.length) throw new Error('Cloud PDF→Word endpoint غير مضبوط في الإعدادات');
     const tries = clamp(Number(settings.cloudRetryMax || 2), 1, 5);
     const ab = await file.arrayBuffer();
@@ -973,8 +1018,8 @@ async function fileToText(file){
           const ct = (r.headers.get('content-type') || '').toLowerCase();
           if (ct.includes('application/json')){
             const j = await r.json();
-            const b64 = String(j?.docxBase64 || '').trim();
-            if (!b64) throw new Error('استجابة تحويل سحابي غير صالحة');
+            const b64 = String(j?.docxBase64 || j?.fileBase64 || j?.data?.docxBase64 || '').trim();
+            if (!b64) throw new Error(String(j?.error || j?.message || 'استجابة تحويل سحابي غير صالحة'));
             const bin = decodeBase64Bytes(b64);
             return { blob: new Blob([bin], { type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), fileName: String(j?.fileName || file.name.replace(/\.pdf$/i, '.docx')) };
           }
@@ -1040,7 +1085,10 @@ async function fileToText(file){
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
     a.click();
+    a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 8000);
   }
 
