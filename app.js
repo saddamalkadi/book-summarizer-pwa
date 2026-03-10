@@ -817,6 +817,11 @@ async function fileToText(file){
     return (s.ocrLang || 'ara+eng').trim() || 'ara+eng';
   }
 
+  function isOcrEnabled(){
+    const toggle = $('ocrToggle') || $('useOcrToggle');
+    return toggle ? !!toggle.checked : true;
+  }
+
   async function preprocessImageDataUrl(dataUrl){
     return new Promise((resolve) => {
       try{
@@ -900,6 +905,7 @@ async function fileToText(file){
 
   async function ocrDataUrl(dataUrl, lang, meta={}){
     if (!dataUrl) return '';
+    if (!isOcrEnabled()) return '';
     if (!window.Tesseract) throw new Error('Tesseract غير متاح');
     const usedLang = (lang || getOcrLang() || 'ara+eng').trim();
     const enhanced = await preprocessImageDataUrl(dataUrl);
@@ -1000,7 +1006,7 @@ async function fileToText(file){
       let pageText = lines.map((l) => l.text).join('\n').trim();
       let method = 'native';
 
-      if (!pageText || pageText.length < 30 || needsArabicOcrFallback(pageText, getOcrLang())){
+      if (isOcrEnabled() && (!pageText || pageText.length < 30 || needsArabicOcrFallback(pageText, getOcrLang()))){
         const dataUrl = await renderPdfPageToDataUrl(page, 2);
         const ocrText = await ocrDataUrl(dataUrl, undefined, { fileName: file?.name || 'document.pdf', page: p });
         if (ocrText && (!pageText || ocrText.length > pageText.length || scoreArabicQuality(ocrText) >= scoreArabicQuality(pageText))){
@@ -3148,31 +3154,122 @@ $('sendBtn').addEventListener('click', sendMessage);
     // transcription
     let transcribeSelectedFile = null;
     let transcribeLastStructured = null;
+
+    const setTranscribeFile = (f) => {
+      transcribeSelectedFile = f || null;
+      transcribeLastStructured = null;
+      if ($('transcribeFileName')) $('transcribeFileName').textContent = f ? `الملف: ${f.name}` : 'لم يتم اختيار ملف بعد';
+      if ($('transcribeStats')) $('transcribeStats').textContent = f ? 'جاهز للاستخراج' : 'جاهز';
+    };
+    const updateTranscribeLiveStats = () => {
+      const txt = String($('transcribeOutput')?.value || '');
+      const chars = txt.length;
+      const words = (txt.trim().match(/\S+/g) || []).length;
+      const lines = txt ? txt.split(/\r?\n/).length : 0;
+      if ($('transcribeChars')) $('transcribeChars').textContent = String(chars);
+      if ($('transcribeWords')) $('transcribeWords').textContent = String(words);
+      if ($('transcribeLines')) $('transcribeLines').textContent = String(lines);
+    };
+
+    $('transcribeOutput')?.addEventListener('input', updateTranscribeLiveStats);
     $('transcribePickBtn')?.addEventListener('click', () => $('transcribePdfPicker')?.click());
     $('transcribePdfPicker')?.addEventListener('change', (e) => {
       const f = e.target?.files?.[0] || null;
-      transcribeSelectedFile = f;
-      transcribeLastStructured = null;
-      $('transcribeFileName').textContent = f ? `الملف: ${f.name}` : 'لم يتم اختيار ملف بعد';
-      $('transcribeStats').textContent = f ? 'جاهز للاستخراج الاستراتيجي' : 'جاهز';
+      setTranscribeFile(f);
     });
-    $('transcribeExtractBtn')?.addEventListener('click', async () => {
-      if (!transcribeSelectedFile) return toast('⚠️ اختر ملف PDF أولاً');
+
+    const drop = $('transcribeDropZone');
+    ['dragenter','dragover'].forEach((ev) => drop?.addEventListener(ev, (e) => {
+      e.preventDefault();
+      drop.style.borderColor = 'var(--accent)';
+    }));
+    ['dragleave','drop'].forEach((ev) => drop?.addEventListener(ev, (e) => {
+      e.preventDefault();
+      drop.style.borderColor = 'var(--line)';
+    }));
+    drop?.addEventListener('drop', (e) => {
+      const f = e.dataTransfer?.files?.[0] || null;
+      if (f) setTranscribeFile(f);
+    });
+
+    $('transcribePasteBtn')?.addEventListener('click', async () => {
       try{
-        showStatus('استخراج استراتيجي متعدد الطبقات من PDF…', true);
-        $('transcribeStats').textContent = 'جاري التحليل الاستراتيجي...';
-        const result = await extractPdfStrategic(transcribeSelectedFile, {
-          onProgress: (p, total, info) => { $('transcribeStats').textContent = `صفحة ${p}/${total} • ${info?.method || 'native'}`; }
-        });
-        transcribeLastStructured = result;
-        $('transcribeOutput').value = result?.text || '';
+        const items = await navigator.clipboard.read();
+        for (const it of items){
+          const t = (it.types || []).find((x) => x.startsWith('image/'));
+          if (!t) continue;
+          const blob = await it.getType(t);
+          const ext = t.split('/')[1] || 'png';
+          const file = new File([blob], `clipboard-${Date.now()}.${ext}`, { type: t });
+          setTranscribeFile(file);
+          toast('✅ تم لصق الصورة من الحافظة');
+          return;
+        }
+        toast('⚠️ لا توجد صورة في الحافظة');
+      }catch(e){
+        toast('⚠️ تعذر الوصول إلى الحافظة');
+      }
+    });
+
+    $('transcribeExtractBtn')?.addEventListener('click', async () => {
+      if (!transcribeSelectedFile) return toast('⚠️ اختر ملف PDF أو صورة أولاً');
+      try{
+        const f = transcribeSelectedFile;
+        const isPdf = /\.pdf$/i.test(String(f.name || '')) || String(f.type || '').includes('pdf');
+        showStatus('استخراج النص…', true);
+        $('transcribeStats').textContent = 'جاري الاستخراج...';
+        if (isPdf){
+          const result = await extractPdfStrategic(f, {
+            onProgress: (p, total, info) => { $('transcribeStats').textContent = `صفحة ${p}/${total} • ${info?.method || 'native'}`; }
+          });
+          transcribeLastStructured = result;
+          $('transcribeOutput').value = result?.text || '';
+          $('transcribeStats').textContent = `استخراج ${result.extractedPages}/${result.totalPages} صفحة • ${result.text.length} حرف`;
+        } else {
+          const txt = await fileToTextSmart(f);
+          $('transcribeOutput').value = txt || '';
+          $('transcribeStats').textContent = txt ? `استخراج صورة • ${txt.length} حرف` : 'لم يتم العثور على نص';
+        }
+        updateTranscribeLiveStats();
         showStatus('', false);
-        $('transcribeStats').textContent = `استخراج ${result.extractedPages}/${result.totalPages} صفحة • ${result.text.length} حرف`;
-        toast(result.text ? '✅ تم الاستخراج الكامل' : '⚠️ لم يتم العثور على نص واضح');
       }catch(e){
         showStatus(`❌ فشل استخراج النص:
 ${e?.message||e}`, false);
       }
+    });
+    $('transcribeCopyBtn')?.addEventListener('click', async () => {
+      const txt = String($('transcribeOutput')?.value || '').trim();
+      if (!txt) return toast('⚠️ لا يوجد نص لنسخه');
+      const ok = await copyToClipboard(txt);
+      toast(ok ? '✅ تم نسخ النص' : '⚠️ تعذر النسخ');
+    });
+    $('transcribeSaveArchiveBtn')?.addEventListener('click', () => {
+      const txt = String($('transcribeOutput')?.value || '').trim();
+      if (!txt) return toast('⚠️ لا يوجد نص للحفظ');
+      const dl = loadDownloads();
+      const name = `${String(transcribeSelectedFile?.name || 'ocr').replace(/\.[^\.]+$/,'')}-archive.txt`;
+      dl.unshift({ id: makeId('dl'), name, mime:'text/plain', encoding:'text', content: txt, createdAt: nowTs(), pinned:false });
+      saveDownloads(dl.slice(0, 120));
+      renderDownloads();
+      refreshNavMeta();
+      toast('✅ تم الحفظ في الأرشيف');
+    });
+    $('transcribeSendChatBtn')?.addEventListener('click', () => {
+      const txt = String($('transcribeOutput')?.value || '').trim();
+      if (!txt) return toast('⚠️ لا يوجد نص للإرسال');
+      $('chatInput').value = `لخّص النص التالي واذكر النقاط الرئيسية:
+
+${txt}`;
+      setActiveNav('chat');
+      $('chatInput').focus();
+      toast('✅ تم إرسال النص إلى الدردشة');
+    });
+    $('transcribeClearBtn')?.addEventListener('click', () => {
+      setTranscribeFile(null);
+      if ($('transcribeOutput')) $('transcribeOutput').value = '';
+      if ($('transcribeStats')) $('transcribeStats').textContent = 'جاهز';
+      updateTranscribeLiveStats();
+      toast('✅ تم المسح');
     });
     $('transcribeConvertBtn')?.addEventListener('click', async () => {
       if (!transcribeSelectedFile) return toast('⚠️ اختر ملف PDF أولاً');
@@ -3194,6 +3291,7 @@ ${e?.message||e}`, false);
         downloadBlob(result.fileName, result.blob);
         showStatus('', false);
         $('transcribeStats').textContent = 'اكتمل التحويل';
+        updateTranscribeLiveStats();
         toast('⬇️ تم تنزيل ملف DOCX قابل للتعديل');
       }catch(e){
         showStatus(`❌ فشل التحويل:
@@ -3222,12 +3320,14 @@ ${e?.message||e}`, false);
         if (polished) $('transcribeOutput').value = polished.trim();
         showStatus('', false);
         $('transcribeStats').textContent = polished ? `تم التحسين (${polished.length} حرف)` : 'لم يرجع النص من المزود';
+        updateTranscribeLiveStats();
         toast(polished ? '☁️ تم التحسين السحابي' : '⚠️ لم يتم إرجاع نص');
       }catch(e){
         showStatus(`❌ فشل التحسين السحابي:
 ${e?.message||e}`, false);
       }
     });
+    updateTranscribeLiveStats();
 
     // downloads
     $('refreshDlBtn').addEventListener('click', renderDownloads);
