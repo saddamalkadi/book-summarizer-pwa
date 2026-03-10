@@ -939,7 +939,50 @@ async function fileToText(file){
     return canvas.toDataURL('image/png', 0.92);
   }
 
-  async function extractTextFromPdfSmart(file, opts={}){
+  function buildLinesFromTextItems(items){
+    const list = (items || []).map((it) => {
+      const text = String(it?.str || '').trim();
+      if (!text) return null;
+      const t = Array.isArray(it?.transform) ? it.transform : [1,0,0,1,0,0];
+      return {
+        text,
+        x: Number(t[4] || 0),
+        y: Number(t[5] || 0),
+        w: Number(it?.width || 0),
+        h: Math.abs(Number(it?.height || t[3] || 0))
+      };
+    }).filter(Boolean).sort((a,b) => Math.abs(a.y - b.y) < 0.1 ? a.x - b.x : b.y - a.y);
+
+    const lines = [];
+    for (const it of list){
+      const current = lines[lines.length - 1];
+      const threshold = Math.max(3, Math.min(8, it.h * 0.65 || 4));
+      if (current && Math.abs(current.y - it.y) <= threshold){
+        current.items.push(it);
+        current.y = (current.y + it.y) / 2;
+      } else {
+        lines.push({ y: it.y, items: [it] });
+      }
+    }
+
+    return lines.map((line) => {
+      const parts = line.items.sort((a,b)=>a.x-b.x);
+      const joined = parts.map((p, idx) => {
+        if (!idx) return p.text;
+        const prev = parts[idx - 1];
+        const gap = p.x - (prev.x + prev.w);
+        return `${gap > 4 ? ' ' : ''}${p.text}`;
+      }).join('').replace(/\s+/g, ' ').trim();
+      return {
+        y: line.y,
+        text: joined,
+        xMin: Math.min(...parts.map(p=>p.x)),
+        xMax: Math.max(...parts.map(p=>p.x+p.w))
+      };
+    }).filter((l) => l.text);
+  }
+
+  async function extractPdfStrategic(file, opts={}){
     const { onProgress } = opts;
     if (!window.pdfjsLib) throw new Error('pdf.js غير متاح');
     const pdfjsLib = window.pdfjsLib;
@@ -947,49 +990,66 @@ async function fileToText(file){
 
     const ab = await file.arrayBuffer();
     const doc = await pdfjsLib.getDocument({ data: ab }).promise;
-    let out = [];
+    const pages = [];
 
     for (let p=1; p<=doc.numPages; p++){
       const page = await doc.getPage(p);
+      const viewport = page.getViewport({ scale: 1.4 });
       const content = await page.getTextContent();
-      const strings = (content.items||[]).map(it => String(it?.str || '').trim()).filter(Boolean);
-      let pageText = strings.join(' ').replace(/\s+/g, ' ').trim();
+      const lines = buildLinesFromTextItems(content.items || []);
+      let pageText = lines.map((l) => l.text).join('\n').trim();
+      let method = 'native';
 
-      if (!pageText || pageText.length < 25 || needsArabicOcrFallback(pageText, getOcrLang())){
+      if (!pageText || pageText.length < 30 || needsArabicOcrFallback(pageText, getOcrLang())){
         const dataUrl = await renderPdfPageToDataUrl(page, 2);
-        const ocrText = await ocrDataUrl(dataUrl, undefined, { fileName: file?.name || "document.pdf", page: p });
-        if (ocrText){
-          if (!pageText || scoreArabicQuality(ocrText) >= scoreArabicQuality(pageText)) pageText = ocrText;
+        const ocrText = await ocrDataUrl(dataUrl, undefined, { fileName: file?.name || 'document.pdf', page: p });
+        if (ocrText && (!pageText || ocrText.length > pageText.length || scoreArabicQuality(ocrText) >= scoreArabicQuality(pageText))){
+          pageText = ocrText.trim();
+          method = 'ocr';
         }
       }
 
-      if (pageText) out.push(`[Page ${p}]\n${pageText}`);
-      if (typeof onProgress === 'function') onProgress(p, doc.numPages, !!pageText);
+      pages.push({
+        page: p,
+        width: viewport.width,
+        height: viewport.height,
+        method,
+        lines: method === 'native' ? lines : [{ y: viewport.height - 20, text: pageText, xMin: 0, xMax: viewport.width }],
+        text: pageText
+      });
+
+      if (typeof onProgress === 'function') onProgress(p, doc.numPages, { method, chars: pageText.length });
     }
 
-    return out.join('\n\n').trim();
+    const text = pages.map((pg) => `[Page ${pg.page}]\n${pg.text}`.trim()).join('\n\n').trim();
+    return { pages, text, totalPages: doc.numPages, extractedPages: pages.filter(p => !!p.text).length };
+  }
+
+  async function extractTextFromPdfSmart(file, opts={}){
+    const result = await extractPdfStrategic(file, opts);
+    return result.text;
   }
 
   async function convertPdfToEditableDocx(file, opts={}){
-    const { onProgress } = opts;
-    const text = await extractTextFromPdfSmart(file, { onProgress });
+    const structured = await extractPdfStrategic(file, opts);
     const title = String(file?.name || 'document').replace(/\.pdf$/i, '');
-    const sections = text
-      .split(/\n\n(?=\[Page\s+\d+\])/)
-      .filter(Boolean)
-      .map((chunk) => {
-        const marker = (chunk.match(/^\[Page\s+\d+\]/) || [''])[0];
-        const body = chunk.replace(/^\[Page\s+\d+\]\n?/, '');
-        return `<section class="page"><div class="marker">${escapeHtml(marker)}</div><div style="white-space:pre-wrap">${escapeHtml(body)}</div></section>`;
-      })
-      .join('');
 
-    const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8" /><title>${escapeHtml(title)}</title><style>body{font-family:Arial,sans-serif;line-height:1.8} .page{margin:0 0 18px 0;padding:0 0 12px 0;border-bottom:1px dashed #cfd5e6;} .marker{font-size:12px;color:#6a738f;margin-bottom:6px}</style></head><body>${sections}</body></html>`;
+    const sections = structured.pages.map((pg) => {
+      let prevY = null;
+      const body = (pg.lines || []).map((ln) => {
+        const topGap = prevY === null ? 0 : Math.max(0, (prevY - ln.y) * 0.45);
+        prevY = ln.y;
+        return `<div class="line" style="margin-top:${topGap.toFixed(2)}px">${escapeHtml(ln.text)}</div>`;
+      }).join('');
+      return `<section class="page"><div class="marker">Page ${pg.page} • ${pg.method.toUpperCase()}</div>${body}</section>`;
+    }).join('');
+
+    const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8" /><title>${escapeHtml(title)}</title><style>body{font-family:Arial,sans-serif;line-height:1.55} .page{margin:0 0 18px 0;padding:0 0 12px 0;border-bottom:1px dashed #cfd5e6;} .marker{font-size:12px;color:#6a738f;margin-bottom:8px} .line{white-space:pre-wrap}</style></head><body>${sections}</body></html>`;
 
     const fn = window.htmlToDocx || window.HTMLtoDOCX || null;
     if (!fn) throw new Error('محول DOCX غير متاح');
     const blob = toDocxBlob(await Promise.resolve(fn(html)));
-    return { text, blob, fileName: `${title || 'converted'}.docx` };
+    return { text: structured.text, structured, blob, fileName: `${title || 'converted'}.docx` };
   }
 
   async function convertPdfToDocxByWorker(file){
@@ -1074,6 +1134,28 @@ async function fileToText(file){
       return await ocrDataUrl(dataUrl, undefined, { fileName: file?.name || "image", page: 1 });
     }
     return await fileToText(file);
+  }
+
+  async function exportTranscriptionResult({ format='docx', text='', structured=null, fileBaseName='transcription' }){
+    const safeBase = String(fileBaseName || 'transcription').replace(/[^\w؀-ۿ\-\.]+/g, '_');
+    const cleanText = String(text || '').trim();
+    if (!cleanText && !structured) throw new Error('لا يوجد محتوى للتصدير');
+
+    if (format === 'txt'){
+      const out = cleanText || String(structured?.pages?.map(p => p?.text || '').join('\n\n') || '').trim();
+      return downloadBlob(`${safeBase}.txt`, new Blob([out], { type:'text/plain;charset=utf-8' }));
+    }
+
+    if (format === 'json'){
+      const payload = structured || { text: cleanText };
+      return downloadBlob(`${safeBase}.json`, new Blob([JSON.stringify(payload, null, 2)], { type:'application/json;charset=utf-8' }));
+    }
+
+    const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;line-height:1.9;white-space:pre-wrap}</style></head><body>${escapeHtml(cleanText)}</body></html>`;
+    const fn = window.htmlToDocx || window.HTMLtoDOCX;
+    if (!fn) throw new Error('محول DOCX غير متاح');
+    const blob = toDocxBlob(await Promise.resolve(fn(html)));
+    return downloadBlob(`${safeBase}.docx`, blob);
   }
 
   // ---------------- Downloads (```file blocks) ----------------
@@ -3065,25 +3147,28 @@ $('sendBtn').addEventListener('click', sendMessage);
 
     // transcription
     let transcribeSelectedFile = null;
+    let transcribeLastStructured = null;
     $('transcribePickBtn')?.addEventListener('click', () => $('transcribePdfPicker')?.click());
     $('transcribePdfPicker')?.addEventListener('change', (e) => {
       const f = e.target?.files?.[0] || null;
       transcribeSelectedFile = f;
+      transcribeLastStructured = null;
       $('transcribeFileName').textContent = f ? `الملف: ${f.name}` : 'لم يتم اختيار ملف بعد';
-      $('transcribeStats').textContent = f ? 'جاهز للاستخراج' : 'جاهز';
+      $('transcribeStats').textContent = f ? 'جاهز للاستخراج الاستراتيجي' : 'جاهز';
     });
     $('transcribeExtractBtn')?.addEventListener('click', async () => {
       if (!transcribeSelectedFile) return toast('⚠️ اختر ملف PDF أولاً');
       try{
-        showStatus('استخراج النص من PDF…', true);
-        $('transcribeStats').textContent = 'جاري التحليل...';
-        const text = await extractTextFromPdfSmart(transcribeSelectedFile, {
-          onProgress: (p, total) => { $('transcribeStats').textContent = `صفحة ${p}/${total}`; }
+        showStatus('استخراج استراتيجي متعدد الطبقات من PDF…', true);
+        $('transcribeStats').textContent = 'جاري التحليل الاستراتيجي...';
+        const result = await extractPdfStrategic(transcribeSelectedFile, {
+          onProgress: (p, total, info) => { $('transcribeStats').textContent = `صفحة ${p}/${total} • ${info?.method || 'native'}`; }
         });
-        $('transcribeOutput').value = text || '';
+        transcribeLastStructured = result;
+        $('transcribeOutput').value = result?.text || '';
         showStatus('', false);
-        $('transcribeStats').textContent = text ? `تم استخراج ${text.length} حرف` : 'لم يتم العثور على نص';
-        toast(text ? '✅ تم استخراج النص' : '⚠️ لم يتم العثور على نص واضح');
+        $('transcribeStats').textContent = `استخراج ${result.extractedPages}/${result.totalPages} صفحة • ${result.text.length} حرف`;
+        toast(result.text ? '✅ تم الاستخراج الكامل' : '⚠️ لم يتم العثور على نص واضح');
       }catch(e){
         showStatus(`❌ فشل استخراج النص:
 ${e?.message||e}`, false);
@@ -3092,7 +3177,7 @@ ${e?.message||e}`, false);
     $('transcribeConvertBtn')?.addEventListener('click', async () => {
       if (!transcribeSelectedFile) return toast('⚠️ اختر ملف PDF أولاً');
       try{
-        showStatus('تحويل PDF إلى DOCX قابل للتعديل…', true);
+        showStatus('تحويل PDF إلى DOCX احترافي قابل للتعديل…', true);
         $('transcribeStats').textContent = 'جاري التحويل...';
         const s = getSettings();
         let result = null;
@@ -3101,8 +3186,9 @@ ${e?.message||e}`, false);
           result = await convertPdfToDocxByWorker(transcribeSelectedFile);
         } else {
           result = await convertPdfToEditableDocx(transcribeSelectedFile, {
-            onProgress: (p, total) => { $('transcribeStats').textContent = `تحويل صفحة ${p}/${total}`; }
+            onProgress: (p, total, info) => { $('transcribeStats').textContent = `تحويل صفحة ${p}/${total} • ${info?.method || 'native'}`; }
           });
+          transcribeLastStructured = result?.structured || transcribeLastStructured;
           if ($('transcribeOutput') && result?.text) $('transcribeOutput').value = result.text;
         }
         downloadBlob(result.fileName, result.blob);
@@ -3116,14 +3202,12 @@ ${e?.message||e}`, false);
     });
     $('transcribeExportWordBtn')?.addEventListener('click', async () => {
       const txt = String($('transcribeOutput')?.value || '').trim();
-      if (!txt) return toast('⚠️ لا يوجد نص لتصديره');
+      if (!txt && !transcribeLastStructured) return toast('⚠️ لا يوجد محتوى لتصديره');
       try{
-        const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;line-height:1.9;white-space:pre-wrap}</style></head><body>${escapeHtml(txt)}</body></html>`;
-        const fn = window.htmlToDocx || window.HTMLtoDOCX;
-        if (!fn) throw new Error('محول DOCX غير متاح');
-        const blob = toDocxBlob(await Promise.resolve(fn(html)));
-        downloadBlob('ocr-export.docx', blob);
-        toast('✅ تم تصدير Word');
+        const format = String($('transcribeExportFormat')?.value || 'docx').toLowerCase();
+        const base = String(transcribeSelectedFile?.name || 'ocr-export').replace(/\.pdf$/i, '-extracted');
+        await exportTranscriptionResult({ format, text: txt, structured: transcribeLastStructured, fileBaseName: base });
+        toast(`✅ تم تصدير ${format.toUpperCase()}`);
       }catch(e){
         toast(`❌ ${e?.message || e}`);
       }
@@ -3140,7 +3224,8 @@ ${e?.message||e}`, false);
         $('transcribeStats').textContent = polished ? `تم التحسين (${polished.length} حرف)` : 'لم يرجع النص من المزود';
         toast(polished ? '☁️ تم التحسين السحابي' : '⚠️ لم يتم إرجاع نص');
       }catch(e){
-        showStatus(`❌ فشل التحسين السحابي:\n${e?.message||e}`, false);
+        showStatus(`❌ فشل التحسين السحابي:
+${e?.message||e}`, false);
       }
     });
 

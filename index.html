@@ -497,29 +497,35 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
           <div class="toolbar">
             <input id="transcribePdfPicker" type="file" hidden accept=".pdf,application/pdf" />
             <button class="btn with-label" id="transcribePickBtn" title="اختيار PDF" aria-label="اختيار PDF"><span class="icon">📄</span><span class="label">اختيار ملف</span></button>
-            <button class="btn ghost with-label" id="transcribeExtractBtn" title="استخراج نص (OCR)" aria-label="استخراج نص (OCR)"><span class="icon">🧠</span><span class="label">استخراج (OCR)</span></button>
+            <button class="btn ghost with-label" id="transcribeExtractBtn" title="استخراج استراتيجي كامل" aria-label="استخراج استراتيجي كامل"><span class="icon">🧠</span><span class="label">استخراج استراتيجي</span></button>
             <button class="btn ghost with-label" id="transcribeCloudBtn" title="تحسين سحابي للنص" aria-label="تحسين سحابي للنص"><span class="icon">☁️</span><span class="label">تحسين سحابي</span></button>
             <button class="btn dark with-label" id="transcribeConvertBtn" title="تحويل PDF إلى DOCX قابل للتعديل" aria-label="تحويل PDF إلى DOCX قابل للتعديل"><span class="icon">📝</span><span class="label">PDF → DOCX</span></button>
             <button class="btn ghost with-label" id="transcribeExportWordBtn" title="تصدير النص الحالي كملف Word" aria-label="تصدير النص الحالي كملف Word"><span class="icon">📤</span><span class="label">تصدير Word</span></button>
+            <select id="transcribeExportFormat" title="صيغة التصدير" style="max-width:180px">
+              <option value="txt">TXT</option>
+              <option value="docx" selected>DOCX</option>
+              <option value="json">JSON (Structured)</option>
+            </select>
             <span class="hint" id="transcribeFileName">لم يتم اختيار ملف بعد</span>
           </div>
           <div class="split">
             <div class="panel">
-              <div class="head"><span>النص المستخرج (AI + OCR)</span><span class="hint" id="transcribeStats">جاهز</span></div>
+              <div class="head"><span>النص المستخرج (استراتيجية هجينة: Native + OCR + Layout)</span><span class="hint" id="transcribeStats">جاهز</span></div>
               <div class="body" style="padding:0">
                 <textarea id="transcribeOutput" style="height:100%; min-height:60vh; border:0; border-radius:0; background:#fbfcff; padding:12px;" placeholder="سيظهر النص المستخرج هنا..."></textarea>
               </div>
             </div>
             <div class="panel">
-              <div class="head"><span>تحويل PDF إلى ملف قابل للتعديل</span><span class="hint">محافظة تنسيق (تجريبي)</span></div>
+              <div class="head"><span>محرك تحويل احترافي PDF → Word</span><span class="hint">الحفاظ على التنسيق قدر الإمكان</span></div>
               <div class="body">
                 <p class="hint" style="line-height:1.9">
-                  هذا القسم يحاول تحويل محتوى PDF مع الحفاظ على مواضع النصوص إلى تنسيق HTML قابل للتحرير، ثم تصديره إلى DOCX.
-                  للحصول على أفضل نتيجة استخدم ملفات PDF نصية واضحة، أما الملفات المصورة فسيُستخدم OCR متقدم لاستخراج النص.
+                  يتم أولًا تنفيذ استخراج متعدد الطبقات: نص PDF الأصلي + OCR محلي محسن + تحسين سحابي اختياري.
+                  ثم يتم بناء تمثيل منظم للصفحات والأسطر لمحاكاة التنسيق الأصلي داخل ملف Word قابل للتعديل.
                 </p>
                 <div class="tag">الخطوة 1: اختيار ملف PDF</div>
-                <div class="tag" style="margin-top:8px">الخطوة 2: استخراج نص ذكي</div>
-                <div class="tag" style="margin-top:8px">الخطوة 3: تنزيل DOCX قابل للتعديل</div>
+                <div class="tag" style="margin-top:8px">الخطوة 2: استخراج استراتيجي كامل (مع تتبع التقدم)</div>
+                <div class="tag" style="margin-top:8px">الخطوة 3: تصدير TXT / JSON / DOCX</div>
+                <div class="tag" style="margin-top:8px">الخطوة 4: تحويل PDF إلى DOCX قابل للتحرير</div>
               </div>
             </div>
           </div>
