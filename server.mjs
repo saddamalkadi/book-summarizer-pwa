@@ -1,15 +1,11 @@
 #!/usr/bin/env node
 import { createServer } from 'node:http';
 import { createReadStream, existsSync, statSync } from 'node:fs';
-import { extname, join, normalize } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = normalize(join(__filename, '..'));
+import { extname, isAbsolute, join, normalize, relative, resolve } from 'node:path';
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 8080);
-const ROOT = process.env.ROOT_DIR || process.cwd();
+const ROOT = resolve(process.env.ROOT_DIR || process.cwd());
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -44,17 +40,25 @@ function setCommonHeaders(res) {
 }
 
 function resolvePath(urlPath) {
-  const clean = decodeURIComponent((urlPath || '/').split('?')[0]);
-  const requested = clean === '/' ? '/index.html' : clean;
-  const fullPath = normalize(join(ROOT, `.${requested}`));
+  let clean = '/';
+  try {
+    clean = decodeURIComponent((urlPath || '/').split('?')[0]);
+  } catch (_) {
+    return null;
+  }
 
-  if (!fullPath.startsWith(ROOT)) return null;
+  const requested = clean === '/' ? '/index.html' : clean;
+  const fullPath = resolve(normalize(join(ROOT, `.${requested}`)));
+
+  const rel = relative(ROOT, fullPath);
+  if ((rel && rel.startsWith('..')) || isAbsolute(rel)) return null;
   if (existsSync(fullPath)) return fullPath;
 
   // SPA fallback: unknown routes without file extension should serve index.html.
   if (!extname(requested)) {
-    const fallback = normalize(join(ROOT, './index.html'));
-    if (fallback.startsWith(ROOT) && existsSync(fallback)) return fallback;
+    const fallback = resolve(normalize(join(ROOT, './index.html')));
+    const fallbackRel = relative(ROOT, fallback);
+    if ((!fallbackRel || !fallbackRel.startsWith('..')) && !isAbsolute(fallbackRel) && existsSync(fallback)) return fallback;
   }
 
   return fullPath;
