@@ -224,13 +224,7 @@ async function buildKbIndex(){
   }
 
   const baseUrl = effectiveBaseUrl(settings) || (settings.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1');
-  const extraHeaders = {};
-  if (isOpenRouter(settings)){
-    const ref = (settings.orReferer || location.origin || '').trim();
-    const title = (settings.orTitle || 'AI Workspace Studio').trim();
-    if (ref) extraHeaders['HTTP-Referer'] = ref;
-    if (title) extraHeaders['X-Title'] = title;
-  }
+  const extraHeaders = buildProviderHeaders(settings);
 
   const abort = new AbortController();
   const batchSize = 64;
@@ -268,13 +262,7 @@ async function searchKb(query){
   if (!withEmb.length) return [];
 
   const baseUrl = effectiveBaseUrl(settings) || (settings.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1');
-  const extraHeaders = {};
-  if (isOpenRouter(settings)){
-    const ref = (settings.orReferer || location.origin || '').trim();
-    const title = (settings.orTitle || 'AI Workspace Studio').trim();
-    if (ref) extraHeaders['HTTP-Referer'] = ref;
-    if (title) extraHeaders['X-Title'] = title;
-  }
+  const extraHeaders = buildProviderHeaders(settings);
 
   const abort = new AbortController();
   const qEmb = (await callEmbeddings({ apiKey: settings.apiKey, baseUrl, model: embedModel, inputs:[query], signal: abort.signal, extraHeaders }))[0];
@@ -456,6 +444,19 @@ async function buildRagContextIfEnabled(userText){
   function isOpenRouter(settings){
     const u = String(settings.baseUrl||'').toLowerCase();
     return settings.provider === 'openrouter' || u.includes('openrouter.ai');
+  }
+
+  function buildProviderHeaders(settings){
+    const headers = {};
+    // OpenRouter-specific headers are only needed for direct browser calls.
+    // When using Gateway mode, these custom headers can trigger CORS preflight failures.
+    if (isOpenRouter(settings) && settings.authMode !== 'gateway'){
+      const ref = (settings.orReferer || location.origin || '').trim();
+      const title = (settings.orTitle || 'AI Workspace Studio').trim();
+      if (ref) headers['HTTP-Referer'] = ref;
+      if (title) headers['X-Title'] = title;
+    }
+    return headers;
   }
 
   // ---------------- Modes ----------------
@@ -1319,11 +1320,7 @@ async function fileToText(file){
       if (!isOpenRouter(settings)) throw new Error('web_search متاح مع OpenRouter فقط');
       const onlineModel = maybeOnlineModel(settings.model || 'openai/gpt-4o-mini', { ...settings, webMode:'openrouter_online' });
       const baseUrl = effectiveBaseUrl(settings) || 'https://openrouter.ai/api/v1';
-      const extraHeaders = {};
-      const ref = (settings.orReferer || location.origin || '').trim();
-      const title = (settings.orTitle || 'AI Workspace Studio').trim();
-      if (ref) extraHeaders['HTTP-Referer'] = ref;
-      if (title) extraHeaders['X-Title'] = title;
+      const extraHeaders = buildProviderHeaders(settings);
 
       const messages = [
         { role:'system', content:'أنت مساعد بحث. ابحث في الويب وأعد إجابة دقيقة مع قائمة مصادر بروابط.' },
@@ -1387,13 +1384,7 @@ async function fileToText(file){
       const follow = `تابع الآن بناءً على نتيجة الأداة أعلاه. لا تكرر مخرجات الأداة حرفيًا. إذا احتجت أداة أخرى اطلبها ببلوك tool فقط.`;
       const messages = buildMessagesForChat(follow, settings, filesText, rag.ctx);
 
-      const extraHeaders = {};
-      if (isOpenRouter(settings)){
-        const ref = (settings.orReferer || location.origin || '').trim();
-        const title = (settings.orTitle || 'AI Workspace Studio').trim();
-        if (ref) extraHeaders['HTTP-Referer'] = ref;
-        if (title) extraHeaders['X-Title'] = title;
-      }
+      const extraHeaders = buildProviderHeaders(settings);
       const baseUrl = effectiveBaseUrl(settings) || (settings.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1');
       let model = settings.model;
       if (settings.provider === 'openrouter') model = maybeOnlineModel(model, settings);
@@ -1446,13 +1437,7 @@ async function maybeUpdateThreadSummary(pid, tid){
   const sys = 'لخّص المحادثة القديمة في نقاط موجزة تحافظ على القرارات والمعلومات المهمة. لا تضف معلومات جديدة.';
   const user = `المحتوى:\n${text}\n\nأعد ملخصًا موجزًا جدًا (200-400 كلمة).`;
 
-  const extraHeaders = {};
-  if (isOpenRouter(settings)){
-    const ref = (settings.orReferer || location.origin || '').trim();
-    const title = (settings.orTitle || 'AI Workspace Studio').trim();
-    if (ref) extraHeaders['HTTP-Referer'] = ref;
-    if (title) extraHeaders['X-Title'] = title;
-  }
+  const extraHeaders = buildProviderHeaders(settings);
 
   try{
     const abort = new AbortController();
@@ -1780,13 +1765,7 @@ function updateChips(){
     let model = settings.model;
     if (settings.provider === 'openrouter') model = maybeOnlineModel(model, settings);
 
-    const extraHeaders = {};
-    if (isOpenRouter(settings)){
-      const ref = (settings.orReferer || location.origin || '').trim();
-      const title = (settings.orTitle || 'AI Workspace Studio').trim();
-      if (ref) extraHeaders['HTTP-Referer'] = ref;
-      if (title) extraHeaders['X-Title'] = title;
-    }
+    const extraHeaders = buildProviderHeaders(settings);
 
     const aId = makeId('m');
     const aMsg = { id: aId, role:'assistant', content:'', ts: nowTs() };
@@ -1890,13 +1869,7 @@ async function runResearchAgent(topicOverride){
   const tid = getCurThreadId(pid);
   const baseUrl = effectiveBaseUrl(settings) || (settings.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1');
 
-  const extraHeaders = {};
-  if (isOpenRouter(settings)){
-    const ref = (settings.orReferer || location.origin || '').trim();
-    const title = (settings.orTitle || 'AI Workspace Studio').trim();
-    if (ref) extraHeaders['HTTP-Referer'] = ref;
-    if (title) extraHeaders['X-Title'] = title;
-  }
+  const extraHeaders = buildProviderHeaders(settings);
 
   const pushAssistant = (content) => {
     const threads = loadThreads(pid);
@@ -2124,13 +2097,7 @@ async function runResearchAgent(topicOverride){
         out = await callGemini({ apiKey: settings.geminiKey, model: settings.model, prompt, signal: abortCtl.signal, maxOut: Math.min(2048, Number(settings.maxOut||2000)) });
       } else {
         const baseUrl = (effectiveBaseUrl(settings) || (settings.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1'));
-        const extraHeaders = {};
-        if (isOpenRouter(settings)){
-          const ref = (settings.orReferer || location.origin || '').trim();
-          const title = (settings.orTitle || 'AI Workspace Studio').trim();
-          if (ref) extraHeaders['HTTP-Referer'] = ref;
-          if (title) extraHeaders['X-Title'] = title;
-        }
+        const extraHeaders = buildProviderHeaders(settings);
         const messages = [{ role:'system', content: sys }, { role:'user', content: `${instr}\n\n${raw}` }];
         out = await callOpenAIChat({ apiKey: settings.apiKey, baseUrl, model: maybeOnlineModel(settings.model, settings), messages, max_tokens: Math.min(2200, Number(settings.maxOut||2000)), signal: abortCtl.signal, extraHeaders });
       }
@@ -2764,10 +2731,7 @@ let pinOnly = false;
     const url = base + '/models';
     if (!hasAuthReady(s)) throw new Error('المصادقة غير مكتملة (API Key أو Gateway URL)');
     const headers = { 'Content-Type':'application/json', ...buildAuthHeaders(s) };
-    const ref = (s.orReferer || location.origin || '').trim();
-    const title = (s.orTitle || 'AI Workspace Studio').trim();
-    if (ref) headers['HTTP-Referer'] = ref;
-    if (title) headers['X-Title'] = title;
+    Object.assign(headers, buildProviderHeaders(s));
 
     const r = await fetch(url, { headers });
     const t = await r.text();
