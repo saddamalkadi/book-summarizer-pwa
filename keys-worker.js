@@ -72,13 +72,19 @@ async function handleGateway(request, env, url) {
 
   // Use server-side OpenRouter key from Worker secret first.
   // Fallback to incoming Authorization for temporary migration.
-  const serverKey = (env.OPENROUTER_API_KEY || '').trim();
+  // Support common aliases in case the variable was created with a slightly different name.
+  const serverKey = (
+    env.OPENROUTER_API_KEY ||
+    env.OPEN_ROUTER_API_KEY ||
+    env.OPENROUTER_KEY ||
+    ''
+  ).trim();
   const incomingAuth = (request.headers.get('Authorization') || '').trim();
   const authHeader = serverKey ? `Bearer ${serverKey}` : incomingAuth;
 
   if (!authHeader) {
     return withCors(new Response(JSON.stringify({
-      error: 'Missing API key. Set OPENROUTER_API_KEY secret on Worker or send Authorization header.'
+      error: 'Missing API key. Set OPENROUTER_API_KEY in Cloudflare Worker Secrets (or wrangler secret put OPENROUTER_API_KEY), or send Authorization header.'
     }), {
       status: 401,
       headers: { 'Content-Type': 'application/json; charset=utf-8' }

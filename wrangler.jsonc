@@ -11,5 +11,9 @@
   },
   "compatibility_flags": [
     "nodejs_compat"
-  ]
+  ],
+  "vars": {
+    "OPENROUTER_TITLE": "AI Workspace Studio",
+    "OPENROUTER_REFERER": "https://dash.cloudflare.com"
+  }
 }
