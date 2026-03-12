@@ -76,11 +76,30 @@ HOST=0.0.0.0 PORT=9090 node server.mjs
 - إصلاح DOCX: توحيد تحويل ناتج html-to-docx إلى Blob قبل التنزيل لتفادي فشل التصدير في بعض المتصفحات.
 - إضافة: دعم تحويل PDF→DOCX عبر CloudConvert Worker Endpoint اختياري من الإعدادات (بديل للتحويل المحلي).
 
-## إعداد bspro-api.tntntt830.workers.dev
-تم تجهيز الإعدادات الافتراضية داخل التطبيق للعمل مباشرة مع بوابة:
+## إعداد Gateway الصحيح
+تم تجهيز الإعدادات الافتراضية داخل التطبيق للعمل مباشرة مع بوابة API:
 - Gateway URL: `https://bspro-api.tntntt830.workers.dev`
 - Cloud PDF→Word Endpoint: `https://bspro-api.tntntt830.workers.dev/convert/pdf-to-docx`
 - Cloud OCR Endpoint: `https://bspro-api.tntntt830.workers.dev/ocr`
 - Auth Mode الافتراضي: `gateway`
 
+إذا كان لديك Worker ثابت للواجهة (مثل `keys.*.workers.dev`) وWorker آخر للـ API، ضع رابط Worker الـ API في Gateway URL.
+
 إذا كان الـWorker يتطلب حماية إضافية، ضع قيمة **Gateway Client Token** من صفحة الإعدادات.
+
+
+## محتوى Worker باسم `keys`
+الملف المقترح داخل المشروع: `keys-worker.js`.
+
+### أسرار (Secrets) مطلوبة في Cloudflare
+- `OPENROUTER_API_KEY` (مفتاح OpenRouter الأساسي داخل السيرفر)
+- `GATEWAY_CLIENT_TOKEN` (اختياري لحماية إضافية)
+- `OPENROUTER_REFERER` (اختياري)
+- `OPENROUTER_TITLE` (اختياري)
+
+### مثال إعداد سريع
+```bash
+wrangler secret put OPENROUTER_API_KEY
+wrangler secret put GATEWAY_CLIENT_TOKEN
+wrangler deploy
+```

@@ -338,6 +338,36 @@ async function buildRagContextIfEnabled(userText){
     return normalizeUrl(s.replace(/^\/+((?:https?:)?\/\/)/i, '$1'));
   }
 
+  function endpointOrigin(u){
+    try{
+      const n = normalizeEndpointUrl(u);
+      if (!n) return '';
+      return new URL(n).origin;
+    }catch(_){ return ''; }
+  }
+
+  function resolveGatewayApiRoot(settings){
+    const rawGateway = normalizeEndpointUrl(settings?.gatewayUrl || '');
+    if (!rawGateway) return '';
+
+    // If user puts the static app worker (often "keys.*.workers.dev") as gateway,
+    // prefer the API worker origin inferred from cloud endpoints.
+    const gatewayOrigin = endpointOrigin(rawGateway);
+    const appOrigin = endpointOrigin(location.origin);
+    const cloudOrigins = [
+      endpointOrigin(settings?.cloudConvertEndpoint || ''),
+      endpointOrigin(settings?.cloudConvertFallbackEndpoint || ''),
+      endpointOrigin(settings?.ocrCloudEndpoint || '')
+    ].filter(Boolean);
+    const inferredApiOrigin = cloudOrigins.find(o => o !== gatewayOrigin) || '';
+    const looksLikeStaticWorker = /\/\/keys\./i.test(rawGateway) || (!!gatewayOrigin && gatewayOrigin === appOrigin);
+
+    if (looksLikeStaticWorker && inferredApiOrigin){
+      return inferredApiOrigin;
+    }
+    return rawGateway;
+  }
+
   function buildEndpointCandidates(raw, paths=[]){
     const base = normalizeEndpointUrl(raw);
     if (!base) return [];
@@ -369,7 +399,7 @@ async function buildRagContextIfEnabled(userText){
   function effectiveBaseUrl(settings){
     // Gateway uses a Worker URL and exposes /v1 compatible endpoints.
     if (settings.authMode === 'gateway' && settings.gatewayUrl){
-      return normalizeUrl(settings.gatewayUrl) + '/v1';
+      return normalizeUrl(resolveGatewayApiRoot(settings)) + '/v1';
     }
     return normalizeUrl(settings.baseUrl || '');
   }
@@ -2628,8 +2658,17 @@ let pinOnly = false;
     // if gateway is enabled and url provided, we force baseUrl to gateway/v1
     let baseUrl = $('baseUrl').value.trim();
     if (authMode === 'gateway' && gatewayUrl){
-      baseUrl = normalizeUrl(gatewayUrl) + '/v1';
+      const resolvedGatewayBase = normalizeUrl(resolveGatewayApiRoot({
+        gatewayUrl,
+        cloudConvertEndpoint,
+        cloudConvertFallbackEndpoint,
+        ocrCloudEndpoint
+      }));
+      baseUrl = resolvedGatewayBase + '/v1';
       $('baseUrl').value = baseUrl;
+      if (resolvedGatewayBase !== normalizeUrl(gatewayUrl)){
+        toast('ℹ️ تم اكتشاف Gateway ثابت؛ تم استخدام Cloud API worker تلقائيًا.');
+      }
       if ($('provider').value === 'openrouter'){
         // ok
       }
