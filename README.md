@@ -76,11 +76,64 @@ HOST=0.0.0.0 PORT=9090 node server.mjs
 - إصلاح DOCX: توحيد تحويل ناتج html-to-docx إلى Blob قبل التنزيل لتفادي فشل التصدير في بعض المتصفحات.
 - إضافة: دعم تحويل PDF→DOCX عبر CloudConvert Worker Endpoint اختياري من الإعدادات (بديل للتحويل المحلي).
 
-## إعداد bspro-api.tntntt830.workers.dev
-تم تجهيز الإعدادات الافتراضية داخل التطبيق للعمل مباشرة مع بوابة:
+## إعداد Gateway الصحيح
+تم تجهيز الإعدادات الافتراضية داخل التطبيق للعمل مباشرة مع بوابة API:
 - Gateway URL: `https://bspro-api.tntntt830.workers.dev`
 - Cloud PDF→Word Endpoint: `https://bspro-api.tntntt830.workers.dev/convert/pdf-to-docx`
 - Cloud OCR Endpoint: `https://bspro-api.tntntt830.workers.dev/ocr`
 - Auth Mode الافتراضي: `gateway`
 
+إذا كان لديك Worker ثابت للواجهة (مثل `keys.*.workers.dev`) وWorker آخر للـ API، ضع رابط Worker الـ API في Gateway URL.
+
 إذا كان الـWorker يتطلب حماية إضافية، ضع قيمة **Gateway Client Token** من صفحة الإعدادات.
+
+## حل مشكلة "الرابط لا يعمل" (ERR_FAILED)
+إذا ظهر الخطأ عند فتح رابط مثل `https://keys.<subdomain>.workers.dev` فجرّب التالي بالترتيب:
+
+1. **تأكد من الرابط الصحيح**
+   - رابط الـ API الافتراضي للتطبيق هو:
+     `https://bspro-api.tntntt830.workers.dev`
+   - رابط الصحة (Health Check):
+     `https://bspro-api.tntntt830.workers.dev/health`
+
+2. **لا تستخدم Worker الواجهة كرابط Gateway**
+   - في إعدادات التطبيق (`Auth Mode = gateway`)، ضع رابط Worker الـ API فقط.
+   - لا تضع رابط Worker ثابت/واجهة إذا كان لا يقدّم مسار `/v1/*`.
+
+3. **اختبر من Cloudflare Dashboard**
+   - Workers & Pages → اختر Worker المطلوب.
+   - تأكد أن آخر Deploy ناجح، وأن عنوان `workers.dev` ظاهر ومفعّل.
+
+4. **أعد النشر إذا كان الرابط متوقفًا**
+   ```bash
+   wrangler deploy
+   ```
+
+5. **تأكد من الأسرار المطلوبة**
+   ```bash
+   wrangler secret put OPENROUTER_API_KEY
+   # اختياري:
+   wrangler secret put GATEWAY_CLIENT_TOKEN
+   ```
+
+6. **امسح الكاش/حدّث قسريًا**
+   - لأن التطبيق PWA، نفّذ Hard Refresh أو احذف Service Worker وCache ثم افتح الرابط مجددًا.
+
+> ملاحظة: إذا كان `bspro-api.../health` يعمل بينما `keys...` لا يعمل، فغالبًا Worker `keys` غير منشور أو تم حذفه، واستخدام `bspro-api` كـ Gateway يكفي للتشغيل.
+
+
+## محتوى Worker باسم `keys`
+الملف المقترح داخل المشروع: `keys-worker.js`.
+
+### أسرار (Secrets) مطلوبة في Cloudflare
+- `OPENROUTER_API_KEY` (مفتاح OpenRouter الأساسي داخل السيرفر)
+- `GATEWAY_CLIENT_TOKEN` (اختياري لحماية إضافية)
+- `OPENROUTER_REFERER` (اختياري)
+- `OPENROUTER_TITLE` (اختياري)
+
+### مثال إعداد سريع
+```bash
+wrangler secret put OPENROUTER_API_KEY
+wrangler secret put GATEWAY_CLIENT_TOKEN
+wrangler deploy
+```
