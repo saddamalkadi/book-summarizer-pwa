@@ -122,6 +122,26 @@ HOST=0.0.0.0 PORT=9090 node server.mjs
 > ملاحظة: إذا كان `bspro-api.../health` يعمل بينما `keys...` لا يعمل، فغالبًا Worker `keys` غير منشور أو تم حذفه، واستخدام `bspro-api` كـ Gateway يكفي للتشغيل.
 
 
+
+## ملاحظة Cloudflare: رسالة "Update your wrangler config file"
+إذا ظهرت الرسالة البرتقالية داخل Dashboard عند إضافة Secret، فهذا **تنبيه مزامنة فقط** وليس خطأ يمنع النشر.
+
+الطريقة الموصى بها (لتفادي الالتباس):
+1. أضف السر من CLI:
+   ```bash
+   wrangler secret put OPENROUTER_API_KEY
+   ```
+2. انشر العامل:
+   ```bash
+   wrangler deploy
+   ```
+3. اختبر:
+   ```bash
+   curl https://<your-worker>.workers.dev/health
+   ```
+
+> ملاحظة: قيمة الـ Secret لا تُكتب داخل `wrangler.jsonc` (لأسباب أمنية)، لذلك ظهور تنبيه المزامنة متوقع عند التعديل من Dashboard.
+
 ## محتوى Worker باسم `keys`
 الملف المقترح داخل المشروع: `keys-worker.js`.
 
