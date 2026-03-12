@@ -2766,19 +2766,48 @@ let pinOnly = false;
       return cache.models;
     }
     const s = getSettings();
-    const base = (effectiveBaseUrl(s) || 'https://openrouter.ai/api/v1').replace(/\/+$/,'');
-    const url = base + '/models';
     if (!hasAuthReady(s)) throw new Error('المصادقة غير مكتملة (API Key أو Gateway URL)');
     const headers = { 'Content-Type':'application/json', ...buildAuthHeaders(s) };
     Object.assign(headers, buildProviderHeaders(s));
 
-    const r = await fetch(url, { headers });
-    const t = await r.text();
-    let j; try{ j = JSON.parse(t);}catch(_){ j = null; }
-    if (!r.ok) throw new Error(j?.error?.message || t || `HTTP ${r.status}`);
-    const models = normalizeOrModels(j);
-    saveJSON(KEYS.modelCache, { ts: nowTs(), models });
-    return models;
+    const candidates = [];
+    if (s.authMode === 'gateway'){
+      const roots = [
+        normalizeUrl(resolveGatewayApiRoot(s)),
+        normalizeUrl(normalizeEndpointUrl(s.gatewayUrl || '')),
+        normalizeUrl(normalizeEndpointUrl(s.baseUrl || '').replace(/\/v1$/i, ''))
+      ].filter(Boolean);
+      for (const root of roots){
+        candidates.push(`${root}/v1/models`);
+        candidates.push(`${root}/models`);
+      }
+    } else {
+      const base = (effectiveBaseUrl(s) || 'https://openrouter.ai/api/v1').replace(/\/+$/,'');
+      candidates.push(base + '/models');
+    }
+
+    const urls = [...new Set(candidates.map(normalizeEndpointUrl).filter(Boolean))];
+    const errs = [];
+    for (const url of urls){
+      try{
+        const r = await fetch(url, { headers });
+        const t = await r.text();
+        let j; try{ j = JSON.parse(t);}catch(_){ j = null; }
+        if (!r.ok){
+          errs.push(`${url} -> ${j?.error?.message || t || `HTTP ${r.status}`}`);
+          continue;
+        }
+        const models = normalizeOrModels(j);
+        if (models.length){
+          saveJSON(KEYS.modelCache, { ts: nowTs(), models });
+          return models;
+        }
+        errs.push(`${url} -> Empty models response`);
+      }catch(e){
+        errs.push(`${url} -> ${e?.message || e}`);
+      }
+    }
+    throw new Error(errs.join('\n') || 'فشل تحميل قائمة الموديلات');
   }
 
   function openModelModal(open){
