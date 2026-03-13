@@ -478,10 +478,20 @@ async function buildRagContextIfEnabled(userText){
   function showStatus(msg, isBusy=false){
     const el = $('statusBox');
     if (!el) return;
-    if (!msg){ el.style.display='none'; el.textContent=''; return; }
+    if (!msg){
+      el.style.display='none';
+      el.textContent='';
+      delete el.dataset.tone;
+      return;
+    }
     el.style.display='block';
     el.textContent = msg;
     el.dataset.busy = isBusy ? '1' : '0';
+    const s = String(msg || '').toLowerCase();
+    el.dataset.tone = isBusy
+      ? 'busy'
+      : (/❌|error|failed|خطأ|فشل/i.test(s) ? 'error'
+      : (/✅|success|ready|ok|اكتمل|تم/i.test(s) ? 'success' : 'info'));
   }
 
   function toast(msg){
@@ -636,6 +646,7 @@ function refreshDeepSearchBtn(){
     $('streamToggle') && ($('streamToggle').checked = !!getSettings().streaming);
     $('ragToggle') && ($('ragToggle').checked = getRagToggle());
     refreshDeepSearchBtn();
+    refreshStrategicWorkspace().catch(()=>{});
   }
 
   function disableModes(){
@@ -644,6 +655,294 @@ function refreshDeepSearchBtn(){
     setWebToggle(false);
     refreshModeButtons();
     toast('⛔ تم إيقاف الأوضاع');
+  }
+
+  function getDisplayModelName(model){
+    const value = String(model || '').trim();
+    if (!value) return 'Not set';
+    return value.length > 34 ? `${value.slice(0, 34)}…` : value;
+  }
+
+  function getAuthStateLabel(settings){
+    if (settings.provider === 'gemini') return (settings.geminiKey || '').trim() ? 'Gemini key ready' : 'Gemini key needed';
+    if (settings.authMode === 'gateway') return (settings.gatewayUrl || '').trim() ? 'Gateway routing' : 'Gateway missing';
+    return (settings.apiKey || '').trim() ? 'Browser key ready' : 'API key needed';
+  }
+
+  function buildQuickPromptTemplate(kind){
+    const templates = {
+      strategy_brief: 'أنشئ brief استراتيجي احترافي لهذا الطلب. المطلوب: 1) الهدف 2) الوضع الحالي 3) الفرص 4) المخاطر 5) خطة التنفيذ 6) المخرجات النهائية.',
+      deep_research: 'نفّذ بحثًا عميقًا منظمًا. ابدأ بخطة بحث، ثم أسئلة التحقيق، ثم النتائج، ثم الاستنتاجات، ثم التوصيات العملية.',
+      system_audit: 'قم بمراجعة تشغيلية للنظام أو التطبيق الحالي. أريد: المشاكل، الأولويات، المخاطر، الإصلاحات السريعة، وخطة تحسين احترافية.',
+      build_product: 'ساعدني في بناء منتج احترافي من هذه الفكرة. أريد: positioning، architecture، user flows، roadmap، ومواصفات الإصدار الأول.',
+      exec_summary: 'اكتب Executive Summary واضحًا وموجزًا مع النقاط الحاسمة والقرار المقترح.',
+      action_board: 'حوّل هذا السياق إلى Action Board: المهمة، المالك، الأولوية، الموعد، الحالة، والخطوة التالية.',
+      kb_orchestrator: 'استخدم الملفات وقاعدة المعرفة لبناء إجابة موثقة باقتباسات واضحة، ثم لخص الفجوات والمعلومات غير المؤكدة.',
+      launch_plan: 'أنشئ Launch Plan متكاملة: readiness، assets، risks، timeline، owners، success metrics.',
+      pm_review: 'قم بدور Product Strategist وراجع الفكرة أو التطبيق: القيمة، UX، gaps، differentiation، ثم توصية تنفيذية.'
+    };
+    return templates[kind] || '';
+  }
+
+  function applyQuickPrompt(kind, shouldSend=false){
+    const input = $('chatInput');
+    if (!input) return;
+    const prompt = buildQuickPromptTemplate(kind);
+    if (!prompt) return;
+    input.value = prompt;
+    resizeComposerInput(input);
+    syncComposerMeta();
+    input.focus();
+    if (shouldSend) sendMessage();
+    else toast('✅ تم تجهيز prompt احترافي');
+  }
+
+  function resizeComposerInput(input = $('chatInput')){
+    if (!input || input.tagName !== 'TEXTAREA') return;
+    input.style.height = 'auto';
+    input.style.height = `${Math.min(220, Math.max(58, input.scrollHeight))}px`;
+  }
+
+  function ensureStrategicChrome(){
+    const sideCard = document.querySelector('.sidecard');
+    if (sideCard && !sideCard.classList.contains('strategic-sidecard')){
+      sideCard.classList.add('strategic-sidecard');
+      sideCard.innerHTML = `
+        <div class="sidecard-title">Strategic Control</div>
+        <div class="sidecard-grid">
+          <div class="sidecard-metric"><span>Project</span><strong id="sideProjectMeta">—</strong></div>
+          <div class="sidecard-metric"><span>Model</span><strong id="sideModelMeta">—</strong></div>
+          <div class="sidecard-metric"><span>Context</span><strong id="sideContextMeta">—</strong></div>
+          <div class="sidecard-metric"><span>Modes</span><strong id="sideModeMeta">—</strong></div>
+        </div>
+        <div class="sidecard-note" id="sideHealthNote">Configure your workspace once, then operate chat, files, retrieval, and workflows from one command center.</div>`;
+    }
+
+    const topTitle = $('topTitle');
+    const topSubtitle = $('topSubtitle');
+    const left = document.querySelector('.topbar .left');
+    if (left && topTitle && topSubtitle && !$('topRuntimeBadge')){
+      const stack = document.createElement('div');
+      stack.className = 'title-stack';
+      const row = document.createElement('div');
+      row.className = 'top-runtime-row';
+      const badge = document.createElement('span');
+      badge.className = 'runtime-badge';
+      badge.id = 'topRuntimeBadge';
+      badge.textContent = 'Workspace online';
+      left.appendChild(stack);
+      stack.appendChild(topTitle);
+      row.appendChild(topSubtitle);
+      row.appendChild(badge);
+      stack.appendChild(row);
+    }
+
+    const input = $('chatInput');
+    if (input && input.tagName !== 'TEXTAREA'){
+      const area = document.createElement('textarea');
+      area.id = input.id;
+      area.dir = input.getAttribute('dir') || 'auto';
+      area.rows = 2;
+      area.placeholder = 'اكتب طلبك بوضوح: الهدف، النتيجة المطلوبة، وأي مرفقات أو قيود. Shift+Enter لسطر جديد.';
+      area.value = input.value || '';
+      input.replaceWith(area);
+      resizeComposerInput(area);
+    }
+
+    const chatbar = document.querySelector('#page-chat .chatbar');
+    if (chatbar && !$('composerContextMeta')){
+      chatbar.insertAdjacentHTML('afterend', `
+        <div class="composer-meta">
+          <span id="composerHint">Enter للإرسال • Shift+Enter لسطر جديد • المرفقات تندمج تلقائيًا مع السياق.</span>
+          <span class="composer-status" id="composerContextMeta">Workspace context —</span>
+        </div>`);
+    }
+
+    const settingsPage = $('page-settings');
+    const settingsToolbar = settingsPage?.querySelector('.toolbar');
+    if (settingsPage && settingsToolbar && !$('settingsHealthBtn')){
+      settingsToolbar.insertAdjacentHTML('afterend', `
+        <div class="settings-overview">
+          <div class="settings-overview-card">
+            <h3>Strategic configuration layer</h3>
+            <p>Turn the app from a simple chat surface into an operational AI workspace: stable gateway routing, stronger defaults, smarter model selection, and clearer runtime diagnostics.</p>
+            <div class="settings-actions">
+              <button class="btn dark sm with-label" id="settingsHealthBtn" type="button"><span class="icon">◎</span><span class="label">Health Check</span></button>
+              <button class="btn ghost sm with-label" id="settingsDefaultsBtn" type="button"><span class="icon">⚙️</span><span class="label">Pro Defaults</span></button>
+              <button class="btn ghost sm with-label" id="settingsRecommendModelBtn" type="button"><span class="icon">✨</span><span class="label">Recommend Model</span></button>
+            </div>
+            <div class="settings-health-output" id="settingsHealthOutput">Run a health check to validate Gateway, model route, and operational readiness.</div>
+          </div>
+          <div class="settings-overview-card">
+            <h3>Runtime readiness</h3>
+            <div class="settings-kpis">
+              <div class="settings-kpi"><span>Connection</span><strong id="settingsReadyState">—</strong></div>
+              <div class="settings-kpi"><span>Gateway</span><strong id="settingsGatewayState">—</strong></div>
+              <div class="settings-kpi"><span>Model</span><strong id="settingsModelState">—</strong></div>
+              <div class="settings-kpi"><span>Security</span><strong id="settingsSecurityState">—</strong></div>
+            </div>
+          </div>
+        </div>`);
+    }
+  }
+
+  function syncComposerMeta(){
+    const meta = $('composerContextMeta');
+    if (!meta) return;
+    const pid = getCurProjectId();
+    const files = loadFiles(pid);
+    const thread = getCurThread();
+    meta.textContent = `Files ${files.length} • Messages ${(thread.messages || []).length} • Attachments ${pendingChatAttachments.length}`;
+    resizeComposerInput();
+  }
+
+  async function refreshStrategicWorkspace(){
+    const settings = getSettings();
+    const pid = getCurProjectId();
+    const project = getCurProject();
+    const thread = getCurThread();
+    const files = loadFiles(pid);
+    const chunks = await kbCountProject(pid).catch(() => 0);
+    const downloads = loadDownloads().length;
+    const modeLabels = [
+      settings.streaming ? 'Streaming' : 'One-shot',
+      getRagToggle() ? 'RAG' : 'No RAG',
+      settings.toolsEnabled ? 'Tools' : 'No Tools',
+      getWebToggle() ? 'Web' : 'Local'
+    ];
+    const readiness = getAuthStateLabel(settings);
+    const runtimeBadge = $('topRuntimeBadge');
+    if (runtimeBadge) runtimeBadge.textContent = `${settings.provider.toUpperCase()} • ${readiness}`;
+    if ($('curProjectName')) $('curProjectName').textContent = project.name;
+    if ($('workspaceHeadline')){
+      $('workspaceHeadline').textContent = (thread.messages || []).length
+        ? `Continue ${project.name} with full operational context.`
+        : 'Build, research, and ship from one strategic AI console.';
+    }
+    if ($('workspaceSummary')){
+      $('workspaceSummary').textContent = `Provider ${settings.provider} on ${getDisplayModelName(settings.model)} • ${files.length} project files • ${chunks} KB chunks • ${downloads} archived outputs.`;
+    }
+    if ($('signalProvider')) $('signalProvider').textContent = settings.provider.toUpperCase();
+    if ($('signalProviderNote')) $('signalProviderNote').textContent = `${readiness} • ${settings.authMode === 'gateway' ? 'Gateway secured flow' : 'Browser-direct flow'}`;
+    if ($('signalModel')) $('signalModel').textContent = getDisplayModelName(settings.model);
+    if ($('signalModelNote')) $('signalModelNote').textContent = `Max output ${settings.maxOut || 2000} • Web mode ${settings.webMode || 'off'}`;
+    if ($('signalContext')) $('signalContext').textContent = `${files.length} files • ${chunks} KB`;
+    if ($('signalContextNote')) $('signalContextNote').textContent = `${(thread.messages || []).length} messages • file clip ${settings.fileClip || 12000}`;
+    if ($('signalModes')) $('signalModes').textContent = modeLabels.join(' • ');
+    if ($('signalModesNote')) $('signalModesNote').textContent = `${isDeep() ? 'Deep' : 'Standard'} • ${isAgent() ? 'Agent' : 'Assistant'} • ${isDeepSearch() ? 'Deep Search' : 'Chat Mode'}`;
+
+    if ($('sideProjectMeta')) $('sideProjectMeta').textContent = `${project.name} (${(thread.messages || []).length})`;
+    if ($('sideModelMeta')) $('sideModelMeta').textContent = getDisplayModelName(settings.model);
+    if ($('sideContextMeta')) $('sideContextMeta').textContent = `${files.length}F • ${chunks}KB • ${downloads}DL`;
+    if ($('sideModeMeta')) $('sideModeMeta').textContent = `${settings.provider} • ${settings.authMode}`;
+    if ($('sideHealthNote')) $('sideHealthNote').textContent = `${readiness}. Workspace ready for chat, knowledge retrieval, files, and workflows.`;
+
+    if ($('settingsReadyState')) $('settingsReadyState').textContent = readiness;
+    if ($('settingsGatewayState')) $('settingsGatewayState').textContent = settings.authMode === 'gateway' ? (settings.gatewayUrl || 'Gateway missing') : 'Direct browser mode';
+    if ($('settingsModelState')) $('settingsModelState').textContent = getDisplayModelName(settings.model);
+    if ($('settingsSecurityState')) $('settingsSecurityState').textContent = settings.authMode === 'gateway' ? 'Secrets kept server-side' : ((settings.apiKey || '').trim() ? 'Browser key in use' : 'No browser key');
+
+    syncComposerMeta();
+  }
+
+  async function runStrategicHealthCheck(){
+    const output = $('settingsHealthOutput');
+    const settings = saveSettingsFromUI();
+    if (output) output.textContent = 'Checking workspace health...';
+    try{
+      if (settings.provider === 'gemini'){
+        const ready = !!(settings.geminiKey || '').trim();
+        const msg = ready
+          ? 'Gemini mode looks ready. API key is present.'
+          : 'Gemini mode is selected but the Gemini API key is missing.';
+        if (output) output.textContent = msg;
+        toast(ready ? '✅ Gemini ready' : '⚠️ Gemini key missing');
+        await refreshStrategicWorkspace();
+        return;
+      }
+
+      if (settings.authMode === 'gateway'){
+        const root = normalizeUrl(resolveGatewayApiRoot(settings));
+        if (!root) throw new Error('Gateway URL is missing.');
+        const headers = {};
+        if (settings.gatewayToken) headers['X-Client-Token'] = settings.gatewayToken;
+        const healthResp = await fetch(`${root}/health`, { headers });
+        const healthText = await healthResp.text();
+        let healthJson; try{ healthJson = JSON.parse(healthText); }catch(_){ healthJson = null; }
+        const modelsResp = await fetch(`${root}/v1/models`, { headers: { Accept:'application/json', ...headers } });
+        const modelsText = await modelsResp.text();
+        let modelsJson; try{ modelsJson = JSON.parse(modelsText); }catch(_){ modelsJson = null; }
+        const modelsCount = Array.isArray(modelsJson?.data) ? modelsJson.data.length : 0;
+        const lines = [
+          `Health status: ${healthResp.status}`,
+          `Gateway ready: ${healthJson?.ready === true ? 'yes' : 'no'}`,
+          `Configured: ${healthJson?.configured === true ? 'yes' : 'no'}`,
+          `Models route: ${modelsResp.status}`,
+          `Catalog entries: ${modelsCount}`
+        ];
+        if (output) output.textContent = lines.join('\n');
+        toast((healthResp.ok && modelsResp.ok) ? '✅ Gateway healthy' : '⚠️ Health check completed with warnings');
+      } else {
+        const ready = !!(settings.apiKey || '').trim();
+        if (output) output.textContent = ready
+          ? 'Browser-direct mode is active. API key is present.'
+          : 'Browser-direct mode is active, but the API key is missing.';
+        toast(ready ? '✅ Direct mode ready' : '⚠️ API key missing');
+      }
+    }catch(e){
+      const msg = String(e?.message || e || 'Health check failed');
+      if (output) output.textContent = msg;
+      toast(`❌ ${msg}`);
+    }
+    await refreshStrategicWorkspace();
+  }
+
+  function applyStrategicDefaults(){
+    const current = getSettings();
+    const nextGateway = normalizeEndpointUrl(current.gatewayUrl || DEFAULT_SETTINGS.gatewayUrl);
+    const next = setSettings({
+      provider: 'openrouter',
+      authMode: 'gateway',
+      gatewayUrl: nextGateway,
+      baseUrl: `${normalizeUrl(resolveGatewayApiRoot({ ...current, gatewayUrl: nextGateway })) || normalizeUrl(nextGateway)}/v1`,
+      streaming: true,
+      toolsEnabled: true,
+      webMode: 'openrouter_online',
+      maxOut: 2400,
+      fileClip: 18000,
+      orTitle: 'AI Workspace Studio',
+      systemPrompt: current.systemPrompt || 'أنت مساعد استراتيجي احترافي. ابدأ دائمًا بفهم الهدف، ثم قدّم مخرجات تنفيذية واضحة، مختصرة، وقابلة للعمل.'
+    });
+    renderSettings();
+    if ($('provider')) $('provider').value = next.provider;
+    if ($('authMode')) $('authMode').value = next.authMode;
+    if ($('gatewayUrl')) $('gatewayUrl').value = next.gatewayUrl || '';
+    if ($('model')) $('model').value = next.model || 'openai/gpt-4o-mini';
+    saveSettingsFromUI();
+    refreshStrategicWorkspace().catch(()=>{});
+    toast('✅ تم تطبيق الملف الاحترافي');
+  }
+
+  function recommendStrategicModel(){
+    const settings = getSettings();
+    let recommended = settings.model || '';
+    if (settings.provider === 'gemini') recommended = 'gemini-2.5-flash';
+    else if (settings.provider === 'openai') recommended = 'gpt-4o-mini';
+    else {
+      const cached = loadJSON(KEYS.modelCache, {})?.models || [];
+      const preferred = [
+        'openai/gpt-4o-mini',
+        'openai/gpt-4o',
+        'openai/gpt-4.1',
+        'anthropic/claude-sonnet-4',
+        'google/gemini-2.0-flash-001'
+      ];
+      recommended = preferred.find((id) => cached.some((m) => m.id === id)) || 'openai/gpt-4o-mini';
+    }
+    if ($('model')) $('model').value = recommended;
+    saveSettingsFromUI();
+    refreshStrategicWorkspace().catch(()=>{});
+    toast(`✅ Recommended model: ${recommended}`);
   }
 
   // ---------------- Projects / Threads ----------------
@@ -762,6 +1061,8 @@ function newThread(){
       text = text.replaceAll(`{{${v}}}`, val);
     }
     $('chatInput').value = text;
+    resizeComposerInput();
+    syncComposerMeta();
     $('chatInput').focus();
     toast('✅ تم إدراج القالب');
     $('promptSelect').value = '';
@@ -823,6 +1124,8 @@ function newThread(){
     refreshModeButtons();
     const cur = String($('chatInput')?.value || '').trim();
     $('chatInput').value = (cur ? (cur + '\n\n') : '') + AGENT_TASK_TEMPLATES[key];
+    resizeComposerInput();
+    syncComposerMeta();
     $('chatInput').focus();
     toast('🤖 تم إدراج مهمة الوكيل');
     sel.value = '';
@@ -1797,6 +2100,32 @@ ${clip}` });
   let abortCtl = null;
   let pendingChatAttachments = [];
 
+  function renderEmptyChatState(log){
+    if (!log) return;
+    log.innerHTML = `
+      <div class="empty-chat-state">
+        <div class="empty-chat-title">ابدأ من مستوى منصة احترافية، لا مجرد رسالة.</div>
+        <div class="empty-chat-text">هذه النسخة أصبحت مهيأة لتعمل كمساحة تشغيل متكاملة: دردشة، ملفات، قاعدة معرفة، Workflows، ومخرجات قابلة للتنزيل. اختر نقطة انطلاق استراتيجية ثم دع المنصة تبني لك العمل خطوة بخطوة.</div>
+        <div class="empty-chat-grid">
+          <button class="empty-chat-card" type="button" data-quick-prompt="strategy_brief">
+            <strong>Strategic Brief</strong>
+            <span>حوّل الفكرة أو المشكلة إلى brief تنفيذي واضح مع أهداف، مخاطر، وخطة عمل.</span>
+          </button>
+          <button class="empty-chat-card" type="button" data-quick-prompt="deep_research">
+            <strong>Deep Research</strong>
+            <span>ابنِ بحثًا متعدد الخطوات مع أسئلة تحقيق، ملاحظات، ومخرجات نهائية قابلة للتنفيذ.</span>
+          </button>
+          <button class="empty-chat-card" type="button" data-quick-prompt="build_product">
+            <strong>Build Product</strong>
+            <span>صمّم منتجًا أو تطبيقًا من الفكرة إلى المعمارية، الواجهات، والـ roadmap.</span>
+          </button>
+          <button class="empty-chat-card" type="button" data-quick-prompt="action_board">
+            <strong>Action Board</strong>
+            <span>حوّل أي سياق أو اجتماع إلى لوحة مهام تنفيذية مع أولويات ومالكين ومواعيد.</span>
+          </button>
+        </div>
+      </div>`;
+  }
 
   function renderChat(){
     const log = $('chatLog');
@@ -1804,6 +2133,14 @@ ${clip}` });
     const thread = getCurThread();
     const msgs = thread.messages || [];
     log.innerHTML = '';
+
+    if (!msgs.length){
+      renderEmptyChatState(log);
+      log.scrollTop = 0;
+      refreshNavMeta();
+      refreshStrategicWorkspace().catch(()=>{});
+      return;
+    }
 
     msgs.forEach((m) => {
       const b = document.createElement('div');
@@ -1848,6 +2185,7 @@ ${clip}` });
 
     log.scrollTop = log.scrollHeight + 1000;
     refreshNavMeta();
+    refreshStrategicWorkspace().catch(()=>{});
   }
 
   function updateStreamingAssistant(mid, text){
@@ -1878,6 +2216,7 @@ ${clip}` });
       chip.appendChild(x);
       box.appendChild(chip);
     });
+    syncComposerMeta();
   }
 
   function clipText(t, limit){
@@ -1949,6 +2288,7 @@ function updateChips(){
       chip.appendChild(x);
       box.appendChild(chip);
     });
+    syncComposerMeta();
   }
 
   // ---------------- Send message ----------------
@@ -1982,6 +2322,8 @@ function updateChips(){
     saveThreads(pid, threads);
 
     input.value = '';
+    resizeComposerInput(input);
+    syncComposerMeta();
     renderChat();
 
     const filesText = buildAutoFilesContext(settings);
@@ -2150,6 +2492,8 @@ function updateChips(){
     const lastUser = [...(th.messages||[])].reverse().find(m => m.role === 'user');
     if (!lastUser) return;
     $('chatInput').value = lastUser.content || '';
+    resizeComposerInput();
+    syncComposerMeta();
     sendMessage();
   }
 
@@ -2911,6 +3255,7 @@ let pinOnly = false;
     $('ragToggle').checked = !!s.rag;
 
     refreshModeButtons();
+    refreshStrategicWorkspace().catch(()=>{});
   }
 
   function saveSettingsFromUI(){
@@ -2980,6 +3325,7 @@ let pinOnly = false;
 
     toast('✅ تم حفظ الإعدادات');
     refreshModeButtons();
+    refreshStrategicWorkspace().catch(()=>{});
     return s;
   }
 
@@ -2989,6 +3335,7 @@ let pinOnly = false;
     document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === `page-${page}`));
     const titles = { chat:'الدردشة', knowledge:'المعرفة (KB)', canvas:'كانفس', files:'الملفات', transcription:'التفريغ النصي', workflows:'Workflows', downloads:'التحميلات', projects:'المشاريع', settings:'الإعدادات' };
     $('topTitle').textContent = titles[page] || 'AI Studio';
+    refreshStrategicWorkspace().catch(()=>{});
   }
 
   function refreshNavMeta(){
@@ -3002,6 +3349,7 @@ let pinOnly = false;
     $('navProjMeta').textContent = String(loadProjects().length);
     $('navWorkMeta') && ($('navWorkMeta').textContent = '4');
     $('navSetMeta').textContent = 'OK';
+    refreshStrategicWorkspace().catch(()=>{});
   }
 
   // ---------------- Model Hub (OpenRouter) ----------------
@@ -3291,6 +3639,12 @@ $('chatToolbarExpandBtn')?.addEventListener('click', () => {
 
     $('newThreadBtn').addEventListener('click', () => { newThread(); setActiveNav('chat'); });
 
+    document.addEventListener('click', (e) => {
+      const quick = e.target.closest('[data-quick-prompt]');
+      if (!quick) return;
+      applyQuickPrompt(quick.dataset.quickPrompt || '');
+    });
+
     // chat
     
     // Chat attachments (inline)
@@ -3315,6 +3669,9 @@ $('chatToolbarExpandBtn')?.addEventListener('click', () => {
 $('sendBtn').addEventListener('click', sendMessage);
     $('stopBtn').addEventListener('click', stopGeneration);
     $('regenBtn').addEventListener('click', regenLast);
+    $('chatInput').addEventListener('input', () => {
+      syncComposerMeta();
+    });
     $('chatInput').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey){
         e.preventDefault();
@@ -3642,6 +3999,9 @@ ${e?.message||e}`, false);
 
     // settings
     $('saveSettingsBtn').addEventListener('click', saveSettingsFromUI);
+    $('settingsHealthBtn')?.addEventListener('click', runStrategicHealthCheck);
+    $('settingsDefaultsBtn')?.addEventListener('click', applyStrategicDefaults);
+    $('settingsRecommendModelBtn')?.addEventListener('click', recommendStrategicModel);
     $('resetSettingsBtn').addEventListener('click', () => { saveJSON(KEYS.settings, DEFAULT_SETTINGS); renderSettings();
     applyUiCollapse();
     applyToolbarCollapses();
@@ -3703,6 +4063,7 @@ ${e?.message||e}`, false);
     $('curProjectName').textContent = getCurProject().name;
 
     renderSettings();
+    ensureStrategicChrome();
 
     // Enable web search by default for first-time users
     try{
@@ -3738,6 +4099,7 @@ ${e?.message||e}`, false);
     updateChips();
 
     bind();
+    refreshStrategicWorkspace().catch(()=>{});
   }
 
   init();

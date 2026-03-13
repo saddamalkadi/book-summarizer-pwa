@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v6.6</title>
+    <title>AI Workspace Studio v6.7</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%231b66ff'/><stop offset='1' stop-color='%230b1020'/></linearGradient></defs><rect width='100' height='100' rx='18' fill='url(%23g)'/><path d='M28 30h44v40H28z' fill='%23ffffff' opacity='.92'/><path d='M34 40h32M34 50h32M34 60h22' stroke='%230b1020' stroke-width='3' stroke-linecap='round'/><circle cx='68' cy='64' r='6' fill='%231b66ff'/></svg>" />
@@ -234,6 +234,146 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
   .topbar .row{gap:6px}
 }
 
+    /* Strategic upgrade */
+    body{
+      background:
+        radial-gradient(circle at top right, rgba(27,102,255,.15), transparent 32%),
+        radial-gradient(circle at top left, rgba(20,184,166,.12), transparent 28%),
+        linear-gradient(180deg, #f8fbff 0%, #eef3fb 52%, #f5f7fb 100%);
+    }
+    body::before{
+      content:"";
+      position:fixed;
+      inset:0;
+      pointer-events:none;
+      background:
+        linear-gradient(120deg, rgba(255,255,255,.35), transparent 18%, transparent 82%, rgba(255,255,255,.2)),
+        radial-gradient(circle at 20% 20%, rgba(255,255,255,.6), transparent 20%);
+      opacity:.65;
+      z-index:-1;
+    }
+    .title-stack{display:flex; flex-direction:column; gap:4px; min-width:0;}
+    .top-runtime-row{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+    .runtime-badge{
+      display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:999px;
+      background:linear-gradient(135deg, rgba(27,102,255,.12), rgba(20,184,166,.14));
+      border:1px solid rgba(27,102,255,.18); font-size:11px; font-weight:1000; color:#16325f;
+    }
+    .status[data-tone="busy"]{background:#eef3ff; border-color:#bfd1ff; color:#183b7a;}
+    .status[data-tone="success"]{background:#ecfdf5; border-color:#9ee6c1; color:#166534;}
+    .status[data-tone="error"]{background:#fff1f2; border-color:#fecdd3; color:#be123c;}
+    .status[data-tone="info"]{background:#f8fafc; border-color:#d7dbea; color:#334155;}
+    .workspace-deck{
+      padding:12px; display:grid; grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr); gap:12px;
+      border-bottom:1px solid rgba(10,20,60,0.08); background:
+        linear-gradient(180deg, rgba(255,255,255,.9), rgba(246,249,255,.92));
+    }
+    .workspace-hero{
+      position:relative; overflow:hidden; border-radius:22px; padding:20px;
+      background:
+        radial-gradient(circle at top left, rgba(255,255,255,.24), transparent 30%),
+        linear-gradient(135deg, #0b1020 0%, #14306b 42%, #1b66ff 100%);
+      color:#fff; min-height:220px; display:flex; flex-direction:column; justify-content:space-between;
+      box-shadow:0 20px 50px rgba(14, 29, 76, .22);
+    }
+    .workspace-hero::after{
+      content:"";
+      position:absolute; inset:auto -40px -70px auto; width:220px; height:220px; border-radius:50%;
+      background:radial-gradient(circle, rgba(255,255,255,.22), transparent 68%);
+      pointer-events:none;
+    }
+    .workspace-eyebrow{font-size:12px; font-weight:1000; letter-spacing:.16em; text-transform:uppercase; opacity:.78;}
+    .workspace-title{font-size:30px; line-height:1.15; font-weight:1000; margin:10px 0 8px;}
+    .workspace-summary{max-width:760px; line-height:1.8; color:rgba(255,255,255,.88);}
+    .workspace-actions{display:flex; flex-wrap:wrap; gap:10px; margin-top:18px;}
+    .workspace-btn{
+      border:none; cursor:pointer; border-radius:14px; padding:11px 14px; font-weight:1000;
+      background:rgba(255,255,255,.12); color:#fff; border:1px solid rgba(255,255,255,.18);
+      backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    }
+    .workspace-btn.primary{background:#fff; color:#0b1020;}
+    .workspace-btn:hover,.quick-prompt-btn:hover,.empty-chat-card:hover{transform:translateY(-1px);}
+    .workspace-signals{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px;}
+    .signal-card{
+      border-radius:20px; padding:16px; background:rgba(255,255,255,.86); border:1px solid rgba(10,20,60,.08);
+      box-shadow:0 16px 38px rgba(15,23,42,.08); min-height:104px; display:flex; flex-direction:column; justify-content:space-between;
+    }
+    .signal-label{font-size:12px; color:var(--muted); font-weight:900; text-transform:uppercase; letter-spacing:.08em;}
+    .signal-value{font-size:18px; font-weight:1000; color:#0b1020; line-height:1.35;}
+    .signal-note{font-size:12px; color:#475569; line-height:1.6;}
+    .strategic-strip{
+      padding:0 12px 12px; display:flex; flex-wrap:wrap; gap:8px; background:linear-gradient(180deg, rgba(246,249,255,.92), rgba(251,252,255,0));
+    }
+    .quick-prompt-btn{
+      border:none; cursor:pointer; border-radius:999px; padding:10px 14px; font-weight:900;
+      background:#ffffff; color:#12305f; border:1px solid rgba(27,102,255,.12);
+      box-shadow:0 10px 24px rgba(27,102,255,.08);
+    }
+    .chatlog .empty-chat-state{
+      max-width:980px; margin:0 auto; border:1px dashed rgba(27,102,255,.18); background:#fff;
+      border-radius:24px; padding:22px; box-shadow:0 18px 40px rgba(15,23,42,.05);
+    }
+    .empty-chat-title{font-size:24px; font-weight:1000; margin-bottom:8px; color:#0b1020;}
+    .empty-chat-text{color:#516079; line-height:1.9; margin-bottom:16px;}
+    .empty-chat-grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px;}
+    .empty-chat-card{
+      padding:16px; border-radius:18px; background:linear-gradient(180deg, #f8fbff, #fdfefe);
+      border:1px solid rgba(10,20,60,.08); cursor:pointer;
+    }
+    .empty-chat-card strong{display:block; margin-bottom:6px; color:#0b1020;}
+    .empty-chat-card span{display:block; color:#516079; line-height:1.7; font-size:13px;}
+    .chatbar textarea{
+      flex:1; min-width:280px; min-height:60px; max-height:180px; resize:vertical;
+      line-height:1.7; padding-top:12px; padding-bottom:12px;
+    }
+    .composer-meta{
+      display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;
+      padding:0 12px 12px; color:#64748b; font-size:12px;
+    }
+    .composer-status{font-weight:900; color:#16325f;}
+    .sidecard-title{font-size:12px; text-transform:uppercase; letter-spacing:.12em; font-weight:1000; opacity:.82; margin-bottom:10px;}
+    .sidecard-grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px;}
+    .sidecard-metric{
+      background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.1); border-radius:14px; padding:10px;
+      display:flex; flex-direction:column; gap:6px;
+    }
+    .sidecard-metric span{font-size:11px; opacity:.75; font-weight:900;}
+    .sidecard-metric strong{font-size:13px; line-height:1.5;}
+    .sidecard-note{margin-top:10px; font-size:12px; line-height:1.8; opacity:.92;}
+    .settings-overview{
+      padding:12px; display:grid; grid-template-columns:minmax(0,1.2fr) minmax(280px,.8fr); gap:12px;
+      border-bottom:1px solid rgba(10,20,60,0.08); background:linear-gradient(180deg, rgba(249,251,255,.96), rgba(255,255,255,.9));
+    }
+    .settings-overview-card{
+      border:1px solid rgba(10,20,60,.08); border-radius:20px; padding:18px; background:#fff;
+      box-shadow:0 16px 38px rgba(15,23,42,.06);
+    }
+    .settings-overview-card h3{margin:0 0 6px; font-size:22px;}
+    .settings-overview-card p{margin:0; color:#516079; line-height:1.85;}
+    .settings-actions{display:flex; flex-wrap:wrap; gap:10px; margin-top:16px;}
+    .settings-kpis{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:14px;}
+    .settings-kpi{
+      border-radius:16px; padding:14px; background:linear-gradient(180deg,#f8fbff,#fbfcff); border:1px solid rgba(10,20,60,.08);
+    }
+    .settings-kpi span{display:block; font-size:12px; color:var(--muted); font-weight:900; margin-bottom:6px;}
+    .settings-kpi strong{display:block; line-height:1.55;}
+    .settings-health-output{
+      margin-top:14px; min-height:54px; border-radius:16px; padding:12px 14px; white-space:pre-wrap;
+      background:#f8fafc; border:1px solid rgba(10,20,60,.08); color:#334155; line-height:1.8;
+    }
+    @media (max-width:1080px){
+      .workspace-deck,.settings-overview{grid-template-columns:1fr;}
+      .workspace-title{font-size:26px;}
+    }
+    @media (max-width:640px){
+      .workspace-deck{padding:10px; gap:10px;}
+      .workspace-signals,.empty-chat-grid,.settings-kpis,.sidecard-grid{grid-template-columns:1fr;}
+      .workspace-title{font-size:22px;}
+      .workspace-hero{padding:16px; min-height:0;}
+      .chatbar textarea{min-width:100%; min-height:56px;}
+      .composer-meta{padding:0 8px 10px;}
+      .settings-overview{padding:10px;}
+    }
 </style>
 </head>
 <body>
@@ -356,6 +496,52 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
               <button class="btn ghost sm with-label" id="chatToolbarCollapseBtn" type="button" title="طي الأدوات" aria-label="طي الأدوات"><span class="icon">▾</span><span class="label">إخفاء</span></button>
               </div>
             </div>
+          </div>
+
+          <div class="workspace-deck" id="workspaceDeck">
+            <section class="workspace-hero">
+              <div>
+                <div class="workspace-eyebrow">Strategic AI Workspace</div>
+                <div class="workspace-title" id="workspaceHeadline">One workspace for chat, research, delivery, and execution.</div>
+                <div class="workspace-summary" id="workspaceSummary">Run conversations with better context, smarter files, safer deployment, and faster operator decisions from one interface.</div>
+              </div>
+              <div class="workspace-actions">
+                <button class="workspace-btn primary" type="button" data-quick-prompt="strategy_brief">Strategic brief</button>
+                <button class="workspace-btn" type="button" data-quick-prompt="deep_research">Deep research</button>
+                <button class="workspace-btn" type="button" data-quick-prompt="system_audit">System audit</button>
+                <button class="workspace-btn" type="button" data-quick-prompt="build_product">Build product</button>
+              </div>
+            </section>
+            <section class="workspace-signals">
+              <div class="signal-card">
+                <div class="signal-label">Provider</div>
+                <div class="signal-value" id="signalProvider">â€”</div>
+                <div class="signal-note" id="signalProviderNote">Connection profile and auth mode</div>
+              </div>
+              <div class="signal-card">
+                <div class="signal-label">Model</div>
+                <div class="signal-value" id="signalModel">â€”</div>
+                <div class="signal-note" id="signalModelNote">Primary intelligence route</div>
+              </div>
+              <div class="signal-card">
+                <div class="signal-label">Context</div>
+                <div class="signal-value" id="signalContext">â€”</div>
+                <div class="signal-note" id="signalContextNote">Files, KB, and memory footprint</div>
+              </div>
+              <div class="signal-card">
+                <div class="signal-label">Execution Mode</div>
+                <div class="signal-value" id="signalModes">â€”</div>
+                <div class="signal-note" id="signalModesNote">Streaming, web, tools, and operator modes</div>
+              </div>
+            </section>
+          </div>
+
+          <div class="strategic-strip" id="strategicStrip">
+            <button class="quick-prompt-btn" type="button" data-quick-prompt="exec_summary">Executive summary</button>
+            <button class="quick-prompt-btn" type="button" data-quick-prompt="action_board">Action board</button>
+            <button class="quick-prompt-btn" type="button" data-quick-prompt="kb_orchestrator">Knowledge orchestrator</button>
+            <button class="quick-prompt-btn" type="button" data-quick-prompt="launch_plan">Launch plan</button>
+            <button class="quick-prompt-btn" type="button" data-quick-prompt="pm_review">Product review</button>
           </div>
 
           <div class="chatlog" id="chatLog"></div>
@@ -789,11 +975,11 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     })();
   </script>
 
-  <script src="app.js?v=66"></script>
+  <script src="app.js?v=67"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js?v=66").then((registration) => {
+        navigator.serviceWorker.register("./sw.js?v=67").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {
