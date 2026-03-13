@@ -28,7 +28,10 @@
     workspaceSectionMap: 'aistudio_workspace_sections_v1',
     projectBrief: (pid) => `aistudio_project_brief_${pid}_v1`,
     sidebarPinned: 'aistudio_sidebar_pinned_v1',
-    focusMode: 'aistudio_focus_mode_v1'
+    focusMode: 'aistudio_focus_mode_v1',
+    studyMode: 'aistudio_study_mode_v1',
+    transcribeProfile: 'aistudio_transcribe_profile_v1',
+    transcribeDocxMode: 'aistudio_transcribe_docx_mode_v1'
   };
 
   const nowTs = () => Date.now();
@@ -210,8 +213,8 @@ async function buildKbIndex(){
   const kb = getKbSettings(pid);
   const settings = getSettings();
   const embedModel = (kb.embedModel || '').trim();
-  if (!embedModel) return toast('⚠️ ضع Embedding Model في صفحة المعرفة.');
-  if (!settings.apiKey) return toast('⚠️ ضع API Key.');
+  if (!embedModel) return toast('⚠️ حدّد نموذج التضمين في صفحة المعرفة.');
+  if (!settings.apiKey) return toast('⚠️ أضف مفتاح API.');
 
   const files = loadFiles(pid).filter(f => (f.text||'').trim());
   if (!files.length) return toast('⚠️ لا توجد نصوص مستخرجة من الملفات.');
@@ -258,8 +261,8 @@ async function searchKb(query){
   const settings = getSettings();
   const embedModel = (kb.embedModel || '').trim();
   const topK = clamp(Number(kb.topK||6), 1, 20);
-  if (!embedModel) throw new Error('Embedding Model غير محدد');
-  if (!hasAuthReady(settings)) throw new Error('المصادقة غير مكتملة (API Key أو Gateway URL)');
+  if (!embedModel) throw new Error('نموذج التضمين غير محدد');
+  if (!hasAuthReady(settings)) throw new Error('المصادقة غير مكتملة (مفتاح API أو رابط البوابة)');
 
   const chunks = await kbGetAllByProject(pid);
   const withEmb = chunks.filter(c => c.embedding);
@@ -574,6 +577,12 @@ const getSidebarPinned = () => (localStorage.getItem(KEYS.sidebarPinned) || 'fal
 const setSidebarPinned = (v) => localStorage.setItem(KEYS.sidebarPinned, v ? 'true' : 'false');
 const getFocusMode = () => (localStorage.getItem(KEYS.focusMode) || 'false') === 'true';
 const setFocusMode = (v) => localStorage.setItem(KEYS.focusMode, v ? 'true' : 'false');
+const getStudyMode = () => (localStorage.getItem(KEYS.studyMode) || 'false') === 'true';
+const setStudyMode = (v) => localStorage.setItem(KEYS.studyMode, v ? 'true' : 'false');
+const getTranscribeProfile = () => localStorage.getItem(KEYS.transcribeProfile) || 'balanced';
+const setTranscribeProfile = (v) => localStorage.setItem(KEYS.transcribeProfile, v || 'balanced');
+const getTranscribeDocxMode = () => localStorage.getItem(KEYS.transcribeDocxMode) || 'auto';
+const setTranscribeDocxMode = (v) => localStorage.setItem(KEYS.transcribeDocxMode, v || 'auto');
 
 const getToolbarCollapsedMap = () => loadJSON(KEYS.toolbarCollapsedMap, {});
 const setToolbarCollapsedMap = (map) => saveJSON(KEYS.toolbarCollapsedMap, map || {});
@@ -585,6 +594,8 @@ const DEFAULT_PROJECT_BRIEF = {
   audience: '',
   deliverable: '',
   constraints: '',
+  memory: '',
+  responseRules: '',
   style: 'executive'
 };
 
@@ -599,7 +610,7 @@ function setProjectBrief(pid, patch){
 }
 
 function hasProjectBrief(brief = getProjectBrief()){
-  return ['goal', 'audience', 'deliverable', 'constraints'].some((k) => String(brief?.[k] || '').trim());
+  return ['goal', 'audience', 'deliverable', 'constraints', 'memory', 'responseRules'].some((k) => String(brief?.[k] || '').trim());
 }
 
 function briefSnippet(text, limit = 44){
@@ -609,20 +620,37 @@ function briefSnippet(text, limit = 44){
 }
 
 function summarizeProjectBrief(brief = getProjectBrief()){
-  const parts = [brief.goal, brief.deliverable, brief.audience].map((v) => briefSnippet(v)).filter(Boolean);
-  return parts.join(' • ') || 'Define goal, audience, and deliverable';
+  const parts = [
+    brief.goal,
+    brief.deliverable,
+    brief.audience,
+    brief.memory ? 'ذاكرة محفوظة' : '',
+    brief.responseRules ? 'قواعد رد' : ''
+  ].map((v) => briefSnippet(v)).filter(Boolean);
+  return parts.join(' • ') || 'حدّد الهدف والجمهور والمخرج المطلوب';
+}
+
+function getBriefStyleLabel(style = 'executive'){
+  return ({
+    executive: 'تنفيذي',
+    operator: 'تشغيلي',
+    deep_dive: 'تحليل عميق',
+    board_ready: 'جاهز للإدارة'
+  })[style] || 'تنفيذي';
 }
 
 function buildProjectBriefContext(pid = getCurProjectId()){
   const brief = getProjectBrief(pid);
   if (!hasProjectBrief(brief)) return '';
-  const lines = ['Project brief:'];
-  if (brief.goal.trim()) lines.push(`- Goal: ${brief.goal.trim()}`);
-  if (brief.audience.trim()) lines.push(`- Audience: ${brief.audience.trim()}`);
-  if (brief.deliverable.trim()) lines.push(`- Deliverable: ${brief.deliverable.trim()}`);
-  if (brief.constraints.trim()) lines.push(`- Constraints: ${brief.constraints.trim()}`);
-  if (brief.style.trim()) lines.push(`- Style: ${brief.style.trim()}`);
-  lines.push('- Use this brief to shape structure, clarity, and output format before answering.');
+  const lines = ['سياق المشروع الدائم:'];
+  if (brief.goal.trim()) lines.push(`- الهدف: ${brief.goal.trim()}`);
+  if (brief.audience.trim()) lines.push(`- الجمهور: ${brief.audience.trim()}`);
+  if (brief.deliverable.trim()) lines.push(`- المخرج المطلوب: ${brief.deliverable.trim()}`);
+  if (brief.constraints.trim()) lines.push(`- القيود: ${brief.constraints.trim()}`);
+  if (brief.memory.trim()) lines.push(`- ذاكرة المشروع: ${brief.memory.trim()}`);
+  if (brief.responseRules.trim()) lines.push(`- قواعد الرد: ${brief.responseRules.trim()}`);
+  if (brief.style.trim()) lines.push(`- أسلوب الرد: ${getBriefStyleLabel(brief.style.trim())}`);
+  lines.push('- استخدم هذا السياق لتشكيل الإجابة والمخرجات قبل البدء في الرد.');
   return lines.join('\n');
 }
 
@@ -713,37 +741,153 @@ function applyShellLayout(){
   if (pinBtn){
     const pinned = getSidebarPinned();
     pinBtn.classList.toggle('dark', pinned);
-    pinBtn.title = pinned ? 'Undock sidebar' : 'Dock sidebar';
+    pinBtn.title = pinned ? 'تحويل الشريط الجانبي إلى لوحة عائمة' : 'تثبيت الشريط الجانبي';
     pinBtn.setAttribute('aria-label', pinBtn.title);
     pinBtn.innerHTML = pinned
-      ? '<span class="icon">⟷</span><span class="label">Docked</span>'
-      : '<span class="icon">⟷</span><span class="label">Float</span>';
+      ? '<span class="icon">⟷</span><span class="label">مثبّت</span>'
+      : '<span class="icon">⟷</span><span class="label">عائم</span>';
+  }
+
+  const historyBtn = $('historyDrawerBtn');
+  if (historyBtn){
+    historyBtn.title = 'فتح سجل الدردشات';
+    historyBtn.setAttribute('aria-label', historyBtn.title);
+    historyBtn.innerHTML = '<span class="icon">🕘</span><span class="label">السجل</span>';
   }
 
   const focusBtn = $('focusModeBtn');
   if (focusBtn){
     const focus = getFocusMode();
     focusBtn.classList.toggle('dark', focus);
-    focusBtn.title = focus ? 'Exit focus mode' : 'Enter focus mode';
+    focusBtn.title = focus ? 'الخروج من وضع التركيز' : 'الدخول إلى وضع التركيز';
     focusBtn.setAttribute('aria-label', focusBtn.title);
     focusBtn.innerHTML = focus
-      ? '<span class="icon">▣</span><span class="label">Focus</span>'
-      : '<span class="icon">▢</span><span class="label">Focus</span>';
+      ? '<span class="icon">▣</span><span class="label">تركيز</span>'
+      : '<span class="icon">▢</span><span class="label">تركيز</span>';
+  }
+
+  const studyBtn = $('studyModeBtn');
+  if (studyBtn){
+    const study = getStudyMode();
+    studyBtn.classList.toggle('dark', study);
+    studyBtn.title = study ? 'إيقاف وضع الدراسة' : 'تفعيل وضع الدراسة';
+    studyBtn.setAttribute('aria-label', studyBtn.title);
+    studyBtn.innerHTML = study
+      ? '<span class="icon">📚</span><span class="label">وضع دراسي</span>'
+      : '<span class="icon">📖</span><span class="label">وضع دراسي</span>';
   }
 }
+
+  let composerRecognition = null;
+  let composerListening = false;
+  let composerDictationBase = '';
+
+  function getSpeechRecognitionCtor(){
+    return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  }
+
+  function syncVoiceInputButton(){
+    const btn = $('voiceInputBtn');
+    if (!btn) return;
+    btn.classList.toggle('dark', composerListening);
+    btn.classList.toggle('is-recording', composerListening);
+    btn.title = composerListening ? 'إيقاف الإملاء الصوتي' : 'بدء الإملاء الصوتي';
+    btn.setAttribute('aria-label', btn.title);
+    btn.innerHTML = composerListening
+      ? '<span class="icon">🎙️</span><span class="label">إيقاف الإملاء</span>'
+      : '<span class="icon">🎤</span><span class="label">إملاء صوتي</span>';
+  }
+
+  function stopComposerDictation(showToast = false){
+    try{ composerRecognition?.stop?.(); }catch(_){}
+    composerRecognition = null;
+    composerListening = false;
+    syncVoiceInputButton();
+    if (showToast) toast('⏹️ تم إيقاف الإملاء الصوتي');
+  }
+
+  function startComposerDictation(){
+    const Ctor = getSpeechRecognitionCtor();
+    if (!Ctor) return toast('⚠️ الإملاء الصوتي غير مدعوم في هذا المتصفح');
+    const input = $('chatInput');
+    if (!input) return;
+
+    composerDictationBase = String(input.value || '').trimEnd();
+    composerRecognition = new Ctor();
+    composerRecognition.lang = document.documentElement.lang === 'ar' ? 'ar-SA' : 'en-US';
+    composerRecognition.continuous = true;
+    composerRecognition.interimResults = true;
+
+    composerRecognition.onstart = () => {
+      composerListening = true;
+      syncVoiceInputButton();
+      showStatus('🎙️ الإملاء الصوتي يعمل الآن…', false);
+    };
+
+    composerRecognition.onresult = (event) => {
+      const parts = [];
+      for (let i = event.resultIndex; i < event.results.length; i += 1){
+        const transcript = String(event.results[i]?.[0]?.transcript || '').trim();
+        if (transcript) parts.push(transcript);
+      }
+      const dictation = parts.join(' ').trim();
+      input.value = [composerDictationBase, dictation].filter(Boolean).join(composerDictationBase ? '\n' : '');
+      resizeComposerInput(input);
+      syncComposerMeta();
+    };
+
+    composerRecognition.onerror = (event) => {
+      composerListening = false;
+      syncVoiceInputButton();
+      if (event?.error !== 'no-speech') toast(`⚠️ تعذّر الإملاء الصوتي: ${event?.error || 'unknown'}`);
+    };
+
+    composerRecognition.onend = () => {
+      composerListening = false;
+      composerRecognition = null;
+      syncVoiceInputButton();
+      showStatus('', false);
+    };
+
+    try{
+      composerRecognition.start();
+    }catch(e){
+      composerListening = false;
+      composerRecognition = null;
+      syncVoiceInputButton();
+      toast(`⚠️ تعذّر بدء الإملاء الصوتي: ${e?.message || e}`);
+    }
+  }
+
+  function toggleComposerDictation(){
+    if (composerListening) stopComposerDictation(true);
+    else startComposerDictation();
+  }
 
 
 function refreshDeepSearchBtn(){
     const b = $('deepSearchToggleBtn');
     if (!b) return;
     b.classList.toggle('dark', isDeepSearch());
-    b.textContent = isDeepSearch() ? '🔬 Deep ✓' : '🔬 Deep';
+    b.textContent = isDeepSearch() ? '🔬 بحث عميق ✓' : '🔬 بحث عميق';
   }
 
   function refreshModeButtons(){
-    $('modeDeepBtn')?.classList.toggle('dark', isDeep());
-    $('modeAgentBtn')?.classList.toggle('dark', isAgent());
-    $('webToggleBtn')?.classList.toggle('dark', getWebToggle());
+    const deepBtn = $('modeDeepBtn');
+    if (deepBtn){
+      deepBtn.classList.toggle('dark', isDeep());
+      deepBtn.innerHTML = '<span class="icon">🧠</span><span class="label">عميق</span>';
+    }
+    const agentBtn = $('modeAgentBtn');
+    if (agentBtn){
+      agentBtn.classList.toggle('dark', isAgent());
+      agentBtn.innerHTML = '<span class="icon">🤖</span><span class="label">وكيل</span>';
+    }
+    const webBtn = $('webToggleBtn');
+    if (webBtn){
+      webBtn.classList.toggle('dark', getWebToggle());
+      webBtn.innerHTML = '<span class="icon">🔎</span><span class="label">ويب</span>';
+    }
     $('streamToggle') && ($('streamToggle').checked = !!getSettings().streaming);
     $('ragToggle') && ($('ragToggle').checked = getRagToggle());
     refreshDeepSearchBtn();
@@ -765,9 +909,9 @@ function refreshDeepSearchBtn(){
   }
 
   function getAuthStateLabel(settings){
-    if (settings.provider === 'gemini') return (settings.geminiKey || '').trim() ? 'Gemini key ready' : 'Gemini key needed';
-    if (settings.authMode === 'gateway') return (settings.gatewayUrl || '').trim() ? 'Gateway routing' : 'Gateway missing';
-    return (settings.apiKey || '').trim() ? 'Browser key ready' : 'API key needed';
+    if (settings.provider === 'gemini') return (settings.geminiKey || '').trim() ? 'مفتاح Gemini جاهز' : 'يلزم مفتاح Gemini';
+    if (settings.authMode === 'gateway') return (settings.gatewayUrl || '').trim() ? 'ربط عبر البوابة' : 'البوابة غير مضبوطة';
+    return (settings.apiKey || '').trim() ? 'مفتاح المتصفح جاهز' : 'يلزم مفتاح API';
   }
 
   function buildQuickPromptTemplate(kind){
@@ -775,12 +919,12 @@ function refreshDeepSearchBtn(){
       strategy_brief: 'أنشئ brief استراتيجي احترافي لهذا الطلب. المطلوب: 1) الهدف 2) الوضع الحالي 3) الفرص 4) المخاطر 5) خطة التنفيذ 6) المخرجات النهائية.',
       deep_research: 'نفّذ بحثًا عميقًا منظمًا. ابدأ بخطة بحث، ثم أسئلة التحقيق، ثم النتائج، ثم الاستنتاجات، ثم التوصيات العملية.',
       system_audit: 'قم بمراجعة تشغيلية للنظام أو التطبيق الحالي. أريد: المشاكل، الأولويات، المخاطر، الإصلاحات السريعة، وخطة تحسين احترافية.',
-      build_product: 'ساعدني في بناء منتج احترافي من هذه الفكرة. أريد: positioning، architecture، user flows، roadmap، ومواصفات الإصدار الأول.',
-      exec_summary: 'اكتب Executive Summary واضحًا وموجزًا مع النقاط الحاسمة والقرار المقترح.',
-      action_board: 'حوّل هذا السياق إلى Action Board: المهمة، المالك، الأولوية، الموعد، الحالة، والخطوة التالية.',
+      build_product: 'ساعدني في بناء منتج احترافي من هذه الفكرة. أريد: التموضع، البنية، تدفقات الاستخدام، خارطة الطريق، ومواصفات الإصدار الأول.',
+      exec_summary: 'اكتب ملخصًا تنفيذيًا واضحًا وموجزًا مع النقاط الحاسمة والقرار المقترح.',
+      action_board: 'حوّل هذا السياق إلى لوحة تنفيذ: المهمة، المالك، الأولوية، الموعد، الحالة، والخطوة التالية.',
       kb_orchestrator: 'استخدم الملفات وقاعدة المعرفة لبناء إجابة موثقة باقتباسات واضحة، ثم لخص الفجوات والمعلومات غير المؤكدة.',
-      launch_plan: 'أنشئ Launch Plan متكاملة: readiness، assets، risks، timeline، owners، success metrics.',
-      pm_review: 'قم بدور Product Strategist وراجع الفكرة أو التطبيق: القيمة، UX، gaps، differentiation، ثم توصية تنفيذية.'
+      launch_plan: 'أنشئ خطة إطلاق متكاملة: الجاهزية، الأصول المطلوبة، المخاطر، الجدول الزمني، المسؤوليات، ومؤشرات النجاح.',
+      pm_review: 'قم بدور خبير استراتيجية منتج وراجع الفكرة أو التطبيق: القيمة، تجربة الاستخدام، الفجوات، عناصر التميز، ثم توصية تنفيذية.'
     };
     return templates[kind] || '';
   }
@@ -795,7 +939,7 @@ function refreshDeepSearchBtn(){
     syncComposerMeta();
     input.focus();
     if (shouldSend) sendMessage();
-    else toast('✅ تم تجهيز prompt احترافي');
+    else toast('✅ تم تجهيز طلب احترافي');
   }
 
   function resizeComposerInput(input = $('chatInput')){
@@ -809,14 +953,14 @@ function refreshDeepSearchBtn(){
     if (sideCard && !sideCard.classList.contains('strategic-sidecard')){
       sideCard.classList.add('strategic-sidecard');
       sideCard.innerHTML = `
-        <div class="sidecard-title">Strategic Control</div>
+        <div class="sidecard-title">التحكم الاستراتيجي</div>
         <div class="sidecard-grid">
-          <div class="sidecard-metric"><span>Project</span><strong id="sideProjectMeta">—</strong></div>
-          <div class="sidecard-metric"><span>Model</span><strong id="sideModelMeta">—</strong></div>
-          <div class="sidecard-metric"><span>Context</span><strong id="sideContextMeta">—</strong></div>
-          <div class="sidecard-metric"><span>Modes</span><strong id="sideModeMeta">—</strong></div>
+          <div class="sidecard-metric"><span>المشروع</span><strong id="sideProjectMeta">—</strong></div>
+          <div class="sidecard-metric"><span>النموذج</span><strong id="sideModelMeta">—</strong></div>
+          <div class="sidecard-metric"><span>السياق</span><strong id="sideContextMeta">—</strong></div>
+          <div class="sidecard-metric"><span>الأوضاع</span><strong id="sideModeMeta">—</strong></div>
         </div>
-        <div class="sidecard-note" id="sideHealthNote">Configure your workspace once, then operate chat, files, retrieval, and workflows from one command center.</div>`;
+        <div class="sidecard-note" id="sideHealthNote">اضبط مساحة العمل مرة واحدة ثم أدر الدردشة والملفات والمعرفة والمخرجات من لوحة عربية موحدة.</div>`;
     }
 
     const brand = document.querySelector('.brand');
@@ -848,12 +992,52 @@ function refreshDeepSearchBtn(){
     }
 
     const topActions = document.querySelector('.topbar .topbar-actions');
+    if (topActions && !$('historyDrawerBtn')){
+      const historyBtn = document.createElement('button');
+      historyBtn.type = 'button';
+      historyBtn.id = 'historyDrawerBtn';
+      historyBtn.className = 'btn ghost sm with-label';
+      topActions.insertBefore(historyBtn, $('focusModeBtn') || $('headerCollapseBtn'));
+    }
+    if (topActions && !$('studyModeBtn')){
+      const study = document.createElement('button');
+      study.type = 'button';
+      study.id = 'studyModeBtn';
+      study.className = 'btn ghost sm with-label';
+      topActions.insertBefore(study, $('focusModeBtn') || $('headerCollapseBtn'));
+    }
     if (topActions && !$('focusModeBtn')){
       const focus = document.createElement('button');
       focus.type = 'button';
       focus.id = 'focusModeBtn';
       focus.className = 'btn ghost sm with-label';
       topActions.insertBefore(focus, $('headerCollapseBtn'));
+    }
+
+    const nav = $('nav');
+    if (nav && !nav.querySelector('[data-page="guide"]')){
+      const guideBtn = document.createElement('button');
+      guideBtn.className = 'navbtn';
+      guideBtn.dataset.page = 'guide';
+      guideBtn.innerHTML = '<span>دليل الاستخدام</span><span class="meta" id="navGuideMeta">AR</span>';
+      nav.appendChild(guideBtn);
+    }
+
+    const contentRoot = document.querySelector('.content');
+    if (contentRoot && !$('page-guide')){
+      const page = document.createElement('div');
+      page.className = 'page';
+      page.id = 'page-guide';
+      page.innerHTML = `
+        <div class="toolbar">
+          <input id="guideSearch" type="text" placeholder="ابحث داخل دليل الاستخدام..." style="max-width:320px" />
+          <button class="btn ghost sm with-label" id="guideExportBtn" type="button"><span class="icon">⬇️</span><span class="label">تنزيل الدليل</span></button>
+        </div>
+        <div class="guide-shell">
+          <aside class="guide-index" id="guideIndex"></aside>
+          <div class="guide-content" id="guideContent"></div>
+        </div>`;
+      contentRoot.appendChild(page);
     }
 
     const input = $('chatInput');
@@ -869,12 +1053,49 @@ function refreshDeepSearchBtn(){
     }
 
     const chatbar = document.querySelector('#page-chat .chatbar');
+    if (chatbar && !$('voiceInputBtn')){
+      const voiceBtn = document.createElement('button');
+      voiceBtn.type = 'button';
+      voiceBtn.id = 'voiceInputBtn';
+      voiceBtn.className = 'btn ghost';
+      voiceBtn.title = 'إملاء صوتي';
+      voiceBtn.setAttribute('aria-label', voiceBtn.title);
+      voiceBtn.textContent = '🎤';
+      chatbar.insertBefore(voiceBtn, $('regenBtn') || $('stopBtn') || $('sendBtn'));
+    }
     if (chatbar && !$('composerContextMeta')){
       chatbar.insertAdjacentHTML('afterend', `
         <div class="composer-meta">
           <span id="composerHint">Enter للإرسال • Shift+Enter لسطر جديد • المرفقات تندمج تلقائيًا مع السياق.</span>
-          <span class="composer-status" id="composerContextMeta">Workspace context —</span>
+          <span class="composer-status" id="composerContextMeta">سياق مساحة العمل —</span>
         </div>`);
+    }
+
+    const chatPage = $('page-chat');
+    if (chatPage && !$('threadDrawer')){
+      const drawer = document.createElement('aside');
+      drawer.className = 'thread-drawer';
+      drawer.id = 'threadDrawer';
+      drawer.innerHTML = `
+        <div class="thread-drawer-head">
+          <div>
+            <div class="thread-drawer-title">سجل الدردشات</div>
+            <div class="thread-drawer-sub" id="threadDrawerSub">المحادثات المحفوظة داخل المشروع الحالي</div>
+          </div>
+          <div class="row" style="margin:0; gap:6px">
+            <button class="btn ghost sm icon" id="threadDrawerCloseBtn" type="button" title="إغلاق" aria-label="إغلاق">✕</button>
+          </div>
+        </div>
+        <div class="thread-drawer-toolbar">
+          <input id="threadSearchInput" type="text" placeholder="ابحث في السجل..." />
+          <button class="btn ghost sm with-label" id="threadExportAllBtn" type="button"><span class="icon">⬇️</span><span class="label">تصدير الكل</span></button>
+        </div>
+        <div class="thread-drawer-list" id="threadDrawerList"></div>`;
+      chatPage.appendChild(drawer);
+      const overlay = document.createElement('div');
+      overlay.className = 'thread-drawer-overlay';
+      overlay.id = 'threadDrawerOverlay';
+      chatPage.appendChild(overlay);
     }
 
     const settingsPage = $('page-settings');
@@ -883,22 +1104,22 @@ function refreshDeepSearchBtn(){
       settingsToolbar.insertAdjacentHTML('afterend', `
         <div class="settings-overview">
           <div class="settings-overview-card">
-            <h3>Strategic configuration layer</h3>
-            <p>Turn the app from a simple chat surface into an operational AI workspace: stable gateway routing, stronger defaults, smarter model selection, and clearer runtime diagnostics.</p>
+            <h3>طبقة التشغيل الاحترافية</h3>
+            <p>حوّل التطبيق من واجهة دردشة إلى مساحة عمل ذكاء اصطناعي متكاملة: ربط أكثر استقرارًا، نماذج أنسب، تشخيصات أوضح، وسياق مشروع محفوظ.</p>
             <div class="settings-actions">
-              <button class="btn dark sm with-label" id="settingsHealthBtn" type="button"><span class="icon">◎</span><span class="label">Health Check</span></button>
-              <button class="btn ghost sm with-label" id="settingsDefaultsBtn" type="button"><span class="icon">⚙️</span><span class="label">Pro Defaults</span></button>
-              <button class="btn ghost sm with-label" id="settingsRecommendModelBtn" type="button"><span class="icon">✨</span><span class="label">Recommend Model</span></button>
+              <button class="btn dark sm with-label" id="settingsHealthBtn" type="button"><span class="icon">◎</span><span class="label">فحص الصحة</span></button>
+              <button class="btn ghost sm with-label" id="settingsDefaultsBtn" type="button"><span class="icon">⚙️</span><span class="label">إعدادات احترافية</span></button>
+              <button class="btn ghost sm with-label" id="settingsRecommendModelBtn" type="button"><span class="icon">✨</span><span class="label">اقتراح نموذج</span></button>
             </div>
-            <div class="settings-health-output" id="settingsHealthOutput">Run a health check to validate Gateway, model route, and operational readiness.</div>
+            <div class="settings-health-output" id="settingsHealthOutput">شغّل فحص الصحة للتأكد من جاهزية البوابة، مسار النموذج، وحالة التشغيل العامة.</div>
           </div>
           <div class="settings-overview-card">
-            <h3>Runtime readiness</h3>
+            <h3>جاهزية التشغيل</h3>
             <div class="settings-kpis">
-              <div class="settings-kpi"><span>Connection</span><strong id="settingsReadyState">—</strong></div>
-              <div class="settings-kpi"><span>Gateway</span><strong id="settingsGatewayState">—</strong></div>
-              <div class="settings-kpi"><span>Model</span><strong id="settingsModelState">—</strong></div>
-              <div class="settings-kpi"><span>Security</span><strong id="settingsSecurityState">—</strong></div>
+              <div class="settings-kpi"><span>الاتصال</span><strong id="settingsReadyState">—</strong></div>
+              <div class="settings-kpi"><span>البوابة</span><strong id="settingsGatewayState">—</strong></div>
+              <div class="settings-kpi"><span>النموذج</span><strong id="settingsModelState">—</strong></div>
+              <div class="settings-kpi"><span>الأمان</span><strong id="settingsSecurityState">—</strong></div>
             </div>
           </div>
         </div>`);
@@ -907,45 +1128,90 @@ function refreshDeepSearchBtn(){
     const mainToolbar = document.querySelector('#page-chat .mainToolbar');
     if (mainToolbar && !$('workspaceBriefSection')){
       mainToolbar.insertAdjacentHTML('beforeend', `
-        <section class="tool-group" id="workspaceBriefSection" data-section-id="brief" data-section-title="Project Brief">
-          <span class="tool-group-title">Project brief</span>
+        <section class="tool-group" id="workspaceBriefSection" data-section-id="brief" data-section-title="ذاكرة المشروع">
+          <span class="tool-group-title">ذاكرة المشروع</span>
           <div class="toolbar-strip workspace-brief-grid">
             <div class="brief-field">
-              <label class="hint" for="briefGoal">Goal</label>
-              <input id="briefGoal" type="text" placeholder="What outcome do you want from this project?" />
+              <label class="hint" for="briefGoal">الهدف</label>
+              <input id="briefGoal" type="text" placeholder="ما النتيجة التي تريد الوصول إليها في هذا المشروع؟" />
             </div>
             <div class="brief-field">
-              <label class="hint" for="briefAudience">Audience</label>
-              <input id="briefAudience" type="text" placeholder="Who is the response for?" />
+              <label class="hint" for="briefAudience">الجمهور</label>
+              <input id="briefAudience" type="text" placeholder="لمن ستكون الإجابة أو المستند النهائي؟" />
             </div>
             <div class="brief-field">
-              <label class="hint" for="briefDeliverable">Deliverable</label>
-              <input id="briefDeliverable" type="text" placeholder="Brief, plan, report, launch doc, table..." />
+              <label class="hint" for="briefDeliverable">المخرج المطلوب</label>
+              <input id="briefDeliverable" type="text" placeholder="خطة، تقرير، عرض، بريد، جدول، مستند تنفيذي..." />
             </div>
             <div class="brief-field">
-              <label class="hint" for="briefStyle">Style</label>
+              <label class="hint" for="briefStyle">أسلوب الرد</label>
               <select id="briefStyle">
-                <option value="executive">Executive</option>
-                <option value="operator">Operator</option>
-                <option value="deep_dive">Deep Dive</option>
-                <option value="board_ready">Board Ready</option>
+                <option value="executive">تنفيذي</option>
+                <option value="operator">تشغيلي</option>
+                <option value="deep_dive">تحليل عميق</option>
+                <option value="board_ready">جاهز للإدارة</option>
               </select>
             </div>
             <div class="brief-field brief-field-wide">
-              <label class="hint" for="briefConstraints">Constraints</label>
-              <textarea id="briefConstraints" rows="3" placeholder="Any must-have constraints, format rules, deadlines, or scope limits"></textarea>
+              <label class="hint" for="briefConstraints">القيود</label>
+              <textarea id="briefConstraints" rows="3" placeholder="أي قيود مهمة: تنسيق إلزامي، موعد نهائي، حدود نطاق، أو متطلبات يجب عدم تجاوزها"></textarea>
+            </div>
+            <div class="brief-field brief-field-wide">
+              <label class="hint" for="briefMemory">ذاكرة المشروع</label>
+              <textarea id="briefMemory" rows="3" placeholder="حقائق ثابتة، قرارات سابقة، أسماء، مصطلحات، أو سياق يجب أن يتذكره المساعد دائمًا"></textarea>
+            </div>
+            <div class="brief-field brief-field-wide">
+              <label class="hint" for="briefResponseRules">قواعد الرد</label>
+              <textarea id="briefResponseRules" rows="3" placeholder="مثل: اكتب بالعربية فقط، استخدم جداول عند المقارنة، ابدأ بملخص تنفيذي، لا تستخدم مصطلحات تقنية معقدة..."></textarea>
             </div>
             <div class="workspace-brief-actions">
-              <button class="btn dark sm with-label" id="briefApplyBtn" type="button"><span class="icon">✦</span><span class="label">Use in chat</span></button>
-              <button class="btn ghost sm with-label" id="briefClearBtn" type="button"><span class="icon">↺</span><span class="label">Clear</span></button>
+              <button class="btn dark sm with-label" id="briefApplyBtn" type="button"><span class="icon">✦</span><span class="label">إدراج في الدردشة</span></button>
+              <button class="btn ghost sm with-label" id="briefClearBtn" type="button"><span class="icon">↺</span><span class="label">مسح</span></button>
             </div>
           </div>
         </section>`);
     }
 
+    const transToolbar = document.querySelector('#page-transcription .toolbar');
+    if (transToolbar && !$('transcribeProfile')){
+      transToolbar.insertAdjacentHTML('beforeend', `
+        <select id="transcribeProfile" title="ملف تشغيل الاستخراج" style="max-width:220px">
+          <option value="fast">سريع</option>
+          <option value="balanced" selected>متوازن</option>
+          <option value="fidelity">دقة أعلى</option>
+        </select>
+        <select id="transcribeDocxMode" title="طريقة تحويل PDF إلى Word" style="max-width:220px">
+          <option value="auto">تحويل ذكي تلقائي</option>
+          <option value="cloud">أعلى مطابقة سحابي</option>
+          <option value="local">تحويل محلي قابل للتعديل</option>
+        </select>`);
+    }
+
+    const transPage = $('page-transcription');
+    if (transPage && !$('transcribeLabCard')){
+      const body = transPage.querySelector('.panel .body');
+      if (body){
+        body.insertAdjacentHTML('afterbegin', `
+          <div class="transcribe-lab-card" id="transcribeLabCard">
+            <div class="transcribe-lab-grid">
+              <div class="transcribe-lab-metric"><span>الملف</span><strong id="transcribeSourceState">لا يوجد</strong></div>
+              <div class="transcribe-lab-metric"><span>الملف الشخصي</span><strong id="transcribeProfileState">متوازن</strong></div>
+              <div class="transcribe-lab-metric"><span>المعالجة</span><strong id="transcribeEngineState">جاهز</strong></div>
+              <div class="transcribe-lab-metric"><span>المطابقة</span><strong id="transcribeQualityState">—</strong></div>
+            </div>
+            <div class="transcribe-lab-note" id="transcribeLabNote">اختر ملفًا ثم حدّد السرعة أو الدقة المطلوبة. للمطابقة الأعلى يفضّل استخدام التحويل السحابي مع ملفات PDF الرقمية.</div>
+          </div>`);
+      }
+    }
+
     ensureWorkspaceSections();
     renderProjectBrief();
+    renderGuidePage();
+    renderThreadHistory();
+    syncTranscribeControls();
+    applyArabicProductCopy();
     applyShellLayout();
+    syncVoiceInputButton();
   }
 
   function ensureWorkspaceSections(){
@@ -1002,6 +1268,8 @@ function refreshDeepSearchBtn(){
     if ($('briefAudience')) $('briefAudience').value = brief.audience || '';
     if ($('briefDeliverable')) $('briefDeliverable').value = brief.deliverable || '';
     if ($('briefConstraints')) $('briefConstraints').value = brief.constraints || '';
+    if ($('briefMemory')) $('briefMemory').value = brief.memory || '';
+    if ($('briefResponseRules')) $('briefResponseRules').value = brief.responseRules || '';
     if ($('briefStyle')) $('briefStyle').value = brief.style || 'executive';
     syncWorkspaceSectionSummaries();
   }
@@ -1013,6 +1281,8 @@ function refreshDeepSearchBtn(){
       audience: $('briefAudience')?.value?.trim() || '',
       deliverable: $('briefDeliverable')?.value?.trim() || '',
       constraints: $('briefConstraints')?.value?.trim() || '',
+      memory: $('briefMemory')?.value?.trim() || '',
+      responseRules: $('briefResponseRules')?.value?.trim() || '',
       style: $('briefStyle')?.value || 'executive'
     });
     syncWorkspaceSectionSummaries();
@@ -1026,27 +1296,29 @@ function refreshDeepSearchBtn(){
     const input = $('chatInput');
     if (!input) return;
     const lines = [
-      'Use this project brief as the operating context for the next response:',
-      brief.goal ? `Goal: ${brief.goal}` : '',
-      brief.audience ? `Audience: ${brief.audience}` : '',
-      brief.deliverable ? `Deliverable: ${brief.deliverable}` : '',
-      brief.constraints ? `Constraints: ${brief.constraints}` : '',
-      brief.style ? `Style: ${brief.style}` : '',
+      'استخدم هذا السياق الدائم للمهمة التالية:',
+      brief.goal ? `الهدف: ${brief.goal}` : '',
+      brief.audience ? `الجمهور: ${brief.audience}` : '',
+      brief.deliverable ? `المخرج المطلوب: ${brief.deliverable}` : '',
+      brief.constraints ? `القيود: ${brief.constraints}` : '',
+      brief.memory ? `ذاكرة المشروع: ${brief.memory}` : '',
+      brief.responseRules ? `قواعد الرد: ${brief.responseRules}` : '',
+      brief.style ? `أسلوب الرد: ${getBriefStyleLabel(brief.style)}` : '',
       '',
-      'Now produce the best first draft or plan for this brief.'
+      'الآن أنشئ أفضل مسودة أولى أو خطة تنفيذية بناءً على هذا السياق.'
     ].filter(Boolean);
     input.value = lines.join('\n');
     resizeComposerInput(input);
     syncComposerMeta();
     input.focus();
-    toast('✅ Brief loaded into chat');
+    toast('✅ تم إدراج سياق المشروع داخل الدردشة');
   }
 
   function clearProjectBrief(){
     setProjectBrief(getCurProjectId(), DEFAULT_PROJECT_BRIEF);
     renderProjectBrief();
     refreshStrategicWorkspace().catch(()=>{});
-    toast('✅ Brief cleared');
+    toast('✅ تم مسح ذاكرة المشروع');
   }
 
   function syncWorkspaceSectionSummaries(){
@@ -1057,22 +1329,460 @@ function refreshDeepSearchBtn(){
     const brief = getProjectBrief(pid);
 
     if ($('workspaceSectionSummary-routing')){
-      $('workspaceSectionSummary-routing').textContent = `${settings.provider} • ${getDisplayModelName(settings.model)} • ${settings.authMode}`;
+      $('workspaceSectionSummary-routing').textContent = `${settings.provider} • ${getDisplayModelName(settings.model)} • ${settings.authMode === 'gateway' ? 'بوابة' : 'مباشر'}`;
     }
     if ($('workspaceSectionSummary-modes')){
       $('workspaceSectionSummary-modes').textContent = [
-        settings.streaming ? 'Streaming' : 'One-shot',
-        getRagToggle() ? 'RAG' : 'No RAG',
-        settings.toolsEnabled ? 'Tools' : 'Tools off',
-        getWebToggle() ? 'Web' : 'Local'
-      ].join(' • ');
+        settings.streaming ? 'بث مباشر' : 'دفعة واحدة',
+        getRagToggle() ? 'RAG' : 'بدون RAG',
+        settings.toolsEnabled ? 'أدوات' : 'الأدوات متوقفة',
+        getWebToggle() ? 'ويب' : 'محلي',
+        getStudyMode() ? 'دراسي' : ''
+      ].filter(Boolean).join(' • ');
     }
     if ($('workspaceSectionSummary-quick')){
-      $('workspaceSectionSummary-quick').textContent = `${messages} messages • ${files} files`;
+      $('workspaceSectionSummary-quick').textContent = `${messages} رسالة • ${files} ملف`;
     }
     if ($('workspaceSectionSummary-brief')){
       $('workspaceSectionSummary-brief').textContent = summarizeProjectBrief(brief);
     }
+  }
+
+  function applyArabicProductCopy(){
+    if ($('topRuntimeBadge')){
+      $('topRuntimeBadge').textContent = 'مساحة العمل جاهزة';
+    }
+    const fixedCopy = [
+      ['workspaceHeadline', 'ابدأ من مساحة عمل عربية احترافية للدردشة والبحث والتنفيذ.'],
+      ['workspaceSummary', 'اعمل من داخل مشروع واحد يجمع الدردشة والملفات والمعرفة والمخرجات التنفيذية في واجهة منظمة.'],
+      ['signalProviderNote', 'المزوّد الحالي وطريقة المصادقة'],
+      ['signalModelNote', 'مسار النموذج الرئيسي'],
+      ['signalContextNote', 'الملفات والمعرفة وذاكرة المشروع'],
+      ['signalModesNote', 'البث والأدوات والويب وأنماط التشغيل'],
+      ['sideHealthNote', 'قم بضبط بيئة العمل مرة واحدة ثم أدر الدردشة والملفات والمعرفة من مكان واحد.'],
+      ['composerHint', 'Enter للإرسال • Shift+Enter لسطر جديد • المرفقات والذاكرة تُدمج تلقائيًا مع السياق.']
+    ];
+    fixedCopy.forEach(([id, text]) => {
+      const el = $(id);
+      if (el) el.textContent = text;
+    });
+
+    const signalLabels = ['المزوّد', 'النموذج', 'السياق', 'أوضاع التشغيل'];
+    document.querySelectorAll('.signal-card .signal-label').forEach((label, idx) => {
+      if (signalLabels[idx]) label.textContent = signalLabels[idx];
+    });
+
+    const navLabels = {
+      chat: '💬 الدردشة',
+      knowledge: '🧠 المعرفة',
+      canvas: '📝 اللوحة',
+      files: '📎 الملفات',
+      transcription: '🧾 مختبر الوثائق',
+      workflows: '⚡ سير العمل',
+      downloads: '⬇️ التحميلات',
+      projects: '🗂️ المشاريع',
+      settings: '⚙️ الإعدادات',
+      guide: '📘 دليل الاستخدام'
+    };
+    document.querySelectorAll('.navbtn[data-page]').forEach((btn) => {
+      const label = btn.querySelector('span:not(.meta)');
+      if (label && navLabels[btn.dataset.page]) label.textContent = navLabels[btn.dataset.page];
+    });
+
+    document.querySelectorAll('[data-quick-prompt]').forEach((btn) => {
+      const key = btn.dataset.quickPrompt || '';
+      const labels = {
+        strategy_brief: 'ملف تنفيذي',
+        deep_research: 'بحث عميق',
+        system_audit: 'مراجعة نظام',
+        build_product: 'بناء منتج',
+        exec_summary: 'ملخص تنفيذي',
+        action_board: 'لوحة تنفيذ',
+        kb_orchestrator: 'تنسيق المعرفة',
+        launch_plan: 'خطة إطلاق',
+        pm_review: 'مراجعة منتج'
+      };
+      if (labels[key]) btn.textContent = labels[key];
+    });
+  }
+
+  function openThreadDrawer(){
+    $('threadDrawer')?.classList.add('show');
+    $('threadDrawerOverlay')?.classList.add('show');
+    renderThreadHistory();
+    setTimeout(() => $('threadSearchInput')?.focus(), 40);
+  }
+
+  function closeThreadDrawer(){
+    $('threadDrawer')?.classList.remove('show');
+    $('threadDrawerOverlay')?.classList.remove('show');
+  }
+
+  function threadMessageCount(thread){
+    return Array.isArray(thread?.messages) ? thread.messages.length : 0;
+  }
+
+  function threadPreview(thread){
+    const firstUser = (thread?.messages || []).find((m) => m.role === 'user')?.content || '';
+    const value = briefSnippet(thread?.summary || firstUser || '', 90);
+    return value || 'لا يوجد محتوى بعد';
+  }
+
+  function suggestThreadTitleFromText(text){
+    const cleaned = String(text || '')
+      .replace(/\s+/g, ' ')
+      .replace(/[^\p{L}\p{N}\s\-–—:]/gu, '')
+      .trim();
+    if (!cleaned) return 'محادثة جديدة';
+    return cleaned.length > 38 ? `${cleaned.slice(0, 38)}…` : cleaned;
+  }
+
+  function ensureThreadTitleFromMessage(thread, text){
+    if (!thread) return thread;
+    const current = String(thread.title || '').trim();
+    const isGeneric = !current || /محادثة جديدة|محادثة$|chat/i.test(current);
+    if (isGeneric){
+      thread.title = suggestThreadTitleFromText(text);
+    }
+    return thread;
+  }
+
+  function renameThreadInteractive(threadId){
+    const pid = getCurProjectId();
+    const threads = loadThreads(pid);
+    const idx = threads.findIndex((t) => t.id === threadId);
+    if (idx < 0) return;
+    const next = prompt('اسم المحادثة:', threads[idx].title || 'محادثة');
+    if (!next) return;
+    threads[idx].title = next.trim();
+    threads[idx].updatedAt = nowTs();
+    saveThreads(pid, threads);
+    renderThreadHistory();
+    refreshNavMeta();
+    toast('✅ تم تحديث اسم المحادثة');
+  }
+
+  function deleteThreadInteractive(threadId){
+    const pid = getCurProjectId();
+    const threads = loadThreads(pid);
+    if (threads.length <= 1) return toast('⚠️ لا يمكن حذف آخر محادثة في المشروع');
+    const idx = threads.findIndex((t) => t.id === threadId);
+    if (idx < 0) return;
+    if (!confirm('حذف هذه المحادثة من السجل؟')) return;
+    const [removed] = threads.splice(idx, 1);
+    saveThreads(pid, threads);
+    if (getCurThreadId(pid) === removed.id){
+      setCurThreadId(pid, threads[0].id);
+      renderChat();
+    }
+    renderThreadHistory();
+    refreshNavMeta();
+    toast('✅ تم حذف المحادثة');
+  }
+
+  function exportThread(threadId){
+    const pid = getCurProjectId();
+    const thread = loadThreads(pid).find((t) => t.id === threadId);
+    if (!thread) return;
+    const lines = [`# ${thread.title || 'محادثة'}`, '', `- المشروع: ${getCurProject().name}`, `- عدد الرسائل: ${threadMessageCount(thread)}`, `- آخر تحديث: ${new Date(thread.updatedAt || nowTs()).toLocaleString('ar')}`, ''];
+    (thread.messages || []).forEach((m) => {
+      lines.push(`## ${m.role === 'user' ? 'المستخدم' : 'المساعد'}`);
+      lines.push('');
+      lines.push(String(m.content || ''));
+      lines.push('');
+    });
+    downloadBlob(`${(thread.title || 'chat').replace(/[^\w\u0600-\u06FF\-]+/g,'_')}.md`, new Blob([lines.join('\n')], { type:'text/markdown;charset=utf-8' }));
+    toast('⬇️ تم تصدير المحادثة');
+  }
+
+  function exportAllThreads(){
+    const pid = getCurProjectId();
+    const payload = {
+      project: getCurProject(),
+      brief: getProjectBrief(pid),
+      threads: loadThreads(pid)
+    };
+    downloadBlob(`threads-${pid}.json`, new Blob([JSON.stringify(payload, null, 2)], { type:'application/json;charset=utf-8' }));
+    toast('⬇️ تم تصدير سجل المشروع');
+  }
+
+  function renderThreadHistory(){
+    const box = $('threadDrawerList');
+    if (!box) return;
+    const pid = getCurProjectId();
+    const cur = getCurThreadId(pid);
+    const query = String($('threadSearchInput')?.value || '').trim().toLowerCase();
+    const rows = loadThreads(pid)
+      .slice()
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+      .filter((thread) => {
+        if (!query) return true;
+        const hay = `${thread.title || ''}\n${threadPreview(thread)}`.toLowerCase();
+        return hay.includes(query);
+      });
+
+    if ($('threadDrawerSub')) $('threadDrawerSub').textContent = `${rows.length} محادثة محفوظة داخل مشروع ${getCurProject().name}`;
+    box.innerHTML = '';
+
+    if (!rows.length){
+      box.innerHTML = `
+        <div class="thread-card thread-card-empty">
+          <div class="thread-card-title">لا توجد محادثات مطابقة</div>
+          <div class="thread-card-preview">جرّب البحث بكلمات مختلفة أو أنشئ محادثة جديدة وسيتم حفظها تلقائيًا داخل سجل المشروع.</div>
+        </div>`;
+      return;
+    }
+
+    rows.forEach((thread) => {
+      const card = document.createElement('div');
+      card.className = `thread-card${thread.id === cur ? ' active' : ''}`;
+      card.innerHTML = `
+        <div class="thread-card-head">
+          <div class="thread-card-title">${escapeHtml(thread.title || 'محادثة')}</div>
+          <div class="thread-card-meta">${threadMessageCount(thread)} رسالة</div>
+        </div>
+        <div class="thread-card-preview">${escapeHtml(threadPreview(thread))}</div>
+        <div class="thread-card-footer">
+          <span>${new Date(thread.updatedAt || nowTs()).toLocaleString('ar')}</span>
+          <div class="thread-card-actions"></div>
+        </div>`;
+      const actions = card.querySelector('.thread-card-actions');
+
+      const openBtn = document.createElement('button');
+      openBtn.className = 'btn ghost sm';
+      openBtn.textContent = 'فتح';
+      openBtn.addEventListener('click', () => {
+        setCurThreadId(pid, thread.id);
+        renderChat();
+        refreshNavMeta();
+        closeThreadDrawer();
+      });
+
+      const renameBtn = document.createElement('button');
+      renameBtn.className = 'btn ghost sm';
+      renameBtn.textContent = 'تسمية';
+      renameBtn.addEventListener('click', () => renameThreadInteractive(thread.id));
+
+      const exportBtn = document.createElement('button');
+      exportBtn.className = 'btn ghost sm';
+      exportBtn.textContent = 'تصدير';
+      exportBtn.addEventListener('click', () => exportThread(thread.id));
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'btn danger sm';
+      deleteBtn.textContent = 'حذف';
+      deleteBtn.addEventListener('click', () => deleteThreadInteractive(thread.id));
+
+      [openBtn, renameBtn, exportBtn, deleteBtn].forEach((btn) => actions.appendChild(btn));
+      box.appendChild(card);
+    });
+  }
+
+  function buildGuideSections(){
+    return [
+      {
+        id: 'chat',
+        page: 'chat',
+        title: 'الدردشة الذكية',
+        body: 'واجهة الدردشة هي مركز التشغيل الرئيسي. اكتب الطلب، أرفق الملفات، استخدم الإملاء الصوتي، وافتح سجل المحادثات عند الحاجة.',
+        steps: [
+          'اكتب الهدف المطلوب بوضوح ثم حدّد النتيجة التي تريد استلامها.',
+          'أرفق الملفات أو الصور مباشرة من زر الإرفاق داخل صندوق الدردشة.',
+          'استخدم زر السجل لفتح أي محادثة محفوظة أو تصديرها.'
+        ],
+        tips: ['فعّل وضع التركيز عندما تريد أكبر مساحة قراءة ممكنة.', 'استخدم وضع الدراسة إذا كنت تريد شرحًا تدريجيًا وتعليميًا.']
+      },
+      {
+        id: 'history',
+        page: 'chat',
+        title: 'سجل الدردشات',
+        body: 'كل محادثة تُحفَظ تلقائيًا داخل المشروع الحالي مع إمكانية الفتح، التسمية، التصدير، والحذف.',
+        steps: [
+          'اضغط زر السجل من أعلى الصفحة لفتح محفوظات المشروع.',
+          'استخدم البحث للعثور على محادثة سابقة بالعنوان أو بالمحتوى.',
+          'صدّر محادثة واحدة أو السجل كاملًا بصيغة مناسبة.'
+        ],
+        tips: ['يتم إنشاء عنوان تلقائي من أول رسالة، ويمكنك تغييره يدويًا.', 'يمكنك الاحتفاظ بعدة محادثات منفصلة داخل نفس المشروع.']
+      },
+      {
+        id: 'brief',
+        page: 'chat',
+        title: 'ذاكرة المشروع',
+        body: 'هذه الطبقة تشبه الذاكرة والتعليمات الدائمة: الهدف، الجمهور، المخرج، القيود، ذاكرة المشروع، وقواعد الرد.',
+        steps: [
+          'عبّئ حقول الهدف والجمهور والمخرج المطلوب مرة واحدة لكل مشروع.',
+          'أضف في ذاكرة المشروع أي حقائق أو قرارات سابقة يجب عدم نسيانها.',
+          'استخدم قواعد الرد لفرض أسلوب إخراج ثابت مثل الجداول أو الملخص التنفيذي.'
+        ],
+        tips: ['يتم حقن هذه المعلومات تلقائيًا داخل سياق المحادثة.', 'زر "إدراج في الدردشة" يحول الذاكرة الحالية إلى مطالبة جاهزة.']
+      },
+      {
+        id: 'files',
+        page: 'files',
+        title: 'الملفات والمعرفة',
+        body: 'ارفع ملفات PDF وDOCX والنصوص والصور لتستخدمها في الدردشة أو تضيفها إلى قاعدة المعرفة.',
+        steps: [
+          'ارفع الملفات من قسم الملفات أو أرفقها مباشرة من الدردشة.',
+          'استخدم المعرفة KB لفهرسة الملفات عندما تريد استرجاعًا موثقًا.',
+          'فعّل RAG عند الإجابة من المعرفة بدل الاعتماد على المحادثة فقط.'
+        ],
+        tips: ['الملفات الرقمية أفضل من الصور من حيث السرعة والدقة.', 'يمكنك الجمع بين الملفات والمعرفة والدردشة داخل نفس المشروع.']
+      },
+      {
+        id: 'knowledge',
+        page: 'knowledge',
+        title: 'قاعدة المعرفة (KB)',
+        body: 'قاعدة المعرفة تحول الملفات إلى مقاطع قابلة للاسترجاع حتى يجيب المساعد باقتباسات وسياق أدق.',
+        steps: [
+          'اذهب إلى قسم المعرفة ثم شغّل الفهرسة.',
+          'بعد اكتمال الفهرسة فعّل RAG من شريط الدردشة.',
+          'اطلب من المساعد الاستشهاد بما ورد في الملفات بدل الرد العام.'
+        ],
+        tips: ['يفضل تقسيم المواد الكبيرة داخل مشروع واحد منظم.', 'حدّث الفهرسة عند تغيير الملفات الأساسية.']
+      },
+      {
+        id: 'canvas',
+        page: 'canvas',
+        title: 'اللوحة والمخرجات',
+        body: 'أي رد مهم يمكن تحويله إلى اللوحة لتحريره وتطويره إلى مستند أو صفحة HTML قابلة للتسليم.',
+        steps: [
+          'من أي رد للمساعد اضغط "إلى اللوحة".',
+          'حرر النص أو حوله إلى بنية أوضح داخل اللوحة.',
+          'صدر النتيجة كملف أو استخدمها كنقطة انطلاق لمخرجات جديدة.'
+        ],
+        tips: ['هذه الآلية تقرّب التجربة من اللوحات التفاعلية في المنصات الحديثة.', 'استخدمها للمقترحات، الخطط، والسياسات.']
+      },
+      {
+        id: 'transcription',
+        page: 'transcription',
+        title: 'التفريغ النصي والوثائق',
+        body: 'قسم الوثائق يوفّر استخراج نص، تحسين OCR، وتحويل PDF إلى Word قابل للتعديل مع عدة أوضاع دقة.',
+        steps: [
+          'اختر ملف PDF أو صورة ثم حدّد ملف التشغيل: سريع، متوازن، أو دقة أعلى.',
+          'اضغط استخراج النص لمراجعة المحتوى قبل أي تحويل نهائي.',
+          'لأعلى مطابقة عند تحويل PDF إلى Word استخدم الوضع السحابي متى كان متاحًا.'
+        ],
+        tips: ['التحويل المطابق تمامًا يعتمد على طبيعة الملف الأصلي ونوعية الخطوط والصور.', 'ملفات PDF الرقمية ذات طبقة النص تعطي نتائج أفضل من الملفات الممسوحة ضوئيًا.']
+      },
+      {
+        id: 'workflows',
+        page: 'workflows',
+        title: 'سير العمل',
+        body: 'سير العمل الجاهز يختصر المهام المتكررة: بحث، OCR، تلخيص، أو بناء صفحة ومخرجات منسقة.',
+        steps: [
+          'اختر سير العمل المناسب من القائمة.',
+          'راجع المدخلات المطلوبة أو الملفات المرتبطة به.',
+          'دع المنصة تنفذ التسلسل بدل إعادة نفس الخطوات يدويًا.'
+        ],
+        tips: ['سير العمل مفيد للفرق والمهام التشغيلية المتكررة.', 'يمكنك استخدامه مع الملفات أو المعرفة أو اللوحة.']
+      },
+      {
+        id: 'projects',
+        page: 'projects',
+        title: 'المشاريع',
+        body: 'كل مشروع يحتفظ بدردشاته وذاكرته وملفاته ولوحاته بشكل منفصل حتى لا تختلط السياقات.',
+        steps: [
+          'أنشئ مشروعًا جديدًا لكل عميل أو منتج أو مهمة كبيرة.',
+          'انقل العمل داخله بدل فتح كل شيء في مشروع واحد.',
+          'استخدم اسمًا واضحًا لكل مشروع ليسهل الرجوع إليه لاحقًا.'
+        ],
+        tips: ['المشروع هو طبقة التنظيم الأساسية في المنصة.', 'سجل الدردشات والذاكرة محفوظان على مستوى المشروع.']
+      },
+      {
+        id: 'settings',
+        page: 'settings',
+        title: 'الإعدادات',
+        body: 'من صفحة الإعدادات يمكنك تحديد المزوّد، النموذج، طريقة المصادقة، والبوابة، ثم فحص الجاهزية الفعلية.',
+        steps: [
+          'اختر المزوّد وطريقة المصادقة المناسبة.',
+          'شغّل فحص الصحة للتحقق من البوابة ومسار النموذج.',
+          'استخدم الإعدادات الاحترافية للوصول إلى أفضل الإعدادات الموصى بها بسرعة.'
+        ],
+        tips: ['الوضع عبر Gateway أنسب للنشر وحماية المفاتيح.', 'راجع الإعدادات بعد أي تغيير في المزود أو الـ Worker.']
+      }
+    ];
+  }
+
+  function renderGuidePage(){
+    const sections = buildGuideSections();
+    const query = String($('guideSearch')?.value || '').trim().toLowerCase();
+    const filtered = sections.filter((section) => {
+      if (!query) return true;
+      return `${section.title}\n${section.body}\n${(section.steps || []).join('\n')}\n${(section.tips || []).join('\n')}`.toLowerCase().includes(query);
+    });
+    if ($('guideIndex')){
+      $('guideIndex').innerHTML = filtered.map((section) => `
+        <button class="guide-index-btn" type="button" data-guide-target="${section.id}">
+          <strong>${escapeHtml(section.title)}</strong>
+          <span>${escapeHtml(briefSnippet(section.body, 66))}</span>
+        </button>`).join('');
+    }
+    if ($('guideContent')){
+      $('guideContent').innerHTML = filtered.map((section) => `
+        <article class="guide-section" id="guide-${section.id}">
+          <h3>${escapeHtml(section.title)}</h3>
+          <p>${escapeHtml(section.body)}</p>
+          ${(section.steps || []).length ? `
+            <div class="guide-block">
+              <h4>خطوات الاستخدام</h4>
+              <ol>${section.steps.map((step) => `<li>${escapeHtml(step)}</li>`).join('')}</ol>
+            </div>` : ''}
+          ${(section.tips || []).length ? `
+            <div class="guide-block">
+              <h4>نصائح عملية</h4>
+              <ul>${section.tips.map((tip) => `<li>${escapeHtml(tip)}</li>`).join('')}</ul>
+            </div>` : ''}
+          <div class="guide-jump-row">
+            <button class="btn ghost sm" type="button" data-open-page="${section.page || (section.id === 'brief' ? 'chat' : section.id)}">فتح القسم</button>
+          </div>
+        </article>`).join('');
+    }
+  }
+
+  function exportGuideDoc(){
+    const sections = buildGuideSections();
+    const out = ['# دليل استخدام AI Workspace Studio', ''];
+    sections.forEach((section) => {
+      out.push(`## ${section.title}`);
+      out.push(section.body);
+      if ((section.steps || []).length){
+        out.push('');
+        out.push('### خطوات الاستخدام');
+        section.steps.forEach((step, idx) => out.push(`${idx + 1}. ${step}`));
+      }
+      if ((section.tips || []).length){
+        out.push('');
+        out.push('### نصائح عملية');
+        section.tips.forEach((tip) => out.push(`- ${tip}`));
+      }
+      out.push('');
+    });
+    downloadBlob('دليل-الاستخدام-العربي.md', new Blob([out.join('\n')], { type:'text/markdown;charset=utf-8' }));
+    toast('⬇️ تم تنزيل دليل الاستخدام');
+  }
+
+  function syncTranscribeControls(){
+    if ($('transcribeProfile')) $('transcribeProfile').value = getTranscribeProfile();
+    if ($('transcribeDocxMode')) $('transcribeDocxMode').value = getTranscribeDocxMode();
+    if ($('transcribeProfileState')){
+      const labels = { fast:'سريع', balanced:'متوازن', fidelity:'دقة أعلى' };
+      $('transcribeProfileState').textContent = labels[getTranscribeProfile()] || 'متوازن';
+    }
+  }
+
+  function getTranscribeProfileLabel(value = getTranscribeProfile()){
+    return ({ fast:'سريع', balanced:'متوازن', fidelity:'دقة أعلى' })[value] || 'متوازن';
+  }
+
+  function getTranscribeDocxModeLabel(value = getTranscribeDocxMode()){
+    return ({ auto:'ذكي تلقائي', cloud:'سحابي', local:'محلي' })[value] || 'ذكي تلقائي';
+  }
+
+  function updateTranscribeLabState(partial = {}){
+    if ($('transcribeSourceState') && Object.prototype.hasOwnProperty.call(partial, 'source')) $('transcribeSourceState').textContent = partial.source;
+    if ($('transcribeEngineState') && Object.prototype.hasOwnProperty.call(partial, 'engine')) $('transcribeEngineState').textContent = partial.engine;
+    if ($('transcribeQualityState') && Object.prototype.hasOwnProperty.call(partial, 'quality')) $('transcribeQualityState').textContent = partial.quality;
+    if ($('transcribeLabNote') && Object.prototype.hasOwnProperty.call(partial, 'note')) $('transcribeLabNote').textContent = partial.note;
   }
 
   function syncComposerMeta(){
@@ -1081,7 +1791,10 @@ function refreshDeepSearchBtn(){
     const pid = getCurProjectId();
     const files = loadFiles(pid);
     const thread = getCurThread();
-    meta.textContent = `Files ${files.length} • Messages ${(thread.messages || []).length} • Attachments ${pendingChatAttachments.length}`;
+    const flags = [];
+    if (hasProjectBrief(getProjectBrief(pid))) flags.push('ذاكرة المشروع مفعّلة');
+    if (getStudyMode()) flags.push('وضع دراسي');
+    meta.textContent = `الملفات ${files.length} • الرسائل ${(thread.messages || []).length} • المرفقات ${pendingChatAttachments.length}${flags.length ? ` • ${flags.join(' • ')}` : ''}`;
     resizeComposerInput();
   }
 
@@ -1101,10 +1814,11 @@ function refreshDeepSearchBtn(){
     const chunks = await kbCountProject(pid).catch(() => 0);
     const downloads = loadDownloads().length;
     const modeLabels = [
-      settings.streaming ? 'Streaming' : 'One-shot',
-      getRagToggle() ? 'RAG' : 'No RAG',
-      settings.toolsEnabled ? 'Tools' : 'No Tools',
-      getWebToggle() ? 'Web' : 'Local'
+      settings.streaming ? 'بث مباشر' : 'دفعة واحدة',
+      getRagToggle() ? 'RAG مفعّل' : 'RAG متوقف',
+      settings.toolsEnabled ? 'الأدوات مفعّلة' : 'الأدوات متوقفة',
+      getWebToggle() ? 'ويب' : 'محلي',
+      getStudyMode() ? 'وضع دراسي' : ''
     ];
     const readiness = getAuthStateLabel(settings);
     syncStrategicLayoutState(messageCount > 0);
@@ -1113,34 +1827,38 @@ function refreshDeepSearchBtn(){
     if ($('curProjectName')) $('curProjectName').textContent = project.name;
     if ($('workspaceHeadline')){
       $('workspaceHeadline').textContent = messageCount
-        ? `Continue ${project.name} with full operational context.`
-        : 'Build, research, and ship from one strategic AI console.';
+        ? `تابع العمل على ${project.name} بسياق كامل ومساحة قراءة واسعة.`
+        : 'منصة عربية للعمل والبحث والتنفيذ في مكان واحد.';
     }
     if ($('workspaceSummary')){
-      const briefPart = hasProjectBrief(brief) ? ` • Brief ${summarizeProjectBrief(brief)}` : '';
-      $('workspaceSummary').textContent = `Provider ${settings.provider} on ${getDisplayModelName(settings.model)} • ${files.length} project files • ${chunks} KB chunks • ${downloads} archived outputs${briefPart}.`;
+      const briefPart = hasProjectBrief(brief) ? ` • الذاكرة: ${summarizeProjectBrief(brief)}` : '';
+      $('workspaceSummary').textContent = `المزوّد ${settings.provider} • النموذج ${getDisplayModelName(settings.model)} • ${files.length} ملفًا • ${chunks} مقطع معرفة • ${downloads} ملفًا مؤرشفًا${briefPart}.`;
     }
     if ($('signalProvider')) $('signalProvider').textContent = settings.provider.toUpperCase();
-    if ($('signalProviderNote')) $('signalProviderNote').textContent = `${readiness} • ${settings.authMode === 'gateway' ? 'Gateway secured flow' : 'Browser-direct flow'}`;
+    if ($('signalProviderNote')) $('signalProviderNote').textContent = `${readiness} • ${settings.authMode === 'gateway' ? 'اتصال محمي عبر البوابة' : 'اتصال مباشر من المتصفح'}`;
     if ($('signalModel')) $('signalModel').textContent = getDisplayModelName(settings.model);
-    if ($('signalModelNote')) $('signalModelNote').textContent = `Max output ${settings.maxOut || 2000} • Web mode ${settings.webMode || 'off'}`;
-    if ($('signalContext')) $('signalContext').textContent = `${files.length} files • ${chunks} KB`;
-    if ($('signalContextNote')) $('signalContextNote').textContent = `${messageCount} messages • file clip ${settings.fileClip || 12000}`;
-    if ($('signalModes')) $('signalModes').textContent = modeLabels.join(' • ');
-    if ($('signalModesNote')) $('signalModesNote').textContent = `${isDeep() ? 'Deep' : 'Standard'} • ${isAgent() ? 'Agent' : 'Assistant'} • ${isDeepSearch() ? 'Deep Search' : 'Chat Mode'}`;
+    if ($('signalModelNote')) $('signalModelNote').textContent = `حد الإخراج ${settings.maxOut || 2000} • نمط الويب ${settings.webMode || 'off'}`;
+    if ($('signalContext')) $('signalContext').textContent = `${files.length} ملف • ${chunks} معرفة`;
+    if ($('signalContextNote')) $('signalContextNote').textContent = `${messageCount} رسالة • قصّ الملفات ${settings.fileClip || 12000}`;
+    if ($('signalModes')) $('signalModes').textContent = modeLabels.filter(Boolean).join(' • ');
+    if ($('signalModesNote')) $('signalModesNote').textContent = `${isDeep() ? 'عميق' : 'قياسي'} • ${isAgent() ? 'وكيل' : 'مساعد'} • ${isDeepSearch() ? 'بحث عميق' : 'محادثة'}`;
 
     if ($('sideProjectMeta')) $('sideProjectMeta').textContent = `${project.name} (${messageCount})`;
     if ($('sideModelMeta')) $('sideModelMeta').textContent = getDisplayModelName(settings.model);
-    if ($('sideContextMeta')) $('sideContextMeta').textContent = `${files.length}F • ${chunks}KB • ${downloads}DL`;
-    if ($('sideModeMeta')) $('sideModeMeta').textContent = `${settings.provider} • ${settings.authMode}`;
+    if ($('sideContextMeta')) $('sideContextMeta').textContent = `${files.length} ملف • ${chunks} معرفة • ${downloads} تنزيل`;
+    if ($('sideModeMeta')) $('sideModeMeta').textContent = `${settings.provider} • ${settings.authMode === 'gateway' ? 'بوابة' : 'مباشر'}`;
     if ($('sideHealthNote')) $('sideHealthNote').textContent = hasProjectBrief(brief)
-      ? `${readiness}. Brief active: ${summarizeProjectBrief(brief)}.`
-      : `${readiness}. Workspace ready for chat, knowledge retrieval, files, and workflows.`;
+      ? `${readiness}. الذاكرة الحالية: ${summarizeProjectBrief(brief)}.`
+      : `${readiness}. مساحة العمل جاهزة للدردشة والمعرفة والملفات وسير العمل.`;
 
     if ($('settingsReadyState')) $('settingsReadyState').textContent = readiness;
-    if ($('settingsGatewayState')) $('settingsGatewayState').textContent = settings.authMode === 'gateway' ? (settings.gatewayUrl || 'Gateway missing') : 'Direct browser mode';
+    if ($('settingsGatewayState')) $('settingsGatewayState').textContent = settings.authMode === 'gateway' ? (settings.gatewayUrl || 'البوابة غير مضبوطة') : 'وضع مباشر من المتصفح';
     if ($('settingsModelState')) $('settingsModelState').textContent = getDisplayModelName(settings.model);
-    if ($('settingsSecurityState')) $('settingsSecurityState').textContent = settings.authMode === 'gateway' ? 'Secrets kept server-side' : ((settings.apiKey || '').trim() ? 'Browser key in use' : 'No browser key');
+    if ($('settingsSecurityState')) $('settingsSecurityState').textContent = settings.authMode === 'gateway' ? 'المفاتيح محفوظة على الخادم' : ((settings.apiKey || '').trim() ? 'مفتاح المتصفح مستخدم' : 'لا يوجد مفتاح في المتصفح');
+
+    if ($('historyDrawerBtn')){
+      $('historyDrawerBtn').innerHTML = `<span class="icon">🕘</span><span class="label">السجل (${loadThreads(pid).length})</span>`;
+    }
 
     syncComposerMeta();
     syncWorkspaceSectionSummaries();
@@ -1149,22 +1867,22 @@ function refreshDeepSearchBtn(){
   async function runStrategicHealthCheck(){
     const output = $('settingsHealthOutput');
     const settings = saveSettingsFromUI();
-    if (output) output.textContent = 'Checking workspace health...';
+    if (output) output.textContent = 'جارٍ فحص صحة مساحة العمل...';
     try{
       if (settings.provider === 'gemini'){
         const ready = !!(settings.geminiKey || '').trim();
         const msg = ready
-          ? 'Gemini mode looks ready. API key is present.'
-          : 'Gemini mode is selected but the Gemini API key is missing.';
+          ? 'وضع Gemini جاهز ويحتوي على المفتاح المطلوب.'
+          : 'تم اختيار Gemini لكن مفتاح Gemini غير موجود.';
         if (output) output.textContent = msg;
-        toast(ready ? '✅ Gemini ready' : '⚠️ Gemini key missing');
+        toast(ready ? '✅ Gemini جاهز' : '⚠️ مفتاح Gemini مفقود');
         await refreshStrategicWorkspace();
         return;
       }
 
       if (settings.authMode === 'gateway'){
         const root = normalizeUrl(resolveGatewayApiRoot(settings));
-        if (!root) throw new Error('Gateway URL is missing.');
+        if (!root) throw new Error('رابط البوابة غير موجود.');
         const headers = {};
         if (settings.gatewayToken) headers['X-Client-Token'] = settings.gatewayToken;
         const healthResp = await fetch(`${root}/health`, { headers });
@@ -1175,23 +1893,23 @@ function refreshDeepSearchBtn(){
         let modelsJson; try{ modelsJson = JSON.parse(modelsText); }catch(_){ modelsJson = null; }
         const modelsCount = Array.isArray(modelsJson?.data) ? modelsJson.data.length : 0;
         const lines = [
-          `Health status: ${healthResp.status}`,
-          `Gateway ready: ${healthJson?.ready === true ? 'yes' : 'no'}`,
-          `Configured: ${healthJson?.configured === true ? 'yes' : 'no'}`,
-          `Models route: ${modelsResp.status}`,
-          `Catalog entries: ${modelsCount}`
+          `حالة الفحص: ${healthResp.status}`,
+          `جاهزية البوابة: ${healthJson?.ready === true ? 'نعم' : 'لا'}`,
+          `الإعدادات مكتملة: ${healthJson?.configured === true ? 'نعم' : 'لا'}`,
+          `مسار النماذج: ${modelsResp.status}`,
+          `عدد النماذج: ${modelsCount}`
         ];
         if (output) output.textContent = lines.join('\n');
-        toast((healthResp.ok && modelsResp.ok) ? '✅ Gateway healthy' : '⚠️ Health check completed with warnings');
+        toast((healthResp.ok && modelsResp.ok) ? '✅ البوابة تعمل بشكل سليم' : '⚠️ اكتمل الفحص مع تنبيهات');
       } else {
         const ready = !!(settings.apiKey || '').trim();
         if (output) output.textContent = ready
-          ? 'Browser-direct mode is active. API key is present.'
-          : 'Browser-direct mode is active, but the API key is missing.';
-        toast(ready ? '✅ Direct mode ready' : '⚠️ API key missing');
+          ? 'وضع المتصفح المباشر نشط والمفتاح موجود.'
+          : 'وضع المتصفح المباشر نشط لكن مفتاح API مفقود.';
+        toast(ready ? '✅ الوضع المباشر جاهز' : '⚠️ مفتاح API مفقود');
       }
     }catch(e){
-      const msg = String(e?.message || e || 'Health check failed');
+      const msg = String(e?.message || e || 'فشل فحص الصحة');
       if (output) output.textContent = msg;
       toast(`❌ ${msg}`);
     }
@@ -1243,7 +1961,7 @@ function refreshDeepSearchBtn(){
     if ($('model')) $('model').value = recommended;
     saveSettingsFromUI();
     refreshStrategicWorkspace().catch(()=>{});
-    toast(`✅ Recommended model: ${recommended}`);
+    toast(`✅ النموذج المقترح: ${recommended}`);
   }
 
   // ---------------- Projects / Threads ----------------
@@ -1293,6 +2011,7 @@ function refreshDeepSearchBtn(){
     threads[idx] = th;
     saveThreads(pid, threads);
     renderChat();
+    renderThreadHistory();
     toast('✅ تم مسح الدردشة');
   }
 
@@ -1304,6 +2023,7 @@ function newThread(){
     saveThreads(pid, arr);
     setCurThreadId(pid, t.id);
     renderChat();
+    renderThreadHistory();
     refreshNavMeta();
     toast('✅ تم إنشاء محادثة جديدة');
   }
@@ -1507,6 +2227,53 @@ async function fileToText(file){
     return toggle ? !!toggle.checked : true;
   }
 
+  function getTranscribeProfileConfig(profile = getTranscribeProfile()){
+    if (profile === 'fast'){
+      return {
+        label: 'سريع',
+        scale: 1.2,
+        parallel: 3,
+        runOcrOnDigital: false,
+        useCloudOcr: false,
+        minNativeChars: 45,
+        preferNative: true
+      };
+    }
+    if (profile === 'fidelity'){
+      return {
+        label: 'دقة أعلى',
+        scale: 2.2,
+        parallel: 2,
+        runOcrOnDigital: true,
+        useCloudOcr: true,
+        minNativeChars: 80,
+        preferNative: false
+      };
+    }
+    return {
+      label: 'متوازن',
+      scale: 1.7,
+      parallel: 2,
+      runOcrOnDigital: false,
+      useCloudOcr: true,
+      minNativeChars: 60,
+      preferNative: false
+    };
+  }
+
+  async function mapWithConcurrency(items, worker, limit=2){
+    const out = new Array(items.length);
+    let cursor = 0;
+    const runners = new Array(Math.max(1, Math.min(limit, items.length))).fill(0).map(async () => {
+      while (cursor < items.length){
+        const idx = cursor++;
+        out[idx] = await worker(items[idx], idx);
+      }
+    });
+    await Promise.all(runners);
+    return out;
+  }
+
   async function preprocessImageDataUrl(dataUrl){
     return new Promise((resolve) => {
       try{
@@ -1593,6 +2360,7 @@ async function fileToText(file){
     if (!isOcrEnabled()) return '';
     if (!window.Tesseract) throw new Error('Tesseract غير متاح');
     const usedLang = (lang || getOcrLang() || 'ara+eng').trim();
+    const profile = getTranscribeProfileConfig();
     const enhanced = await preprocessImageDataUrl(dataUrl);
     const psmList = [window.Tesseract?.PSM?.AUTO, window.Tesseract?.PSM?.SINGLE_BLOCK, window.Tesseract?.PSM?.SPARSE_TEXT].filter(v => typeof v !== 'undefined');
     const candidates = [];
@@ -1611,7 +2379,7 @@ async function fileToText(file){
       }catch(_){ }
     }
     let best = candidates.sort((a,b)=>b.length-a.length)[0] || '';
-    if (best.length < 80){
+    if (profile.useCloudOcr && best.length < 80){
       try{
         const cloud = await cloudOcrDataUrl(enhanced, meta);
         if (cloud && cloud.length > best.length) best = cloud;
@@ -1673,47 +2441,113 @@ async function fileToText(file){
     }).filter((l) => l.text);
   }
 
+  function detectLineAlignment(line, pageWidth){
+    const leftGap = Math.max(0, Number(line?.xMin || 0));
+    const rightGap = Math.max(0, pageWidth - Number(line?.xMax || 0));
+    const centerDiff = Math.abs(leftGap - rightGap);
+    if (centerDiff < pageWidth * 0.06) return 'center';
+    if (rightGap < pageWidth * 0.12) return 'right';
+    return 'left';
+  }
+
+  function groupLinesIntoBlocks(lines, pageHeight){
+    const blocks = [];
+    let current = null;
+    let prevY = null;
+    lines.forEach((line, idx) => {
+      const gap = prevY === null ? 0 : Math.abs(prevY - line.y);
+      const lineHeight = idx === 0 ? 18 : Math.max(14, gap || 18);
+      const align = line.align || 'left';
+      if (!current || gap > 26 || current.align !== align){
+        current = { align, marginTop: prevY === null ? 0 : Math.min(36, gap * 0.55), lines: [] };
+        blocks.push(current);
+      }
+      current.lines.push({ text: line.text, y: line.y, lineHeight: Math.max(18, lineHeight) });
+      prevY = line.y;
+    });
+    if (!blocks.length){
+      return [{ align:'left', marginTop:0, lines:[{ text:'', y: pageHeight, lineHeight:20 }] }];
+    }
+    return blocks;
+  }
+
+  function estimateTranscriptionQuality(pages){
+    const nativePages = pages.filter((p) => p.method === 'native').length;
+    const ocrPages = pages.filter((p) => p.method === 'ocr').length;
+    const chars = pages.reduce((sum, p) => sum + String(p.text || '').length, 0);
+    const avg = pages.length ? Math.round(chars / pages.length) : 0;
+    if (!pages.length) return 'لا توجد بيانات';
+    if (nativePages === pages.length && avg > 200) return 'مرتفعة';
+    if (nativePages >= ocrPages) return 'جيدة';
+    return 'تحتاج مراجعة';
+  }
+
   async function extractPdfStrategic(file, opts={}){
     const { onProgress } = opts;
     if (!window.pdfjsLib) throw new Error('pdf.js غير متاح');
+    const profile = getTranscribeProfileConfig();
     const pdfjsLib = window.pdfjsLib;
     try{ pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }catch(_){ }
 
     const ab = await file.arrayBuffer();
     const doc = await pdfjsLib.getDocument({ data: ab }).promise;
-    const pages = [];
+    let done = 0;
+    const pages = await mapWithConcurrency(
+      Array.from({ length: doc.numPages }, (_, i) => i + 1),
+      async (p) => {
+        const page = await doc.getPage(p);
+        const viewport = page.getViewport({ scale: profile.scale });
+        const content = await page.getTextContent();
+        const lines = buildLinesFromTextItems(content.items || []).map((line) => ({
+          ...line,
+          align: detectLineAlignment(line, viewport.width)
+        }));
+        let pageText = lines.map((l) => l.text).join('\n').trim();
+        let method = 'native';
+        const nativeLooksWeak = !pageText || pageText.length < profile.minNativeChars || needsArabicOcrFallback(pageText, getOcrLang());
+        const shouldRunOcr = isOcrEnabled() && (nativeLooksWeak || profile.runOcrOnDigital);
 
-    for (let p=1; p<=doc.numPages; p++){
-      const page = await doc.getPage(p);
-      const viewport = page.getViewport({ scale: 1.4 });
-      const content = await page.getTextContent();
-      const lines = buildLinesFromTextItems(content.items || []);
-      let pageText = lines.map((l) => l.text).join('\n').trim();
-      let method = 'native';
-
-      if (isOcrEnabled() && (!pageText || pageText.length < 30 || needsArabicOcrFallback(pageText, getOcrLang()))){
-        const dataUrl = await renderPdfPageToDataUrl(page, 2);
-        const ocrText = await ocrDataUrl(dataUrl, undefined, { fileName: file?.name || 'document.pdf', page: p });
-        if (ocrText && (!pageText || ocrText.length > pageText.length || scoreArabicQuality(ocrText) >= scoreArabicQuality(pageText))){
-          pageText = ocrText.trim();
-          method = 'ocr';
+        if (shouldRunOcr){
+          const dataUrl = await renderPdfPageToDataUrl(page, Math.max(1.6, profile.scale));
+          const ocrText = await ocrDataUrl(dataUrl, undefined, { fileName: file?.name || 'document.pdf', page: p });
+          if (ocrText && (!pageText || !profile.preferNative || ocrText.length > pageText.length || scoreArabicQuality(ocrText) >= scoreArabicQuality(pageText))){
+            pageText = ocrText.trim();
+            method = 'ocr';
+          }
         }
-      }
 
-      pages.push({
-        page: p,
-        width: viewport.width,
-        height: viewport.height,
-        method,
-        lines: method === 'native' ? lines : [{ y: viewport.height - 20, text: pageText, xMin: 0, xMax: viewport.width }],
-        text: pageText
-      });
+        done += 1;
+        if (typeof onProgress === 'function') onProgress(done, doc.numPages, { method, chars: pageText.length, profile: profile.label });
 
-      if (typeof onProgress === 'function') onProgress(p, doc.numPages, { method, chars: pageText.length });
-    }
+        return {
+          page: p,
+          width: viewport.width,
+          height: viewport.height,
+          method,
+          lines: method === 'native'
+            ? lines
+            : [{ y: viewport.height - 20, text: pageText, xMin: 0, xMax: viewport.width, align:'left' }],
+          blocks: groupLinesIntoBlocks(method === 'native'
+            ? lines
+            : [{ y: viewport.height - 20, text: pageText, xMin: 0, xMax: viewport.width, align:'left' }], viewport.height),
+          text: pageText
+        };
+      },
+      profile.parallel
+    );
 
-    const text = pages.map((pg) => `[Page ${pg.page}]\n${pg.text}`.trim()).join('\n\n').trim();
-    return { pages, text, totalPages: doc.numPages, extractedPages: pages.filter(p => !!p.text).length };
+    const sortedPages = pages.sort((a, b) => a.page - b.page);
+    const text = sortedPages.map((pg) => `[Page ${pg.page}]\n${pg.text}`.trim()).join('\n\n').trim();
+    return {
+      pages: sortedPages,
+      text,
+      totalPages: doc.numPages,
+      extractedPages: sortedPages.filter(p => !!p.text).length,
+      nativePages: sortedPages.filter(p => p.method === 'native').length,
+      ocrPages: sortedPages.filter(p => p.method === 'ocr').length,
+      profile: profile.label,
+      quality: estimateTranscriptionQuality(sortedPages)
+    };
   }
 
   async function extractTextFromPdfSmart(file, opts={}){
@@ -1724,18 +2558,27 @@ async function fileToText(file){
   async function convertPdfToEditableDocx(file, opts={}){
     const structured = await extractPdfStrategic(file, opts);
     const title = String(file?.name || 'document').replace(/\.pdf$/i, '');
-
     const sections = structured.pages.map((pg) => {
-      let prevY = null;
-      const body = (pg.lines || []).map((ln) => {
-        const topGap = prevY === null ? 0 : Math.max(0, (prevY - ln.y) * 0.45);
-        prevY = ln.y;
-        return `<div class="line" style="margin-top:${topGap.toFixed(2)}px">${escapeHtml(ln.text)}</div>`;
+      const blocks = (pg.blocks || []).map((block) => {
+        const text = block.lines.map((line) => escapeHtml(line.text)).join('<br/>');
+        const align = block.align === 'center' ? 'center' : (block.align === 'right' ? 'right' : 'left');
+        return `<div class="block ${align}" style="margin-top:${Math.max(0, block.marginTop || 0).toFixed(1)}px">${text}</div>`;
       }).join('');
-      return `<section class="page"><div class="marker">Page ${pg.page} • ${pg.method.toUpperCase()}</div>${body}</section>`;
+      return `<section class="page">
+        <div class="marker">صفحة ${pg.page} • ${pg.method === 'native' ? 'نص رقمي' : 'OCR'}</div>
+        ${blocks}
+      </section>`;
     }).join('');
 
-    const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8" /><title>${escapeHtml(title)}</title><style>body{font-family:Arial,sans-serif;line-height:1.55} .page{margin:0 0 18px 0;padding:0 0 12px 0;border-bottom:1px dashed #cfd5e6;} .marker{font-size:12px;color:#6a738f;margin-bottom:8px} .line{white-space:pre-wrap}</style></head><body>${sections}</body></html>`;
+    const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8" /><title>${escapeHtml(title)}</title><style>
+      body{font-family:Arial,sans-serif;line-height:1.6;color:#101828}
+      .page{margin:0 0 22px 0;padding:0 0 16px 0;border-bottom:1px dashed #cfd5e6}
+      .marker{font-size:12px;color:#6a738f;margin-bottom:12px}
+      .block{white-space:pre-wrap;font-size:13.5px;line-height:1.75}
+      .block.center{text-align:center}
+      .block.right{text-align:right}
+      .block.left{text-align:left}
+    </style></head><body>${sections}</body></html>`;
 
     const fn = window.htmlToDocx || window.HTMLtoDOCX || null;
     if (!fn) throw new Error('محول DOCX غير متاح');
@@ -2298,9 +3141,9 @@ async function maybeUpdateThreadSummary(pid, tid){
     if (!msg) return 'حدث خطأ غير معروف أثناء الدردشة.';
     if (/unauthorized client token/i.test(msg)) return 'تم الوصول إلى Gateway، لكن Gateway Client Token غير صحيح أو مفقود.';
     if (/missing api key|gateway_missing_upstream_key/i.test(msg)) return 'تم الوصول إلى Gateway، لكن مفتاح OpenRouter غير مضبوط داخل الـ Worker.';
-    if (/failed to fetch|networkerror|load failed|network request failed|cors/i.test(msg)) return 'تعذر الوصول إلى خدمة الدردشة. تحقق من Gateway URL أو CORS أو الاتصال.';
+    if (/failed to fetch|networkerror|load failed|network request failed|cors/i.test(msg)) return 'تعذر الوصول إلى خدمة الدردشة. تحقق من رابط البوابة أو CORS أو الاتصال.';
     if (/stream_empty_response|empty_assistant_response|unrecognized_assistant_response/i.test(msg)) return 'تم الاتصال بالمزوّد لكن الرد رجع فارغًا أو بصيغة غير متوقعة.';
-    if (/missing authentication/i.test(msg)) return 'ضع API Key الصحيح ثم احفظ الإعدادات.';
+    if (/missing authentication/i.test(msg)) return 'ضع مفتاح API الصحيح ثم احفظ الإعدادات.';
     if (/upstream/i.test(msg) || /gateway_upstream_/i.test(msg)) return 'فشل مزود الذكاء الاصطناعي في الرد من جهة الخادم.';
     return msg;
   }
@@ -2380,8 +3223,14 @@ function buildMessagesForChat({ userText, settings, filesText, ragCtx, attachmen
     if (briefCtx){
       msgs.push({ role:'system', content: briefCtx });
     }
+    if (getStudyMode()){
+      msgs.push({
+        role:'system',
+        content:'وضع الدراسة مفعّل: اشرح بطريقة تعليمية تدريجية، استخدم أمثلة قصيرة، جزّئ الحل إلى خطوات واضحة، واذكر سؤال تحقق قصيرًا عندما يكون ذلك مفيدًا للفهم.'
+      });
+    }
     if (threadSummary && threadSummary.trim()){
-      msgs.push({ role:'system', content: `Conversation memory:\n${threadSummary.trim()}` });
+      msgs.push({ role:'system', content: `ملخص المحادثة السابقة:\n${threadSummary.trim()}` });
     }
     const tail = (Array.isArray(historyMessages) ? historyMessages : []).slice(-14);
     for (const m of tail){
@@ -2435,7 +3284,7 @@ ${clip}` });
     setActiveNav('canvas');
     openCanvasDoc(id);
     refreshNavMeta();
-    toast('✅ Sent to Canvas');
+    toast('✅ تم إرسال الرد إلى اللوحة');
   }
 
   function renderEmptyChatState(log){
@@ -2446,16 +3295,16 @@ ${clip}` });
         <div class="empty-chat-text">ابدأ من اللوحة العليا أو اكتب الهدف مباشرة. سيستخدم التطبيق الملفات، المعرفة، وملحقات المحادثة لبناء استجابة أوضح وأكثر احترافية.</div>
         <div class="empty-chat-points">
           <div class="empty-chat-point">
-            <strong>Readable Outputs</strong>
+            <strong>مخرجات مريحة للقراءة</strong>
             <span>تقارير، ملخصات، وخطط عمل مكتوبة بطريقة واضحة ومريحة للقراءة الطويلة.</span>
           </div>
           <div class="empty-chat-point">
-            <strong>Context-Rich</strong>
+            <strong>سياق غني</strong>
             <span>الملفات، قاعدة المعرفة، والمرفقات تندمج داخل نفس سياق التشغيل بدل الدردشة المعزولة.</span>
           </div>
           <div class="empty-chat-point">
-            <strong>Operator Ready</strong>
-            <span>استخدم القوالب، الـ Workflows، ونمط الوكيل لتحويل الطلب إلى مخرجات تنفيذية قابلة للاستخدام.</span>
+            <strong>جاهز للتنفيذ</strong>
+            <span>استخدم القوالب، سير العمل، ونمط الوكيل لتحويل الطلب إلى مخرجات تنفيذية قابلة للاستخدام.</span>
           </div>
         </div>
       </div>`;
@@ -2482,7 +3331,7 @@ ${clip}` });
       b.dataset.mid = m.id || '';
       const meta = document.createElement('div');
       meta.className = 'meta';
-      meta.textContent = (m.role === 'user' ? 'USER' : 'ASSISTANT') + ' • ' + new Date(m.ts || nowTs()).toLocaleString('ar');
+      meta.textContent = (m.role === 'user' ? 'المستخدم' : 'المساعد') + ' • ' + new Date(m.ts || nowTs()).toLocaleString('ar');
 
       const body = document.createElement('div');
       body.className = 'body';
@@ -2503,7 +3352,7 @@ ${clip}` });
       if (m.role === 'assistant'){
         const canvasBtn = document.createElement('button');
         canvasBtn.className = 'btn ghost sm';
-        canvasBtn.textContent = 'Canvas';
+        canvasBtn.textContent = 'إلى اللوحة';
         canvasBtn.addEventListener('click', () => sendMessageToCanvas(m));
         actions.appendChild(canvasBtn);
 
@@ -2511,7 +3360,7 @@ ${clip}` });
         if (dlCount){
           const info = document.createElement('span');
           info.className = 'hint';
-          info.textContent = `📄 اكتشاف ${dlCount} ملف(ات) — راجع التحميلات`;
+          info.textContent = `📄 تم اكتشاف ${dlCount} ملفًا — راجع التحميلات`;
           actions.appendChild(info);
           refreshNavMeta();
         }
@@ -2525,6 +3374,7 @@ ${clip}` });
 
     log.scrollTop = log.scrollHeight + 1000;
     refreshNavMeta();
+    renderThreadHistory();
     refreshStrategicWorkspace().catch(()=>{});
   }
 
@@ -2633,17 +3483,18 @@ function updateChips(){
 
   // ---------------- Send message ----------------
   async function sendMessage(){
+    if (composerListening) stopComposerDictation();
     const input = $('chatInput');
     const text = (input.value || '').trim();
     if (!text) return;
 
     const settings = getSettings();
     if (settings.provider === 'gemini'){
-      if (!(settings.geminiKey||'').trim()) return toast('⚠️ ضع Gemini API Key في الإعدادات.');
+      if (!(settings.geminiKey||'').trim()) return toast('⚠️ ضع مفتاح Gemini في الإعدادات.');
     } else if (settings.authMode === 'gateway'){
-      if (!(settings.gatewayUrl||'').trim()) return toast('⚠️ ضع Gateway URL في الإعدادات (Auth Mode = Gateway).');
+      if (!(settings.gatewayUrl||'').trim()) return toast('⚠️ ضع رابط البوابة في الإعدادات (نمط المصادقة = بوابة).');
     } else {
-      if (!(settings.apiKey||'').trim()) return toast('⚠️ ضع API Key في الإعدادات.');
+      if (!(settings.apiKey||'').trim()) return toast('⚠️ ضع مفتاح API في الإعدادات.');
     }
 
     const pid = getCurProjectId();
@@ -2657,6 +3508,7 @@ function updateChips(){
 
     const uMsg = { id: makeId('m'), role:'user', content: text, ts: nowTs() };
     thread.messages.push(uMsg);
+    ensureThreadTitleFromMessage(thread, text);
     thread.updatedAt = nowTs();
     threads[idx] = thread;
     saveThreads(pid, threads);
@@ -2742,7 +3594,7 @@ function updateChips(){
           }
 
           if (streamErrLast){
-            showStatus('⚠️ تعذر البث المباشر على هذا الاتصال، سيتم المتابعة بدون Streaming…', true);
+            showStatus('⚠️ تعذر البث المباشر على هذا الاتصال، سيتم المتابعة بدون بث مباشر…', true);
             let callErrLast = null;
             for (let i=0; i<baseCandidates.length; i++){
               const baseUrl = baseCandidates[i];
@@ -2844,8 +3696,8 @@ async function runResearchAgent(topicOverride){
   if (!topic.trim()) return;
 
   const settings = getSettings();
-  if (settings.provider !== 'gemini' && !settings.apiKey) return toast('⚠️ ضع API Key في الإعدادات.');
-  if (settings.provider === 'gemini' && !settings.geminiKey) return toast('⚠️ ضع Gemini API Key في الإعدادات.');
+  if (settings.provider !== 'gemini' && !settings.apiKey) return toast('⚠️ ضع مفتاح API في الإعدادات.');
+  if (settings.provider === 'gemini' && !settings.geminiKey) return toast('⚠️ ضع مفتاح Gemini في الإعدادات.');
 
   const pid = getCurProjectId();
   const tid = getCurThreadId(pid);
@@ -2921,7 +3773,7 @@ async function runResearchAgent(topicOverride){
     let final = '';
     if (settings.provider === 'gemini'){
       final = await callGemini({ apiKey: settings.geminiKey, model: settings.model, prompt: `${sys}\n\n${synthPrompt}`, signal: abortCtl.signal, maxOut: Math.min(2048, Number(settings.maxOut||2000)) });
-      pushAssistant('🧪 Research Report:\n\n' + final);
+      pushAssistant('🧪 تقرير بحث:\n\n' + final);
     } else {
       if (settings.streaming){
         const aId = makeId('m');
@@ -2929,7 +3781,7 @@ async function runResearchAgent(topicOverride){
         const idx = threads.findIndex(t => t.id === tid);
         const thread = threads[idx] || threads[0];
         thread.messages = thread.messages || [];
-        thread.messages.push({ id: aId, role:'assistant', content:'🧪 Research Report:\n\n', ts: nowTs() });
+        thread.messages.push({ id: aId, role:'assistant', content:'🧪 تقرير بحث:\n\n', ts: nowTs() });
         threads[idx] = thread;
         saveThreads(pid, threads);
         renderChat();
@@ -2942,18 +3794,18 @@ async function runResearchAgent(topicOverride){
           max_tokens: Math.min(2400, Number(settings.maxOut||2000)),
           signal: abortCtl.signal,
           extraHeaders,
-          onDelta: (_d, full) => updateStreamingAssistant(aId, '🧪 Research Report:\n\n' + full)
+          onDelta: (_d, full) => updateStreamingAssistant(aId, '🧪 تقرير بحث:\n\n' + full)
         });
 
         const threads2 = loadThreads(pid);
         const thread2 = threads2.find(t => t.id === tid) || threads2[0];
         const msg2 = (thread2.messages||[]).find(m => m.id === aId);
-        if (msg2) msg2.content = '🧪 Research Report:\n\n' + final;
+        if (msg2) msg2.content = '🧪 تقرير بحث:\n\n' + final;
         saveThreads(pid, threads2);
         renderChat();
       } else {
         final = await callOpenAIChat({ apiKey: settings.apiKey, baseUrl, model: settings.model, messages: [{role:'system', content: sys},{role:'user', content: synthPrompt}], max_tokens: Math.min(2400, Number(settings.maxOut||2000)), signal: abortCtl.signal, extraHeaders });
-        pushAssistant('🧪 Research Report:\n\n' + final);
+        pushAssistant('🧪 تقرير بحث:\n\n' + final);
       }
     }
     showStatus('', false);
@@ -3057,7 +3909,7 @@ async function runResearchAgent(topicOverride){
 
   async function canvasAi(action){
     const settings = getSettings();
-    if (settings.provider !== 'gemini' && !settings.apiKey) return toast('⚠️ ضع API Key في الإعدادات.');
+    if (settings.provider !== 'gemini' && !settings.apiKey) return toast('⚠️ ضع مفتاح API في الإعدادات.');
     const raw = $('canvasEditor').value || '';
     if (!raw.trim()) return;
 
@@ -3242,7 +4094,7 @@ async function runResearchAgent(topicOverride){
       box.appendChild(wrap);
     };
 
-    card('🧪 Research (3 steps)', 'خطة → ملاحظات (Web/KB) → تقرير + ملف تنزيل.', [
+    card('🧪 بحث متكامل (3 مراحل)', 'خطة → ملاحظات (الويب/المعرفة) → تقرير + ملف تنزيل.', [
       {label:'تشغيل', kind:'btn sm', onClick: runResearchAgent},
       {label:'إدراج برومبت', kind:'btn ghost sm', onClick: () => {
         $('chatInput').value =
@@ -3267,12 +4119,12 @@ async function runResearchAgent(topicOverride){
       }},
     ]);
 
-    card('🧩 بناء تطبيق HTML من كانفس', 'استخدم محتوى كانفس لإنشاء تطبيق HTML كامل (ملف واحد).', [
-      {label:'تشغيل على كانفس', kind:'btn sm', onClick: () => { setActiveNav('canvas'); canvasAi('build_app_html'); }},
-      {label:'فتح كانفس', kind:'btn ghost sm', onClick: () => setActiveNav('canvas')},
+    card('🧩 بناء تطبيق HTML من اللوحة', 'استخدم محتوى اللوحة لإنشاء تطبيق HTML كامل داخل ملف واحد.', [
+      {label:'تشغيل على اللوحة', kind:'btn sm', onClick: () => { setActiveNav('canvas'); canvasAi('build_app_html'); }},
+      {label:'فتح اللوحة', kind:'btn ghost sm', onClick: () => setActiveNav('canvas')},
     ]);
 
-    card('📌 Action Items', 'استخراج مهام من آخر محادثة: المهمة + المالك + الموعد + الأولوية + الحالة.', [
+    card('📌 عناصر تنفيذ', 'استخراج مهام من آخر محادثة: المهمة + المالك + الموعد + الأولوية + الحالة.', [
       {label:'إدراج', kind:'btn ghost sm', onClick: () => {
         $('chatInput').value =
           'استخرج من المحادثة مهامًا تنفيذية بصيغة جدول:\\n'
@@ -3302,20 +4154,20 @@ async function runResearchAgent(topicOverride){
   function getWorkflowTemplate(id){
     const templates = {
       research: [
-        { step:'research', note:'Research report (multi-step)'}
+        { step:'research', note:'تقرير بحث متعدد المراحل'}
       ],
       ocr_index: [
-        { step:'ocr_images', note:'OCR all images in Files'},
-        { step:'kb_index', note:'Re-index Knowledge Base'}
+        { step:'ocr_images', note:'OCR لكل الصور داخل الملفات'},
+        { step:'kb_index', note:'إعادة فهرسة قاعدة المعرفة'}
       ],
       kb_summary: [
         { step:'chat', prompt:'لخّص قاعدة المعرفة الحالية بوضوح مع اقتباسات [KB:...] وأنشئ ملف kb_summary.md باستخدام قالب ```file```.'}
       ],
       action_items: [
-        { step:'chat', prompt:'استخرج Action Items من المحادثة بصيغة جدول وأنشئ ملف action_items.md باستخدام قالب ```file```.'}
+        { step:'chat', prompt:'استخرج عناصر التنفيذ من المحادثة بصيغة جدول وأنشئ ملف action_items.md باستخدام قالب ```file```.'}
       ],
       canvas_app: [
-        { step:'canvas_build', note:'Canvas → Build HTML App'}
+        { step:'canvas_build', note:'اللوحة → بناء تطبيق HTML'}
       ]
     };
     return templates[id] || templates.research;
@@ -3355,7 +4207,7 @@ async function runResearchAgent(topicOverride){
     const ed = $('workflowEditor');
     const id = sel ? sel.value : 'research';
     wfClear();
-    wfLog('▶ تشغيل Workflow: ' + id);
+    wfLog('▶ تشغيل سير العمل: ' + id);
 
     let steps = [];
     try{
@@ -3371,33 +4223,33 @@ async function runResearchAgent(topicOverride){
 
     for (let i=0;i<steps.length;i++){
       const st = steps[i] || {};
-      wfLog(`\nStep ${i+1}: ${st.step || 'unknown'}`);
+      wfLog(`\nالخطوة ${i+1}: ${st.step || 'غير معروف'}`);
       if (st.step === 'research'){
-        wfLog('… فتح Research');
+        wfLog('… تشغيل البحث');
         await runResearchAgent();
       } else if (st.step === 'ocr_images'){
         await ocrAllImages();
       } else if (st.step === 'kb_index'){
         wfLog('… إعادة فهرسة KB');
         await buildKb();
-        wfLog('✅ KB Indexed');
+        wfLog('✅ اكتملت فهرسة قاعدة المعرفة');
       } else if (st.step === 'chat'){
         const prompt = String(st.prompt || '').trim();
-        if (!prompt){ wfLog('⚠️ لا يوجد prompt'); continue; }
+        if (!prompt){ wfLog('⚠️ لا يوجد طلب'); continue; }
         // push prompt to chat and send
         $('chatInput').value = prompt;
         setActiveNav('chat');
         await sendMessage();
       } else if (st.step === 'canvas_build'){
-        wfLog('… Canvas build_app_html');
+        wfLog('… بناء تطبيق HTML من اللوحة');
         setActiveNav('canvas');
         canvasAi('build_app_html');
       } else {
         wfLog('⚠️ خطوة غير معروفة: ' + st.step);
       }
     }
-    wfLog('\n✅ انتهى Workflow');
-    toast('✅ Workflow done');
+    wfLog('\n✅ اكتمل سير العمل');
+    toast('✅ اكتمل سير العمل');
   }
 
 let pinOnly = false;
@@ -3674,10 +4526,11 @@ let pinOnly = false;
 
   // ---------------- Navigation ----------------
   function setActiveNav(page){
+    if (page !== 'chat' && composerListening) stopComposerDictation();
     document.querySelectorAll('.navbtn').forEach(b => b.classList.toggle('active', b.dataset.page === page));
     document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === `page-${page}`));
-    const titles = { chat:'الدردشة', knowledge:'المعرفة (KB)', canvas:'كانفس', files:'الملفات', transcription:'التفريغ النصي', workflows:'Workflows', downloads:'التحميلات', projects:'المشاريع', settings:'الإعدادات' };
-    $('topTitle').textContent = titles[page] || 'AI Studio';
+    const titles = { chat:'الدردشة', knowledge:'المعرفة (KB)', canvas:'اللوحة', files:'الملفات', transcription:'مختبر الوثائق', workflows:'سير العمل', downloads:'التحميلات', projects:'المشاريع', guide:'دليل الاستخدام', settings:'الإعدادات' };
+    $('topTitle').textContent = titles[page] || 'استوديو الذكاء';
     refreshStrategicWorkspace().catch(()=>{});
   }
 
@@ -3692,6 +4545,7 @@ let pinOnly = false;
     $('navProjMeta').textContent = String(loadProjects().length);
     $('navWorkMeta') && ($('navWorkMeta').textContent = '4');
     $('navSetMeta').textContent = 'OK';
+    $('navGuideMeta') && ($('navGuideMeta').textContent = 'AR');
     refreshStrategicWorkspace().catch(()=>{});
   }
 
@@ -3863,7 +4717,7 @@ let pinOnly = false;
     }catch(e){
       showStatus(`❌ فشل تحميل الموديلات:\n${e?.message || e}`, false);
       openModelModal(true);
-      $('modelList').innerHTML = `<div class="hint">تعذر تحميل الموديلات. تأكد من Base URL و API Key. وإذا كنت تستخدم Gateway اجعل Gateway URL بدون <span class="kbd">/v1</span>.</div>`;
+      $('modelList').innerHTML = `<div class="hint">تعذر تحميل النماذج. تأكد من الرابط الأساسي والمفتاح. وإذا كنت تستخدم البوابة فاجعل رابطها بدون <span class="kbd">/v1</span>.</div>`;
     }
   }
 
@@ -3911,6 +4765,7 @@ let pinOnly = false;
       if (btn.dataset.page === 'downloads') renderDownloads();
       if (btn.dataset.page === 'workflows') renderWorkflows();
       if (btn.dataset.page === 'projects') renderProjects();
+      if (btn.dataset.page === 'guide') renderGuidePage();
       if (btn.dataset.page === 'settings') renderSettings();
     setupCollapsibleToolbars();
     applyUiCollapse();
@@ -3932,8 +4787,8 @@ let pinOnly = false;
     });
 
     // modes
-    $('modeDeepBtn').addEventListener('click', () => { setDeep(!isDeep()); refreshModeButtons(); toast(isDeep() ? '🧠 مفعّل' : '🧠 متوقف'); });
-    $('modeAgentBtn').addEventListener('click', () => { setAgent(!isAgent()); refreshModeButtons(); toast(isAgent() ? '🤖 مفعّل' : '🤖 متوقف'); });
+    $('modeDeepBtn').addEventListener('click', () => { setDeep(!isDeep()); refreshModeButtons(); toast(isDeep() ? '🧠 تم تفعيل التفكير العميق' : '🧠 تم إيقاف التفكير العميق'); });
+    $('modeAgentBtn').addEventListener('click', () => { setAgent(!isAgent()); refreshModeButtons(); toast(isAgent() ? '🤖 تم تفعيل وضع الوكيل' : '🤖 تم إيقاف وضع الوكيل'); });
     $('modeOffBtn').addEventListener('click', disableModes);
 
 // v5: Collapse UI
@@ -3986,7 +4841,7 @@ $('chatToolbarExpandBtn')?.addEventListener('click', () => {
 });
 
 
-    $('webToggleBtn').addEventListener('click', () => { setWebToggle(!getWebToggle()); refreshModeButtons(); toast(getWebToggle() ? '🔎 Web ON' : '🔎 Web OFF'); });
+    $('webToggleBtn').addEventListener('click', () => { setWebToggle(!getWebToggle()); refreshModeButtons(); toast(getWebToggle() ? '🔎 تم تفعيل الويب' : '🔎 تم إيقاف الويب'); });
 
     $('newThreadBtn').addEventListener('click', () => { newThread(); setActiveNav('chat'); });
 
@@ -3994,6 +4849,17 @@ $('chatToolbarExpandBtn')?.addEventListener('click', () => {
       const quick = e.target.closest('[data-quick-prompt]');
       if (!quick) return;
       applyQuickPrompt(quick.dataset.quickPrompt || '');
+    });
+
+    document.addEventListener('click', (e) => {
+      const openPageBtn = e.target.closest('[data-open-page]');
+      if (openPageBtn){
+        setActiveNav(openPageBtn.dataset.openPage || 'chat');
+      }
+      const guideBtn = e.target.closest('[data-guide-target]');
+      if (guideBtn){
+        document.getElementById(`guide-${guideBtn.dataset.guideTarget}`)?.scrollIntoView({ behavior:'smooth', block:'start' });
+      }
     });
 
     document.addEventListener('click', (e) => {
@@ -4032,11 +4898,24 @@ $('chatToolbarExpandBtn')?.addEventListener('click', () => {
       applyShellLayout();
       refreshStrategicWorkspace().catch(()=>{});
     });
+    $('historyDrawerBtn')?.addEventListener('click', openThreadDrawer);
+    $('threadDrawerCloseBtn')?.addEventListener('click', closeThreadDrawer);
+    $('threadDrawerOverlay')?.addEventListener('click', closeThreadDrawer);
+    $('threadSearchInput')?.addEventListener('input', renderThreadHistory);
+    $('threadExportAllBtn')?.addEventListener('click', exportAllThreads);
     $('pinSideBtn')?.addEventListener('click', () => {
       setSidebarPinned(!getSidebarPinned());
       applyShellLayout();
     });
-    ['briefGoal','briefAudience','briefDeliverable','briefConstraints','briefStyle'].forEach((id) => {
+    $('studyModeBtn')?.addEventListener('click', () => {
+      setStudyMode(!getStudyMode());
+      applyShellLayout();
+      syncComposerMeta();
+      refreshStrategicWorkspace().catch(()=>{});
+      toast(getStudyMode() ? '📚 تم تفعيل وضع الدراسة' : '📚 تم إيقاف وضع الدراسة');
+    });
+    $('voiceInputBtn')?.addEventListener('click', toggleComposerDictation);
+    ['briefGoal','briefAudience','briefDeliverable','briefConstraints','briefMemory','briefResponseRules','briefStyle'].forEach((id) => {
       const el = $(id);
       if (!el) return;
       el.addEventListener('input', saveProjectBriefFromUI);
@@ -4044,6 +4923,18 @@ $('chatToolbarExpandBtn')?.addEventListener('click', () => {
     });
     $('briefApplyBtn')?.addEventListener('click', applyProjectBriefToComposer);
     $('briefClearBtn')?.addEventListener('click', clearProjectBrief);
+    $('guideSearch')?.addEventListener('input', renderGuidePage);
+    $('guideExportBtn')?.addEventListener('click', exportGuideDoc);
+    $('transcribeProfile')?.addEventListener('change', (e) => {
+      setTranscribeProfile(e.target.value);
+      syncTranscribeControls();
+      updateTranscribeLabState({ note:'تم تحديث ملف التشغيل. اختر ملفًا أو أعد الاستخراج لتطبيقه.' });
+    });
+    $('transcribeDocxMode')?.addEventListener('change', (e) => {
+      setTranscribeDocxMode(e.target.value);
+      syncTranscribeControls();
+      updateTranscribeLabState({ note:'تم تحديث مسار التحويل. استخدم الوضع السحابي عند البحث عن أفضل تطابق ممكن.' });
+    });
 
 $('sendBtn').addEventListener('click', sendMessage);
     $('stopBtn').addEventListener('click', stopGeneration);
@@ -4070,25 +4961,25 @@ $('sendBtn').addEventListener('click', sendMessage);
     $('streamToggle').addEventListener('change', (e) => {
       const s = setSettings({ streaming: !!e.target.checked });
       $('streamDefault').checked = !!s.streaming;
-      toast(s.streaming ? 'Streaming ON' : 'Streaming OFF');
+      toast(s.streaming ? '📡 تم تفعيل البث المباشر' : '📡 تم إيقاف البث المباشر');
     });
 
     $('ragToggle') && $('ragToggle').addEventListener('change', (e) => {
       setRagToggle(!!e.target.checked);
-      toast(e.target.checked ? 'RAG ON' : 'RAG OFF');
+      toast(e.target.checked ? '🧠 تم تفعيل RAG' : '🧠 تم إيقاف RAG');
     });
 
 
     $('toolsToggle') && $('toolsToggle').addEventListener('change', (e) => {
       const s = setSettings({ toolsEnabled: !!e.target.checked });
       if ($('toolsDefault')) $('toolsDefault').checked = !!s.toolsEnabled;
-      toast(s.toolsEnabled ? 'Tools ON' : 'Tools OFF');
+      toast(s.toolsEnabled ? '🧰 تم تفعيل الأدوات' : '🧰 تم إيقاف الأدوات');
     });
 
     $('toolsDefault') && $('toolsDefault').addEventListener('change', (e) => {
       const s = setSettings({ toolsEnabled: !!e.target.checked });
       if ($('toolsToggle')) $('toolsToggle').checked = !!s.toolsEnabled;
-      toast(s.toolsEnabled ? 'Tools ON' : 'Tools OFF');
+      toast(s.toolsEnabled ? '🧰 تم تفعيل الأدوات' : '🧰 تم إيقاف الأدوات');
     });
 
     $('authMode') && $('authMode').addEventListener('change', () => {
@@ -4201,6 +5092,14 @@ $('sendBtn').addEventListener('click', sendMessage);
       transcribeLastStructured = null;
       if ($('transcribeFileName')) $('transcribeFileName').textContent = f ? `الملف: ${f.name}` : 'لم يتم اختيار ملف بعد';
       if ($('transcribeStats')) $('transcribeStats').textContent = f ? 'جاهز للاستخراج' : 'جاهز';
+      updateTranscribeLabState({
+        source: f ? briefSnippet(f.name, 36) : 'لا يوجد',
+        engine: f ? `جاهز • ${getTranscribeProfileLabel()}` : 'جاهز',
+        quality: '—',
+        note: f
+          ? `تم اختيار الملف. يمكنك الآن استخراج النص أو التحويل إلى Word عبر وضع ${getTranscribeDocxModeLabel()}.`
+          : 'اختر ملفًا لبدء الاستخراج أو التحويل.'
+      });
     };
     const updateTranscribeLiveStats = () => {
       const txt = String($('transcribeOutput')?.value || '');
@@ -4257,8 +5156,15 @@ $('sendBtn').addEventListener('click', sendMessage);
       try{
         const f = transcribeSelectedFile;
         const isPdf = /\.pdf$/i.test(String(f.name || '')) || String(f.type || '').includes('pdf');
+        const profileLabel = getTranscribeProfileLabel();
         showStatus('استخراج النص…', true);
-        $('transcribeStats').textContent = 'جاري الاستخراج...';
+        $('transcribeStats').textContent = `جاري الاستخراج • ${profileLabel}...`;
+        updateTranscribeLabState({
+          source: briefSnippet(f.name, 36),
+          engine: isPdf ? `استخراج PDF • ${profileLabel}` : `OCR/قراءة ملف • ${profileLabel}`,
+          quality: 'قيد التحليل',
+          note: 'يتم الآن تحليل الملف واختيار أفضل مسار بين النص الرقمي وOCR حسب جودة الصفحات.'
+        });
         if (isPdf){
           const result = await extractPdfStrategic(f, {
             onProgress: (p, total, info) => { $('transcribeStats').textContent = `صفحة ${p}/${total} • ${info?.method || 'native'}`; }
@@ -4266,14 +5172,31 @@ $('sendBtn').addEventListener('click', sendMessage);
           transcribeLastStructured = result;
           $('transcribeOutput').value = result?.text || '';
           $('transcribeStats').textContent = `استخراج ${result.extractedPages}/${result.totalPages} صفحة • ${result.text.length} حرف`;
+          updateTranscribeLabState({
+            source: `${briefSnippet(f.name, 26)} • ${result.totalPages} صفحة`,
+            engine: `PDF • ${profileLabel} • أصلي ${result.nativePages}/${result.totalPages}`,
+            quality: result.quality || 'جيدة',
+            note: result.ocrPages
+              ? `اكتمل الاستخراج. تم استخدام OCR في ${result.ocrPages} صفحة عند الحاجة مع الحفاظ على النص الرقمي حيث كان صالحًا.`
+              : 'اكتمل الاستخراج من الطبقة النصية الأصلية بدون حاجة كبيرة إلى OCR.'
+          });
         } else {
           const txt = await fileToTextSmart(f);
           $('transcribeOutput').value = txt || '';
           $('transcribeStats').textContent = txt ? `استخراج صورة • ${txt.length} حرف` : 'لم يتم العثور على نص';
+          updateTranscribeLabState({
+            source: briefSnippet(f.name, 26),
+            engine: 'OCR/قراءة ملف',
+            quality: txt ? 'قابل للمراجعة' : 'غير كافٍ',
+            note: txt
+              ? 'اكتمل استخراج النص. راجع الأسطر وعلامات الترقيم قبل التصدير النهائي إذا كان الملف صورة أو مسحًا ضوئيًا.'
+              : 'لم يتم العثور على نص واضح داخل الملف الحالي.'
+          });
         }
         updateTranscribeLiveStats();
         showStatus('', false);
       }catch(e){
+        updateTranscribeLabState({ engine:'فشل الاستخراج', quality:'توقف', note:String(e?.message || e) });
         showStatus(`❌ فشل استخراج النص:
 ${e?.message||e}`, false);
       }
@@ -4302,6 +5225,8 @@ ${e?.message||e}`, false);
 
 ${txt}`;
       setActiveNav('chat');
+      resizeComposerInput($('chatInput'));
+      syncComposerMeta();
       $('chatInput').focus();
       toast('✅ تم إرسال النص إلى الدردشة');
     });
@@ -4309,32 +5234,66 @@ ${txt}`;
       setTranscribeFile(null);
       if ($('transcribeOutput')) $('transcribeOutput').value = '';
       if ($('transcribeStats')) $('transcribeStats').textContent = 'جاهز';
+      updateTranscribeLabState({
+        source: 'لا يوجد',
+        engine: 'جاهز',
+        quality: '—',
+        note: 'تمت إعادة ضبط مختبر الوثائق. اختر ملفًا جديدًا للبدء.'
+      });
       updateTranscribeLiveStats();
       toast('✅ تم المسح');
     });
     $('transcribeConvertBtn')?.addEventListener('click', async () => {
       if (!transcribeSelectedFile) return toast('⚠️ اختر ملف PDF أولاً');
       try{
+        const isPdf = /\.pdf$/i.test(String(transcribeSelectedFile.name || '')) || String(transcribeSelectedFile.type || '').includes('pdf');
+        if (!isPdf) return toast('⚠️ التحويل إلى Word مخصص لملفات PDF');
         showStatus('تحويل PDF إلى DOCX احترافي قابل للتعديل…', true);
         $('transcribeStats').textContent = 'جاري التحويل...';
         const s = getSettings();
+        const mode = getTranscribeDocxMode();
+        const hasCloud = !!String(s.cloudConvertEndpoint || s.cloudConvertFallbackEndpoint || '').trim();
+        let route = mode === 'auto' ? (hasCloud ? 'cloud' : 'local') : mode;
+        if (route === 'cloud' && !hasCloud) route = 'local';
         let result = null;
-        if ((s.cloudConvertEndpoint || '').trim()){
-          $('transcribeStats').textContent = 'تحويل عبر CloudConvert Worker...';
+        if (route === 'cloud'){
+          $('transcribeStats').textContent = 'تحويل عبر المسار السحابي...';
+          updateTranscribeLabState({
+            source: briefSnippet(transcribeSelectedFile.name, 26),
+            engine: 'تحويل DOCX • سحابي',
+            quality: 'أعلى مطابقة ممكنة',
+            note: 'يتم الآن استخدام المسار السحابي للحصول على أعلى تطابق ممكن ضمن حدود الملف الأصلي.'
+          });
           result = await convertPdfToDocxByWorker(transcribeSelectedFile);
         } else {
+          $('transcribeStats').textContent = 'تحويل محلي قابل للتعديل...';
           result = await convertPdfToEditableDocx(transcribeSelectedFile, {
             onProgress: (p, total, info) => { $('transcribeStats').textContent = `تحويل صفحة ${p}/${total} • ${info?.method || 'native'}`; }
           });
           transcribeLastStructured = result?.structured || transcribeLastStructured;
           if ($('transcribeOutput') && result?.text) $('transcribeOutput').value = result.text;
+          updateTranscribeLabState({
+            source: briefSnippet(transcribeSelectedFile.name, 26),
+            engine: `تحويل DOCX • محلي • ${getTranscribeProfileLabel()}`,
+            quality: result?.structured?.quality || 'جيدة',
+            note: 'اكتمل التحويل المحلي. الملف الناتج قابل للتعديل ويهدف إلى أفضل محاكاة عملية للتنسيق الأصلي، لكنه قد يحتاج مراجعة نهائية في المستندات المعقدة جدًا.'
+          });
         }
         downloadBlob(result.fileName, result.blob);
         showStatus('', false);
         $('transcribeStats').textContent = 'اكتمل التحويل';
         updateTranscribeLiveStats();
-        toast('⬇️ تم تنزيل ملف DOCX قابل للتعديل');
+        if (route === 'cloud'){
+          updateTranscribeLabState({
+            source: briefSnippet(transcribeSelectedFile.name, 26),
+            engine: 'تحويل DOCX • سحابي',
+            quality: 'أعلى مطابقة ممكنة',
+            note: 'اكتمل التحويل السحابي. هذه أفضل دقة متاحة عبر المسار الحالي، مع بقاء الحاجة إلى مراجعة بسيطة في الملفات شديدة التعقيد.'
+          });
+        }
+        toast('⬇️ تم تنزيل ملف Word قابل للتعديل');
       }catch(e){
+        updateTranscribeLabState({ engine:'فشل التحويل', quality:'توقف', note:String(e?.message || e) });
         showStatus(`❌ فشل التحويل:
 ${e?.message||e}`, false);
       }
@@ -4359,11 +5318,19 @@ ${e?.message||e}`, false);
         $('transcribeStats').textContent = 'جاري التحسين السحابي...';
         const polished = await cloudPolishText(txt);
         if (polished) $('transcribeOutput').value = polished.trim();
+        updateTranscribeLabState({
+          engine: 'تحسين سحابي',
+          quality: polished ? 'منقّح' : 'بدون تغيير',
+          note: polished
+            ? 'اكتمل تحسين النص سحابيًا مع تنظيف الأسطر وعلامات الترقيم والحفاظ على المعنى.'
+            : 'لم يتم إرجاع نص محسّن من المزود الحالي.'
+        });
         showStatus('', false);
         $('transcribeStats').textContent = polished ? `تم التحسين (${polished.length} حرف)` : 'لم يرجع النص من المزود';
         updateTranscribeLiveStats();
         toast(polished ? '☁️ تم التحسين السحابي' : '⚠️ لم يتم إرجاع نص');
       }catch(e){
+        updateTranscribeLabState({ engine:'فشل التحسين', quality:'توقف', note:String(e?.message || e) });
         showStatus(`❌ فشل التحسين السحابي:
 ${e?.message||e}`, false);
       }
