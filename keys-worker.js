@@ -21,7 +21,15 @@ export default {
       // Static assets fallback (PWA files)
       if (env.ASSETS && typeof env.ASSETS.fetch === 'function') {
         const assetResp = await env.ASSETS.fetch(request);
-        return withCors(assetResp, request);
+        if (assetResp.status !== 404 || !isSpaRequest(request, url)) {
+          return withCors(assetResp, request);
+        }
+
+        // If a client-side route is requested directly (e.g. /e/*),
+        // serve the app shell so the router can handle it.
+        const shellRequest = new Request(new URL('/index.html', url).toString(), request);
+        const shellResp = await env.ASSETS.fetch(shellRequest);
+        return withCors(shellResp, request);
       }
 
       return withCors(new Response('Not Found', { status: 404 }), request);
@@ -122,4 +130,15 @@ async function handleGateway(request, env, url) {
 function canHaveBody(method) {
   const m = String(method || '').toUpperCase();
   return !(m === 'GET' || m === 'HEAD');
+}
+
+function isSpaRequest(request, url) {
+  const method = String(request.method || '').toUpperCase();
+  if (!(method === 'GET' || method === 'HEAD')) return false;
+
+  // Real files usually contain an extension; SPA routes do not.
+  const path = url.pathname || '/';
+  if (path === '/' || path === '') return true;
+  const lastPart = path.split('/').pop() || '';
+  return !lastPart.includes('.');
 }
