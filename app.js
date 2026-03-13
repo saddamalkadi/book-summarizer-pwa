@@ -350,9 +350,12 @@ async function buildRagContextIfEnabled(userText){
     const rawGateway = normalizeEndpointUrl(settings?.gatewayUrl || '');
     if (!rawGateway) return '';
 
+    // بعض المستخدمين يضعون gatewayUrl منتهيًا بـ /v1؛ نعيده للجذر حتى لا يتكرر /v1 مرتين.
+    const gatewayRoot = rawGateway.replace(/\/v1\/?$/i, '');
+
     // If user puts the static app worker (often "keys.*.workers.dev") as gateway,
     // prefer the API worker origin inferred from cloud endpoints.
-    const gatewayOrigin = endpointOrigin(rawGateway);
+    const gatewayOrigin = endpointOrigin(gatewayRoot);
     const appOrigin = endpointOrigin(location.origin);
     const cloudOrigins = [
       endpointOrigin(settings?.cloudConvertEndpoint || ''),
@@ -360,12 +363,12 @@ async function buildRagContextIfEnabled(userText){
       endpointOrigin(settings?.ocrCloudEndpoint || '')
     ].filter(Boolean);
     const inferredApiOrigin = cloudOrigins.find(o => o !== gatewayOrigin) || '';
-    const looksLikeStaticWorker = /\/\/keys\./i.test(rawGateway) || (!!gatewayOrigin && gatewayOrigin === appOrigin);
+    const looksLikeStaticWorker = /\/\/keys\./i.test(gatewayRoot) || (!!gatewayOrigin && gatewayOrigin === appOrigin);
 
     if (looksLikeStaticWorker && inferredApiOrigin){
       return inferredApiOrigin;
     }
-    return rawGateway;
+    return gatewayRoot;
   }
 
   function buildEndpointCandidates(raw, paths=[]){
@@ -2921,7 +2924,7 @@ let pinOnly = false;
     }catch(e){
       showStatus(`❌ فشل تحميل الموديلات:\n${e?.message || e}`, false);
       openModelModal(true);
-      $('modelList').innerHTML = `<div class="hint">تعذر تحميل الموديلات. تأكد من Base URL و API Key.</div>`;
+      $('modelList').innerHTML = `<div class="hint">تعذر تحميل الموديلات. تأكد من Base URL و API Key. وإذا كنت تستخدم Gateway اجعل Gateway URL بدون <span class="kbd">/v1</span>.</div>`;
     }
   }
 
