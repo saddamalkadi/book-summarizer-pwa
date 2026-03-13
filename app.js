@@ -353,17 +353,23 @@ async function buildRagContextIfEnabled(userText){
     // بعض المستخدمين يضعون gatewayUrl منتهيًا بـ /v1؛ نعيده للجذر حتى لا يتكرر /v1 مرتين.
     const gatewayRoot = rawGateway.replace(/\/v1\/?$/i, '');
 
-    // If user puts the static app worker (often "keys.*.workers.dev") as gateway,
-    // prefer the API worker origin inferred from cloud endpoints.
+    // If user explicitly points to a known static keys worker
+    // (often "keys.*.workers.dev") as gateway, prefer the API worker origin
+    // inferred from cloud endpoints.
+    //
+    // NOTE:
+    // Do NOT auto-switch just because gateway origin === app origin.
+    // In many deployments this same Worker serves both static assets and /v1 API.
+    // Switching in that case can silently route chat calls to another worker and
+    // trigger auth errors (e.g. "No cookie auth credentials found").
     const gatewayOrigin = endpointOrigin(gatewayRoot);
-    const appOrigin = endpointOrigin(location.origin);
     const cloudOrigins = [
       endpointOrigin(settings?.cloudConvertEndpoint || ''),
       endpointOrigin(settings?.cloudConvertFallbackEndpoint || ''),
       endpointOrigin(settings?.ocrCloudEndpoint || '')
     ].filter(Boolean);
     const inferredApiOrigin = cloudOrigins.find(o => o !== gatewayOrigin) || '';
-    const looksLikeStaticWorker = /\/\/keys\./i.test(gatewayRoot) || (!!gatewayOrigin && gatewayOrigin === appOrigin);
+    const looksLikeStaticWorker = /\/\/keys\./i.test(gatewayRoot);
 
     if (looksLikeStaticWorker && inferredApiOrigin){
       return inferredApiOrigin;
