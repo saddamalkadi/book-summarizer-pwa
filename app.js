@@ -1819,16 +1819,33 @@ function updateChips(){
       } else {
         const baseUrl = (effectiveBaseUrl(settings) || (settings.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1'));
         if (wantStream){
-          ans = await streamChatCompletions({
-            apiKey: settings.apiKey, baseUrl, model, messages,
-            max_tokens: Number(settings.maxOut || 2000),
-            signal: abortCtl.signal,
-            extraHeaders,
-            onDelta: (_d, full) => {
-              updateStreamingAssistant(aId, full);
-              aMsg.content = full;
-            }
-          });
+          try{
+            ans = await streamChatCompletions({
+              apiKey: settings.apiKey, baseUrl, model, messages,
+              max_tokens: Number(settings.maxOut || 2000),
+              signal: abortCtl.signal,
+              extraHeaders,
+              onDelta: (_d, full) => {
+                updateStreamingAssistant(aId, full);
+                aMsg.content = full;
+              }
+            });
+          }catch(streamErr){
+            const msg = String(streamErr?.message || streamErr || '');
+            const streamUnavailable = /failed to fetch|networkerror|load failed|network request failed/i.test(msg);
+            if (!streamUnavailable) throw streamErr;
+            showStatus('⚠️ تعذر البث المباشر على هذا الاتصال، سيتم المتابعة بدون Streaming…', true);
+            ans = await callOpenAIChat({
+              apiKey: settings.apiKey,
+              baseUrl,
+              model,
+              messages,
+              max_tokens: Number(settings.maxOut || 2000),
+              signal: abortCtl.signal,
+              extraHeaders
+            });
+            updateStreamingAssistant(aId, ans);
+          }
         } else {
           ans = await callOpenAIChat({ apiKey: settings.apiKey, baseUrl, model, messages, max_tokens: Number(settings.maxOut || 2000), signal: abortCtl.signal, extraHeaders });
           updateStreamingAssistant(aId, ans);
