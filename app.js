@@ -451,9 +451,9 @@ async function buildRagContextIfEnabled(userText){
   const nativeFetch = window.fetch.bind(window);
   window.fetch = (input, init) => {
     const nextInit = init ? { ...init } : {};
-    if (shouldIncludeGatewayCredentials(input) && !nextInit.credentials){
+    if (shouldIncludeGatewayCredentials(input) && nextInit.credentials !== 'include'){
       // Some gateway deployments rely on cookie/session auth.
-      // Force cookies to be sent for cross-origin gateway calls.
+      // Always force cookies for gateway calls, even when callers pass "omit".
       nextInit.credentials = 'include';
     }
     return nativeFetch(input, nextInit);
