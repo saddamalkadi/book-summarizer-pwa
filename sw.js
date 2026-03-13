@@ -1,5 +1,5 @@
 // AI Workspace Studio - Service Worker
-const CACHE_NAME = "aistudio-cache-v64";
+const CACHE_NAME = "aistudio-cache-v65";
 const CORE = [
   "./",
   "./index.html",
@@ -46,7 +46,7 @@ async function networkFirst(request){
     return res;
   } catch (_) {
     const cached = await cache.match(request);
-    return cached || fetch(request);
+    return cached || new Response("Offline", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } });
   }
 }
 
@@ -54,7 +54,8 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
   if (event.request.mode === "navigate") {
-    event.respondWith(networkFirst("./index.html"));
+    const appShellRequest = new Request("./index.html", { cache: "no-store" });
+    event.respondWith(networkFirst(appShellRequest));
     return;
   }
   if (url.origin === self.location.origin) {
