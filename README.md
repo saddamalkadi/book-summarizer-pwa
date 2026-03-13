@@ -78,9 +78,9 @@ HOST=0.0.0.0 PORT=9090 node server.mjs
 
 ## إعداد Gateway الصحيح
 تم تجهيز الإعدادات الافتراضية داخل التطبيق للعمل مباشرة مع بوابة API:
-- Gateway URL: `https://bspro-api.tntntt830.workers.dev`
-- Cloud PDF→Word Endpoint: `https://bspro-api.tntntt830.workers.dev/convert/pdf-to-docx`
-- Cloud OCR Endpoint: `https://bspro-api.tntntt830.workers.dev/ocr`
+- Gateway URL: `https://sadam-key.tntntt830.workers.dev`
+- Cloud PDF→Word Endpoint: `https://sadam-convert.tntntt830.workers.dev/convert/pdf-to-docx`
+- Cloud OCR Endpoint: `https://sadam-convert.tntntt830.workers.dev/ocr`
 - Auth Mode الافتراضي: `gateway`
 
 إذا كان لديك Worker ثابت للواجهة (مثل `keys.*.workers.dev`) وWorker آخر للـ API، ضع رابط Worker الـ API في Gateway URL.
@@ -92,9 +92,9 @@ HOST=0.0.0.0 PORT=9090 node server.mjs
 
 1. **تأكد من الرابط الصحيح**
    - رابط الـ API الافتراضي للتطبيق هو:
-     `https://bspro-api.tntntt830.workers.dev`
+     `https://sadam-key.tntntt830.workers.dev`
    - رابط الصحة (Health Check):
-     `https://bspro-api.tntntt830.workers.dev/health`
+     `https://sadam-key.tntntt830.workers.dev/health`
 
 2. **لا تستخدم Worker الواجهة كرابط Gateway**
    - في إعدادات التطبيق (`Auth Mode = gateway`)، ضع رابط Worker الـ API فقط.
@@ -119,7 +119,7 @@ HOST=0.0.0.0 PORT=9090 node server.mjs
 6. **امسح الكاش/حدّث قسريًا**
    - لأن التطبيق PWA، نفّذ Hard Refresh أو احذف Service Worker وCache ثم افتح الرابط مجددًا.
 
-> ملاحظة: إذا كان `bspro-api.../health` يعمل بينما `keys...` لا يعمل، فغالبًا Worker `keys` غير منشور أو تم حذفه، واستخدام `bspro-api` كـ Gateway يكفي للتشغيل.
+> ملاحظة: إذا كان `sadam-key.../health` يعمل بينما `keys...` لا يعمل، فغالبًا Worker `keys` غير منشور أو تم حذفه، واستخدام `sadam-key` كـ Gateway يكفي للتشغيل.
 
 
 

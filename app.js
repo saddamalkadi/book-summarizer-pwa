@@ -57,12 +57,12 @@
     toolsEnabled: false,
 
     authMode: 'gateway',          // browser | gateway
-    gatewayUrl: 'https://bspro-api.tntntt830.workers.dev',
+    gatewayUrl: 'https://sadam-key.tntntt830.workers.dev',
     gatewayToken: '',             // optional extra protection
-    cloudConvertEndpoint: 'https://bspro-api.tntntt830.workers.dev/convert/pdf-to-docx',
+    cloudConvertEndpoint: 'https://sadam-convert.tntntt830.workers.dev/convert/pdf-to-docx',
     cloudConvertFallbackEndpoint: '',
     cloudRetryMax: 2,
-    ocrCloudEndpoint: 'https://bspro-api.tntntt830.workers.dev/ocr',
+    ocrCloudEndpoint: 'https://sadam-convert.tntntt830.workers.dev/ocr',
     ocrLang: 'ara+eng',
 
     orReferer: '',
@@ -350,22 +350,31 @@ async function buildRagContextIfEnabled(userText){
     const rawGateway = normalizeEndpointUrl(settings?.gatewayUrl || '');
     if (!rawGateway) return '';
 
-    // If user puts the static app worker (often "keys.*.workers.dev") as gateway,
-    // prefer the API worker origin inferred from cloud endpoints.
-    const gatewayOrigin = endpointOrigin(rawGateway);
-    const appOrigin = endpointOrigin(location.origin);
+    // بعض المستخدمين يضعون gatewayUrl منتهيًا بـ /v1؛ نعيده للجذر حتى لا يتكرر /v1 مرتين.
+    const gatewayRoot = rawGateway.replace(/\/v1\/?$/i, '');
+
+    // If user explicitly points to a known static keys worker
+    // (often "keys.*.workers.dev") as gateway, prefer the API worker origin
+    // inferred from cloud endpoints.
+    //
+    // NOTE:
+    // Do NOT auto-switch just because gateway origin === app origin.
+    // In many deployments this same Worker serves both static assets and /v1 API.
+    // Switching in that case can silently route chat calls to another worker and
+    // trigger auth errors (e.g. "No cookie auth credentials found").
+    const gatewayOrigin = endpointOrigin(gatewayRoot);
     const cloudOrigins = [
       endpointOrigin(settings?.cloudConvertEndpoint || ''),
       endpointOrigin(settings?.cloudConvertFallbackEndpoint || ''),
       endpointOrigin(settings?.ocrCloudEndpoint || '')
     ].filter(Boolean);
     const inferredApiOrigin = cloudOrigins.find(o => o !== gatewayOrigin) || '';
-    const looksLikeStaticWorker = /\/\/keys\./i.test(rawGateway) || (!!gatewayOrigin && gatewayOrigin === appOrigin);
+    const looksLikeStaticWorker = /\/\/keys\./i.test(gatewayRoot);
 
     if (looksLikeStaticWorker && inferredApiOrigin){
       return inferredApiOrigin;
     }
-    return rawGateway;
+    return gatewayRoot;
   }
 
   function buildEndpointCandidates(raw, paths=[]){
@@ -421,6 +430,40 @@ async function buildRagContextIfEnabled(userText){
     if (settings.authMode === 'gateway') return !!(settings.gatewayUrl || '').trim();
     return !!(settings.apiKey || '').trim();
   }
+
+  function getChatBaseUrlCandidates(settings){
+    const defaults = (settings.provider === 'openrouter') ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1';
+    const out = [effectiveBaseUrl(settings), settings.baseUrl, defaults]
+      .map(normalizeEndpointUrl)
+      .filter(Boolean)
+      .map(normalizeUrl);
+    return [...new Set(out)];
+  }
+
+  function shouldIncludeGatewayCredentials(input){
+    try{
+      const settings = getSettings();
+      if (settings.authMode !== 'gateway') return false;
+      const gatewayRoot = resolveGatewayApiRoot(settings);
+      const gatewayOrigin = endpointOrigin(gatewayRoot);
+      if (!gatewayOrigin) return false;
+
+      const reqUrl = (typeof input === 'string') ? input : (input && input.url) || '';
+      if (!reqUrl) return false;
+      return new URL(reqUrl, location.href).origin === gatewayOrigin;
+    }catch(_){ return false; }
+  }
+
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = (input, init) => {
+    const nextInit = init ? { ...init } : {};
+    if (shouldIncludeGatewayCredentials(input) && nextInit.credentials !== 'include'){
+      // Some gateway deployments rely on cookie/session auth.
+      // Always force cookies for gateway calls, even when callers pass "omit".
+      nextInit.credentials = 'include';
+    }
+    return nativeFetch(input, nextInit);
+  };
 
 
 
@@ -1817,20 +1860,71 @@ function updateChips(){
         const prompt = messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n');
         ans = await callGemini({ apiKey: settings.geminiKey, model: settings.model, prompt, signal: abortCtl.signal, maxOut: Math.min(2048, Number(settings.maxOut||2000)) });
       } else {
-        const baseUrl = (effectiveBaseUrl(settings) || (settings.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1'));
+        const baseCandidates = getChatBaseUrlCandidates(settings);
+        const maxTokens = Number(settings.maxOut || 2000);
         if (wantStream){
-          ans = await streamChatCompletions({
-            apiKey: settings.apiKey, baseUrl, model, messages,
-            max_tokens: Number(settings.maxOut || 2000),
-            signal: abortCtl.signal,
-            extraHeaders,
-            onDelta: (_d, full) => {
-              updateStreamingAssistant(aId, full);
-              aMsg.content = full;
+          let streamErrLast = null;
+          for (let i=0; i<baseCandidates.length; i++){
+            const baseUrl = baseCandidates[i];
+            try{
+              ans = await streamChatCompletions({
+                apiKey: settings.apiKey, baseUrl, model, messages,
+                max_tokens: maxTokens,
+                signal: abortCtl.signal,
+                extraHeaders,
+                onDelta: (_d, full) => {
+                  updateStreamingAssistant(aId, full);
+                  aMsg.content = full;
+                }
+              });
+              streamErrLast = null;
+              break;
+            }catch(streamErr){
+              streamErrLast = streamErr;
+              const msg = String(streamErr?.message || streamErr || '');
+              const streamUnavailable = /failed to fetch|networkerror|load failed|network request failed/i.test(msg);
+              const isLast = i === baseCandidates.length - 1;
+              if (!streamUnavailable || isLast) break;
             }
-          });
+          }
+
+          if (streamErrLast){
+            showStatus('⚠️ تعذر البث المباشر على هذا الاتصال، سيتم المتابعة بدون Streaming…', true);
+            let callErrLast = null;
+            for (let i=0; i<baseCandidates.length; i++){
+              const baseUrl = baseCandidates[i];
+              try{
+                ans = await callOpenAIChat({
+                  apiKey: settings.apiKey,
+                  baseUrl,
+                  model,
+                  messages,
+                  max_tokens: maxTokens,
+                  signal: abortCtl.signal,
+                  extraHeaders
+                });
+                callErrLast = null;
+                break;
+              }catch(callErr){
+                callErrLast = callErr;
+              }
+            }
+            if (callErrLast) throw callErrLast;
+            updateStreamingAssistant(aId, ans);
+          }
         } else {
-          ans = await callOpenAIChat({ apiKey: settings.apiKey, baseUrl, model, messages, max_tokens: Number(settings.maxOut || 2000), signal: abortCtl.signal, extraHeaders });
+          let callErrLast = null;
+          for (let i=0; i<baseCandidates.length; i++){
+            const baseUrl = baseCandidates[i];
+            try{
+              ans = await callOpenAIChat({ apiKey: settings.apiKey, baseUrl, model, messages, max_tokens: maxTokens, signal: abortCtl.signal, extraHeaders });
+              callErrLast = null;
+              break;
+            }catch(callErr){
+              callErrLast = callErr;
+            }
+          }
+          if (callErrLast) throw callErrLast;
           updateStreamingAssistant(aId, ans);
         }
       }
@@ -2904,7 +2998,7 @@ let pinOnly = false;
     }catch(e){
       showStatus(`❌ فشل تحميل الموديلات:\n${e?.message || e}`, false);
       openModelModal(true);
-      $('modelList').innerHTML = `<div class="hint">تعذر تحميل الموديلات. تأكد من Base URL و API Key.</div>`;
+      $('modelList').innerHTML = `<div class="hint">تعذر تحميل الموديلات. تأكد من Base URL و API Key. وإذا كنت تستخدم Gateway اجعل Gateway URL بدون <span class="kbd">/v1</span>.</div>`;
     }
   }
 
