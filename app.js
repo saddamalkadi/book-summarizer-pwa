@@ -425,6 +425,15 @@ async function buildRagContextIfEnabled(userText){
     return !!(settings.apiKey || '').trim();
   }
 
+  function getChatBaseUrlCandidates(settings){
+    const defaults = (settings.provider === 'openrouter') ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1';
+    const out = [effectiveBaseUrl(settings), settings.baseUrl, defaults]
+      .map(normalizeEndpointUrl)
+      .filter(Boolean)
+      .map(normalizeUrl);
+    return [...new Set(out)];
+  }
+
 
 
   // ---------------- UI helpers ----------------
@@ -1820,37 +1829,71 @@ function updateChips(){
         const prompt = messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n');
         ans = await callGemini({ apiKey: settings.geminiKey, model: settings.model, prompt, signal: abortCtl.signal, maxOut: Math.min(2048, Number(settings.maxOut||2000)) });
       } else {
-        const baseUrl = (effectiveBaseUrl(settings) || (settings.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1'));
+        const baseCandidates = getChatBaseUrlCandidates(settings);
+        const maxTokens = Number(settings.maxOut || 2000);
         if (wantStream){
-          try{
-            ans = await streamChatCompletions({
-              apiKey: settings.apiKey, baseUrl, model, messages,
-              max_tokens: Number(settings.maxOut || 2000),
-              signal: abortCtl.signal,
-              extraHeaders,
-              onDelta: (_d, full) => {
-                updateStreamingAssistant(aId, full);
-                aMsg.content = full;
-              }
-            });
-          }catch(streamErr){
-            const msg = String(streamErr?.message || streamErr || '');
-            const streamUnavailable = /failed to fetch|networkerror|load failed|network request failed/i.test(msg);
-            if (!streamUnavailable) throw streamErr;
+          let streamErrLast = null;
+          for (let i=0; i<baseCandidates.length; i++){
+            const baseUrl = baseCandidates[i];
+            try{
+              ans = await streamChatCompletions({
+                apiKey: settings.apiKey, baseUrl, model, messages,
+                max_tokens: maxTokens,
+                signal: abortCtl.signal,
+                extraHeaders,
+                onDelta: (_d, full) => {
+                  updateStreamingAssistant(aId, full);
+                  aMsg.content = full;
+                }
+              });
+              streamErrLast = null;
+              break;
+            }catch(streamErr){
+              streamErrLast = streamErr;
+              const msg = String(streamErr?.message || streamErr || '');
+              const streamUnavailable = /failed to fetch|networkerror|load failed|network request failed/i.test(msg);
+              const isLast = i === baseCandidates.length - 1;
+              if (!streamUnavailable || isLast) break;
+            }
+          }
+
+          if (streamErrLast){
             showStatus('⚠️ تعذر البث المباشر على هذا الاتصال، سيتم المتابعة بدون Streaming…', true);
-            ans = await callOpenAIChat({
-              apiKey: settings.apiKey,
-              baseUrl,
-              model,
-              messages,
-              max_tokens: Number(settings.maxOut || 2000),
-              signal: abortCtl.signal,
-              extraHeaders
-            });
+            let callErrLast = null;
+            for (let i=0; i<baseCandidates.length; i++){
+              const baseUrl = baseCandidates[i];
+              try{
+                ans = await callOpenAIChat({
+                  apiKey: settings.apiKey,
+                  baseUrl,
+                  model,
+                  messages,
+                  max_tokens: maxTokens,
+                  signal: abortCtl.signal,
+                  extraHeaders
+                });
+                callErrLast = null;
+                break;
+              }catch(callErr){
+                callErrLast = callErr;
+              }
+            }
+            if (callErrLast) throw callErrLast;
             updateStreamingAssistant(aId, ans);
           }
         } else {
-          ans = await callOpenAIChat({ apiKey: settings.apiKey, baseUrl, model, messages, max_tokens: Number(settings.maxOut || 2000), signal: abortCtl.signal, extraHeaders });
+          let callErrLast = null;
+          for (let i=0; i<baseCandidates.length; i++){
+            const baseUrl = baseCandidates[i];
+            try{
+              ans = await callOpenAIChat({ apiKey: settings.apiKey, baseUrl, model, messages, max_tokens: maxTokens, signal: abortCtl.signal, extraHeaders });
+              callErrLast = null;
+              break;
+            }catch(callErr){
+              callErrLast = callErr;
+            }
+          }
+          if (callErrLast) throw callErrLast;
           updateStreamingAssistant(aId, ans);
         }
       }
