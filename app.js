@@ -1295,7 +1295,45 @@ async function fileToText(file){
     const t = await r.text();
     let j; try{ j = JSON.parse(t); }catch(_){ j = null; }
     if (!r.ok) throw new Error((j?.error?.message) || t || `HTTP ${r.status}`);
-    return j?.choices?.[0]?.message?.content || '';
+    return extractAssistantText(j);
+  }
+
+  function textFromPart(part){
+    if (part == null) return '';
+    if (typeof part === 'string') return part;
+    if (typeof part === 'number' || typeof part === 'boolean') return String(part);
+    if (Array.isArray(part)) return part.map(textFromPart).join('');
+
+    if (typeof part === 'object'){
+      if (typeof part.text === 'string') return part.text;
+      if (typeof part.value === 'string') return part.value;
+      if (typeof part.content === 'string') return part.content;
+      if (Array.isArray(part.content)) return part.content.map(textFromPart).join('');
+      if (Array.isArray(part.parts)) return part.parts.map(textFromPart).join('');
+      if (typeof part.output_text === 'string') return part.output_text;
+    }
+    return '';
+  }
+
+  function extractAssistantText(payload){
+    if (!payload || typeof payload !== 'object') return '';
+
+    const direct = textFromPart(payload.output_text) || textFromPart(payload.response?.output_text);
+    if (direct) return direct;
+
+    const choices = Array.isArray(payload.choices) ? payload.choices : [];
+    for (const ch of choices){
+      const fromMessage = textFromPart(ch?.message?.content) || textFromPart(ch?.message);
+      if (fromMessage) return fromMessage;
+
+      const fromDelta = textFromPart(ch?.delta?.content) || textFromPart(ch?.delta);
+      if (fromDelta) return fromDelta;
+
+      const fromText = textFromPart(ch?.text);
+      if (fromText) return fromText;
+    }
+
+    return '';
   }
 
   async function callGemini({ apiKey, model, prompt, signal, maxOut=2048 }){
@@ -1329,10 +1367,7 @@ async function fileToText(file){
     if (contentType.includes('application/json')){
       const t = await r.text();
       let j; try{ j = JSON.parse(t); }catch(_){ j = null; }
-      const oneShot = j?.choices?.[0]?.message?.content
-        || j?.choices?.[0]?.delta?.content
-        || j?.output_text
-        || '';
+      const oneShot = extractAssistantText(j);
       return String(oneShot || '');
     }
 
@@ -1353,7 +1388,7 @@ async function fileToText(file){
         const payload = s.slice(5).trim();
         if (payload === '[DONE]') return full;
         let j; try{ j = JSON.parse(payload); }catch(_){ continue; }
-        const delta = j?.choices?.[0]?.delta?.content;
+        const delta = textFromPart(j?.choices?.[0]?.delta?.content) || textFromPart(j?.choices?.[0]?.delta);
         if (delta){
           full += delta;
           onDelta?.(delta, full);
@@ -1367,7 +1402,11 @@ async function fileToText(file){
       const payload = tail.slice(5).trim();
       if (payload && payload !== '[DONE]'){
         let j; try{ j = JSON.parse(payload); }catch(_){ j = null; }
-        const lastDelta = j?.choices?.[0]?.delta?.content || j?.choices?.[0]?.message?.content || '';
+        const lastDelta = textFromPart(j?.choices?.[0]?.delta?.content)
+          || textFromPart(j?.choices?.[0]?.delta)
+          || textFromPart(j?.choices?.[0]?.message?.content)
+          || textFromPart(j?.choices?.[0]?.message)
+          || '';
         if (lastDelta){
           full += lastDelta;
           onDelta?.(lastDelta, full);
