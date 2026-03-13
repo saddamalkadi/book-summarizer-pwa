@@ -57,12 +57,12 @@
     toolsEnabled: false,
 
     authMode: 'gateway',          // browser | gateway
-    gatewayUrl: 'https://bspro-api.tntntt830.workers.dev',
+    gatewayUrl: 'https://sadam-key.tntntt830.workers.dev',
     gatewayToken: '',             // optional extra protection
-    cloudConvertEndpoint: 'https://bspro-api.tntntt830.workers.dev/convert/pdf-to-docx',
+    cloudConvertEndpoint: 'https://sadam-convert.tntntt830.workers.dev/convert/pdf-to-docx',
     cloudConvertFallbackEndpoint: '',
     cloudRetryMax: 2,
-    ocrCloudEndpoint: 'https://bspro-api.tntntt830.workers.dev/ocr',
+    ocrCloudEndpoint: 'https://sadam-convert.tntntt830.workers.dev/ocr',
     ocrLang: 'ara+eng',
 
     orReferer: '',
