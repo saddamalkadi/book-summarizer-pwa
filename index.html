@@ -1,0 +1,820 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>AI Workspace Studio v6.2</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#0b1020" />
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+
+  <!-- PDF/DOCX parsing (v3) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.9.0/mammoth.browser.min.js"></script>
+  <!-- OCR (v4) -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+
+
+  <!-- DOCX export (Canvas) -->
+  <script>
+    if (typeof global === 'undefined') window.global = window;
+    if (typeof process === 'undefined') window.process = { env: {} };
+    if (typeof Buffer === 'undefined') {
+      window.Buffer = {
+        from: function(data, encoding) {
+          if (typeof data === 'string') {
+            if (encoding === 'base64') {
+              var binary = atob(data);
+              var bytes = new Uint8Array(binary.length);
+              for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+              return bytes;
+            }
+            return new TextEncoder().encode(data);
+          }
+          return new Uint8Array(data);
+        },
+        isBuffer: function() { return false; }
+      };
+    }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/@turbodocx/html-to-docx@1.20.1/dist/html-to-docx.browser.js"></script>
+
+  <style>
+    :root{
+      --bg:#f6f7fb; --card:#ffffff; --text:#0b1020; --muted:#5c6782;
+      --pri:#1b66ff; --pri2:#0b1020; --line:#d7dbea;
+      --shadow: 0 12px 30px rgba(10,20,60,0.09);
+      --r:18px;
+      --app-vh:100vh;
+    }
+    @supports (height: 100svh){
+      :root{--app-vh:100svh;}
+    }
+    @supports (height: 100dvh){
+      :root{--app-vh:100dvh;}
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; overflow:auto; overflow-x:hidden; touch-action:pan-y;}
+    *{
+      scrollbar-width: thin;
+      scrollbar-color: #8aa8ff #eef2ff;
+    }
+    *::-webkit-scrollbar{width:10px; height:10px;}
+    *::-webkit-scrollbar-track{background:#eef2ff; border-radius:999px;}
+    *::-webkit-scrollbar-thumb{background:linear-gradient(180deg,#90b0ff,#5f83ff); border-radius:999px; border:2px solid #eef2ff;}
+    *::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,#7da0ff,#4b72ff);}
+    a{color:var(--pri); font-weight:900; text-decoration:underline}
+    .app{min-height:var(--app-vh); min-height:100vh; width:100%; display:grid; grid-template-columns:minmax(260px,320px) minmax(0,1fr); gap:12px; padding:12px;}
+    .side{background:linear-gradient(180deg,#0b1020,#14214a); color:#fff; padding:14px; display:flex; flex-direction:column; gap:12px; overflow-y:auto; min-height:0; border-radius:20px; box-shadow:var(--shadow); max-height:calc(var(--app-vh) - 24px); position:sticky; top:12px;}
+    .brand{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12); border-radius:16px;}
+    .brand .name{font-weight:1000}
+    .brand .sub{opacity:.85; font-size:12px; margin-top:2px}
+    .iconbtn{border:none; background:rgba(255,255,255,.12); color:#fff; width:34px; height:34px; border-radius:12px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; font-size:15px;}
+    .nav{display:flex; flex-direction:column; gap:10px; overflow:auto; padding:4px;}
+    .navbtn{border:none; cursor:pointer; padding:12px 14px; border-radius:16px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12); color:#fff; display:flex; align-items:center; justify-content:space-between; gap:10px; font-weight:1000; width:100%; -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); transition:transform .2s ease, background .2s ease, border-color .2s ease;}
+    .navbtn:hover{transform:translateY(-1px); background:rgba(255,255,255,.15); border-color:rgba(255,255,255,.26);}
+    .navbtn.active{background:linear-gradient(135deg,rgba(103,145,255,.45),rgba(55,95,225,.25)); border-color:rgba(179,199,255,.65); box-shadow:0 10px 25px rgba(9,20,60,.25);}
+    .navbtn .meta{opacity:.8; font-size:11px; font-weight:900; padding:2px 8px; border-radius:999px; background:rgba(255,255,255,.12);}
+    .sidecard{margin-top:auto; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12); border-radius:16px; padding:12px; font-size:12.5px; line-height:1.6; opacity:.95;}
+    .main{display:flex; flex-direction:column; gap:12px; min-width:0; min-height:0; max-height:calc(var(--app-vh) - 24px); overflow:hidden;}
+    .topbar{background:var(--card); border:1px solid rgba(10,20,60,0.06); border-radius:var(--r); box-shadow:var(--shadow); padding:10px; display:flex; align-items:center; justify-content:space-between; gap:10px; position:sticky; top:0; z-index:20;}
+    .topbar .left{display:flex; align-items:center; gap:10px; min-width:0}
+    .pill{border:1px solid var(--line); background:#fbfcff; border-radius:14px; padding:10px 12px; font-weight:900; cursor:pointer;}
+    .btn{border:none; border-radius:12px; padding:8px 10px; font-weight:900; cursor:pointer; background:var(--pri); color:#fff; white-space:nowrap;}
+    .btn.ghost{background:#eef3ff; color:var(--pri)}
+    .btn.dark{background:var(--pri2)}
+    .btn.danger{background:#ff3b30}
+    .btn.sm{height:30px; padding:0 8px; border-radius:10px; font-size:11px;}
+    .btn.icon{width:30px; height:30px; min-width:30px; padding:0; display:inline-flex; align-items:center; justify-content:center; font-size:14px;}
+    .btn.with-label{display:inline-flex; align-items:center; gap:6px; min-height:34px;}
+    .btn.with-label .icon{font-size:14px; line-height:1;}
+    .btn.with-label .label{font-size:12px;}
+    .title{font-weight:1000; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+    .status{display:none; border-radius:14px; padding:10px 12px; border:1px solid #d7e4ff; background:#eef3ff; color:#2d3b66; font-size:13px; white-space:pre-wrap;}
+    .content{flex:1; min-height:0; background:var(--card); border:1px solid rgba(10,20,60,0.06); border-radius:var(--r); box-shadow:var(--shadow); overflow:hidden; display:flex; flex-direction:column; min-width:0; isolation:isolate;}
+    .page{display:none; flex:1; min-height:0; overflow:auto; overscroll-behavior-y:contain;}
+    
+    .page.active{display:flex; flex-direction:column;}
+    .toolbar{display:flex; gap:8px; flex-wrap:wrap; align-items:center; padding:10px; border-bottom:1px solid var(--line); overflow:auto;}
+    .toolbar.has-collapse{position:relative;}
+    .toolbar-collapse-btn{margin-inline-start:auto;}
+    .toolbar.is-collapsed{overflow:visible;}
+    .toolbar.is-collapsed > :not(.toolbar-collapse-btn){display:none !important;}
+    textarea,input[type="text"],input[type="password"],select{width:100%; border:1px solid var(--line); border-radius:14px; padding:10px 12px; font-size:14px; outline:none; background:#fbfcff;}
+    .row{display:flex; gap:10px; flex-wrap:wrap;}
+    .col{flex:1; min-width:220px;}
+    .hint{color:var(--muted); font-size:12.5px}
+    .chatlog{flex:1; min-height:0; padding:12px; overflow:auto; background:#fbfcff; border-top:1px solid rgba(10,20,60,0.06); border-bottom:1px solid rgba(10,20,60,0.06);}
+    .topbar-actions{align-items:center; margin:0; flex-wrap:wrap; overflow:visible; padding-bottom:2px;}
+    .bubble{padding:10px 12px; border-radius:16px; margin:0 0 10px; border:1px solid rgba(10,20,60,0.08); background:#fff; max-width:980px;}
+    .bubble.user{background:#e9f0ff; border-color:#d2e2ff;}
+    .bubble .meta{font-size:12px; color:var(--muted); font-weight:900; margin-bottom:6px}
+    .bubble .actions{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px}
+    .chatbar{display:flex; gap:8px; padding:10px;}
+    .chatbar input{flex:1;}
+    .chips{display:flex; flex-wrap:wrap; gap:8px; padding:0 10px 10px;}
+    .chip{display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; background:#0b1020; color:#fff; font-size:12px; font-weight:900;}
+    .chip .x{border:none; background:rgba(255,255,255,.18); color:#fff; width:22px; height:22px; border-radius:999px; cursor:pointer;}
+    .split{display:grid; grid-template-columns:1fr 1fr; gap:10px; flex:1; min-height:0; padding:10px;}
+    .panel{border:1px solid rgba(10,20,60,0.08); border-radius:16px; background:#fbfcff; overflow:hidden; display:flex; flex-direction:column; min-height:0;}
+    .panel .head{padding:10px 12px; border-bottom:1px solid rgba(10,20,60,0.08); font-weight:1000; display:flex; justify-content:space-between; align-items:center; gap:10px;}
+    .panel .body{padding:10px; overflow:auto; min-height:0;}
+    iframe.preview{width:100%; height:100%; border:0; background:#fff;}
+    .kbd{font-family:ui-monospace,Menlo,Consolas,'Courier New',monospace; font-size:12px; font-weight:900; background:rgba(10,20,60,0.06); padding:2px 6px; border-radius:10px; border:1px solid rgba(10,20,60,0.08);}
+    .modal{display:none; position:fixed; inset:0; z-index:90;}
+    .modal.show{display:block;}
+    .modal .backdrop{position:absolute; inset:0; background:rgba(0,0,0,.35);}
+    .modal .panel{position:absolute; top:7vh; left:6vw; right:6vw; max-height:86vh; background:#fff; border-radius:18px; box-shadow:0 30px 90px rgba(0,0,0,.25); overflow:hidden; display:flex; flex-direction:column;}
+    .modal .panel .head{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px; border-bottom:1px solid rgba(10,20,60,0.10);}
+    .modal .panel .body{padding:12px; overflow:auto; min-height:0;}
+    .tag{display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; border:1px solid rgba(10,20,60,0.10); background:rgba(10,20,60,0.04); font-weight:900; font-size:11px;}
+
+    .topbar .row{display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px;}
+    .mainToolbar{display:flex; align-items:stretch; gap:10px; flex-wrap:wrap;}
+    .mainToolbar .toolbar-strip{display:flex; align-items:center; gap:8px; flex-wrap:wrap; overflow-x:visible; padding-bottom:2px;}
+    .mainToolbar .toolbar-strip > *{flex:0 0 auto;}
+    .mainToolbar .btn.sm,.mainToolbar .pill,.mainToolbar input,.mainToolbar select{min-height:38px;}
+    .tool-group{display:flex; flex-direction:column; gap:6px; padding:8px; border:1px solid var(--line); border-radius:14px; background:#f8faff; min-width:0; flex:1 1 280px;}
+    .tool-group-title{font-size:11px; color:var(--muted); font-weight:900; padding-inline:4px;}
+    .topbar-actions{display:flex; align-items:center; gap:6px; padding:4px; border:1px solid var(--line); border-radius:14px; background:#f8faff;}
+    .mainToolbar #provider{min-width:min(170px,100%);}
+    .mainToolbar #baseUrl,.mainToolbar #model{min-width:min(240px,100%);}
+    .mainToolbar #promptSelect,.mainToolbar #agentTaskTemplate{min-width:min(220px,100%);}
+    .chatbar{flex-wrap:wrap; align-items:center;}
+    .chatbar input{min-width:220px;}
+    @media (prefers-reduced-motion: reduce){
+      *{scroll-behavior:auto !important; transition:none !important; animation:none !important;}
+    }
+    /* Mobile */
+    @media (max-width:980px){
+      .app{grid-template-columns:1fr; padding:10px; min-height:100%;}
+      .side{position:fixed; inset:10px auto 10px 10px; width:min(340px,88vw); max-height:calc(var(--app-vh) - 20px); transform:translateX(-120%); transition:transform .18s ease; z-index:50;}
+      .side.show{transform:translateX(0);}
+      .backdrop2{display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:40;}
+      .backdrop2.show{display:block;}
+      .split{grid-template-columns:1fr;}
+      .main{max-height:none; min-height:0; overflow:visible;}
+      .content{min-height:calc(var(--app-vh) - 96px);}
+      .topbar{flex-wrap:wrap; align-items:flex-start;}
+      .topbar .left{width:100%;}
+      .topbar .row{width:100%; justify-content:flex-start;}
+      .topbar-actions{flex-wrap:wrap; overflow:visible;}
+      .toolbar{padding:8px; gap:6px;}
+      .nav{flex-direction:column; overflow-x:hidden; overflow-y:auto; padding:2px 2px 8px; scrollbar-width:none;}
+      .nav::-webkit-scrollbar{display:none;}
+      .navbtn{min-width:0;}
+      .mainToolbar{flex-wrap:wrap; overflow:visible;}
+      .mainToolbar .tool-group{flex:1 1 100%; min-width:0;}
+      .mainToolbar .toolbar-strip{flex-wrap:wrap; overflow-x:visible;}
+      .chatbar input{min-width:100%;}
+    }
+
+    @media (max-width:640px){
+      .app{padding:0; gap:8px;}
+      .main{gap:8px; max-height:none;}
+      .topbar{border-radius:0 0 16px 16px; padding:8px; position:sticky; top:0;}
+      .topbar .left{align-items:center;}
+      .topbar .title{font-size:15px;}
+      .topbar #topSubtitle{display:none;}
+      .topbar-actions{padding-bottom:0; gap:6px;}
+      .topbar-actions .btn{height:34px; padding:0 10px; font-size:12px;}
+      .topbar-actions .btn.with-label .label{font-size:11px;}
+      .content{border-radius:0; border-left:none; border-right:none;}
+      .toolbar{padding:8px 8px 6px;}
+      .chatlog{padding:10px 8px;}
+      .bubble{margin-bottom:8px; border-radius:14px;}
+      .chatbar{position:sticky; bottom:0; background:var(--card); border-top:1px solid var(--line); padding:8px; padding-bottom:calc(8px + env(safe-area-inset-bottom)); padding-bottom:calc(8px + constant(safe-area-inset-bottom)); z-index:8;}
+      .chatbar .btn{height:40px; padding:0 10px;}
+      .chatbar input{min-width:0; font-size:16px;}
+      .chips{padding:0 8px 8px;}
+      .hint{font-size:12px;}
+      .side{inset:0 auto 0 0; width:min(330px,90vw); max-height:100%; border-radius:0 18px 18px 0; padding-top:calc(14px + env(safe-area-inset-top)); padding-top:calc(14px + constant(safe-area-inset-top));}
+      .modal .panel{left:2vw; right:2vw; top:4vh; max-height:92vh;}
+      .page{overscroll-behavior-y:auto;}
+      #page-chat{overflow:hidden;}
+    }
+  
+    /* v4 Scroll fixes (mobile/PWA) */
+    .chatlog, .panel .body {
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-y: auto;
+      touch-action: pan-y;
+    }
+    .nav {
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-y: contain;
+      touch-action: pan-y;
+    }
+
+    @media (max-width:980px){
+      html, body{height:auto; min-height:100%; overflow-x:hidden; overflow-y:auto;}
+      .main{overflow:visible;}
+      .page{overscroll-behavior-y:auto;}
+    }
+    
+
+
+/* v5 Compact UI */
+body.headerCollapsed .topbar .row{display:flex !important;}
+body.headerCollapsed .topbar .row > :not(#headerCollapseBtn){display:none !important;}
+body.headerCollapsed .topbar{padding:8px !important;}
+body.headerCollapsed .topbar .hint{display:none !important;}
+
+body.chatToolbarCollapsed #page-chat .toolbar.mainToolbar{display:none !important;}
+body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
+
+/* Make the topbar take less space on mobile */
+@media (max-width: 980px){
+  .topbar{gap:8px}
+  .topbar .left{gap:8px}
+  .topbar .row{gap:6px}
+}
+
+</style>
+</head>
+<body>
+  <div class="backdrop2" id="backdrop"></div>
+
+  <div class="app">
+    <aside class="side" id="side">
+      <div class="brand">
+        <div>
+          <div class="name">AI Workspace Studio</div>
+          <div class="sub">Chat • Canvas • Files • Projects • Models</div>
+        </div>
+        <button class="iconbtn" id="closeSideBtn" title="إغلاق">✕</button>
+      </div>
+
+      <nav class="nav" id="nav">
+        <button class="navbtn active" data-page="chat"><span>💬 الدردشة</span><span class="meta" id="navChatMeta">—</span></button>
+        <button class="navbtn" data-page="knowledge"><span>🧠 المعرفة (KB)</span><span class="meta" id="navKbMeta">—</span></button>
+        <button class="navbtn" data-page="canvas"><span>📝 كانفس</span><span class="meta" id="navCanvasMeta">—</span></button>
+        <button class="navbtn" data-page="files"><span>📎 الملفات</span><span class="meta" id="navFilesMeta">—</span></button>
+        <button class="navbtn" data-page="transcription"><span>🧾 التفريغ النصي</span><span class="meta" id="navTransMeta">—</span></button>
+        <button class="navbtn" data-page="workflows"><span>⚡ Workflows</span><span class="meta" id="navWorkMeta">—</span></button>
+        <button class="navbtn" data-page="downloads"><span>⬇️ التحميلات</span><span class="meta" id="navDlMeta">—</span></button>
+        <button class="navbtn" data-page="projects"><span>🗂️ المشاريع</span><span class="meta" id="navProjMeta">—</span></button>
+        <button class="navbtn" data-page="settings"><span>⚙️ الإعدادات</span><span class="meta" id="navSetMeta">—</span></button>
+      </nav>
+
+      <div class="sidecard">
+        <b>ملاحظة أمان:</b> مفاتيح API داخل المتصفح مناسبة للتجربة. للنشر العام استخدم Proxy لحمايتها.
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div class="left">
+          <button class="btn ghost sm" id="openSideBtn" title="قائمة">☰</button>
+          <div class="title" id="topTitle">الدردشة</div>
+          <span class="hint" id="topSubtitle">مشروع: <b id="curProjectName">افتراضي</b></span>
+        </div>
+        <div class="row topbar-actions">
+          <button class="btn ghost sm with-label" id="headerCollapseBtn" title="طي الشريط العلوي" aria-label="طي الشريط العلوي"><span class="icon">▾</span><span class="label">طي</span></button>
+          <button class="btn ghost sm with-label" id="modeDeepBtn" title="تفكير عميق" aria-label="تفكير عميق"><span class="icon">🧠</span><span class="label">عميق</span></button>
+          <button class="btn ghost sm with-label" id="modeAgentBtn" title="وضع الوكيل" aria-label="وضع الوكيل"><span class="icon">🤖</span><span class="label">وكيل</span></button>
+          <button class="btn ghost sm with-label" id="webToggleBtn" title="بحث ويب" aria-label="بحث ويب"><span class="icon">🔎</span><span class="label">ويب</span></button>
+          <button class="btn ghost sm with-label" id="modeOffBtn" title="إيقاف الأوضاع" aria-label="إيقاف الأوضاع"><span class="icon">⛔</span><span class="label">إيقاف</span></button>
+          <button class="btn dark sm with-label" id="newThreadBtn" title="محادثة جديدة" aria-label="محادثة جديدة"><span class="icon">✚</span><span class="label">محادثة</span></button>
+        </div>
+      </div>
+
+      <div class="status" id="statusBox"></div>
+
+      <section class="content">
+        <!-- CHAT -->
+        <div class="page active" id="page-chat">
+          
+          <div class="toolbar" id="chatMiniToolbar" style="display:none">
+            <button class="btn ghost sm icon" id="chatToolbarExpandBtn" type="button" title="إظهار الأدوات" aria-label="إظهار الأدوات">⚙️</button>
+            <span class="tag" id="chatMiniModelTag">—</span>
+          </div>
+
+<div class="toolbar mainToolbar">
+            <div class="tool-group">
+              <span class="tool-group-title">إعدادات النموذج</span>
+              <div class="toolbar-strip">
+              <select id="provider" class="pill" style="max-width:220px">
+                <option value="openrouter">OpenRouter</option>
+                <option value="openai">OpenAI</option>
+                <option value="gemini">Gemini</option>
+              </select>
+              <input id="baseUrl" type="text" value="https://openrouter.ai/api/v1" style="max-width:420px" />
+              <input id="model" type="text" value="openai/gpt-4o-mini" style="max-width:420px" />
+              <button class="btn ghost sm with-label" id="pickModelBtn" title="الموديلات" aria-label="الموديلات"><span class="icon">🧩</span><span class="label">الموديلات</span></button>
+              </div>
+            </div>
+
+            <div class="tool-group">
+              <span class="tool-group-title">أنماط وميزات</span>
+              <div class="toolbar-strip">
+              <select id="promptSelect" class="pill" style="max-width:260px">
+                <option value="">قوالب…</option>
+                <option value="report_ar">📄 تقرير احترافي</option>
+                <option value="email_ar">✉️ بريد رسمي</option>
+                <option value="policy_ar">📌 سياسة/إجراء</option>
+                <option value="analysis_ar">📊 تحليل + توصيات</option>
+                <option value="json_schema">🧩 JSON منظم</option>
+              </select>
+
+              <label class="pill" style="display:flex; align-items:center; gap:8px; user-select:none;">
+                <input type="checkbox" id="streamToggle" />
+                Streaming
+              </label>
+
+              <label class="pill" style="display:flex; align-items:center; gap:8px; user-select:none;">
+                <input type="checkbox" id="ragToggle" />
+                RAG
+              </label>
+
+              <label class="pill" style="display:flex; align-items:center; gap:8px; user-select:none;">
+                <input type="checkbox" id="toolsToggle" />
+                Tools
+              </label>
+
+              <button class="btn ghost sm with-label" id="researchBtn" type="button" title="بحث تفصيلي متعدد الخطوات" aria-label="بحث تفصيلي"><span class="icon">🧪</span><span class="label">بحث</span></button>
+              <button class="btn ghost sm with-label" id="deepSearchToggleBtn" type="button" title="تشغيل/إيقاف البحث العميق" aria-label="البحث العميق"><span class="icon">🔬</span><span class="label">بحث عميق</span></button>
+              <select id="agentTaskTemplate" class="pill" style="max-width:260px">
+                <option value="">🤖 مهمة وكيل…</option>
+                <option value="site_login_project">🌐 دخول موقع + إنشاء مشروع/حساب</option>
+                <option value="excel_process">📊 معالجة ملف Excel</option>
+                <option value="web_task_plan">🧭 تنفيذ مهمة ويب خطوة بخطوة</option>
+              </select>
+              </div>
+            </div>
+            <div class="tool-group">
+              <span class="tool-group-title">إجراءات سريعة</span>
+              <div class="toolbar-strip">
+              <button class="btn ghost sm with-label" id="agentTaskApplyBtn" type="button" title="إدراج قالب مهمة الوكيل" aria-label="إدراج مهمة"><span class="icon">➕</span><span class="label">إدراج</span></button>
+              <button class="btn ghost sm with-label" id="scrollTopBtn" type="button" title="الانتقال للأعلى" aria-label="للأعلى"><span class="icon">⬆️</span><span class="label">للأعلى</span></button>
+              <button class="btn ghost sm with-label" id="scrollBottomBtn" type="button" title="الانتقال للأسفل" aria-label="للأسفل"><span class="icon">⬇️</span><span class="label">للأسفل</span></button>
+              <button class="btn ghost sm with-label" id="clearChatBtn" type="button" title="مسح الدردشة الحالية" aria-label="مسح الدردشة"><span class="icon">🗑️</span><span class="label">مسح</span></button>
+              <button class="btn ghost sm with-label" id="chatToolbarCollapseBtn" type="button" title="طي الأدوات" aria-label="طي الأدوات"><span class="icon">▾</span><span class="label">إخفاء</span></button>
+              </div>
+            </div>
+          </div>
+
+          <div class="chatlog" id="chatLog"></div>
+
+          <div class="chatbar">
+            <input id="chatAttachFiles" type="file" multiple hidden accept=".pdf,.docx,.txt,.md,.csv,.json,.xml,.html,.htm,.png,.jpg,.jpeg,.webp" />
+            <button class="btn ghost" id="chatAttachBtn" type="button" title="إرفاق ملف/صورة للدردشة">📎</button>
+            <input id="chatInput" dir="auto" placeholder="اكتب سؤالك… ويمكنك إرفاق ملفات هنا." />
+            <button class="btn ghost" id="regenBtn" type="button">↻</button>
+            <button class="btn danger icon" id="stopBtn" type="button" style="display:none" title="إيقاف" aria-label="إيقاف">⏹</button>
+            <button class="btn dark icon" id="sendBtn" type="button" title="إرسال" aria-label="إرسال">➤</button>
+          </div>
+
+          <div class="chips" id="chatAttachChips"></div>
+          <div class="chips" id="chatChips"></div>
+          <div class="hint" style="padding:0 10px 10px">تلميح: اطلب إنشاء ملفات باستخدام قالب <span class="kbd">```file</span> وسيظهر رابط في التحميلات.</div>
+        </div>
+
+
+        <!-- KNOWLEDGE BASE -->
+        <div class="page" id="page-knowledge">
+          <div class="toolbar">
+            <button class="btn icon" id="kbBuildBtn" title="فهرسة KB" aria-label="فهرسة KB">🧠</button>
+            <button class="btn ghost icon" id="kbClearBtn" title="مسح KB" aria-label="مسح KB">🗑️</button>
+            <span class="tag" id="kbStats">—</span>
+          </div>
+
+          <div class="split">
+            <div class="panel">
+              <div class="head"><span>بحث داخل KB</span><span class="hint">Top‑K + Citations</span></div>
+              <div class="body">
+                <div class="row" style="margin-bottom:10px">
+                  <input id="kbQuery" type="text" placeholder="اكتب سؤالك للبحث في KB…" />
+                  <button class="btn ghost sm icon" id="kbSearchBtn" title="بحث" aria-label="بحث">🔎</button>
+                  <button class="btn ghost sm icon" id="kbInsertBtn" title="إدراج في الدردشة" aria-label="إدراج في الدردشة">💬</button>
+                </div>
+                <div class="hint" style="margin-bottom:8px">سيُرجع أفضل المقاطع من الملفات داخل المشروع.</div>
+                <div id="kbResults" style="white-space:pre-wrap; line-height:1.7"></div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="head"><span>إعدادات KB</span><span class="hint">لكل مشروع</span></div>
+              <div class="body">
+                <div class="row">
+                  <div class="col">
+                    <label class="hint">Embedding Model</label>
+                    <input id="embedModel" type="text" placeholder="مثال: openai/text-embedding-3-small" />
+                    <div class="hint" style="margin-top:6px">مع OpenRouter غالبًا تحتاج prefix مثل <span class="kbd">openai/…</span>.</div>
+                  </div>
+                  <div class="col">
+                    <label class="hint">Top‑K</label>
+                    <input id="kbTopK" type="text" value="6" />
+                  </div>
+                </div>
+
+                <div class="row" style="margin-top:10px">
+                  <div class="col">
+                    <label class="hint">Chunk Size (chars)</label>
+                    <input id="kbChunkSize" type="text" value="900" />
+                  </div>
+                  <div class="col">
+                    <label class="hint">Chunk Overlap</label>
+                    <input id="kbOverlap" type="text" value="120" />
+                  </div>
+                </div>
+
+                <div class="row" style="margin-top:10px">
+                  <div class="col">
+                    <label class="hint">RAG Instruction</label>
+                    <textarea id="kbRagHint" rows="4" placeholder="مثال: استخدم المقاطع فقط واذكر الاقتباسات [KB:..]…"></textarea>
+                  </div>
+                </div>
+
+                <div class="hint" style="margin-top:10px">الخطوة الصحيحة: ارفع ملفات → فهرس KB → فعّل RAG في الدردشة.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+
+        <!-- CANVAS -->
+        <div class="page" id="page-canvas">
+          <div class="toolbar">
+            <select id="canvasDoc" class="pill" style="max-width:240px"></select>
+            <input id="canvasTitle" type="text" placeholder="عنوان المستند" style="max-width:420px" />
+            <button class="btn ghost sm icon" id="canvasNewBtn" title="جديد" aria-label="جديد">✚</button>
+            <button class="btn sm icon" id="canvasSaveBtn" title="حفظ" aria-label="حفظ">💾</button>
+            <button class="btn ghost sm icon" id="canvasVersionsBtn" title="الإصدارات" aria-label="الإصدارات">🕘</button>
+            <button class="btn ghost sm icon" id="canvasAiBtn" title="ذكاء" aria-label="ذكاء">✨</button>
+            <label class="pill" style="display:flex; align-items:center; gap:8px">
+              <input type="checkbox" id="canvasPreviewToggle" />
+              معاينة HTML
+            </label>
+            <button class="btn ghost sm icon" id="canvasRefreshPreviewBtn" title="تحديث" aria-label="تحديث">🔄</button>
+            <button class="btn ghost sm icon" id="canvasExportBtn" title="تصدير" aria-label="تصدير">📤</button>
+          </div>
+
+          <div class="split">
+            <div class="panel">
+              <div class="head"><span>المحرر</span><span class="hint">Markdown/HTML</span></div>
+              <div class="body" style="padding:0">
+                <textarea id="canvasEditor" style="height:100%; min-height:60vh; border:0; border-radius:0; background:#fbfcff; padding:12px; font-family: ui-monospace, Menlo, Consolas, 'Courier New', monospace;"></textarea>
+              </div>
+            </div>
+
+            <div class="panel" id="previewPanel">
+              <div class="head"><span>المعاينة</span><span class="hint">HTML Sandbox</span></div>
+              <div class="body" style="padding:0">
+                <iframe class="preview" id="canvasPreview"></iframe>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- FILES -->
+        <div class="page" id="page-files">
+          <div class="toolbar">
+            <input id="filePicker" type="file" multiple hidden accept=".pdf,.docx,.txt,.md,.csv,.json,.xml,.html,.htm,.png,.jpg,.jpeg,.webp" />
+            <button class="btn icon" id="addFilesBtn" title="إضافة ملفات" aria-label="إضافة ملفات">📎</button>
+            <button class="btn ghost icon" id="clearFilesBtn" title="مسح" aria-label="مسح">🗑️</button>
+            <span class="hint">يدعم: PDF/DOCX/Text + Images مع OCR محلي + سحابي اختياري.</span>
+          </div>
+          <div class="split">
+            <div class="panel">
+              <div class="head"><span>ملفات المشروع</span><span class="hint" id="filesCount">0</span></div>
+              <div class="body" id="filesList"></div>
+            </div>
+            <div class="panel">
+              <div class="head"><span>سياق نصّي</span><span class="hint">يُرسل للمحادثة</span></div>
+              <div class="body" style="padding:0">
+                <textarea id="filesText" style="height:100%; min-height:60vh; border:0; border-radius:0; background:#fbfcff; padding:12px;"></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TRANSCRIPTION -->
+        <div class="page" id="page-transcription">
+          <div class="toolbar">
+            <input id="transcribePdfPicker" type="file" hidden accept=".pdf,application/pdf,image/*" />
+            <button class="btn with-label" id="transcribePickBtn" title="اختيار ملف" aria-label="اختيار ملف"><span class="icon">📄</span><span class="label">اختيار ملف</span></button>
+            <button class="btn ghost with-label" id="transcribePasteBtn" title="لصق من الحافظة" aria-label="لصق من الحافظة"><span class="icon">📋</span><span class="label">لصق من الحافظة</span></button>
+            <button class="btn ghost with-label" id="transcribeExtractBtn" title="استخراج النص" aria-label="استخراج النص"><span class="icon">🧠</span><span class="label">استخراج النص</span></button>
+            <button class="btn ghost with-label" id="transcribeCopyBtn" title="نسخ النص" aria-label="نسخ النص"><span class="icon">📎</span><span class="label">نسخ النص</span></button>
+            <button class="btn ghost with-label" id="transcribeSaveArchiveBtn" title="حفظ في الأرشيف" aria-label="حفظ في الأرشيف"><span class="icon">🗂️</span><span class="label">حفظ في الأرشيف</span></button>
+            <button class="btn ghost with-label" id="transcribeSendChatBtn" title="إرسال إلى الدردشة / الملخص" aria-label="إرسال إلى الدردشة / الملخص"><span class="icon">💬</span><span class="label">إرسال للدردشة</span></button>
+            <button class="btn ghost with-label" id="transcribeClearBtn" title="مسح" aria-label="مسح"><span class="icon">🧹</span><span class="label">مسح</span></button>
+            <button class="btn ghost with-label" id="transcribeCloudBtn" title="تحسين سحابي للنص" aria-label="تحسين سحابي للنص"><span class="icon">☁️</span><span class="label">تحسين سحابي</span></button>
+            <button class="btn dark with-label" id="transcribeConvertBtn" title="تحويل PDF إلى DOCX قابل للتعديل" aria-label="تحويل PDF إلى DOCX قابل للتعديل"><span class="icon">📝</span><span class="label">PDF → DOCX</span></button>
+            <button class="btn ghost with-label" id="transcribeExportWordBtn" title="تصدير النص الحالي" aria-label="تصدير النص الحالي"><span class="icon">📤</span><span class="label">تصدير</span></button>
+            <select id="transcribeExportFormat" title="صيغة التصدير" style="max-width:180px">
+              <option value="txt">TXT</option>
+              <option value="docx" selected>DOCX</option>
+              <option value="json">JSON (Structured)</option>
+            </select>
+            <label class="pill" style="display:flex; align-items:center; gap:8px">
+              <input type="checkbox" id="ocrToggle" checked />
+              تفعيل OCR
+            </label>
+            <span class="hint" id="transcribeFileName">لم يتم اختيار ملف بعد</span>
+          </div>
+          <div class="split">
+            <div class="panel">
+              <div class="head"><span>التفريغ النصي</span><span class="hint" id="transcribeStats">جاهز</span></div>
+              <div class="body">
+                <div class="hint" style="line-height:1.8; margin-bottom:8px">استخراج النص من الصور أو PDF ثم مراجعته وحفظه.</div>
+                <div id="transcribeDropZone" style="border:2px dashed var(--line); border-radius:14px; padding:14px; margin-bottom:10px; background:#fbfcff">
+                  <strong>منطقة رفع ملفات / سحب وإفلات</strong>
+                  <div class="hint" style="margin-top:6px">اسحب ملف PDF أو صورة هنا، أو استخدم أزرار الاختيار/اللصق.</div>
+                </div>
+                <textarea id="transcribeOutput" style="height:100%; min-height:60vh; border:0; border-radius:0; background:#fbfcff; padding:12px;" placeholder="سيظهر النص المستخرج هنا..."></textarea>
+                <div class="row" style="margin-top:10px">
+                  <div class="tag">الأحرف: <span id="transcribeChars">0</span></div>
+                  <div class="tag">الكلمات: <span id="transcribeWords">0</span></div>
+                  <div class="tag">الأسطر: <span id="transcribeLines">0</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="head"><span>محرك تحويل احترافي PDF → Word</span><span class="hint">الحفاظ على التنسيق قدر الإمكان</span></div>
+              <div class="body">
+                <p class="hint" style="line-height:1.9">
+                  يتم أولًا تنفيذ استخراج متعدد الطبقات: نص PDF الأصلي + OCR محلي محسن + تحسين سحابي اختياري.
+                  ثم يتم بناء تمثيل منظم للصفحات والأسطر لمحاكاة التنسيق الأصلي داخل ملف Word قابل للتعديل.
+                </p>
+                <div class="tag">الخطوة 1: اختيار ملف PDF</div>
+                <div class="tag" style="margin-top:8px">الخطوة 2: استخراج استراتيجي كامل (مع تتبع التقدم)</div>
+                <div class="tag" style="margin-top:8px">الخطوة 3: تصدير TXT / JSON / DOCX</div>
+                <div class="tag" style="margin-top:8px">الخطوة 4: تحويل PDF إلى DOCX قابل للتحرير</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- DOWNLOADS -->
+        <div class="page" id="page-downloads">
+          <div class="toolbar">
+            <input id="dlSearch" type="text" placeholder="بحث في التحميلات..." style="max-width:320px"/>
+            <button class="btn ghost icon" id="refreshDlBtn" title="تحديث" aria-label="تحديث">🔄</button>
+            <button class="btn ghost icon" id="pinFilterBtn" title="المثبت" aria-label="المثبت">📌</button>
+            <button class="btn danger icon" id="clearDlBtn" title="مسح" aria-label="مسح">🗑️</button>
+          </div>
+          <div class="hint" style="padding:10px">أي ملف يتم إنشاؤه من الذكاء عبر قالب <span class="kbd">```file</span> يظهر هنا. يمكنك إعادة التسمية والتثبيت.</div>
+          <div class="panel" style="margin:0 10px 10px; min-height:0; flex:1">
+            <div class="body" id="downloadsList"></div>
+          </div>
+        </div>
+
+        <!-- PROJECTS -->
+        <div class="page" id="page-projects">
+          <div class="toolbar">
+            <button class="btn icon" id="newProjectBtn" title="مشروع جديد" aria-label="مشروع جديد">✚</button>
+            <button class="btn ghost icon" id="renameProjectBtn" title="إعادة تسمية" aria-label="إعادة تسمية">✏️</button>
+            <button class="btn danger icon" id="deleteProjectBtn" title="حذف" aria-label="حذف">🗑️</button>
+          </div>
+          <div class="panel" style="margin:10px; min-height:0; flex:1">
+            <div class="head"><span>المشاريع</span><span class="hint">محادثات + كانفس + ملفات + إعدادات</span></div>
+            <div class="body" id="projectsList"></div>
+          </div>
+        </div>
+
+        
+        <!-- WORKFLOWS -->
+        <div class="page" id="page-workflows">
+          <div class="toolbar">
+            <span class="hint">قوالب تشغيل سريعة (Pipelines) لتنفيذ مهام قوية بنقرة واحدة.</span>
+          </div>
+          <div class="panel" style="margin:10px; min-height:0; flex:1;">
+            <div class="head"><span>Workflows</span><span class="hint">One‑click</span></div>
+            <div class="body" id="workflowsList"></div>
+
+            <div class="row" style="margin-top:10px">
+              <select id="workflowTemplate" class="pill" style="max-width:320px">
+                <option value="research">🧪 Research Report</option>
+                <option value="ocr_index">🖼️ OCR Images → 🔎 KB Index</option>
+                <option value="kb_summary">📚 KB Summary → File</option>
+                <option value="action_items">📌 Action Items → File</option>
+                <option value="canvas_app">🧩 Canvas → Build HTML App</option>
+              </select>
+              <button class="btn sm icon" id="workflowRunBtn" type="button" title="تشغيل" aria-label="تشغيل">▶</button>
+              <button class="btn ghost sm icon" id="workflowLoadBtn" type="button" title="تحميل القالب" aria-label="تحميل القالب">📥</button>
+              <button class="btn ghost sm icon" id="workflowClearLogBtn" type="button" title="مسح السجل" aria-label="مسح السجل">🗑️</button>
+            </div>
+            <div class="row" style="margin-top:10px">
+              <textarea id="workflowEditor" rows="8" placeholder='Pipeline JSON (اختياري)...' style="width:100%"></textarea>
+            </div>
+            <div class="panel" style="margin-top:10px">
+              <div class="head"><span>Run Log</span><span class="hint">متابعة التنفيذ</span></div>
+              <div class="body" id="workflowLog" style="white-space:pre-wrap; line-height:1.7"></div>
+            </div>
+
+          </div>
+        </div>
+
+<!-- SETTINGS -->
+        <div class="page" id="page-settings">
+          <div class="toolbar">
+            <button class="btn dark icon" id="saveSettingsBtn" title="حفظ" aria-label="حفظ">💾</button>
+            <button class="btn ghost icon" id="resetSettingsBtn" title="إعادة ضبط" aria-label="إعادة ضبط">↺</button>
+          </div>
+          <div class="panel" style="margin:10px; min-height:0; flex:1">
+            <div class="head"><span>الإعدادات</span><span class="hint">BYOK + مزودات</span></div>
+            <div class="body">
+              
+              <div class="row" style="margin-top:0">
+                <div class="col">
+                  <label class="hint">Auth Mode</label>
+                  <select id="authMode">
+                    <option value="browser" selected>Browser (BYOK داخل المتصفح)</option>
+                    <option value="gateway">Gateway (Cloudflare Worker — آمن)</option>
+                  </select>
+                  <div class="hint" style="margin-top:6px">Gateway يحمي المفاتيح: لا تُخزن في المتصفح.</div>
+                </div>
+                <div class="col">
+                  <label class="hint">Gateway URL</label>
+                  <input id="gatewayUrl" type="text" placeholder="مثال: https://sadam-key.tntntt830.workers.dev" />
+                  <div class="hint" style="margin-top:6px">سيتم استخدامه بدل Base URL عند تفعيل Gateway.</div>
+                </div>
+              </div>
+              <div class="row" style="margin-top:10px">
+                <div class="col">
+                  <label class="hint">Gateway Client Token (اختياري)</label>
+                  <input id="gatewayToken" type="password" placeholder="إن فعلت حماية إضافية في الـWorker" />
+                </div>
+                <div class="col">
+                  <label class="hint">Cloud PDF→Word Endpoint (Primary)</label>
+                  <input id="cloudConvertEndpoint" type="text" placeholder="مثال: https://sadam-convert.tntntt830.workers.dev/convert/pdf-to-docx" />
+                  <div class="hint" style="margin-top:6px">يُستخدم أولاً للتحويل السحابي عالي الدقة (PDF إلى Word).</div>
+                </div>
+              </div>
+              <div class="row" style="margin-top:10px">
+                <div class="col">
+                  <label class="hint">Cloud PDF→Word Endpoint (Fallback)</label>
+                  <input id="cloudConvertFallbackEndpoint" type="text" placeholder="اختياري: endpoint احتياطي عند فشل الرئيسي" />
+                </div>
+                <div class="col">
+                  <label class="hint">Cloud OCR Endpoint (اختياري)</label>
+                  <input id="ocrCloudEndpoint" type="text" placeholder="مثال: https://sadam-convert.tntntt830.workers.dev/ocr" />
+                  <div class="hint" style="margin-top:6px">يرفع الصورة للـOCR السحابي عند ضعف نتيجة OCR المحلي.</div>
+                </div>
+              </div>
+              <div class="row" style="margin-top:10px">
+                <div class="col">
+                  <label class="hint">OCR Languages (Tesseract)</label>
+                  <input id="ocrLang" type="text" placeholder="ara+eng" />
+                  <div class="hint" style="margin-top:6px">مثال: <span class="kbd">ara+eng</span> أو <span class="kbd">ara</span> حسب اللغة.</div>
+                </div>
+                <div class="col">
+                  <label class="hint">Tools (Agent Tools)</label>
+                  <label class="pill" style="display:flex; align-items:center; gap:8px; max-width:260px">
+                    <input type="checkbox" id="toolsDefault" />
+                    تفعيل Tools افتراضيًا
+                  </label>
+                  <div class="hint" style="margin-top:6px">يسمح للموديل باستدعاء أدوات: KB/Web/Files.</div>
+                </div>
+              </div>
+<div class="row">
+                <div class="col">
+                  <label class="hint">API Key (OpenRouter/OpenAI)</label>
+                  <input id="apiKey" type="password" placeholder="ضع المفتاح هنا" />
+                  <div class="hint" style="margin-top:6px">OpenRouter يوصي بإرسال <span class="kbd">HTTP-Referer</span> و <span class="kbd">X-Title</span>.</div>
+                </div>
+                <div class="col">
+                  <label class="hint">Gemini API Key</label>
+                  <input id="geminiKey" type="password" placeholder="اختياري" />
+                </div>
+              </div>
+
+              <div class="row" style="margin-top:10px">
+                <div class="col">
+                  <label class="hint">HTTP-Referer (OpenRouter)</label>
+                  <input id="orReferer" type="text" placeholder="مثال: https://your-site.github.io" />
+                </div>
+                <div class="col">
+                  <label class="hint">X-Title (OpenRouter)</label>
+                  <input id="orTitle" type="text" placeholder="AI Workspace Studio" />
+                </div>
+              </div>
+
+              <div class="row" style="margin-top:10px">
+                <div class="col">
+                  <label class="hint">System Prompt</label>
+                  <textarea id="systemPrompt" rows="4" placeholder="اختياري…"></textarea>
+                </div>
+                <div class="col">
+                  <label class="hint">Max Output Tokens</label>
+                  <input id="maxOut" type="text" value="2000" />
+                  <div class="hint" style="margin-top:6px">إذا ظهر خطأ من الموديل قلّل القيمة.</div>
+                </div>
+              </div>
+
+              <div class="row" style="margin-top:10px">
+                <div class="col">
+                  <label class="hint">حفظ الملفات كنص (حد أقصى)</label>
+                  <input id="fileClip" type="text" value="12000" />
+                </div>
+                <div class="col">
+                  <label class="hint">Web Mode</label>
+                  <select id="webMode">
+                    <option value="off">Off</option>
+                    <option value="openrouter_online">OpenRouter :online</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="row" style="margin-top:10px">
+                <div class="col">
+                  <label class="hint">Model Hub Cache</label>
+                  <button class="btn ghost icon" id="refreshModelsBtn" title="تحديث موديلات OpenRouter" aria-label="تحديث موديلات OpenRouter">🔄</button>
+                  <button class="btn ghost icon" id="clearModelsCacheBtn" title="مسح الكاش" aria-label="مسح الكاش">🗑️</button>
+                </div>
+                <div class="col">
+                  <label class="hint">Streaming Default</label>
+                  <label class="pill" style="display:flex; align-items:center; gap:8px; max-width:220px">
+                    <input type="checkbox" id="streamDefault" />
+                    تفعيل Streaming
+                  </label>
+                </div>
+              </div>
+
+              <div class="hint" style="margin-top:12px">* بحث الويب يعتمد على المزوّد. في v2 نستخدم OpenRouter <span class="kbd">:online</span>.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Model Hub Modal -->
+  <div class="modal" id="modelModal" aria-hidden="true">
+    <div class="backdrop" id="modelModalBackdrop"></div>
+    <div class="panel">
+      <div class="head">
+        <div style="font-weight:1000">Model Hub</div>
+        <div class="row" style="margin:0; align-items:center">
+          <button class="btn ghost sm icon" id="modelFavOnlyBtn" title="المفضلة" aria-label="المفضلة">⭐</button>
+          <button class="btn ghost sm icon" id="modelRefreshBtn" title="تحديث" aria-label="تحديث">🔄</button>
+          <button class="btn ghost sm icon" id="modelModalClose" title="إغلاق" aria-label="إغلاق">✕</button>
+        </div>
+      </div>
+      <div class="body">
+        <div class="row">
+          <div class="col"><input id="modelSearch" type="text" placeholder="بحث (gpt, claude...)" /></div>
+          <div class="col"><select id="modelProviderFilter"><option value="">الكل (provider)</option></select></div>
+          <div class="col"><select id="modelSort">
+            <option value="name">ترتيب: الاسم</option>
+            <option value="context_desc">ترتيب: السياق (تنازلي)</option>
+            <option value="price_prompt_asc">ترتيب: سعر Prompt (تصاعدي)</option>
+            <option value="price_completion_asc">ترتيب: سعر Completion (تصاعدي)</option>
+          </select></div>
+        </div>
+        <div class="hint" style="margin-top:8px">⭐ لحفظه كمفضلة. يمكنك اختيار أي موديل أو كتابته يدويًا.</div>
+        <div id="modelList" style="margin-top:12px"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function(){
+      const setAppViewportHeight = () => {
+        const viewportHeight = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+        document.documentElement.style.setProperty('--app-vh', `${viewportHeight}px`);
+      };
+      setAppViewportHeight();
+      window.addEventListener('resize', setAppViewportHeight);
+      window.addEventListener('orientationchange', setAppViewportHeight);
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', setAppViewportHeight);
+      }
+    })();
+  </script>
+
+  <script src="app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./sw.js?v=64").then((registration) => {
+          registration.update().catch(() => {});
+
+          if (registration.waiting) {
+            registration.waiting.postMessage({ type: "SKIP_WAITING" });
+          }
+
+          registration.addEventListener("updatefound", () => {
+            const worker = registration.installing;
+            if (!worker) return;
+            worker.addEventListener("statechange", () => {
+              if (worker.state === "installed" && navigator.serviceWorker.controller) {
+                worker.postMessage({ type: "SKIP_WAITING" });
+              }
+            });
+          });
+        }).catch(()=>{});
+
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+          window.location.reload();
+        });
+      });
+    }
+  </script>
+</body>
+</html>
