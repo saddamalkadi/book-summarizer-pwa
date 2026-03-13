@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v6.8</title>
+    <title>AI Workspace Studio v6.9</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%231b66ff'/><stop offset='1' stop-color='%230b1020'/></linearGradient></defs><rect width='100' height='100' rx='18' fill='url(%23g)'/><path d='M28 30h44v40H28z' fill='%23ffffff' opacity='.92'/><path d='M34 40h32M34 50h32M34 60h22' stroke='%230b1020' stroke-width='3' stroke-linecap='round'/><circle cx='68' cy='64' r='6' fill='%231b66ff'/></svg>" />
@@ -730,6 +730,168 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
         font-size: 13px;
       }
     }
+
+    /* Floating workspace shell + collapsible AI-platform layout */
+    #page-chat > .toolbar.mainToolbar{
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
+    .brand-dock-btn{
+      min-width: 88px;
+    }
+    .tool-group{
+      position: relative;
+      overflow: hidden;
+    }
+    .workspace-section-toggle{
+      width: 100%;
+      border: none;
+      background: transparent;
+      padding: 0;
+      cursor: pointer;
+      color: inherit;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      text-align: inherit;
+    }
+    .workspace-section-head{
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+    .workspace-section-title{
+      font-size: 13px;
+      font-weight: 1000;
+      color: #0b1020;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .workspace-section-summary{
+      font-size: 12px;
+      color: #5b6782;
+      line-height: 1.6;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+    .workspace-section-chevron{
+      width: 30px;
+      height: 30px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(27,102,255,.08);
+      color: #1b66ff;
+      flex: 0 0 auto;
+    }
+    .workspace-section-body{
+      display: grid;
+      gap: 12px;
+      padding-top: 14px;
+    }
+    .tool-group.is-collapsed .workspace-section-body{
+      display: none;
+    }
+    .tool-group.is-collapsed{
+      padding-bottom: 12px;
+    }
+    .workspace-brief-grid{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .brief-field{
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+    }
+    .brief-field-wide{
+      grid-column: 1 / -1;
+    }
+    .workspace-brief-actions{
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      grid-column: 1 / -1;
+    }
+    body.sidebarFloating .app{
+      grid-template-columns: 1fr;
+    }
+    body.sidebarFloating .side{
+      position: fixed;
+      top: 12px;
+      bottom: 12px;
+      right: 12px;
+      left: auto;
+      width: min(320px, 28vw);
+      max-height: none;
+      transform: translateX(calc(100% + 24px));
+      transition: transform .2s ease;
+      z-index: 60;
+    }
+    body.sidebarFloating .side.show{
+      transform: translateX(0);
+    }
+    body.sidebarFloating .backdrop2{
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(5,10,25,.38);
+      z-index: 55;
+    }
+    body.sidebarFloating .backdrop2.show{
+      display: block;
+    }
+    body.focusMode #page-chat > .toolbar.mainToolbar,
+    body.focusMode #page-chat > .workspace-deck,
+    body.focusMode #page-chat > .strategic-strip,
+    body.focusMode #page-chat > .composer-meta,
+    body.focusMode #page-chat > .hint{
+      display: none !important;
+    }
+    body.focusMode .status{
+      width: min(100%, calc(var(--reading-width) + 32px));
+      margin: 0 auto 10px;
+    }
+    body.focusMode .chatlog{
+      padding-top: 18px;
+    }
+    body.focusMode .chatbar{
+      padding-top: 8px;
+    }
+    body.focusMode .bubble{
+      box-shadow: 0 16px 30px rgba(15,23,42,.06);
+    }
+    @media (max-width:980px){
+      .workspace-brief-grid{
+        grid-template-columns: 1fr;
+      }
+      body.sidebarFloating .side{
+        width: min(360px, 90vw);
+        right: 10px;
+        left: auto;
+        top: 10px;
+        bottom: 10px;
+      }
+    }
+    @media (max-width:640px){
+      .brand-dock-btn .label{
+        font-size: 11px;
+      }
+      .workspace-section-summary{
+        white-space: normal;
+      }
+      body.sidebarFloating .side{
+        width: min(92vw, 360px);
+        border-radius: 20px;
+      }
+    }
 </style>
 </head>
 <body>
@@ -1331,11 +1493,11 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     })();
   </script>
 
-  <script src="app.js?v=68"></script>
+  <script src="app.js?v=69"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js?v=68").then((registration) => {
+        navigator.serviceWorker.register("./sw.js?v=69").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

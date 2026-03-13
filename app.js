@@ -24,7 +24,11 @@
     deepSearch: 'aistudio_mode_deepsearch_v6',
     headerCollapsed: 'aistudio_header_collapsed_v5',
     chatToolbarCollapsed: 'aistudio_chat_toolbar_collapsed_v5',
-    toolbarCollapsedMap: 'aistudio_toolbar_collapsed_map_v1'
+    toolbarCollapsedMap: 'aistudio_toolbar_collapsed_map_v1',
+    workspaceSectionMap: 'aistudio_workspace_sections_v1',
+    projectBrief: (pid) => `aistudio_project_brief_${pid}_v1`,
+    sidebarPinned: 'aistudio_sidebar_pinned_v1',
+    focusMode: 'aistudio_focus_mode_v1'
   };
 
   const nowTs = () => Date.now();
@@ -566,9 +570,61 @@ const getHeaderCollapsed = () => (localStorage.getItem(KEYS.headerCollapsed) || 
 const setHeaderCollapsed = (v) => localStorage.setItem(KEYS.headerCollapsed, v ? 'true' : 'false');
 const getChatToolbarCollapsed = () => (localStorage.getItem(KEYS.chatToolbarCollapsed) || 'false') === 'true';
 const setChatToolbarCollapsed = (v) => localStorage.setItem(KEYS.chatToolbarCollapsed, v ? 'true' : 'false');
+const getSidebarPinned = () => (localStorage.getItem(KEYS.sidebarPinned) || 'false') === 'true';
+const setSidebarPinned = (v) => localStorage.setItem(KEYS.sidebarPinned, v ? 'true' : 'false');
+const getFocusMode = () => (localStorage.getItem(KEYS.focusMode) || 'false') === 'true';
+const setFocusMode = (v) => localStorage.setItem(KEYS.focusMode, v ? 'true' : 'false');
 
 const getToolbarCollapsedMap = () => loadJSON(KEYS.toolbarCollapsedMap, {});
 const setToolbarCollapsedMap = (map) => saveJSON(KEYS.toolbarCollapsedMap, map || {});
+const getWorkspaceSectionMap = () => loadJSON(KEYS.workspaceSectionMap, {});
+const setWorkspaceSectionMap = (map) => saveJSON(KEYS.workspaceSectionMap, map || {});
+
+const DEFAULT_PROJECT_BRIEF = {
+  goal: '',
+  audience: '',
+  deliverable: '',
+  constraints: '',
+  style: 'executive'
+};
+
+function getProjectBrief(pid = getCurProjectId()){
+  return { ...DEFAULT_PROJECT_BRIEF, ...(loadJSON(KEYS.projectBrief(pid), {}) || {}) };
+}
+
+function setProjectBrief(pid, patch){
+  const next = { ...getProjectBrief(pid), ...(patch || {}) };
+  saveJSON(KEYS.projectBrief(pid), next);
+  return next;
+}
+
+function hasProjectBrief(brief = getProjectBrief()){
+  return ['goal', 'audience', 'deliverable', 'constraints'].some((k) => String(brief?.[k] || '').trim());
+}
+
+function briefSnippet(text, limit = 44){
+  const value = String(text || '').trim();
+  if (!value) return '';
+  return value.length > limit ? `${value.slice(0, limit)}…` : value;
+}
+
+function summarizeProjectBrief(brief = getProjectBrief()){
+  const parts = [brief.goal, brief.deliverable, brief.audience].map((v) => briefSnippet(v)).filter(Boolean);
+  return parts.join(' • ') || 'Define goal, audience, and deliverable';
+}
+
+function buildProjectBriefContext(pid = getCurProjectId()){
+  const brief = getProjectBrief(pid);
+  if (!hasProjectBrief(brief)) return '';
+  const lines = ['Project brief:'];
+  if (brief.goal.trim()) lines.push(`- Goal: ${brief.goal.trim()}`);
+  if (brief.audience.trim()) lines.push(`- Audience: ${brief.audience.trim()}`);
+  if (brief.deliverable.trim()) lines.push(`- Deliverable: ${brief.deliverable.trim()}`);
+  if (brief.constraints.trim()) lines.push(`- Constraints: ${brief.constraints.trim()}`);
+  if (brief.style.trim()) lines.push(`- Style: ${brief.style.trim()}`);
+  lines.push('- Use this brief to shape structure, clarity, and output format before answering.');
+  return lines.join('\n');
+}
 
 function isToolbarCollapsed(id){
   const map = getToolbarCollapsedMap();
@@ -579,6 +635,17 @@ function setToolbarCollapsed(id, v){
   const map = getToolbarCollapsedMap();
   map[id] = !!v;
   setToolbarCollapsedMap(map);
+}
+
+function isWorkspaceSectionCollapsed(id){
+  const map = getWorkspaceSectionMap();
+  return map[id] ?? true;
+}
+
+function setWorkspaceSectionCollapsed(id, v){
+  const map = getWorkspaceSectionMap();
+  map[id] = !!v;
+  setWorkspaceSectionMap(map);
 }
 
 function applyToolbarCollapses(){
@@ -629,6 +696,40 @@ function applyUiCollapse(){
   }
   const tag = document.getElementById('chatMiniModelTag');
   if (tag){ tag.textContent = (getSettings().model || '—'); }
+}
+
+function applyShellLayout(){
+  const desktop = window.innerWidth > 980;
+  const floatingSidebar = desktop && !getSidebarPinned();
+  document.body.classList.toggle('sidebarFloating', floatingSidebar);
+  document.body.classList.toggle('focusMode', getFocusMode());
+
+  if (!desktop || !floatingSidebar){
+    $('side')?.classList.remove('show');
+    $('backdrop')?.classList.remove('show');
+  }
+
+  const pinBtn = $('pinSideBtn');
+  if (pinBtn){
+    const pinned = getSidebarPinned();
+    pinBtn.classList.toggle('dark', pinned);
+    pinBtn.title = pinned ? 'Undock sidebar' : 'Dock sidebar';
+    pinBtn.setAttribute('aria-label', pinBtn.title);
+    pinBtn.innerHTML = pinned
+      ? '<span class="icon">⟷</span><span class="label">Docked</span>'
+      : '<span class="icon">⟷</span><span class="label">Float</span>';
+  }
+
+  const focusBtn = $('focusModeBtn');
+  if (focusBtn){
+    const focus = getFocusMode();
+    focusBtn.classList.toggle('dark', focus);
+    focusBtn.title = focus ? 'Exit focus mode' : 'Enter focus mode';
+    focusBtn.setAttribute('aria-label', focusBtn.title);
+    focusBtn.innerHTML = focus
+      ? '<span class="icon">▣</span><span class="label">Focus</span>'
+      : '<span class="icon">▢</span><span class="label">Focus</span>';
+  }
 }
 
 
@@ -718,6 +819,15 @@ function refreshDeepSearchBtn(){
         <div class="sidecard-note" id="sideHealthNote">Configure your workspace once, then operate chat, files, retrieval, and workflows from one command center.</div>`;
     }
 
+    const brand = document.querySelector('.brand');
+    if (brand && !$('pinSideBtn')){
+      const pin = document.createElement('button');
+      pin.type = 'button';
+      pin.id = 'pinSideBtn';
+      pin.className = 'btn ghost sm with-label brand-dock-btn';
+      brand.insertBefore(pin, $('closeSideBtn'));
+    }
+
     const topTitle = $('topTitle');
     const topSubtitle = $('topSubtitle');
     const left = document.querySelector('.topbar .left');
@@ -735,6 +845,15 @@ function refreshDeepSearchBtn(){
       row.appendChild(topSubtitle);
       row.appendChild(badge);
       stack.appendChild(row);
+    }
+
+    const topActions = document.querySelector('.topbar .topbar-actions');
+    if (topActions && !$('focusModeBtn')){
+      const focus = document.createElement('button');
+      focus.type = 'button';
+      focus.id = 'focusModeBtn';
+      focus.className = 'btn ghost sm with-label';
+      topActions.insertBefore(focus, $('headerCollapseBtn'));
     }
 
     const input = $('chatInput');
@@ -784,6 +903,176 @@ function refreshDeepSearchBtn(){
           </div>
         </div>`);
     }
+
+    const mainToolbar = document.querySelector('#page-chat .mainToolbar');
+    if (mainToolbar && !$('workspaceBriefSection')){
+      mainToolbar.insertAdjacentHTML('beforeend', `
+        <section class="tool-group" id="workspaceBriefSection" data-section-id="brief" data-section-title="Project Brief">
+          <span class="tool-group-title">Project brief</span>
+          <div class="toolbar-strip workspace-brief-grid">
+            <div class="brief-field">
+              <label class="hint" for="briefGoal">Goal</label>
+              <input id="briefGoal" type="text" placeholder="What outcome do you want from this project?" />
+            </div>
+            <div class="brief-field">
+              <label class="hint" for="briefAudience">Audience</label>
+              <input id="briefAudience" type="text" placeholder="Who is the response for?" />
+            </div>
+            <div class="brief-field">
+              <label class="hint" for="briefDeliverable">Deliverable</label>
+              <input id="briefDeliverable" type="text" placeholder="Brief, plan, report, launch doc, table..." />
+            </div>
+            <div class="brief-field">
+              <label class="hint" for="briefStyle">Style</label>
+              <select id="briefStyle">
+                <option value="executive">Executive</option>
+                <option value="operator">Operator</option>
+                <option value="deep_dive">Deep Dive</option>
+                <option value="board_ready">Board Ready</option>
+              </select>
+            </div>
+            <div class="brief-field brief-field-wide">
+              <label class="hint" for="briefConstraints">Constraints</label>
+              <textarea id="briefConstraints" rows="3" placeholder="Any must-have constraints, format rules, deadlines, or scope limits"></textarea>
+            </div>
+            <div class="workspace-brief-actions">
+              <button class="btn dark sm with-label" id="briefApplyBtn" type="button"><span class="icon">✦</span><span class="label">Use in chat</span></button>
+              <button class="btn ghost sm with-label" id="briefClearBtn" type="button"><span class="icon">↺</span><span class="label">Clear</span></button>
+            </div>
+          </div>
+        </section>`);
+    }
+
+    ensureWorkspaceSections();
+    renderProjectBrief();
+    applyShellLayout();
+  }
+
+  function ensureWorkspaceSections(){
+    const mainToolbar = document.querySelector('#page-chat .mainToolbar');
+    if (!mainToolbar) return;
+    const ids = ['routing', 'modes', 'quick', 'brief'];
+
+    [...mainToolbar.querySelectorAll('.tool-group')].forEach((group, idx) => {
+      if (!group.dataset.sectionId) group.dataset.sectionId = ids[idx] || `section-${idx+1}`;
+      if (!group.dataset.sectionTitle){
+        group.dataset.sectionTitle = group.querySelector('.tool-group-title')?.textContent?.trim() || `Section ${idx+1}`;
+      }
+      if (group.dataset.accordionReady === 'true') return;
+
+      const title = group.dataset.sectionTitle;
+      const titleEl = group.querySelector('.tool-group-title');
+      if (titleEl) titleEl.remove();
+
+      const body = document.createElement('div');
+      body.className = 'workspace-section-body';
+      while (group.firstChild) body.appendChild(group.firstChild);
+
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'workspace-section-toggle';
+      toggle.innerHTML = `
+        <span class="workspace-section-head">
+          <span class="workspace-section-title">${escapeHtml(title)}</span>
+          <span class="workspace-section-summary" id="workspaceSectionSummary-${group.dataset.sectionId}"></span>
+        </span>
+        <span class="workspace-section-chevron">▾</span>`;
+
+      group.appendChild(toggle);
+      group.appendChild(body);
+      group.dataset.accordionReady = 'true';
+    });
+
+    applyWorkspaceSectionCollapses();
+    syncWorkspaceSectionSummaries();
+  }
+
+  function applyWorkspaceSectionCollapses(){
+    document.querySelectorAll('#page-chat .tool-group[data-section-id]').forEach((group) => {
+      const collapsed = isWorkspaceSectionCollapsed(group.dataset.sectionId);
+      group.classList.toggle('is-collapsed', collapsed);
+      const chevron = group.querySelector('.workspace-section-chevron');
+      if (chevron) chevron.textContent = collapsed ? '▸' : '▾';
+    });
+  }
+
+  function renderProjectBrief(){
+    const brief = getProjectBrief();
+    if ($('briefGoal')) $('briefGoal').value = brief.goal || '';
+    if ($('briefAudience')) $('briefAudience').value = brief.audience || '';
+    if ($('briefDeliverable')) $('briefDeliverable').value = brief.deliverable || '';
+    if ($('briefConstraints')) $('briefConstraints').value = brief.constraints || '';
+    if ($('briefStyle')) $('briefStyle').value = brief.style || 'executive';
+    syncWorkspaceSectionSummaries();
+  }
+
+  function saveProjectBriefFromUI(){
+    const pid = getCurProjectId();
+    const brief = setProjectBrief(pid, {
+      goal: $('briefGoal')?.value?.trim() || '',
+      audience: $('briefAudience')?.value?.trim() || '',
+      deliverable: $('briefDeliverable')?.value?.trim() || '',
+      constraints: $('briefConstraints')?.value?.trim() || '',
+      style: $('briefStyle')?.value || 'executive'
+    });
+    syncWorkspaceSectionSummaries();
+    clearTimeout(saveProjectBriefFromUI._t);
+    saveProjectBriefFromUI._t = setTimeout(() => refreshStrategicWorkspace().catch(()=>{}), 120);
+    return brief;
+  }
+
+  function applyProjectBriefToComposer(){
+    const brief = saveProjectBriefFromUI();
+    const input = $('chatInput');
+    if (!input) return;
+    const lines = [
+      'Use this project brief as the operating context for the next response:',
+      brief.goal ? `Goal: ${brief.goal}` : '',
+      brief.audience ? `Audience: ${brief.audience}` : '',
+      brief.deliverable ? `Deliverable: ${brief.deliverable}` : '',
+      brief.constraints ? `Constraints: ${brief.constraints}` : '',
+      brief.style ? `Style: ${brief.style}` : '',
+      '',
+      'Now produce the best first draft or plan for this brief.'
+    ].filter(Boolean);
+    input.value = lines.join('\n');
+    resizeComposerInput(input);
+    syncComposerMeta();
+    input.focus();
+    toast('✅ Brief loaded into chat');
+  }
+
+  function clearProjectBrief(){
+    setProjectBrief(getCurProjectId(), DEFAULT_PROJECT_BRIEF);
+    renderProjectBrief();
+    refreshStrategicWorkspace().catch(()=>{});
+    toast('✅ Brief cleared');
+  }
+
+  function syncWorkspaceSectionSummaries(){
+    const settings = getSettings();
+    const pid = getCurProjectId();
+    const files = loadFiles(pid).length;
+    const messages = (getCurThread().messages || []).length;
+    const brief = getProjectBrief(pid);
+
+    if ($('workspaceSectionSummary-routing')){
+      $('workspaceSectionSummary-routing').textContent = `${settings.provider} • ${getDisplayModelName(settings.model)} • ${settings.authMode}`;
+    }
+    if ($('workspaceSectionSummary-modes')){
+      $('workspaceSectionSummary-modes').textContent = [
+        settings.streaming ? 'Streaming' : 'One-shot',
+        getRagToggle() ? 'RAG' : 'No RAG',
+        settings.toolsEnabled ? 'Tools' : 'Tools off',
+        getWebToggle() ? 'Web' : 'Local'
+      ].join(' • ');
+    }
+    if ($('workspaceSectionSummary-quick')){
+      $('workspaceSectionSummary-quick').textContent = `${messages} messages • ${files} files`;
+    }
+    if ($('workspaceSectionSummary-brief')){
+      $('workspaceSectionSummary-brief').textContent = summarizeProjectBrief(brief);
+    }
   }
 
   function syncComposerMeta(){
@@ -807,6 +1096,7 @@ function refreshDeepSearchBtn(){
     const project = getCurProject();
     const thread = getCurThread();
     const messageCount = (thread.messages || []).length;
+    const brief = getProjectBrief(pid);
     const files = loadFiles(pid);
     const chunks = await kbCountProject(pid).catch(() => 0);
     const downloads = loadDownloads().length;
@@ -827,7 +1117,8 @@ function refreshDeepSearchBtn(){
         : 'Build, research, and ship from one strategic AI console.';
     }
     if ($('workspaceSummary')){
-      $('workspaceSummary').textContent = `Provider ${settings.provider} on ${getDisplayModelName(settings.model)} • ${files.length} project files • ${chunks} KB chunks • ${downloads} archived outputs.`;
+      const briefPart = hasProjectBrief(brief) ? ` • Brief ${summarizeProjectBrief(brief)}` : '';
+      $('workspaceSummary').textContent = `Provider ${settings.provider} on ${getDisplayModelName(settings.model)} • ${files.length} project files • ${chunks} KB chunks • ${downloads} archived outputs${briefPart}.`;
     }
     if ($('signalProvider')) $('signalProvider').textContent = settings.provider.toUpperCase();
     if ($('signalProviderNote')) $('signalProviderNote').textContent = `${readiness} • ${settings.authMode === 'gateway' ? 'Gateway secured flow' : 'Browser-direct flow'}`;
@@ -842,7 +1133,9 @@ function refreshDeepSearchBtn(){
     if ($('sideModelMeta')) $('sideModelMeta').textContent = getDisplayModelName(settings.model);
     if ($('sideContextMeta')) $('sideContextMeta').textContent = `${files.length}F • ${chunks}KB • ${downloads}DL`;
     if ($('sideModeMeta')) $('sideModeMeta').textContent = `${settings.provider} • ${settings.authMode}`;
-    if ($('sideHealthNote')) $('sideHealthNote').textContent = `${readiness}. Workspace ready for chat, knowledge retrieval, files, and workflows.`;
+    if ($('sideHealthNote')) $('sideHealthNote').textContent = hasProjectBrief(brief)
+      ? `${readiness}. Brief active: ${summarizeProjectBrief(brief)}.`
+      : `${readiness}. Workspace ready for chat, knowledge retrieval, files, and workflows.`;
 
     if ($('settingsReadyState')) $('settingsReadyState').textContent = readiness;
     if ($('settingsGatewayState')) $('settingsGatewayState').textContent = settings.authMode === 'gateway' ? (settings.gatewayUrl || 'Gateway missing') : 'Direct browser mode';
@@ -850,6 +1143,7 @@ function refreshDeepSearchBtn(){
     if ($('settingsSecurityState')) $('settingsSecurityState').textContent = settings.authMode === 'gateway' ? 'Secrets kept server-side' : ((settings.apiKey || '').trim() ? 'Browser key in use' : 'No browser key');
 
     syncComposerMeta();
+    syncWorkspaceSectionSummaries();
   }
 
   async function runStrategicHealthCheck(){
@@ -2082,6 +2376,10 @@ async function maybeUpdateThreadSummary(pid, tid){
 function buildMessagesForChat({ userText, settings, filesText, ragCtx, attachments, historyMessages=[], threadSummary='' }){
     const sys = buildSystemPrompt(settings);
     const msgs = [{ role:'system', content: sys }];
+    const briefCtx = buildProjectBriefContext();
+    if (briefCtx){
+      msgs.push({ role:'system', content: briefCtx });
+    }
     if (threadSummary && threadSummary.trim()){
       msgs.push({ role:'system', content: `Conversation memory:\n${threadSummary.trim()}` });
     }
@@ -2106,6 +2404,39 @@ ${clip}` });
   // ---------------- Chat rendering ----------------
   let abortCtl = null;
   let pendingChatAttachments = [];
+
+  function titleFromMessage(content, fallback='Artifact'){
+    const first = String(content || '')
+      .replace(/[`#>*_-]/g, ' ')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find(Boolean);
+    if (!first) return fallback;
+    return first.length > 56 ? `${first.slice(0, 56)}…` : first;
+  }
+
+  function sendMessageToCanvas(message){
+    const pid = getCurProjectId();
+    const docs = loadCanvas(pid);
+    const title = titleFromMessage(message?.content, 'Chat Artifact');
+    const now = nowTs();
+    const id = makeId('doc');
+    docs.unshift({
+      id,
+      title,
+      content: String(message?.content || ''),
+      createdAt: now,
+      updatedAt: now,
+      versions: [{ ts: now, title, content: String(message?.content || '') }]
+    });
+    saveCanvas(pid, docs);
+    setCurCanvasId(pid, id);
+    renderCanvasList();
+    setActiveNav('canvas');
+    openCanvasDoc(id);
+    refreshNavMeta();
+    toast('✅ Sent to Canvas');
+  }
 
   function renderEmptyChatState(log){
     if (!log) return;
@@ -2170,6 +2501,12 @@ ${clip}` });
       actions.appendChild(copyBtn);
 
       if (m.role === 'assistant'){
+        const canvasBtn = document.createElement('button');
+        canvasBtn.className = 'btn ghost sm';
+        canvasBtn.textContent = 'Canvas';
+        canvasBtn.addEventListener('click', () => sendMessageToCanvas(m));
+        actions.appendChild(canvasBtn);
+
         const dlCount = ingestDownloadsFromText(m.content || '');
         if (dlCount){
           const info = document.createElement('span');
@@ -3162,6 +3499,7 @@ let pinOnly = false;
         loadThreads(p.id);
         renderCanvasList();
         renderFiles();
+        renderProjectBrief();
         renderChat();
         refreshNavMeta();
         toast('✅ تم فتح المشروع');
@@ -3185,6 +3523,7 @@ let pinOnly = false;
     saveFiles(p.id, []);
     saveCanvas(p.id, []);
     $('curProjectName').textContent = p.name;
+    renderProjectBrief();
     renderProjects(); renderFiles(); renderCanvasList(); renderChat(); refreshNavMeta();
   }
 
@@ -3215,6 +3554,7 @@ let pinOnly = false;
     setCurProjectId('default');
     $('curProjectName').textContent='افتراضي';
     loadThreads('default');
+    renderProjectBrief();
     renderProjects(); renderFiles(); renderCanvasList(); renderChat(); refreshNavMeta();
     toast('✅ تم حذف المشروع');
   }
@@ -3549,8 +3889,15 @@ let pinOnly = false;
     // sidebar mobile
     const side = $('side');
     const back = $('backdrop');
-    const openSide = () => { side.classList.add('show'); back.classList.add('show'); };
-    const closeSide = () => { side.classList.remove('show'); back.classList.remove('show'); };
+    const openSide = () => {
+      if (window.innerWidth > 980 && getSidebarPinned()) return;
+      side.classList.add('show');
+      back.classList.add('show');
+    };
+    const closeSide = () => {
+      side.classList.remove('show');
+      back.classList.remove('show');
+    };
     $('openSideBtn').addEventListener('click', openSide);
     $('closeSideBtn').addEventListener('click', closeSide);
     back.addEventListener('click', closeSide);
@@ -3568,6 +3915,7 @@ let pinOnly = false;
     setupCollapsibleToolbars();
     applyUiCollapse();
     applyToolbarCollapses();
+    applyShellLayout();
     // Default collapse on mobile (first run)
     try{
       if (window.innerWidth < 980){
@@ -3648,6 +3996,16 @@ $('chatToolbarExpandBtn')?.addEventListener('click', () => {
       applyQuickPrompt(quick.dataset.quickPrompt || '');
     });
 
+    document.addEventListener('click', (e) => {
+      const toggle = e.target.closest('.workspace-section-toggle');
+      if (!toggle) return;
+      const group = toggle.closest('.tool-group[data-section-id]');
+      if (!group) return;
+      const id = group.dataset.sectionId;
+      setWorkspaceSectionCollapsed(id, !isWorkspaceSectionCollapsed(id));
+      applyWorkspaceSectionCollapses();
+    });
+
     // chat
     
     // Chat attachments (inline)
@@ -3669,6 +4027,24 @@ $('chatToolbarExpandBtn')?.addEventListener('click', () => {
       toast(isDeepSearch() ? '🔬 Deep Search ON' : '🔬 Deep Search OFF');
     });
 
+    $('focusModeBtn')?.addEventListener('click', () => {
+      setFocusMode(!getFocusMode());
+      applyShellLayout();
+      refreshStrategicWorkspace().catch(()=>{});
+    });
+    $('pinSideBtn')?.addEventListener('click', () => {
+      setSidebarPinned(!getSidebarPinned());
+      applyShellLayout();
+    });
+    ['briefGoal','briefAudience','briefDeliverable','briefConstraints','briefStyle'].forEach((id) => {
+      const el = $(id);
+      if (!el) return;
+      el.addEventListener('input', saveProjectBriefFromUI);
+      el.addEventListener('change', saveProjectBriefFromUI);
+    });
+    $('briefApplyBtn')?.addEventListener('click', applyProjectBriefToComposer);
+    $('briefClearBtn')?.addEventListener('click', clearProjectBrief);
+
 $('sendBtn').addEventListener('click', sendMessage);
     $('stopBtn').addEventListener('click', stopGeneration);
     $('regenBtn').addEventListener('click', regenLast);
@@ -3677,6 +4053,7 @@ $('sendBtn').addEventListener('click', sendMessage);
     });
     window.addEventListener('resize', () => {
       resizeComposerInput();
+      applyShellLayout();
       refreshStrategicWorkspace().catch(()=>{});
     });
     $('chatInput').addEventListener('keydown', (e) => {
@@ -4098,6 +4475,7 @@ ${e?.message||e}`, false);
     renderCanvasList();
     renderDownloads();
     renderProjects();
+    renderProjectBrief();
     renderKbUI().catch(()=>{});
     refreshNavMeta();
     ensureKbStats().catch(()=>{});
@@ -4106,6 +4484,7 @@ ${e?.message||e}`, false);
     updateChips();
 
     bind();
+    applyShellLayout();
     refreshStrategicWorkspace().catch(()=>{});
   }
 
