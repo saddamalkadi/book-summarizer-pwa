@@ -121,7 +121,10 @@ async function handleGateway(request, env, url) {
     }, 401), request);
   }
 
-  const upstreamUrl = new URL(`https://openrouter.ai${url.pathname}${url.search}`);
+  const upstreamPath = url.pathname.startsWith('/v1/')
+    ? `/api${url.pathname}`
+    : url.pathname;
+  const upstreamUrl = new URL(`https://openrouter.ai${upstreamPath}${url.search}`);
 
   const headers = new Headers(request.headers);
   headers.set('Authorization', authHeader);
