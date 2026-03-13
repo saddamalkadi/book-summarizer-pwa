@@ -434,6 +434,31 @@ async function buildRagContextIfEnabled(userText){
     return [...new Set(out)];
   }
 
+  function shouldIncludeGatewayCredentials(input){
+    try{
+      const settings = getSettings();
+      if (settings.authMode !== 'gateway') return false;
+      const gatewayRoot = resolveGatewayApiRoot(settings);
+      const gatewayOrigin = endpointOrigin(gatewayRoot);
+      if (!gatewayOrigin) return false;
+
+      const reqUrl = (typeof input === 'string') ? input : (input && input.url) || '';
+      if (!reqUrl) return false;
+      return new URL(reqUrl, location.href).origin === gatewayOrigin;
+    }catch(_){ return false; }
+  }
+
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = (input, init) => {
+    const nextInit = init ? { ...init } : {};
+    if (shouldIncludeGatewayCredentials(input) && !nextInit.credentials){
+      // Some gateway deployments rely on cookie/session auth.
+      // Force cookies to be sent for cross-origin gateway calls.
+      nextInit.credentials = 'include';
+    }
+    return nativeFetch(input, nextInit);
+  };
+
 
 
   // ---------------- UI helpers ----------------
