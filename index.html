@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v6.7</title>
+    <title>AI Workspace Studio v6.8</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%231b66ff'/><stop offset='1' stop-color='%230b1020'/></linearGradient></defs><rect width='100' height='100' rx='18' fill='url(%23g)'/><path d='M28 30h44v40H28z' fill='%23ffffff' opacity='.92'/><path d='M34 40h32M34 50h32M34 60h22' stroke='%230b1020' stroke-width='3' stroke-linecap='round'/><circle cx='68' cy='64' r='6' fill='%231b66ff'/></svg>" />
@@ -373,6 +373,362 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       .chatbar textarea{min-width:100%; min-height:56px;}
       .composer-meta{padding:0 8px 10px;}
       .settings-overview{padding:10px;}
+    }
+
+    /* Strategic responsive refinement */
+    :root{
+      --shell-max: 1880px;
+      --toolbar-max: 1560px;
+      --reading-width: 1120px;
+      --assistant-width: 940px;
+      --user-width: 780px;
+      --page-gutter: clamp(12px, 2vw, 24px);
+    }
+    .app{
+      max-width: var(--shell-max);
+      margin-inline: auto;
+      padding: clamp(10px, 1vw, 18px);
+      gap: clamp(10px, 1vw, 16px);
+    }
+    .content,
+    .topbar{
+      border-radius: 22px;
+    }
+    .page{
+      scrollbar-gutter: stable;
+    }
+    #page-chat{
+      background: linear-gradient(180deg, rgba(248,251,255,.95), rgba(255,255,255,.98));
+    }
+    #page-chat > .toolbar.mainToolbar,
+    #page-chat > .workspace-deck,
+    #page-chat > .strategic-strip,
+    #page-settings > .settings-overview{
+      width: min(100%, var(--toolbar-max));
+      margin-inline: auto;
+    }
+    #page-chat > .chatbar,
+    #page-chat > .composer-meta,
+    #page-chat > .chips,
+    #page-chat > .hint{
+      width: min(100%, calc(var(--reading-width) + 32px));
+      margin-inline: auto;
+    }
+    #page-chat > .toolbar.mainToolbar{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      align-items: stretch;
+      gap: 12px;
+      padding: 14px var(--page-gutter) 12px;
+      overflow: visible;
+    }
+    #page-chat .tool-group{
+      height: 100%;
+      padding: 12px;
+      border-radius: 18px;
+      background: linear-gradient(180deg, #fbfcff, #f5f8ff);
+      box-shadow: 0 10px 24px rgba(15,23,42,.04);
+    }
+    #page-chat .tool-group-title{
+      font-size: 11px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .workspace-deck{
+      padding: 14px var(--page-gutter);
+    }
+    .workspace-hero{
+      min-height: 240px;
+      padding: clamp(18px, 2vw, 26px);
+    }
+    .workspace-signals{
+      align-content: start;
+    }
+    .workspace-deck.workspace-deck-collapsed{
+      padding-top: 0;
+      padding-bottom: 10px;
+      border-bottom: none;
+      background: transparent;
+      grid-template-columns: 1fr;
+    }
+    .workspace-deck.workspace-deck-collapsed .workspace-hero{
+      min-height: 0;
+      padding: 16px 18px;
+      border-radius: 18px;
+      box-shadow: 0 14px 30px rgba(14, 29, 76, .14);
+    }
+    .workspace-deck.workspace-deck-collapsed .workspace-title{
+      font-size: 22px;
+      margin: 8px 0 4px;
+    }
+    .workspace-deck.workspace-deck-collapsed .workspace-summary,
+    .workspace-deck.workspace-deck-collapsed .workspace-signals{
+      display: none;
+    }
+    .workspace-deck.workspace-deck-collapsed .workspace-actions{
+      margin-top: 12px;
+    }
+    .strategic-strip{
+      padding: 0 var(--page-gutter) 16px;
+    }
+    .strategic-strip.strategic-strip-collapsed{
+      display: none;
+    }
+    .chatlog{
+      padding: clamp(18px, 2.4vw, 30px) var(--page-gutter) clamp(20px, 2.8vw, 34px);
+      background:
+        radial-gradient(circle at top, rgba(27,102,255,.05), transparent 22%),
+        linear-gradient(180deg, #fbfcff 0%, #f8fbff 100%);
+    }
+    .chatlog > *{
+      width: min(100%, var(--reading-width));
+      margin-inline: auto;
+    }
+    .bubble{
+      width: min(100%, var(--assistant-width));
+      margin-bottom: 14px;
+      padding: 16px 18px;
+      border-radius: 20px;
+      box-shadow: 0 14px 28px rgba(15,23,42,.05);
+    }
+    .bubble.assistant{
+      margin-inline-end: auto;
+      background: linear-gradient(180deg, #ffffff, #fbfdff);
+    }
+    .bubble.user{
+      width: min(100%, var(--user-width));
+      margin-inline-start: auto;
+      background: linear-gradient(180deg, #edf3ff, #e6efff);
+      border-color: #cfe0ff;
+    }
+    .bubble .meta{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .bubble .body{
+      font-size: 15px;
+      line-height: 1.9;
+      color: #162033;
+    }
+    .bubble .body > :first-child{
+      margin-top: 0;
+    }
+    .bubble .body > :last-child{
+      margin-bottom: 0;
+    }
+    .bubble .body pre,
+    .bubble .body code{
+      max-width: 100%;
+      overflow-x: auto;
+    }
+    .chatlog .empty-chat-state{
+      width: min(100%, 900px);
+      padding: 18px 20px;
+    }
+    .empty-chat-state--compact{
+      border-style: solid;
+    }
+    .empty-chat-title{
+      font-size: clamp(22px, 2vw, 28px);
+    }
+    .empty-chat-points{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .empty-chat-point{
+      padding: 14px;
+      border-radius: 16px;
+      background: linear-gradient(180deg, #f8fbff, #ffffff);
+      border: 1px solid rgba(10,20,60,.08);
+    }
+    .empty-chat-point strong{
+      display: block;
+      margin-bottom: 6px;
+      color: #0b1020;
+      font-size: 14px;
+    }
+    .empty-chat-point span{
+      display: block;
+      color: #516079;
+      line-height: 1.75;
+      font-size: 13px;
+    }
+    .chatbar{
+      gap: 10px;
+      padding: 12px 0 10px;
+    }
+    .chatbar > input,
+    .chatbar > textarea{
+      flex: 1 1 460px;
+    }
+    .chatbar > button{
+      align-self: flex-end;
+    }
+    .composer-meta,
+    .chips,
+    #page-chat > .hint{
+      padding-inline: 0;
+    }
+    .composer-meta{
+      padding-bottom: 14px;
+    }
+    .chips{
+      padding-bottom: 12px;
+    }
+    .topbar .row{
+      row-gap: 6px;
+    }
+    @media (min-width:1500px){
+      :root{
+        --reading-width: 1180px;
+        --assistant-width: 980px;
+        --user-width: 820px;
+      }
+      .app{
+        grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+      }
+    }
+    @media (max-width:1380px){
+      #page-chat > .toolbar.mainToolbar{
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width:980px){
+      :root{
+        --reading-width: 100%;
+        --assistant-width: 100%;
+        --user-width: 94%;
+        --page-gutter: 14px;
+      }
+      #page-chat > .toolbar.mainToolbar{
+        grid-template-columns: 1fr;
+        padding-top: 12px;
+      }
+      .workspace-deck{
+        padding: 12px var(--page-gutter);
+      }
+      .workspace-deck.workspace-deck-collapsed{
+        display: none;
+      }
+      .strategic-strip{
+        padding-inline: var(--page-gutter);
+      }
+      .strategic-strip.strategic-strip-collapsed{
+        display: none;
+      }
+      .chatlog > *{
+        width: 100%;
+      }
+      .bubble{
+        width: min(100%, 96%);
+      }
+      .empty-chat-points{
+        grid-template-columns: 1fr;
+      }
+      .chatbar{
+        padding-top: 10px;
+      }
+    }
+    @media (max-width:640px){
+      :root{
+        --page-gutter: 10px;
+      }
+      .topbar .row{
+        width: 100%;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        justify-content: flex-start;
+        scrollbar-width: none;
+      }
+      .topbar .row::-webkit-scrollbar{
+        display: none;
+      }
+      .topbar .row > *{
+        flex: 0 0 auto;
+      }
+      .workspace-actions,
+      .strategic-strip{
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+      .workspace-actions::-webkit-scrollbar,
+      .strategic-strip::-webkit-scrollbar{
+        display: none;
+      }
+      .workspace-btn,
+      .quick-prompt-btn{
+        flex: 0 0 auto;
+      }
+      .workspace-deck{
+        padding-inline: 10px;
+      }
+      .workspace-hero{
+        padding: 14px;
+      }
+      .workspace-title{
+        font-size: 20px;
+      }
+      .workspace-summary{
+        font-size: 13.5px;
+        line-height: 1.7;
+      }
+      .workspace-signals{
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .signal-card{
+        min-height: 84px;
+        padding: 12px;
+      }
+      .signal-value{
+        font-size: 15px;
+      }
+      .signal-note{
+        font-size: 11px;
+        line-height: 1.5;
+      }
+      .chatlog{
+        padding-top: 14px;
+      }
+      .bubble,
+      .bubble.user,
+      .bubble.assistant{
+        width: 100%;
+        margin-inline: 0;
+      }
+      .bubble{
+        padding: 14px 14px 15px;
+        border-radius: 18px;
+      }
+      .bubble .body{
+        font-size: 14px;
+        line-height: 1.85;
+      }
+      .chatbar{
+        width: 100%;
+        padding-inline: 10px;
+      }
+      .chatbar > button{
+        align-self: center;
+      }
+      .composer-meta{
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
+    @media (max-width:360px){
+      .workspace-signals{
+        grid-template-columns: 1fr;
+      }
+      .workspace-summary{
+        font-size: 13px;
+      }
     }
 </style>
 </head>
@@ -975,11 +1331,11 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     })();
   </script>
 
-  <script src="app.js?v=67"></script>
+  <script src="app.js?v=68"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js?v=67").then((registration) => {
+        navigator.serviceWorker.register("./sw.js?v=68").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

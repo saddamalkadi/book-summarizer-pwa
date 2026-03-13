@@ -796,11 +796,17 @@ function refreshDeepSearchBtn(){
     resizeComposerInput();
   }
 
+  function syncStrategicLayoutState(hasMessages){
+    $('workspaceDeck')?.classList.toggle('workspace-deck-collapsed', !!hasMessages);
+    $('strategicStrip')?.classList.toggle('strategic-strip-collapsed', !!hasMessages);
+  }
+
   async function refreshStrategicWorkspace(){
     const settings = getSettings();
     const pid = getCurProjectId();
     const project = getCurProject();
     const thread = getCurThread();
+    const messageCount = (thread.messages || []).length;
     const files = loadFiles(pid);
     const chunks = await kbCountProject(pid).catch(() => 0);
     const downloads = loadDownloads().length;
@@ -811,11 +817,12 @@ function refreshDeepSearchBtn(){
       getWebToggle() ? 'Web' : 'Local'
     ];
     const readiness = getAuthStateLabel(settings);
+    syncStrategicLayoutState(messageCount > 0);
     const runtimeBadge = $('topRuntimeBadge');
     if (runtimeBadge) runtimeBadge.textContent = `${settings.provider.toUpperCase()} • ${readiness}`;
     if ($('curProjectName')) $('curProjectName').textContent = project.name;
     if ($('workspaceHeadline')){
-      $('workspaceHeadline').textContent = (thread.messages || []).length
+      $('workspaceHeadline').textContent = messageCount
         ? `Continue ${project.name} with full operational context.`
         : 'Build, research, and ship from one strategic AI console.';
     }
@@ -827,11 +834,11 @@ function refreshDeepSearchBtn(){
     if ($('signalModel')) $('signalModel').textContent = getDisplayModelName(settings.model);
     if ($('signalModelNote')) $('signalModelNote').textContent = `Max output ${settings.maxOut || 2000} • Web mode ${settings.webMode || 'off'}`;
     if ($('signalContext')) $('signalContext').textContent = `${files.length} files • ${chunks} KB`;
-    if ($('signalContextNote')) $('signalContextNote').textContent = `${(thread.messages || []).length} messages • file clip ${settings.fileClip || 12000}`;
+    if ($('signalContextNote')) $('signalContextNote').textContent = `${messageCount} messages • file clip ${settings.fileClip || 12000}`;
     if ($('signalModes')) $('signalModes').textContent = modeLabels.join(' • ');
     if ($('signalModesNote')) $('signalModesNote').textContent = `${isDeep() ? 'Deep' : 'Standard'} • ${isAgent() ? 'Agent' : 'Assistant'} • ${isDeepSearch() ? 'Deep Search' : 'Chat Mode'}`;
 
-    if ($('sideProjectMeta')) $('sideProjectMeta').textContent = `${project.name} (${(thread.messages || []).length})`;
+    if ($('sideProjectMeta')) $('sideProjectMeta').textContent = `${project.name} (${messageCount})`;
     if ($('sideModelMeta')) $('sideModelMeta').textContent = getDisplayModelName(settings.model);
     if ($('sideContextMeta')) $('sideContextMeta').textContent = `${files.length}F • ${chunks}KB • ${downloads}DL`;
     if ($('sideModeMeta')) $('sideModeMeta').textContent = `${settings.provider} • ${settings.authMode}`;
@@ -2103,26 +2110,22 @@ ${clip}` });
   function renderEmptyChatState(log){
     if (!log) return;
     log.innerHTML = `
-      <div class="empty-chat-state">
-        <div class="empty-chat-title">ابدأ من مستوى منصة احترافية، لا مجرد رسالة.</div>
-        <div class="empty-chat-text">هذه النسخة أصبحت مهيأة لتعمل كمساحة تشغيل متكاملة: دردشة، ملفات، قاعدة معرفة، Workflows، ومخرجات قابلة للتنزيل. اختر نقطة انطلاق استراتيجية ثم دع المنصة تبني لك العمل خطوة بخطوة.</div>
-        <div class="empty-chat-grid">
-          <button class="empty-chat-card" type="button" data-quick-prompt="strategy_brief">
-            <strong>Strategic Brief</strong>
-            <span>حوّل الفكرة أو المشكلة إلى brief تنفيذي واضح مع أهداف، مخاطر، وخطة عمل.</span>
-          </button>
-          <button class="empty-chat-card" type="button" data-quick-prompt="deep_research">
-            <strong>Deep Research</strong>
-            <span>ابنِ بحثًا متعدد الخطوات مع أسئلة تحقيق، ملاحظات، ومخرجات نهائية قابلة للتنفيذ.</span>
-          </button>
-          <button class="empty-chat-card" type="button" data-quick-prompt="build_product">
-            <strong>Build Product</strong>
-            <span>صمّم منتجًا أو تطبيقًا من الفكرة إلى المعمارية، الواجهات، والـ roadmap.</span>
-          </button>
-          <button class="empty-chat-card" type="button" data-quick-prompt="action_board">
-            <strong>Action Board</strong>
-            <span>حوّل أي سياق أو اجتماع إلى لوحة مهام تنفيذية مع أولويات ومالكين ومواعيد.</span>
-          </button>
+      <div class="empty-chat-state empty-chat-state--compact">
+        <div class="empty-chat-title">المساحة جاهزة لبحث، منتج، أو خطة تنفيذ.</div>
+        <div class="empty-chat-text">ابدأ من اللوحة العليا أو اكتب الهدف مباشرة. سيستخدم التطبيق الملفات، المعرفة، وملحقات المحادثة لبناء استجابة أوضح وأكثر احترافية.</div>
+        <div class="empty-chat-points">
+          <div class="empty-chat-point">
+            <strong>Readable Outputs</strong>
+            <span>تقارير، ملخصات، وخطط عمل مكتوبة بطريقة واضحة ومريحة للقراءة الطويلة.</span>
+          </div>
+          <div class="empty-chat-point">
+            <strong>Context-Rich</strong>
+            <span>الملفات، قاعدة المعرفة، والمرفقات تندمج داخل نفس سياق التشغيل بدل الدردشة المعزولة.</span>
+          </div>
+          <div class="empty-chat-point">
+            <strong>Operator Ready</strong>
+            <span>استخدم القوالب، الـ Workflows، ونمط الوكيل لتحويل الطلب إلى مخرجات تنفيذية قابلة للاستخدام.</span>
+          </div>
         </div>
       </div>`;
   }
@@ -3671,6 +3674,10 @@ $('sendBtn').addEventListener('click', sendMessage);
     $('regenBtn').addEventListener('click', regenLast);
     $('chatInput').addEventListener('input', () => {
       syncComposerMeta();
+    });
+    window.addEventListener('resize', () => {
+      resizeComposerInput();
+      refreshStrategicWorkspace().catch(()=>{});
     });
     $('chatInput').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey){
