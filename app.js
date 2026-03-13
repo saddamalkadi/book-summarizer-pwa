@@ -1323,6 +1323,19 @@ async function fileToText(file){
       let j; try{ j=JSON.parse(t);}catch(_){j=null;}
       throw new Error(j?.error?.message || t || `HTTP ${r.status}`);
     }
+
+    const contentType = String(r.headers.get('content-type') || '').toLowerCase();
+    // Some gateways ignore stream=true and return a normal JSON completion response.
+    if (contentType.includes('application/json')){
+      const t = await r.text();
+      let j; try{ j = JSON.parse(t); }catch(_){ j = null; }
+      const oneShot = j?.choices?.[0]?.message?.content
+        || j?.choices?.[0]?.delta?.content
+        || j?.output_text
+        || '';
+      return String(oneShot || '');
+    }
+
     const reader = r.body.getReader();
     const dec = new TextDecoder('utf-8');
     let buf = '';
@@ -1347,6 +1360,21 @@ async function fileToText(file){
         }
       }
     }
+
+    // Handle any final buffered line when stream closes without trailing newline.
+    const tail = (buf || '').trim();
+    if (tail.startsWith('data:')){
+      const payload = tail.slice(5).trim();
+      if (payload && payload !== '[DONE]'){
+        let j; try{ j = JSON.parse(payload); }catch(_){ j = null; }
+        const lastDelta = j?.choices?.[0]?.delta?.content || j?.choices?.[0]?.message?.content || '';
+        if (lastDelta){
+          full += lastDelta;
+          onDelta?.(lastDelta, full);
+        }
+      }
+    }
+
     return full;
   }
 
@@ -1884,6 +1912,7 @@ function updateChips(){
                   aMsg.content = full;
                 }
               });
+              if (!String(ans || '').trim()) throw new Error('STREAM_EMPTY_RESPONSE');
               streamErrLast = null;
               break;
             }catch(streamErr){
