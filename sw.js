@@ -1,8 +1,10 @@
 // AI Workspace Studio - Service Worker
-const CACHE_NAME = "aistudio-cache-v65";
+const APP_VERSION = "66";
+const CACHE_NAME = `aistudio-cache-v${APP_VERSION}`;
 const CORE = [
   "./",
   "./index.html",
+  `./app.js?v=${APP_VERSION}`,
   "./manifest.webmanifest"
 ];
 

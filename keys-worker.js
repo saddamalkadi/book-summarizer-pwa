@@ -5,12 +5,10 @@ export default {
 
       const url = new URL(request.url);
 
-      // Basic health check
+      // Health/readiness check
       if (url.pathname === '/health') {
-        return withCors(new Response(JSON.stringify({ ok: true, worker: 'keys' }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json; charset=utf-8' }
-        }), request);
+        const health = getWorkerHealth(env);
+        return withCors(jsonResponse(health.body, health.status), request);
       }
 
       // Gateway endpoint (OpenAI-compatible): /v1/* -> OpenRouter /v1/*
@@ -34,18 +32,48 @@ export default {
 
       return withCors(new Response('Not Found', { status: 404 }), request);
     } catch (err) {
-      return withCors(new Response(JSON.stringify({
-        error: String(err?.message || err || 'Worker error')
-      }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json; charset=utf-8' }
-      }), request);
+      return withCors(jsonResponse({
+        error: String(err?.message || err || 'Worker error'),
+        code: 'WORKER_UNHANDLED_ERROR'
+      }, 500), request);
     }
   }
 };
 
 function handleOptions(request) {
   return withCors(new Response(null, { status: 204 }), request);
+}
+
+function jsonResponse(payload, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { 'Content-Type': 'application/json; charset=utf-8' }
+  });
+}
+
+function getServerKey(env) {
+  return (
+    env.OPENROUTER_API_KEY ||
+    env.OPEN_ROUTER_API_KEY ||
+    env.OPENROUTER_KEY ||
+    ''
+  ).trim();
+}
+
+function getWorkerHealth(env) {
+  const configured = !!getServerKey(env);
+  const clientTokenRequired = !!String(env.GATEWAY_CLIENT_TOKEN || '').trim();
+  return {
+    status: configured ? 200 : 503,
+    body: {
+      ok: configured,
+      ready: configured,
+      configured,
+      worker: 'keys',
+      upstream: 'openrouter',
+      client_token_required: clientTokenRequired
+    }
+  };
 }
 
 function withCors(response, request) {
@@ -71,32 +99,26 @@ async function handleGateway(request, env, url) {
   if (expectedClientToken) {
     const got = (request.headers.get('X-Client-Token') || '').trim();
     if (!got || got !== expectedClientToken) {
-      return withCors(new Response(JSON.stringify({ error: 'Unauthorized client token' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json; charset=utf-8' }
-      }), request);
+      return withCors(jsonResponse({
+        error: 'Unauthorized client token. Check Gateway Client Token in the app settings.',
+        code: 'GATEWAY_INVALID_CLIENT_TOKEN'
+      }, 401), request);
     }
   }
 
   // Use server-side OpenRouter key from Worker secret first.
   // Fallback to incoming Authorization for temporary migration.
   // Support common aliases in case the variable was created with a slightly different name.
-  const serverKey = (
-    env.OPENROUTER_API_KEY ||
-    env.OPEN_ROUTER_API_KEY ||
-    env.OPENROUTER_KEY ||
-    ''
-  ).trim();
+  const serverKey = getServerKey(env);
   const incomingAuth = (request.headers.get('Authorization') || '').trim();
   const authHeader = serverKey ? `Bearer ${serverKey}` : incomingAuth;
 
   if (!authHeader) {
-    return withCors(new Response(JSON.stringify({
-      error: 'Missing API key. Set OPENROUTER_API_KEY in Cloudflare Worker Secrets (or wrangler secret put OPENROUTER_API_KEY), or send Authorization header.'
-    }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json; charset=utf-8' }
-    }), request);
+    return withCors(jsonResponse({
+      error: 'Missing API key. Set OPENROUTER_API_KEY in Cloudflare Worker Secrets, or send Authorization header for temporary browser-side auth.',
+      code: 'GATEWAY_MISSING_UPSTREAM_KEY',
+      configured: false
+    }, 401), request);
   }
 
   const upstreamUrl = new URL(`https://openrouter.ai${url.pathname}${url.search}`);
@@ -117,7 +139,33 @@ async function handleGateway(request, env, url) {
     redirect: 'follow'
   };
 
-  const upstreamResp = await fetch(upstreamUrl.toString(), init);
+  let upstreamResp;
+  try {
+    upstreamResp = await fetch(upstreamUrl.toString(), init);
+  } catch (err) {
+    return withCors(jsonResponse({
+      error: 'OpenRouter upstream request failed before a response was received.',
+      code: 'GATEWAY_UPSTREAM_FETCH_FAILED',
+      detail: String(err?.message || err || 'Fetch failed')
+    }, 502), request);
+  }
+
+  if (!upstreamResp.ok) {
+    const raw = await upstreamResp.text().catch(() => '');
+    let parsed;
+    try { parsed = raw ? JSON.parse(raw) : null; } catch (_) { parsed = null; }
+    const upstreamMessage = (
+      parsed?.error?.message ||
+      parsed?.message ||
+      raw ||
+      `OpenRouter upstream error (HTTP ${upstreamResp.status})`
+    );
+    return withCors(jsonResponse({
+      error: upstreamMessage,
+      code: `GATEWAY_UPSTREAM_${upstreamResp.status}`,
+      upstream_status: upstreamResp.status
+    }, upstreamResp.status), request);
+  }
 
   // Pass-through status/body while keeping permissive CORS for app clients.
   return withCors(new Response(upstreamResp.body, {

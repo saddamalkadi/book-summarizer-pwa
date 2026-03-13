@@ -1294,46 +1294,102 @@ async function fileToText(file){
     });
     const t = await r.text();
     let j; try{ j = JSON.parse(t); }catch(_){ j = null; }
-    if (!r.ok) throw new Error((j?.error?.message) || t || `HTTP ${r.status}`);
-    return extractAssistantText(j);
+    if (!r.ok) throw new Error(extractApiErrorMessage(j, t, r.status));
+
+    const extracted = extractAssistantText(j);
+    if (!String(extracted.text || '').trim()){
+      throw new Error(extracted.diagnostic || 'EMPTY_ASSISTANT_RESPONSE');
+    }
+    return extracted.text;
   }
 
   function textFromPart(part){
     if (part == null) return '';
     if (typeof part === 'string') return part;
     if (typeof part === 'number' || typeof part === 'boolean') return String(part);
-    if (Array.isArray(part)) return part.map(textFromPart).join('');
+    if (Array.isArray(part)) return part.map(textFromPart).filter(Boolean).join('');
 
     if (typeof part === 'object'){
       if (typeof part.text === 'string') return part.text;
       if (typeof part.value === 'string') return part.value;
       if (typeof part.content === 'string') return part.content;
-      if (Array.isArray(part.content)) return part.content.map(textFromPart).join('');
-      if (Array.isArray(part.parts)) return part.parts.map(textFromPart).join('');
+      if (Array.isArray(part.content)) return part.content.map(textFromPart).filter(Boolean).join('');
+      if (Array.isArray(part.parts)) return part.parts.map(textFromPart).filter(Boolean).join('');
+      if (Array.isArray(part.items)) return part.items.map(textFromPart).filter(Boolean).join('');
       if (typeof part.output_text === 'string') return part.output_text;
+      if (typeof part.refusal === 'string') return part.refusal;
+      if (part.type === 'output_text' && typeof part.text === 'string') return part.text;
+      if (part.type === 'text' && typeof part.text === 'string') return part.text;
+      if (typeof part.message === 'string') return part.message;
+      if (part.message && typeof part.message === 'object') return textFromPart(part.message);
     }
     return '';
   }
 
-  function extractAssistantText(payload){
-    if (!payload || typeof payload !== 'object') return '';
-
-    const direct = textFromPart(payload.output_text) || textFromPart(payload.response?.output_text);
+  function extractApiErrorMessage(payload, fallbackText, status){
+    const direct = textFromPart(payload?.error?.message)
+      || textFromPart(payload?.message)
+      || textFromPart(payload?.detail);
     if (direct) return direct;
+    const raw = String(fallbackText || '').trim();
+    if (raw) return raw;
+    return `HTTP ${status}`;
+  }
+
+  function describeResponseShape(payload){
+    if (!payload || typeof payload !== 'object') return 'payload=none';
+    const keys = Object.keys(payload).slice(0, 8).join(',') || 'none';
+    const choices = Array.isArray(payload.choices) ? payload.choices.length : 0;
+    const output = Array.isArray(payload.output) ? payload.output.length : 0;
+    const responseOutput = Array.isArray(payload.response?.output) ? payload.response.output.length : 0;
+    return `keys=${keys} choices=${choices} output=${output} response_output=${responseOutput}`;
+  }
+
+  function extractAssistantText(payload){
+    if (!payload || typeof payload !== 'object'){
+      return { text:'', diagnostic:'EMPTY_ASSISTANT_RESPONSE payload=none' };
+    }
+
+    const directCandidates = [
+      textFromPart(payload.output_text),
+      textFromPart(payload.response?.output_text),
+      textFromPart(payload.message),
+      textFromPart(payload.content)
+    ].filter(Boolean);
+    if (directCandidates.length){
+      return { text: directCandidates.join('\n\n').trim(), diagnostic:'' };
+    }
+
+    const outputEntries = [
+      ...(Array.isArray(payload.output) ? payload.output : []),
+      ...(Array.isArray(payload.response?.output) ? payload.response.output : [])
+    ];
+    for (const entry of outputEntries){
+      const fromOutput = textFromPart(entry?.content)
+        || textFromPart(entry?.text)
+        || textFromPart(entry?.output_text)
+        || textFromPart(entry);
+      if (fromOutput) return { text: fromOutput, diagnostic:'' };
+    }
 
     const choices = Array.isArray(payload.choices) ? payload.choices : [];
     for (const ch of choices){
-      const fromMessage = textFromPart(ch?.message?.content) || textFromPart(ch?.message);
-      if (fromMessage) return fromMessage;
-
-      const fromDelta = textFromPart(ch?.delta?.content) || textFromPart(ch?.delta);
-      if (fromDelta) return fromDelta;
-
-      const fromText = textFromPart(ch?.text);
-      if (fromText) return fromText;
+      const fromMessage = textFromPart(ch?.message?.content)
+        || textFromPart(ch?.message)
+        || textFromPart(ch?.delta?.content)
+        || textFromPart(ch?.delta)
+        || textFromPart(ch?.text);
+      if (fromMessage) return { text: fromMessage, diagnostic:'' };
     }
 
-    return '';
+    const hasStructuredPayload = !!(
+      payload.output_text != null
+      || payload.response?.output_text != null
+      || outputEntries.length
+      || choices.length
+    );
+    const diagnosticCode = hasStructuredPayload ? 'EMPTY_ASSISTANT_RESPONSE' : 'UNRECOGNIZED_ASSISTANT_RESPONSE';
+    return { text:'', diagnostic:`${diagnosticCode} ${describeResponseShape(payload)}` };
   }
 
   async function callGemini({ apiKey, model, prompt, signal, maxOut=2048 }){
@@ -1368,7 +1424,10 @@ async function fileToText(file){
       const t = await r.text();
       let j; try{ j = JSON.parse(t); }catch(_){ j = null; }
       const oneShot = extractAssistantText(j);
-      return String(oneShot || '');
+      if (!String(oneShot.text || '').trim()){
+        throw new Error(oneShot.diagnostic || 'STREAM_EMPTY_RESPONSE');
+      }
+      return String(oneShot.text || '');
     }
 
     const reader = r.body.getReader();
@@ -1414,6 +1473,9 @@ async function fileToText(file){
       }
     }
 
+    if (!String(full || '').trim()){
+      throw new Error('STREAM_EMPTY_RESPONSE');
+    }
     return full;
   }
 
@@ -1529,7 +1591,15 @@ async function fileToText(file){
       const filesText = String($('filesText')?.value || '');
       const rag = await buildRagContextIfEnabled(''); // keep rag stable
       const follow = `تابع الآن بناءً على نتيجة الأداة أعلاه. لا تكرر مخرجات الأداة حرفيًا. إذا احتجت أداة أخرى اطلبها ببلوك tool فقط.`;
-      const messages = buildMessagesForChat(follow, settings, filesText, rag.ctx);
+      const threadSnapshot = getCurThread();
+      const messages = buildMessagesForChat({
+        userText: follow,
+        settings,
+        filesText,
+        ragCtx: rag.ctx,
+        historyMessages: threadSnapshot.messages || [],
+        threadSummary: threadSnapshot.summary || ''
+      });
 
       const extraHeaders = buildProviderHeaders(settings);
       const baseUrl = effectiveBaseUrl(settings) || (settings.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1');
@@ -1609,6 +1679,28 @@ async function maybeUpdateThreadSummary(pid, tid){
     return model;
   }
 
+  function answerHasAgentPlan(ans){
+    const text = String(ans || '').toLowerCase();
+    return text.includes('plan:') || text.includes('الخطة:');
+  }
+
+  function shouldRetryWithoutStreaming(err){
+    const msg = String(err?.message || err || '');
+    return /failed to fetch|networkerror|load failed|network request failed|stream_empty_response|empty_assistant_response|unrecognized_assistant_response/i.test(msg);
+  }
+
+  function getFriendlyChatError(err){
+    const msg = String(err?.message || err || '').trim();
+    if (!msg) return 'حدث خطأ غير معروف أثناء الدردشة.';
+    if (/unauthorized client token/i.test(msg)) return 'تم الوصول إلى Gateway، لكن Gateway Client Token غير صحيح أو مفقود.';
+    if (/missing api key|gateway_missing_upstream_key/i.test(msg)) return 'تم الوصول إلى Gateway، لكن مفتاح OpenRouter غير مضبوط داخل الـ Worker.';
+    if (/failed to fetch|networkerror|load failed|network request failed|cors/i.test(msg)) return 'تعذر الوصول إلى خدمة الدردشة. تحقق من Gateway URL أو CORS أو الاتصال.';
+    if (/stream_empty_response|empty_assistant_response|unrecognized_assistant_response/i.test(msg)) return 'تم الاتصال بالمزوّد لكن الرد رجع فارغًا أو بصيغة غير متوقعة.';
+    if (/missing authentication/i.test(msg)) return 'ضع API Key الصحيح ثم احفظ الإعدادات.';
+    if (/upstream/i.test(msg) || /gateway_upstream_/i.test(msg)) return 'فشل مزود الذكاء الاصطناعي في الرد من جهة الخادم.';
+    return msg;
+  }
+
   
   function buildAutoFilesContext(settings){
     // If filesText area is empty, build a clipped context from project files automatically.
@@ -1677,22 +1769,21 @@ async function maybeUpdateThreadSummary(pid, tid){
     return { role:'user', content };
   }
 
-function buildMessagesForChat(userText, settings, filesText, ragCtx, attachments){
+function buildMessagesForChat({ userText, settings, filesText, ragCtx, attachments, historyMessages=[], threadSummary='' }){
     const sys = buildSystemPrompt(settings);
     const msgs = [{ role:'system', content: sys }];
-    const thread = getCurThread();
-    if (thread.summary && thread.summary.trim()){
-      msgs.push({ role:'system', content: `ملخص المحادثة السابقة (Memory):\n${thread.summary.trim()}` });
+    if (threadSummary && threadSummary.trim()){
+      msgs.push({ role:'system', content: `Conversation memory:\n${threadSummary.trim()}` });
     }
-    const tail = (thread.messages || []).slice(-14);
+    const tail = (Array.isArray(historyMessages) ? historyMessages : []).slice(-14);
     for (const m of tail){
       if (!m?.role || !m?.content) continue;
       msgs.push({ role: m.role, content: m.content });
     }
-        if (filesText && filesText.trim()){
+    if (filesText && filesText.trim()){
       const clipLimit = Number(settings.fileClip || 12000);
       const clip = filesText.length > clipLimit ? clipText(filesText, clipLimit) : filesText;
-      msgs.push({ role:'system', content: `سياق من ملفات المستخدم:
+      msgs.push({ role:'system', content: `User files context:
 ${clip}` });
     }
     if (ragCtx && ragCtx.trim()){
@@ -1711,9 +1802,6 @@ ${clip}` });
     const log = $('chatLog');
     if (!log) return;
     const thread = getCurThread();
-    if (thread.summary && thread.summary.trim()){
-      msgs.push({ role:'system', content: `ملخص المحادثة السابقة (Memory):\n${thread.summary.trim()}` });
-    }
     const msgs = thread.messages || [];
     log.innerHTML = '';
 
@@ -1884,6 +1972,8 @@ function updateChips(){
     const idx = threads.findIndex(t => t.id === tid);
     const thread = threads[idx] || threads[0];
     thread.messages = thread.messages || [];
+    const historySnapshot = thread.messages.slice();
+    const threadSummary = String(thread.summary || '');
 
     const uMsg = { id: makeId('m'), role:'user', content: text, ts: nowTs() };
     thread.messages.push(uMsg);
@@ -1898,7 +1988,15 @@ function updateChips(){
     const attachmentsForRequest = pendingChatAttachments.slice();
     
     const rag = await buildRagContextIfEnabled(text);
-    const messages = buildMessagesForChat(text, settings, filesText, rag.ctx, attachmentsForRequest);
+    const messages = buildMessagesForChat({
+      userText: text,
+      settings,
+      filesText,
+      ragCtx: rag.ctx,
+      attachments: attachmentsForRequest,
+      historyMessages: historySnapshot,
+      threadSummary
+    });
 
     // clear pending attachments after being embedded into the request
     pendingChatAttachments = [];
@@ -1951,13 +2049,11 @@ function updateChips(){
                   aMsg.content = full;
                 }
               });
-              if (!String(ans || '').trim()) throw new Error('STREAM_EMPTY_RESPONSE');
               streamErrLast = null;
               break;
             }catch(streamErr){
               streamErrLast = streamErr;
-              const msg = String(streamErr?.message || streamErr || '');
-              const streamUnavailable = /failed to fetch|networkerror|load failed|network request failed/i.test(msg);
+              const streamUnavailable = shouldRetryWithoutStreaming(streamErr);
               const isLast = i === baseCandidates.length - 1;
               if (!streamUnavailable || isLast) break;
             }
@@ -1980,14 +2076,15 @@ function updateChips(){
                 });
                 callErrLast = null;
                 break;
-              }catch(callErr){
-                callErrLast = callErr;
+                }catch(callErr){
+                  callErrLast = callErr;
+                }
               }
+              if (callErrLast) throw callErrLast;
+              if (!String(ans || '').trim()) throw new Error('EMPTY_ASSISTANT_RESPONSE');
+              updateStreamingAssistant(aId, ans);
             }
-            if (callErrLast) throw callErrLast;
-            updateStreamingAssistant(aId, ans);
-          }
-        } else {
+          } else {
           let callErrLast = null;
           for (let i=0; i<baseCandidates.length; i++){
             const baseUrl = baseCandidates[i];
@@ -1996,15 +2093,18 @@ function updateChips(){
               callErrLast = null;
               break;
             }catch(callErr){
-              callErrLast = callErr;
+                callErrLast = callErr;
+              }
             }
+            if (callErrLast) throw callErrLast;
+            if (!String(ans || '').trim()) throw new Error('EMPTY_ASSISTANT_RESPONSE');
+            updateStreamingAssistant(aId, ans);
           }
-          if (callErrLast) throw callErrLast;
-          updateStreamingAssistant(aId, ans);
         }
-      }
 
-      if (isAgent() && ans && !/الخطة:|plan:/i.test(ans)){
+        if (!String(ans || '').trim()) throw new Error('EMPTY_ASSISTANT_RESPONSE');
+
+        if (isAgent() && ans && !answerHasAgentPlan(ans)){
         ans = `الخطة:\n1) تحليل\n2) تنفيذ\n3) نتيجة\n\nالتنفيذ:\n${ans}\n\nالنتيجة النهائية:\n—`;
       }
 
@@ -2025,15 +2125,14 @@ function updateChips(){
       renderChat();
       toast('✅ تم');
     }catch(e){
-      const em = String(e?.message || e || '');
-      const friendly = em.includes('Missing Authentication') ? '⚠️ ضع API Key الصحيح ثم احفظ الإعدادات.' : em;
+      const friendly = getFriendlyChatError(e);
       showStatus(`❌ خطأ:\n${friendly}`, false);
       $('stopBtn').style.display = 'none';
       const threads2 = loadThreads(pid);
       const idx2 = threads2.findIndex(t => t.id === tid);
       const thread2 = threads2[idx2] || threads2[0];
       const msg2 = (thread2.messages || []).find(m => m.id === aId);
-      if (msg2 && !msg2.content) msg2.content = `❌ ${e?.message || e}`;
+      if (msg2 && !msg2.content) msg2.content = `❌ ${friendly}`;
       threads2[idx2] = thread2;
       saveThreads(pid, threads2);
       renderChat();
