@@ -464,11 +464,10 @@ async function buildRagContextIfEnabled(userText){
     const nextInit = init ? { ...init } : {};
     const gatewayMeta = resolveGatewayRequestMeta(input);
     if (gatewayMeta && !('credentials' in nextInit)){
-      // Keep cookies enabled for gateway calls.
-      // This is required for deployments protected by Cloudflare Access
-      // (otherwise upstream may return: "No cookie auth credentials found").
-      // For gateways that do not rely on cookies, sending credentials is harmless.
-      nextInit.credentials = 'include';
+      // Only attach cookies when the gateway is served from the same origin.
+      // For cross-origin workers (e.g. GitHub Pages -> workers.dev), forcing
+      // `include` can break CORS if the worker responds with wildcard origin.
+      nextInit.credentials = gatewayMeta.sameOriginWithApp ? 'include' : 'omit';
     }
     return nativeFetch(input, nextInit);
   };
