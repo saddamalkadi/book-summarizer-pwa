@@ -3,11 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v7.4</title>
+    <title>AI Workspace Studio v7.5</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
-  <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%231b66ff'/><stop offset='1' stop-color='%230b1020'/></linearGradient></defs><rect width='100' height='100' rx='18' fill='url(%23g)'/><path d='M28 30h44v40H28z' fill='%23ffffff' opacity='.92'/><path d='M34 40h32M34 50h32M34 60h22' stroke='%230b1020' stroke-width='3' stroke-linecap='round'/><circle cx='68' cy='64' r='6' fill='%231b66ff'/></svg>" />
+  <link rel="icon" href="logo.svg" />
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 
 
   <!-- PDF/DOCX parsing (v3) -->
@@ -262,6 +263,97 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       background:linear-gradient(135deg, rgba(27,102,255,.12), rgba(20,184,166,.14));
       border:1px solid rgba(27,102,255,.18); font-size:11px; font-weight:1000; color:#16325f;
     }
+    .brand-identity{display:flex; align-items:center; gap:12px; min-width:0;}
+    .brand-mark{
+      width:52px; height:52px; min-width:52px; border-radius:16px;
+      display:grid; place-items:center;
+      background:linear-gradient(145deg,#091122,#1b66ff 58%,#5eead4 110%);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.22), 0 16px 32px rgba(6,15,35,.28);
+      border:1px solid rgba(255,255,255,.18); overflow:hidden;
+    }
+    .brand-mark img{width:100%; height:100%; display:block; object-fit:cover;}
+    .brand-copy{min-width:0;}
+    .brand-copy .sub{line-height:1.55;}
+    .developer-credit{display:block; margin-top:4px; font-size:11px; opacity:.88; color:rgba(255,255,255,.86);}
+    .account-trigger{
+      border:1px solid rgba(10,20,60,.08);
+      background:linear-gradient(180deg,#fff,#f4f7ff);
+      color:#102040;
+      min-width:170px;
+    }
+    .account-trigger strong{display:block; font-size:12px; font-weight:1000;}
+    .account-trigger span{font-size:11px; color:#60708d;}
+    .account-avatar{
+      width:28px; height:28px; border-radius:50%; object-fit:cover;
+      background:#dbe7ff; border:1px solid rgba(27,102,255,.18);
+    }
+    .plan-pill{
+      display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:999px;
+      font-size:11px; font-weight:1000; background:#eef4ff; color:#123164; border:1px solid rgba(27,102,255,.16);
+    }
+    .plan-pill.premium{background:linear-gradient(135deg,#fff7d6,#ffe28b); color:#6e4a00; border-color:rgba(180,125,0,.22);}
+    .account-card{display:grid; gap:12px;}
+    .account-summary{
+      display:flex; gap:12px; align-items:center; flex-wrap:wrap;
+      border:1px solid rgba(10,20,60,.08); border-radius:18px; padding:14px;
+      background:linear-gradient(180deg,#ffffff,#f8fbff);
+    }
+    .account-summary .account-avatar{width:54px; height:54px; min-width:54px;}
+    .account-meta{display:grid; gap:4px; min-width:0; flex:1;}
+    .account-meta strong{font-size:16px; color:#0b1020;}
+    .account-meta span{font-size:12px; color:#60708d; line-height:1.7;}
+    .account-actions{display:flex; gap:8px; flex-wrap:wrap;}
+    .upgrade-inline{display:grid; gap:10px; grid-template-columns:minmax(0,1fr) auto; align-items:center;}
+    .auth-gate{
+      position:fixed; inset:0; z-index:130; display:none;
+      background:
+        radial-gradient(circle at top right, rgba(27,102,255,.24), transparent 32%),
+        radial-gradient(circle at bottom left, rgba(94,234,212,.18), transparent 28%),
+        rgba(8,12,24,.78);
+      backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+      padding:24px; overflow:auto;
+    }
+    .auth-gate.show{display:grid; place-items:center;}
+    .auth-shell{
+      width:min(1120px,100%);
+      display:grid; grid-template-columns:minmax(320px,1.1fr) minmax(320px,.9fr);
+      gap:18px; align-items:stretch;
+    }
+    .auth-hero,.auth-card{
+      border-radius:28px; border:1px solid rgba(255,255,255,.12);
+      box-shadow:0 28px 70px rgba(2,8,20,.36); overflow:hidden;
+    }
+    .auth-hero{
+      padding:32px; color:#fff;
+      background:
+        radial-gradient(circle at top left, rgba(94,234,212,.24), transparent 28%),
+        linear-gradient(145deg,#081121 0%, #11234f 56%, #1b66ff 100%);
+      display:grid; gap:18px; align-content:start;
+    }
+    .auth-kicker{font-size:12px; font-weight:1000; letter-spacing:.18em; text-transform:uppercase; opacity:.82;}
+    .auth-title{margin:0; font-size:clamp(28px,4vw,44px); line-height:1.12; font-weight:1000;}
+    .auth-copy{margin:0; color:rgba(255,255,255,.84); line-height:1.95; font-size:14px;}
+    .auth-feature-grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px;}
+    .auth-feature{
+      border-radius:18px; padding:14px; background:rgba(255,255,255,.08);
+      border:1px solid rgba(255,255,255,.12); display:grid; gap:5px;
+    }
+    .auth-feature strong{font-size:14px;}
+    .auth-feature span{font-size:12px; color:rgba(255,255,255,.78); line-height:1.7;}
+    .auth-developer{font-size:12px; font-weight:900; color:rgba(255,255,255,.86);}
+    .auth-card{
+      background:linear-gradient(180deg,#ffffff,#f7faff);
+      padding:28px; display:grid; gap:14px; align-content:start;
+    }
+    .auth-card h2{margin:0; font-size:24px; color:#0b1020;}
+    .auth-status{
+      border-radius:16px; padding:12px 14px; line-height:1.85; font-size:13px;
+      border:1px solid rgba(27,102,255,.12);
+    }
+    .auth-note{color:#5a6988; line-height:1.9; font-size:13px;}
+    .auth-google-slot{min-height:44px; display:flex; align-items:center; justify-content:center;}
+    .auth-card .divider{height:1px; background:rgba(10,20,60,.08); margin:2px 0;}
+    .auth-config-grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px;}
     .status[data-tone="busy"]{background:#eef3ff; border-color:#bfd1ff; color:#183b7a;}
     .status[data-tone="success"]{background:#ecfdf5; border-color:#9ee6c1; color:#166534;}
     .status[data-tone="error"]{background:#fff1f2; border-color:#fecdd3; color:#be123c;}
@@ -673,6 +765,14 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
         --user-width: 94%;
         --page-gutter: 14px;
       }
+      .auth-shell{
+        grid-template-columns: 1fr;
+      }
+      .auth-feature-grid,
+      .auth-config-grid,
+      .upgrade-inline{
+        grid-template-columns: 1fr;
+      }
       #page-chat > .toolbar.mainToolbar{
         grid-template-columns: 1fr;
         padding-top: 12px;
@@ -708,6 +808,19 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     @media (max-width:640px){
       :root{
         --page-gutter: 10px;
+      }
+      .auth-gate{
+        padding: 12px;
+      }
+      .auth-hero,
+      .auth-card{
+        border-radius: 22px;
+      }
+      .brand-identity{
+        align-items: flex-start;
+      }
+      .account-trigger{
+        min-width: 0;
       }
       .topbar .row{
         width: 100%;
@@ -1938,11 +2051,11 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     })();
   </script>
 
-  <script src="app.js?v=74"></script>
+<script src="app.js?v=75"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js?v=74").then((registration) => {
+navigator.serviceWorker.register("./sw.js?v=75").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

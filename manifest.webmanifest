@@ -1,7 +1,7 @@
 {
-  "name": "AI Workspace Studio v6.2",
+  "name": "AI Workspace Studio v7.5",
   "short_name": "AI Studio",
-  "description": "Chat • Canvas • KB/RAG • Secure Gateway • Tools/Agent Loop • Workflows • Chat Attachments • Deep Search",
+  "description": "منصة عربية للدردشة والملفات والمعرفة وسير العمل مع تسجيل Google وخطط مجانية ومدفوعة.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -11,12 +11,12 @@
   "dir": "rtl",
   "icons": [
     {
-      "src": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%231b66ff'/><stop offset='1' stop-color='%230b1020'/></linearGradient></defs><rect width='100' height='100' rx='18' fill='url(%23g)'/><path d='M28 30h44v40H28z' fill='%23ffffff' opacity='.92'/><path d='M34 40h32M34 50h32M34 60h22' stroke='%230b1020' stroke-width='3' stroke-linecap='round'/><circle cx='68' cy='64' r='6' fill='%231b66ff'/></svg>",
+      "src": "logo.svg",
       "sizes": "192x192",
       "type": "image/svg+xml"
     },
     {
-      "src": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%231b66ff'/><stop offset='1' stop-color='%230b1020'/></linearGradient></defs><rect width='100' height='100' rx='18' fill='url(%23g)'/><path d='M28 30h44v40H28z' fill='%23ffffff' opacity='.92'/><path d='M34 40h32M34 50h32M34 60h22' stroke='%230b1020' stroke-width='3' stroke-linecap='round'/><circle cx='68' cy='64' r='6' fill='%231b66ff'/></svg>",
+      "src": "logo.svg",
       "sizes": "512x512",
       "type": "image/svg+xml"
     }

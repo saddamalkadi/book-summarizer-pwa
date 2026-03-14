@@ -1,4 +1,4 @@
-/* AI Workspace Studio v7.4 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v7.5 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -32,7 +32,9 @@
     focusMode: 'aistudio_focus_mode_v1',
     studyMode: 'aistudio_study_mode_v1',
     transcribeProfile: 'aistudio_transcribe_profile_v1',
-    transcribeDocxMode: 'aistudio_transcribe_docx_mode_v1'
+    transcribeDocxMode: 'aistudio_transcribe_docx_mode_v1',
+    authState: 'aistudio_auth_state_v1',
+    authConfigCache: 'aistudio_auth_config_v1'
   };
 
   const nowTs = () => Date.now();
@@ -78,9 +80,40 @@
     maxCloudFileMB: 12,
     allowCloudOcr: true,
     allowCloudPolish: true,
+    googleClientId: '',
+    upgradeEmail: 'tntntt830@gmail.com',
 
     orReferer: '',
     orTitle: 'AI Workspace Studio'
+  };
+
+  const DEFAULT_AUTH_STATE = {
+    signedIn: false,
+    plan: 'free',
+    email: '',
+    name: '',
+    picture: '',
+    sessionToken: '',
+    sessionExp: 0,
+    upgradeCode: '',
+    lastVerifiedAt: 0
+  };
+
+  const DEFAULT_AUTH_CONFIG = {
+    authRequired: true,
+    brandName: 'AI Workspace Studio',
+    developerName: 'صدام القاضي',
+    upgradeEmail: 'tntntt830@gmail.com',
+    googleClientId: '',
+    clientIdConfigured: false,
+    premiumEnabled: true
+  };
+
+  const AUTH_RUNTIME = {
+    config: null,
+    configLoadedAt: 0,
+    configPromise: null,
+    booting: false
   };
 
 // ---------------- KB (IndexedDB + RAG) ----------------
@@ -346,6 +379,69 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     return s;
   }
 
+  function getAuthState(){
+    return { ...DEFAULT_AUTH_STATE, ...(loadJSON(KEYS.authState, {}) || {}) };
+  }
+
+  function saveAuthState(patch){
+    const next = { ...getAuthState(), ...(patch || {}) };
+    saveJSON(KEYS.authState, next);
+    return next;
+  }
+
+  function clearAuthState(options = {}){
+    const current = getAuthState();
+    saveJSON(KEYS.authState, {
+      ...DEFAULT_AUTH_STATE,
+      upgradeCode: options.preserveUpgradeCode ? (current.upgradeCode || '') : ''
+    });
+    return getAuthState();
+  }
+
+  function hasValidAuthSession(state = getAuthState()){
+    return !!state.sessionToken && Number(state.sessionExp || 0) > (Date.now() + 30 * 1000);
+  }
+
+  function getAccountPlanLabel(plan = getAuthState().plan){
+    return plan === 'premium' ? 'الخطة المدفوعة' : 'الخطة المجانية';
+  }
+
+  function getGatewayWorkerRoot(settings = getSettings()){
+    return normalizeEndpointUrl(settings.gatewayUrl || '').replace(/\/v1\/?$/i, '');
+  }
+
+  function getLocalAuthConfig(settings = getSettings()){
+    return {
+      ...DEFAULT_AUTH_CONFIG,
+      googleClientId: String(settings.googleClientId || '').trim(),
+      upgradeEmail: String(settings.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail).trim() || DEFAULT_AUTH_CONFIG.upgradeEmail,
+      clientIdConfigured: !!String(settings.googleClientId || '').trim()
+    };
+  }
+
+  function getAuthConfigCached(){
+    if (AUTH_RUNTIME.config) return AUTH_RUNTIME.config;
+    const cached = loadJSON(KEYS.authConfigCache, null);
+    if (cached && typeof cached === 'object'){
+      AUTH_RUNTIME.config = { ...DEFAULT_AUTH_CONFIG, ...cached };
+      return AUTH_RUNTIME.config;
+    }
+    const local = getLocalAuthConfig();
+    AUTH_RUNTIME.config = local;
+    return local;
+  }
+
+  function setAuthConfigCached(config){
+    AUTH_RUNTIME.config = { ...DEFAULT_AUTH_CONFIG, ...(config || {}) };
+    AUTH_RUNTIME.configLoadedAt = Date.now();
+    saveJSON(KEYS.authConfigCache, AUTH_RUNTIME.config);
+    return AUTH_RUNTIME.config;
+  }
+
+  function getEffectiveAuthConfig(settings = getSettings()){
+    return { ...getLocalAuthConfig(settings), ...getAuthConfigCached() };
+  }
+
   function normalizeUrl(u){
     const s = String(u || '').trim();
     return s.replace(/\/+$/,'');
@@ -451,6 +547,109 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     return !!(settings.apiKey || '').trim();
   }
 
+  function getAuthServiceRoot(settings = getSettings()){
+    return getGatewayWorkerRoot(settings);
+  }
+
+  function getAccountRuntimeState(settings = getSettings()){
+    const auth = getAuthState();
+    const config = getEffectiveAuthConfig(settings);
+    const authConfigured = !!String(config.googleClientId || settings.googleClientId || '').trim();
+    const authRequired = config.authRequired !== false && authConfigured;
+    const signedIn = hasValidAuthSession(auth);
+    const premium = signedIn && auth.plan === 'premium';
+    return {
+      auth,
+      config,
+      authRequired,
+      signedIn,
+      premium,
+      plan: premium ? 'premium' : 'free'
+    };
+  }
+
+  async function fetchAuthJson(path, init = {}, settings = getSettings()){
+    const root = getAuthServiceRoot(settings);
+    if (!root) throw new Error('رابط البوابة غير مضبوط لطبقة الحسابات.');
+    const auth = getAuthState();
+    const headers = new Headers(init.headers || {});
+    headers.set('Content-Type', headers.get('Content-Type') || 'application/json');
+    if (settings.gatewayToken) headers.set('X-Client-Token', settings.gatewayToken);
+    if (auth.sessionToken) headers.set('X-App-Session', auth.sessionToken);
+    const response = await fetch(`${root}${path}`, { ...init, headers });
+    const raw = await response.text();
+    let payload = null;
+    try{ payload = raw ? JSON.parse(raw) : null; }catch(_){ payload = null; }
+    if (!response.ok){
+      throw new Error(payload?.error || payload?.message || raw || `HTTP ${response.status}`);
+    }
+    return payload || {};
+  }
+
+  async function loadRemoteAuthConfig(force = false){
+    if (!force && AUTH_RUNTIME.config && (Date.now() - AUTH_RUNTIME.configLoadedAt) < 5 * 60 * 1000){
+      return AUTH_RUNTIME.config;
+    }
+    if (!force && AUTH_RUNTIME.configPromise) return AUTH_RUNTIME.configPromise;
+    const settings = getSettings();
+    const root = getAuthServiceRoot(settings);
+    if (!root){
+      return setAuthConfigCached(getLocalAuthConfig(settings));
+    }
+    AUTH_RUNTIME.configPromise = fetch(`${root}/auth/config`, {
+      headers: settings.gatewayToken ? { 'X-Client-Token': settings.gatewayToken } : {}
+    }).then(async (response) => {
+      const raw = await response.text();
+      let payload = null;
+      try{ payload = raw ? JSON.parse(raw) : null; }catch(_){ payload = null; }
+      if (!response.ok){
+        throw new Error(payload?.error || raw || `HTTP ${response.status}`);
+      }
+      const local = getLocalAuthConfig(settings);
+      const remote = payload || {};
+      return setAuthConfigCached({
+        ...remote,
+        googleClientId: String(remote.googleClientId || local.googleClientId || '').trim(),
+        upgradeEmail: String(remote.upgradeEmail || local.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail).trim(),
+        clientIdConfigured: !!String(remote.googleClientId || local.googleClientId || '').trim()
+      });
+    }).catch(() => {
+      return setAuthConfigCached(getLocalAuthConfig(settings));
+    }).finally(() => {
+      AUTH_RUNTIME.configPromise = null;
+    });
+    return AUTH_RUNTIME.configPromise;
+  }
+
+  function applyAuthResponse(payload, extra = {}){
+    const next = saveAuthState({
+      signedIn: true,
+      plan: payload?.plan === 'premium' ? 'premium' : 'free',
+      email: payload?.email || '',
+      name: payload?.name || payload?.email || '',
+      picture: payload?.picture || '',
+      sessionToken: payload?.sessionToken || payload?.session_token || '',
+      sessionExp: Number(payload?.sessionExp || payload?.session_exp || 0),
+      upgradeCode: extra.upgradeCode || payload?.upgradeCode || getAuthState().upgradeCode || '',
+      lastVerifiedAt: Date.now()
+    });
+    return next;
+  }
+
+  async function verifyStoredAuthSession(force = false){
+    const current = getAuthState();
+    if (!hasValidAuthSession(current)) return clearAuthState({ preserveUpgradeCode: true });
+    if (!force && (Date.now() - Number(current.lastVerifiedAt || 0)) < 3 * 60 * 1000){
+      return current;
+    }
+    try{
+      const payload = await fetchAuthJson('/auth/session', { method:'GET' });
+      return applyAuthResponse(payload, { upgradeCode: current.upgradeCode || '' });
+    }catch(_){
+      return clearAuthState({ preserveUpgradeCode: true });
+    }
+  }
+
   function getConvertWorkerRoot(settings = getSettings()){
     const origins = [
       endpointOrigin(settings?.cloudConvertEndpoint || ''),
@@ -528,7 +727,8 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
 
   function getAppRuntimePolicy(raw = getSettings()){
     const source = { ...DEFAULT_SETTINGS, ...(raw || {}) };
-    const freeMode = !!source.freeMode;
+    const account = getAccountRuntimeState(source);
+    const freeMode = account.authRequired ? (!account.premium || !!source.freeMode) : !!source.freeMode;
     const costGuard = freeMode ? 'strict' : (source.costGuard || 'balanced');
     const caps = getCostGuardCaps(costGuard);
     const notes = [];
@@ -544,6 +744,10 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     const allowEmbeddings = !strictLike;
     const allowRag = !strictLike;
     const allowThreadSummary = !strictLike;
+
+    if (account.authRequired){
+      notes.push(account.premium ? 'حساب مدفوع نشط' : 'حساب مجاني');
+    }
 
     if (freeMode){
       const gatewayRoot = normalizeUrl(resolveGatewayApiRoot(source));
@@ -573,9 +777,14 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     runtime.webMode = allowWeb ? (source.webMode || 'off') : 'off';
 
     let blockedReason = '';
-    if (freeMode && !(normalizeUrl(resolveGatewayApiRoot(runtime)) || isOpenRouter(runtime))){
+    if (account.authRequired && !account.signedIn){
+      blockedReason = account.config.clientIdConfigured
+        ? 'سجّل الدخول بحساب Gmail للمتابعة والوصول إلى الخطة المجانية أو المدفوعة.'
+        : 'تسجيل Google غير مضبوط بعد. أضف Google Client ID في إعدادات المنصة أو من تهيئة الـ Worker.';
+    }
+    if (!blockedReason && freeMode && !(normalizeUrl(resolveGatewayApiRoot(runtime)) || isOpenRouter(runtime))){
       blockedReason = 'الوضع المجاني يحتاج Gateway أو OpenRouter مباشر حتى يعمل على مستوى التطبيق بالكامل.';
-    } else if (!hasAuthReady(runtime)){
+    } else if (!blockedReason && !hasAuthReady(runtime)){
       blockedReason = freeMode
         ? 'الوضع المجاني يحتاج Gateway أو OpenRouter مباشر مع إعداد مصادقة صالح.'
         : getMissingAuthMessage(runtime);
@@ -1376,7 +1585,443 @@ function refreshDeepSearchBtn(){
     input.style.height = `${Math.min(220, Math.max(58, input.scrollHeight))}px`;
   }
 
+  function getBrandMarkHtml(){
+    return `<img src="logo.svg" alt="شعار AI Workspace Studio" />`;
+  }
+
+  function getAuthGoogleClientId(settings = getSettings()){
+    const config = getEffectiveAuthConfig(settings);
+    return String(config.googleClientId || settings.googleClientId || '').trim();
+  }
+
+  function setAuthGateStatus(message, tone = 'info'){
+    const box = $('authGateStatus');
+    if (!box) return;
+    box.dataset.tone = tone;
+    box.textContent = message || 'سجّل الدخول بحساب Gmail للدخول إلى المنصة ومتابعة العمل على خطتك.';
+  }
+
+  function syncAccountPlanControls(){
+    const account = getAccountRuntimeState();
+    const freeLocked = account.authRequired && !account.premium;
+    if ($('freeMode')){
+      $('freeMode').checked = freeLocked ? true : !!getSettings().freeMode;
+      $('freeMode').disabled = freeLocked;
+      $('freeMode').title = freeLocked ? 'الخطة المجانية تفرض الوضع المجاني تلقائيًا.' : '';
+    }
+    if ($('costGuard')){
+      if (freeLocked) $('costGuard').value = 'strict';
+      $('costGuard').disabled = freeLocked;
+      $('costGuard').title = freeLocked ? 'الخطة المجانية تفرض سياسة تكلفة اقتصادية صارمة.' : '';
+    }
+  }
+
+  function ensureAccountChrome(){
+    const brand = document.querySelector('.brand');
+    if (brand && !brand.querySelector('.brand-identity')){
+      brand.innerHTML = `
+        <div class="brand-identity">
+          <div class="brand-mark">${getBrandMarkHtml()}</div>
+          <div class="brand-copy">
+            <div class="name">AI Workspace Studio</div>
+            <div class="sub">منصة عربية للدردشة والبحث والملفات وسير العمل</div>
+            <span class="developer-credit">تم تطوير التطبيق بواسطة صدام القاضي</span>
+          </div>
+        </div>
+        <button class="iconbtn" id="closeSideBtn" title="إغلاق">✕</button>`;
+    }
+
+    const topActions = document.querySelector('.topbar .topbar-actions');
+    if (topActions && !$('accountTriggerBtn')){
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.id = 'accountTriggerBtn';
+      button.className = 'btn ghost sm with-label account-trigger';
+      button.innerHTML = `
+        <img class="account-avatar" id="accountTriggerAvatar" alt="" />
+        <span>
+          <strong id="accountTriggerName">الحساب</strong>
+          <span id="accountTriggerPlan">الخطة المجانية</span>
+        </span>`;
+      topActions.insertBefore(button, $('historyDrawerBtn') || $('focusModeBtn') || $('headerCollapseBtn'));
+    }
+
+    if (!$('authGate')){
+      document.body.insertAdjacentHTML('afterbegin', `
+        <div class="auth-gate" id="authGate">
+          <div class="auth-shell">
+            <section class="auth-hero">
+              <div class="brand-identity">
+                <div class="brand-mark">${getBrandMarkHtml()}</div>
+                <div class="brand-copy">
+                  <div class="name">AI Workspace Studio</div>
+                  <div class="sub">دردشة • معرفة • ملفات • مشاريع • تحويلات</div>
+                </div>
+              </div>
+              <div class="auth-kicker">GMAIL ACCESS</div>
+              <h1 class="auth-title">ابدأ من حساب Gmail ثم تحكّم بالخطة المجانية أو المدفوعة من نفس المنصة.</h1>
+              <p class="auth-copy">تسجيل الدخول يفعّل الهوية، يربط الخطة المجانية افتراضيًا، ويتيح طلب الترقية وإدخال كود التفعيل عند وصوله على بريدك.</p>
+              <div class="auth-feature-grid">
+                <div class="auth-feature"><strong>خطة مجانية</strong><span>تشغيل اقتصادي آمن ومحدود التكلفة على مستوى التطبيق بالكامل.</span></div>
+                <div class="auth-feature"><strong>ترقية مرنة</strong><span>إرسال طلب ترقية إلى بريد الإدارة ثم تفعيل الكود داخل الحساب نفسه.</span></div>
+                <div class="auth-feature"><strong>سجل موحّد</strong><span>المشاريع والمحادثات والملفات تبقى مرتبطة بجلسة حسابك الحالية.</span></div>
+                <div class="auth-feature"><strong>إدارة عربية</strong><span>واجهة عربية احترافية مع طبقة تشغيل واضحة للخطة والتكلفة.</span></div>
+              </div>
+              <div class="auth-developer">تم تطوير التطبيق بواسطة صدام القاضي</div>
+            </section>
+            <section class="auth-card">
+              <h2>تسجيل الدخول إلى المنصة</h2>
+              <div class="auth-status status" id="authGateStatus" data-tone="info">سجّل الدخول بحساب Gmail للدخول إلى المنصة ومتابعة العمل على خطتك.</div>
+              <div class="auth-google-slot" id="googleSignInSlot"></div>
+              <div class="auth-note" id="authGatePlanNote">بعد تسجيل الدخول ستدخل تلقائيًا إلى الخطة المجانية، ويمكنك لاحقًا تفعيل كود الترقية للخطة المدفوعة.</div>
+              <div class="account-actions">
+                <button class="btn ghost sm with-label" type="button" id="authRetryBtn"><span class="icon">↻</span><span class="label">إعادة التهيئة</span></button>
+                <button class="btn ghost sm with-label" type="button" id="authCloseBtn"><span class="icon">✕</span><span class="label">إغلاق</span></button>
+              </div>
+              <div class="divider"></div>
+              <details class="tool-group" open>
+                <summary class="workspace-section-toggle">
+                  <span class="workspace-section-head">
+                    <span class="workspace-section-title">تهيئة الدخول المحلية</span>
+                    <span class="workspace-section-summary">استخدمها فقط إذا لم يكن Google Client ID مضبوطًا على الـ Worker بعد.</span>
+                  </span>
+                  <span class="workspace-section-chevron">⌄</span>
+                </summary>
+                <div class="tool-group-body" style="padding-top:14px">
+                  <div class="auth-config-grid">
+                    <div>
+                      <label class="hint">Google Client ID</label>
+                      <input id="authGateGoogleClientId" type="text" placeholder="أدخل Google Client ID للتطبيق" />
+                    </div>
+                    <div>
+                      <label class="hint">بريد طلب الترقية</label>
+                      <input id="authGateUpgradeEmail" type="email" placeholder="tntntt830@gmail.com" />
+                    </div>
+                    <div style="grid-column:1/-1">
+                      <label class="hint">رابط البوابة</label>
+                      <input id="authGateGatewayUrl" type="text" placeholder="https://sadam-key.tntntt830.workers.dev" />
+                    </div>
+                  </div>
+                  <div class="account-actions" style="margin-top:12px">
+                    <button class="btn sm with-label" type="button" id="authSaveLocalConfigBtn"><span class="icon">💾</span><span class="label">حفظ التهيئة المحلية</span></button>
+                  </div>
+                </div>
+              </details>
+            </section>
+          </div>
+        </div>`);
+    }
+
+    const settingsBody = document.querySelector('#page-settings .panel .body');
+    if (settingsBody && !$('settingsAccountCard')){
+      settingsBody.insertAdjacentHTML('afterbegin', `
+        <div class="account-card" id="settingsAccountCard" style="margin-bottom:16px">
+          <div class="account-summary">
+            <img class="account-avatar" id="settingsAccountAvatar" alt="" />
+            <div class="account-meta">
+              <strong id="settingsAccountName">الحساب غير مسجل</strong>
+              <span id="settingsAccountEmail">سجّل الدخول بحساب Gmail لتفعيل الخطة المجانية أو المدفوعة.</span>
+              <span id="settingsAccountHint">تُفرض الخطة المجانية تلقائيًا بعد تسجيل الدخول، ويمكنك ترقية الحساب بكود يصل إليك عبر البريد.</span>
+            </div>
+            <span class="plan-pill" id="settingsPlanPill">الخطة المجانية</span>
+          </div>
+          <div class="account-actions">
+            <button class="btn sm with-label" type="button" id="accountSignInBtn"><span class="icon">🔐</span><span class="label">تسجيل الدخول</span></button>
+            <button class="btn ghost sm with-label" type="button" id="accountUpgradeRequestBtn"><span class="icon">✉️</span><span class="label">طلب ترقية</span></button>
+            <button class="btn ghost sm with-label" type="button" id="accountLogoutBtn"><span class="icon">↩</span><span class="label">تسجيل الخروج</span></button>
+          </div>
+          <div class="upgrade-inline">
+            <input id="upgradeCodeInput" type="text" placeholder="أدخل كود الترقية الذي وصلك عبر البريد" />
+            <button class="btn dark sm with-label" type="button" id="activateUpgradeBtn"><span class="icon">⚡</span><span class="label">تفعيل الكود</span></button>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <div class="col">
+              <label class="hint">Google Client ID</label>
+              <input id="googleClientId" type="text" placeholder="Google Client ID للتطبيق" />
+            </div>
+            <div class="col">
+              <label class="hint">بريد طلب الترقية</label>
+              <input id="upgradeEmail" type="email" placeholder="tntntt830@gmail.com" />
+            </div>
+          </div>
+        </div>`);
+    }
+  }
+
+  function syncAccountUi(){
+    ensureAccountChrome();
+    const settings = getSettings();
+    const auth = getAuthState();
+    const config = getEffectiveAuthConfig(settings);
+    const signedIn = hasValidAuthSession(auth);
+    const plan = signedIn && auth.plan === 'premium' ? 'premium' : 'free';
+    const displayName = signedIn ? (auth.name || auth.email || 'الحساب') : 'تسجيل الدخول';
+    const displayEmail = signedIn ? (auth.email || 'حساب Gmail') : 'سجّل الدخول بحساب Gmail';
+    const planLabel = getAccountPlanLabel(plan);
+    const avatar = signedIn && auth.picture ? auth.picture : 'logo.svg';
+
+    if ($('accountTriggerAvatar')) $('accountTriggerAvatar').src = avatar;
+    if ($('accountTriggerName')) $('accountTriggerName').textContent = displayName;
+    if ($('accountTriggerPlan')) $('accountTriggerPlan').textContent = planLabel;
+
+    if ($('settingsAccountAvatar')) $('settingsAccountAvatar').src = avatar;
+    if ($('settingsAccountName')) $('settingsAccountName').textContent = signedIn ? displayName : 'الحساب غير مسجل';
+    if ($('settingsAccountEmail')) $('settingsAccountEmail').textContent = displayEmail;
+    if ($('settingsAccountHint')) $('settingsAccountHint').textContent = signedIn
+      ? (plan === 'premium'
+        ? 'الحساب يعمل الآن على الخطة المدفوعة. يمكنك استخدام المزايا المدفوعة أو تشغيل الوضع المجاني يدويًا لتقليل التكلفة.'
+        : 'الحساب يعمل الآن على الخطة المجانية. الترقية متاحة عبر طلب بريدي ثم كود تفعيل.')
+      : 'سجّل الدخول أولاً، ثم اطلب الترقية أو فعّل الكود إذا وصلك من الإدارة.';
+    if ($('settingsPlanPill')){
+      $('settingsPlanPill').textContent = planLabel;
+      $('settingsPlanPill').classList.toggle('premium', plan === 'premium');
+    }
+    if ($('accountSignInBtn')) $('accountSignInBtn').textContent = signedIn ? 'إعادة المصادقة' : 'تسجيل الدخول';
+    if ($('accountUpgradeRequestBtn')) $('accountUpgradeRequestBtn').disabled = !signedIn;
+    if ($('accountLogoutBtn')) $('accountLogoutBtn').disabled = !signedIn;
+    if ($('activateUpgradeBtn')) $('activateUpgradeBtn').disabled = !signedIn;
+    if ($('upgradeCodeInput') && auth.upgradeCode && !$('upgradeCodeInput').value) $('upgradeCodeInput').value = auth.upgradeCode;
+
+    if ($('googleClientId')) $('googleClientId').value = settings.googleClientId || config.googleClientId || '';
+    if ($('upgradeEmail')) $('upgradeEmail').value = settings.upgradeEmail || config.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail;
+    if ($('authGateGoogleClientId')) $('authGateGoogleClientId').value = settings.googleClientId || config.googleClientId || '';
+    if ($('authGateUpgradeEmail')) $('authGateUpgradeEmail').value = settings.upgradeEmail || config.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail;
+    if ($('authGateGatewayUrl')) $('authGateGatewayUrl').value = settings.gatewayUrl || DEFAULT_SETTINGS.gatewayUrl;
+    if ($('authGatePlanNote')) $('authGatePlanNote').textContent = plan === 'premium'
+      ? 'الحساب الحالي مدفوع. يمكنك إغلاق هذه الشاشة أو إعادة المصادقة إذا لزم.'
+      : 'بعد تسجيل الدخول ستبدأ بالخطة المجانية. للترقية اطلب كودًا ثم فعّله من صفحة الإعدادات.';
+
+    syncAccountPlanControls();
+  }
+
+  function waitForGoogleIdentity(timeoutMs = 12000){
+    return new Promise((resolve) => {
+      const ready = () => !!(window.google && window.google.accounts && window.google.accounts.id);
+      if (ready()) return resolve(true);
+      const startedAt = Date.now();
+      const timer = setInterval(() => {
+        if (ready()){
+          clearInterval(timer);
+          resolve(true);
+          return;
+        }
+        if ((Date.now() - startedAt) >= timeoutMs){
+          clearInterval(timer);
+          resolve(false);
+        }
+      }, 200);
+    });
+  }
+
+  async function renderGoogleButton(force = false){
+    const slot = $('googleSignInSlot');
+    if (!slot) return;
+    const clientId = getAuthGoogleClientId();
+    if (!clientId){
+      slot.innerHTML = '<div class="hint">أدخل Google Client ID أولاً من التهيئة المحلية أو من إعدادات المنصة.</div>';
+      setAuthGateStatus('تسجيل Google غير مضبوط بعد. أضف Google Client ID ثم أعد التهيئة.', 'error');
+      return;
+    }
+    const ready = await waitForGoogleIdentity();
+    if (!ready){
+      slot.innerHTML = '<div class="hint">تعذر تحميل خدمة Google Sign-In. تأكد من الاتصال ثم أعد المحاولة.</div>';
+      setAuthGateStatus('تعذر تحميل خدمة تسجيل الدخول من Google.', 'error');
+      return;
+    }
+    try{
+      if (force) slot.innerHTML = '';
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: handleGoogleCredentialResponse,
+        auto_select: false,
+        cancel_on_tap_outside: false,
+        context: 'signin'
+      });
+      slot.innerHTML = '';
+      window.google.accounts.id.renderButton(slot, {
+        theme: 'outline',
+        size: 'large',
+        shape: 'pill',
+        text: 'continue_with',
+        logo_alignment: 'right',
+        width: Math.min(360, Math.max(260, slot.clientWidth || 320))
+      });
+      setAuthGateStatus('سجّل الدخول بحساب Gmail للدخول إلى المنصة ومتابعة العمل على خطتك.', 'info');
+    }catch(error){
+      slot.innerHTML = '<div class="hint">تعذر تهيئة زر تسجيل الدخول حاليًا.</div>';
+      setAuthGateStatus(`تعذر تهيئة Google Sign-In: ${error?.message || error}`, 'error');
+    }
+  }
+
+  function openAuthGate(message = ''){
+    ensureAccountChrome();
+    $('authGate')?.classList.add('show');
+    setAuthGateStatus(message || '', 'info');
+    renderGoogleButton().catch((error) => {
+      setAuthGateStatus(`تعذر تهيئة تسجيل Google: ${error?.message || error}`, 'error');
+    });
+  }
+
+  function closeAuthGate(force = false){
+    const account = getAccountRuntimeState();
+    if (!force && account.authRequired && !hasValidAuthSession()){
+      return;
+    }
+    $('authGate')?.classList.remove('show');
+  }
+
+  async function handleGoogleCredentialResponse(response){
+    try{
+      setAuthGateStatus('جارٍ التحقق من حساب Google وتأسيس الجلسة...', 'busy');
+      const code = ($('upgradeCodeInput')?.value || getAuthState().upgradeCode || '').trim();
+      const payload = await fetchAuthJson('/auth/google', {
+        method: 'POST',
+        body: JSON.stringify({
+          credential: response?.credential || '',
+          clientId: getAuthGoogleClientId(),
+          upgradeCode: code
+        })
+      });
+      applyAuthResponse(payload, { upgradeCode: code });
+      syncAccountUi();
+      refreshModeButtons();
+      renderSettings();
+      refreshStrategicWorkspace().catch(()=>{});
+      closeAuthGate(true);
+      toast('✅ تم تسجيل الدخول بنجاح');
+    }catch(error){
+      setAuthGateStatus(`فشل تسجيل الدخول: ${error?.message || error}`, 'error');
+    }
+  }
+
+  function buildUpgradeMailto(account = getAuthState(), config = getEffectiveAuthConfig()){
+    const to = encodeURIComponent(config.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail);
+    const subject = encodeURIComponent(`طلب ترقية حساب - ${account.email || 'مستخدم جديد'}`);
+    const body = encodeURIComponent([
+      'مرحبًا،',
+      '',
+      'أرغب في ترقية حسابي إلى الخطة المدفوعة.',
+      `الاسم: ${account.name || ''}`,
+      `البريد: ${account.email || ''}`,
+      `الخطة الحالية: ${getAccountPlanLabel(account.plan)}`,
+      `التاريخ: ${new Date().toLocaleString('ar-SA')}`,
+      '',
+      'يرجى إرسال كود الترقية لهذا الحساب.'
+    ].join('\n'));
+    return `mailto:${to}?subject=${subject}&body=${body}`;
+  }
+
+  async function requestUpgradeByEmail(){
+    const account = getAuthState();
+    if (!hasValidAuthSession(account)){
+      openAuthGate('سجّل الدخول أولاً ثم أرسل طلب الترقية.');
+      return;
+    }
+    try{
+      const payload = await fetchAuthJson('/auth/upgrade/request', {
+        method: 'POST',
+        body: JSON.stringify({ appVersion: '7.5' })
+      }).catch(() => null);
+      const mailto = payload?.mailto || buildUpgradeMailto(account, getEffectiveAuthConfig());
+      window.location.href = mailto;
+      toast('✉️ تم تجهيز رسالة طلب الترقية');
+    }catch(error){
+      toast(`⚠️ تعذر تجهيز طلب الترقية: ${error?.message || error}`);
+    }
+  }
+
+  async function activateUpgradeCodeFromUi(){
+    const auth = getAuthState();
+    if (!hasValidAuthSession(auth)){
+      openAuthGate('سجّل الدخول أولاً ثم فعّل كود الترقية.');
+      return;
+    }
+    const code = String($('upgradeCodeInput')?.value || '').trim();
+    if (!code) return toast('⚠️ أدخل كود الترقية أولاً.');
+    try{
+      const payload = await fetchAuthJson('/auth/upgrade/activate', {
+        method: 'POST',
+        body: JSON.stringify({ code })
+      });
+      applyAuthResponse(payload, { upgradeCode: code });
+      syncAccountUi();
+      refreshModeButtons();
+      renderSettings();
+      refreshStrategicWorkspace().catch(()=>{});
+      toast('✅ تم تفعيل الخطة المدفوعة');
+    }catch(error){
+      toast(`⚠️ تعذر تفعيل الكود: ${error?.message || error}`);
+    }
+  }
+
+  function logoutCurrentAccount(){
+    clearAuthState();
+    try{ window.google?.accounts?.id?.disableAutoSelect(); }catch(_){}
+    syncAccountUi();
+    refreshModeButtons();
+    refreshStrategicWorkspace().catch(()=>{});
+    openAuthGate('تم تسجيل الخروج. سجّل الدخول مرة أخرى بحساب Gmail للمتابعة.');
+  }
+
+  function openAccountCenter(){
+    if (!hasValidAuthSession()){
+      openAuthGate();
+      return;
+    }
+    setActiveNav('settings');
+    renderSettings();
+    window.setTimeout(() => {
+      $('settingsAccountCard')?.scrollIntoView({ behavior:'smooth', block:'start' });
+    }, 60);
+  }
+
+  function saveLocalAuthConfigFromUi(source = 'settings'){
+    const googleClientId = source === 'gate'
+      ? String($('authGateGoogleClientId')?.value || '').trim()
+      : String($('googleClientId')?.value || '').trim();
+    const upgradeEmail = source === 'gate'
+      ? String($('authGateUpgradeEmail')?.value || '').trim()
+      : String($('upgradeEmail')?.value || '').trim();
+    const gatewayUrl = source === 'gate'
+      ? normalizeEndpointUrl($('authGateGatewayUrl')?.value || '')
+      : normalizeEndpointUrl($('gatewayUrl')?.value || '');
+
+    setSettings({
+      googleClientId,
+      upgradeEmail: upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail,
+      gatewayUrl: gatewayUrl || getSettings().gatewayUrl
+    });
+    AUTH_RUNTIME.config = null;
+    loadRemoteAuthConfig(true).then(() => {
+      syncAccountUi();
+      renderGoogleButton(true).catch(()=>{});
+      renderSettings();
+      refreshStrategicWorkspace().catch(()=>{});
+      toast('✅ تم حفظ تهيئة تسجيل الدخول');
+    });
+  }
+
+  async function initializeAuthExperience(){
+    ensureAccountChrome();
+    if (AUTH_RUNTIME.booting) return;
+    AUTH_RUNTIME.booting = true;
+    try{
+      await loadRemoteAuthConfig(false);
+      await verifyStoredAuthSession(false);
+      syncAccountUi();
+      const account = getAccountRuntimeState();
+      if (account.authRequired && !hasValidAuthSession()){
+        openAuthGate();
+      } else {
+        closeAuthGate(true);
+      }
+    }finally{
+      AUTH_RUNTIME.booting = false;
+    }
+  }
+
   function ensureStrategicChrome(){
+    ensureAccountChrome();
     const sideCard = document.querySelector('.sidecard');
     if (sideCard && !sideCard.classList.contains('strategic-sidecard')){
       sideCard.classList.add('strategic-sidecard');
@@ -2306,6 +2951,7 @@ function refreshDeepSearchBtn(){
     const files = loadFiles(pid);
     const chunks = await kbCountProject(pid).catch(() => 0);
     const downloads = loadDownloads().length;
+    const runtime = policy.runtime;
     const modeLabels = [
       settings.streaming ? 'بث مباشر' : 'دفعة واحدة',
       modes.rag ? 'RAG مفعّل' : 'RAG متوقف',
@@ -4621,7 +5267,10 @@ function updateChips(){
     const rawSettings = getSettings();
     const policy = getAppRuntimePolicy(rawSettings);
     const settings = policy.runtime;
-    if (!policy.allowChat) return toast(`⚠️ ${policy.blockedReason}`);
+    if (!policy.allowChat){
+      if (getAccountRuntimeState().authRequired && !hasValidAuthSession()) openAuthGate(policy.blockedReason);
+      return toast(`⚠️ ${policy.blockedReason}`);
+    }
     if (!hasAuthReady(settings)) return toast(`⚠️ ${getMissingAuthMessage(settings)}`);
 
     const pid = getCurProjectId();
@@ -5040,7 +5689,10 @@ async function runResearchAgent(topicOverride){
     const rawSettings = getSettings();
     const policy = getAppRuntimePolicy(rawSettings);
     const settings = policy.runtime;
-    if (!policy.allowChat) return toast(`⚠️ ${policy.blockedReason}`);
+    if (!policy.allowChat){
+      if (getAccountRuntimeState().authRequired && !hasValidAuthSession()) openAuthGate(policy.blockedReason);
+      return toast(`⚠️ ${policy.blockedReason}`);
+    }
     if (!hasAuthReady(settings)) return toast(`⚠️ ${getMissingAuthMessage(settings)}`);
     const raw = $('canvasEditor').value || '';
     if (!raw.trim()) return;
@@ -5574,6 +6226,8 @@ let pinOnly = false;
     if ($('cloudRetryMax')) $('cloudRetryMax').value = String(s.cloudRetryMax || 2);
     if ($('freeMode')) $('freeMode').checked = !!s.freeMode;
     if ($('costGuard')) $('costGuard').value = s.costGuard || 'balanced';
+    if ($('googleClientId')) $('googleClientId').value = s.googleClientId || '';
+    if ($('upgradeEmail')) $('upgradeEmail').value = s.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail;
     if ($('maxCloudPdfPages')) $('maxCloudPdfPages').value = String(s.maxCloudPdfPages || DEFAULT_SETTINGS.maxCloudPdfPages);
     if ($('maxCloudFileMB')) $('maxCloudFileMB').value = String(s.maxCloudFileMB || DEFAULT_SETTINGS.maxCloudFileMB);
     if ($('allowCloudOcr')) $('allowCloudOcr').checked = !!s.allowCloudOcr;
@@ -5590,6 +6244,7 @@ let pinOnly = false;
     $('ragToggle').checked = !!s.rag;
 
     refreshModeButtons();
+    syncAccountUi();
     refreshStrategicWorkspace().catch(()=>{});
   }
 
@@ -5604,6 +6259,8 @@ let pinOnly = false;
     const cloudRetryMax = $('cloudRetryMax') ? clamp(Number($('cloudRetryMax').value || 2), 1, 5) : 2;
     const freeMode = $('freeMode') ? !!$('freeMode').checked : false;
     const costGuard = $('costGuard') ? $('costGuard').value : 'balanced';
+    const googleClientId = $('googleClientId') ? $('googleClientId').value.trim() : '';
+    const upgradeEmail = $('upgradeEmail') ? $('upgradeEmail').value.trim() : DEFAULT_AUTH_CONFIG.upgradeEmail;
     const maxCloudPdfPages = $('maxCloudPdfPages') ? clamp(Number($('maxCloudPdfPages').value || DEFAULT_SETTINGS.maxCloudPdfPages), 1, 400) : DEFAULT_SETTINGS.maxCloudPdfPages;
     const maxCloudFileMB = $('maxCloudFileMB') ? clamp(Number($('maxCloudFileMB').value || DEFAULT_SETTINGS.maxCloudFileMB), 1, 200) : DEFAULT_SETTINGS.maxCloudFileMB;
     const allowCloudOcr = $('allowCloudOcr') ? !!$('allowCloudOcr').checked : true;
@@ -5657,6 +6314,8 @@ let pinOnly = false;
       ocrLang: ocrLang || 'ara+eng',
       freeMode,
       costGuard,
+      googleClientId,
+      upgradeEmail: upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail,
       maxCloudPdfPages,
       maxCloudFileMB,
       allowCloudOcr,
@@ -5673,6 +6332,7 @@ let pinOnly = false;
     if ($('toolsToggle')) $('toolsToggle').checked = !!s.toolsEnabled;
 
     toast('✅ تم حفظ الإعدادات');
+    loadRemoteAuthConfig(true).then(() => syncAccountUi()).catch(() => syncAccountUi());
     refreshModeButtons();
     refreshStrategicWorkspace().catch(()=>{});
     return s;
@@ -5909,6 +6569,25 @@ let pinOnly = false;
     $('openSideBtn').addEventListener('click', openSide);
     $('closeSideBtn').addEventListener('click', closeSide);
     back.addEventListener('click', closeSide);
+    $('accountTriggerBtn')?.addEventListener('click', openAccountCenter);
+    $('accountSignInBtn')?.addEventListener('click', () => openAuthGate());
+    $('accountUpgradeRequestBtn')?.addEventListener('click', requestUpgradeByEmail);
+    $('accountLogoutBtn')?.addEventListener('click', logoutCurrentAccount);
+    $('activateUpgradeBtn')?.addEventListener('click', activateUpgradeCodeFromUi);
+    $('authRetryBtn')?.addEventListener('click', async () => {
+      AUTH_RUNTIME.config = null;
+      await loadRemoteAuthConfig(true);
+      syncAccountUi();
+      renderGoogleButton(true).catch(()=>{});
+    });
+    $('authCloseBtn')?.addEventListener('click', () => closeAuthGate());
+    $('authSaveLocalConfigBtn')?.addEventListener('click', () => saveLocalAuthConfigFromUi('gate'));
+    $('upgradeCodeInput')?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter'){
+        event.preventDefault();
+        activateUpgradeCodeFromUi();
+      }
+    });
 
     // nav
     $('nav').addEventListener('click', (e) => {
@@ -6678,8 +7357,8 @@ ${e?.message||e}`, false);
     loadThreads(pid);
     $('curProjectName').textContent = getCurProject().name;
 
-    renderSettings();
     ensureStrategicChrome();
+    renderSettings();
 
     // Enable web search by default for first-time users
     try{
@@ -6717,6 +7396,7 @@ ${e?.message||e}`, false);
 
     bind();
     applyShellLayout();
+    initializeAuthExperience().catch(()=>{});
     refreshStrategicWorkspace().catch(()=>{});
   }
 

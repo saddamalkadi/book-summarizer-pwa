@@ -14,6 +14,11 @@
   ],
   "vars": {
     "OPENROUTER_TITLE": "AI Workspace Studio",
-    "OPENROUTER_REFERER": "https://dash.cloudflare.com"
+    "OPENROUTER_REFERER": "https://dash.cloudflare.com",
+    "APP_BRAND_NAME": "AI Workspace Studio",
+    "APP_DEVELOPER_NAME": "صدام القاضي",
+    "APP_UPGRADE_EMAIL": "tntntt830@gmail.com",
+    "AUTH_REQUIRE_GOOGLE": "true",
+    "GOOGLE_CLIENT_ID_WEB": ""
   }
 }
