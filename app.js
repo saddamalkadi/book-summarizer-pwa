@@ -1,4 +1,4 @@
-/* AI Workspace Studio v8.2 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v8.3 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);

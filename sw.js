@@ -1,5 +1,5 @@
 // AI Workspace Studio - Service Worker
-const APP_VERSION = "82";
+const APP_VERSION = "83";
 const CACHE_NAME = `aistudio-cache-v${APP_VERSION}`;
 const CORE = [
   "./",
@@ -55,15 +55,29 @@ async function networkFirst(request){
   }
 }
 
+function isDirectDownloadPath(pathname){
+  return pathname.includes("/downloads/") ||
+    pathname.endsWith("/downloads") ||
+    /\.(apk|aab|zip)$/i.test(pathname);
+}
+
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
   if (event.request.mode === "navigate") {
+    if (isDirectDownloadPath(url.pathname)) {
+      event.respondWith(networkFirst(event.request));
+      return;
+    }
     const appShellRequest = new Request("./index.html", { cache: "no-store" });
     event.respondWith(networkFirst(appShellRequest));
     return;
   }
   if (url.origin === self.location.origin) {
+    if (isDirectDownloadPath(url.pathname)) {
+      event.respondWith(networkFirst(event.request));
+      return;
+    }
     if (url.pathname.endsWith("/app.js") || url.pathname.endsWith("/index.html")) {
       event.respondWith(networkFirst(event.request));
       return;
