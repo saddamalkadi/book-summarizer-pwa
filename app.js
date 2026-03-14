@@ -640,6 +640,80 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     return AUTH_RUNTIME.configPromise;
   }
 
+  async function fetchAuthJson(path, init = {}, settings = getSettings()){
+    const run = async (activeSettings) => {
+      const root = getAuthServiceRoot(activeSettings);
+      if (!root) throw new Error('رابط البوابة غير مضبوط لطبقة الحسابات.');
+      const auth = getAuthState();
+      const headers = new Headers(init.headers || {});
+      headers.set('Content-Type', headers.get('Content-Type') || 'application/json');
+      if (activeSettings.gatewayToken) headers.set('X-Client-Token', activeSettings.gatewayToken);
+      if (auth.sessionToken) headers.set('X-App-Session', auth.sessionToken);
+      const response = await fetch(`${root}${path}`, { ...init, headers });
+      const raw = await response.text();
+      let payload = null;
+      try{ payload = raw ? JSON.parse(raw) : null; }catch(_){ payload = null; }
+      if (!response.ok){
+        throw new Error(payload?.error || payload?.message || raw || `HTTP ${response.status}`);
+      }
+      return payload || {};
+    };
+
+    try{
+      return await run(settings);
+    }catch(err){
+      const repaired = repairGatewayAfterAccessIssue(err, settings);
+      if (repaired){
+        return run(repaired);
+      }
+      throw err;
+    }
+  }
+
+  async function loadRemoteAuthConfig(force = false){
+    if (!force && AUTH_RUNTIME.config && (Date.now() - AUTH_RUNTIME.configLoadedAt) < 5 * 60 * 1000){
+      return AUTH_RUNTIME.config;
+    }
+    if (!force && AUTH_RUNTIME.configPromise) return AUTH_RUNTIME.configPromise;
+    const settings = getSettings();
+    const requestRemoteConfig = async (activeSettings) => {
+      const root = getAuthServiceRoot(activeSettings);
+      if (!root){
+        return setAuthConfigCached(getLocalAuthConfig(activeSettings));
+      }
+      const response = await fetch(`${root}/auth/config`, {
+        headers: activeSettings.gatewayToken ? { 'X-Client-Token': activeSettings.gatewayToken } : {}
+      });
+      const raw = await response.text();
+      let payload = null;
+      try{ payload = raw ? JSON.parse(raw) : null; }catch(_){ payload = null; }
+      if (!response.ok){
+        throw new Error(payload?.error || raw || `HTTP ${response.status}`);
+      }
+      const local = getLocalAuthConfig(activeSettings);
+      const remote = payload || {};
+      return setAuthConfigCached({
+        ...remote,
+        googleClientId: String(remote.googleClientId || '').trim(),
+        upgradeEmail: String(remote.upgradeEmail || local.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail).trim(),
+        adminEmail: String(remote.adminEmail || local.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim(),
+        adminEnabled: remote.adminEnabled !== false,
+        clientIdConfigured: !!String(remote.googleClientId || '').trim()
+      });
+    };
+
+    AUTH_RUNTIME.configPromise = requestRemoteConfig(settings).catch((err) => {
+      const repaired = repairGatewayAfterAccessIssue(err, settings);
+      if (repaired){
+        return requestRemoteConfig(repaired);
+      }
+      return setAuthConfigCached(getLocalAuthConfig(settings));
+    }).finally(() => {
+      AUTH_RUNTIME.configPromise = null;
+    });
+    return AUTH_RUNTIME.configPromise;
+  }
+
   function applyAuthResponse(payload, extra = {}){
     const next = saveAuthState({
       signedIn: true,
@@ -679,6 +753,11 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     return origins[0] || '';
   }
 
+  function isCloudflareAccessCookieError(value){
+    const msg = String(value?.message || value || '').trim();
+    return /no\s+(?:cookie|kookie)\s+auth\s+credential|cloudflare access|authentication required|access denied/i.test(msg);
+  }
+
   function validateGatewayUrlInput(gatewayUrl, settings = {}){
     const raw = normalizeEndpointUrl(gatewayUrl || '');
     if (!raw) return { ok:true, normalized:'', warning:'' };
@@ -716,6 +795,33 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       ? 'تم تنظيف رابط البوابة تلقائيًا إلى الجذر الصحيح.'
       : '';
     return { ok:true, normalized, warning };
+  }
+
+  function repairGatewayAfterAccessIssue(reason = '', settings = getSettings()){
+    const current = { ...DEFAULT_SETTINGS, ...(settings || {}) };
+    if (current.authMode !== 'gateway') return null;
+
+    const fallbackGateway = normalizeEndpointUrl(DEFAULT_SETTINGS.gatewayUrl || '');
+    if (!fallbackGateway) return null;
+
+    const validation = validateGatewayUrlInput(current.gatewayUrl || '', current);
+    const currentGateway = normalizeEndpointUrl(current.gatewayUrl || '').replace(/\/v1\/?$/i, '');
+    const shouldRepair = !validation.ok || (isCloudflareAccessCookieError(reason) && currentGateway && currentGateway !== fallbackGateway);
+    if (!shouldRepair) return null;
+
+    const nextGateway = fallbackGateway;
+    const nextBase = `${normalizeUrl(resolveGatewayApiRoot({ ...current, gatewayUrl: nextGateway })) || normalizeUrl(nextGateway)}/v1`;
+    const next = setSettings({
+      gatewayUrl: nextGateway,
+      baseUrl: nextBase
+    });
+
+    if ($('gatewayUrl')) $('gatewayUrl').value = next.gatewayUrl || '';
+    if ($('baseUrl')) $('baseUrl').value = next.baseUrl || '';
+    AUTH_RUNTIME.config = null;
+    AUTH_RUNTIME.configPromise = null;
+    AUTH_RUNTIME.configLoadedAt = 0;
+    return next;
   }
 
   function getCostGuardLabel(value = getSettings().costGuard){
@@ -4872,6 +4978,126 @@ async function fileToText(file){
     return full;
   }
 
+  async function callOpenAIChat({ apiKey, baseUrl, model, messages, max_tokens, signal, extraHeaders={} }){
+    const run = async () => {
+      const currentSettings = getSettings();
+      const url = effectiveBaseUrl(currentSettings).replace(/\/+$/,'') + '/chat/completions';
+      const body = { model, messages, max_tokens, temperature: 0.25 };
+      const r = await fetch(url, {
+        method:'POST',
+        headers: { 'Content-Type':'application/json', ...extraHeaders, ...buildAuthHeaders(currentSettings) },
+        body: JSON.stringify(body),
+        signal
+      });
+      const t = await r.text();
+      let j; try{ j = JSON.parse(t); }catch(_){ j = null; }
+      if (!r.ok) throw new Error(extractApiErrorMessage(j, t, r.status));
+
+      const extracted = extractAssistantText(j);
+      if (!String(extracted.text || '').trim()){
+        throw new Error(extracted.diagnostic || 'EMPTY_ASSISTANT_RESPONSE');
+      }
+      return extracted.text;
+    };
+
+    try{
+      return await run();
+    }catch(err){
+      const repaired = repairGatewayAfterAccessIssue(err);
+      if (repaired){
+        return run();
+      }
+      throw err;
+    }
+  }
+
+  async function streamChatCompletions({ apiKey, baseUrl, model, messages, max_tokens, signal, onDelta, extraHeaders={} }){
+    const run = async () => {
+      const currentSettings = getSettings();
+      const url = effectiveBaseUrl(currentSettings).replace(/\/+$/,'') + '/chat/completions';
+      const body = { model, messages, max_tokens, temperature: 0.25, stream: true };
+      const r = await fetch(url, {
+        method:'POST',
+        headers: { 'Content-Type':'application/json', ...extraHeaders, ...buildAuthHeaders(currentSettings) },
+        body: JSON.stringify(body),
+        signal
+      });
+      if (!r.ok){
+        const t = await r.text().catch(()=> '');
+        let j; try{ j=JSON.parse(t);}catch(_){j=null;}
+        throw new Error(j?.error?.message || t || `HTTP ${r.status}`);
+      }
+
+      const contentType = String(r.headers.get('content-type') || '').toLowerCase();
+      if (contentType.includes('application/json')){
+        const t = await r.text();
+        let j; try{ j = JSON.parse(t); }catch(_){ j = null; }
+        const oneShot = extractAssistantText(j);
+        if (!String(oneShot.text || '').trim()){
+          throw new Error(oneShot.diagnostic || 'STREAM_EMPTY_RESPONSE');
+        }
+        return String(oneShot.text || '');
+      }
+
+      const reader = r.body.getReader();
+      const dec = new TextDecoder('utf-8');
+      let buf = '';
+      let full = '';
+      while (true){
+        const {value, done} = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, {stream:true});
+        const lines = buf.split(/\r?\n/);
+        buf = lines.pop() || '';
+        for (const line of lines){
+          const s = line.trim();
+          if (!s || !s.startsWith) continue;
+          if (!s.startsWith('data:')) continue;
+          const payload = s.slice(5).trim();
+          if (payload === '[DONE]') return full;
+          let j; try{ j = JSON.parse(payload); }catch(_){ continue; }
+          const delta = textFromPart(j?.choices?.[0]?.delta?.content) || textFromPart(j?.choices?.[0]?.delta);
+          if (delta){
+            full += delta;
+            onDelta?.(delta, full);
+          }
+        }
+      }
+
+      const tail = (buf || '').trim();
+      if (tail.startsWith('data:')){
+        const payload = tail.slice(5).trim();
+        if (payload && payload !== '[DONE]'){
+          let j; try{ j = JSON.parse(payload); }catch(_){ j = null; }
+          const lastDelta = textFromPart(j?.choices?.[0]?.delta?.content)
+            || textFromPart(j?.choices?.[0]?.delta)
+            || textFromPart(j?.choices?.[0]?.message?.content)
+            || textFromPart(j?.choices?.[0]?.message)
+            || '';
+          if (lastDelta){
+            full += lastDelta;
+            onDelta?.(lastDelta, full);
+          }
+        }
+      }
+
+      if (!String(full || '').trim()){
+        throw new Error('STREAM_EMPTY_RESPONSE');
+      }
+      return full;
+    };
+
+    try{
+      return await run();
+    }catch(err){
+      const repaired = repairGatewayAfterAccessIssue(err);
+      if (repaired){
+        return run();
+      }
+      throw err;
+    }
+  }
+
   // ---------------- Prompts and messages ----------------
   function buildSystemPrompt(settings){
     const policy = getAppRuntimePolicy(settings);
@@ -7943,6 +8169,9 @@ ${e?.message||e}`, false);
 
     ensureStrategicChrome();
     renderSettings();
+    if (repairGatewayAfterAccessIssue('boot-invalid-gateway', getSettings())){
+      renderSettings();
+    }
 
     // Enable web search by default for first-time users
     try{
