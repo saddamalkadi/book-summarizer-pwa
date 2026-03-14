@@ -24,6 +24,7 @@
     deepSearch: 'aistudio_mode_deepsearch_v6',
     headerCollapsed: 'aistudio_header_collapsed_v5',
     chatToolbarCollapsed: 'aistudio_chat_toolbar_collapsed_v5',
+    chatToolbarPinned: 'aistudio_chat_toolbar_pinned_v1',
     toolbarCollapsedMap: 'aistudio_toolbar_collapsed_map_v1',
     workspaceSectionMap: 'aistudio_workspace_sections_v1',
     projectBrief: (pid) => `aistudio_project_brief_${pid}_v1`,
@@ -533,8 +534,40 @@ async function buildRagContextIfEnabled(userText){
       c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : c === '"' ? '&quot;' : '&#39;'
     ));
   }
+  function sanitizeRenderedHtml(html){
+    if (typeof document === 'undefined') return String(html || '');
+    const tpl = document.createElement('template');
+    tpl.innerHTML = String(html || '');
+    tpl.content.querySelectorAll('script,iframe,object,embed,link,meta').forEach((el) => el.remove());
+    tpl.content.querySelectorAll('*').forEach((el) => {
+      [...el.attributes].forEach((attr) => {
+        const name = String(attr.name || '').toLowerCase();
+        const value = String(attr.value || '');
+        if (name.startsWith('on') || name === 'srcdoc'){
+          el.removeAttribute(attr.name);
+          return;
+        }
+        if ((name === 'href' || name === 'src') && /^\s*javascript:/i.test(value)){
+          el.removeAttribute(attr.name);
+        }
+      });
+      if (el.tagName === 'A'){
+        const href = String(el.getAttribute('href') || '').trim();
+        if (/^(https?:|mailto:|tel:)/i.test(href)){
+          el.setAttribute('target', '_blank');
+          el.setAttribute('rel', 'noopener noreferrer');
+        }
+        if (/^(data:|blob:)/i.test(href)){
+          el.setAttribute('download', '');
+        }
+      }
+    });
+    return tpl.innerHTML;
+  }
   function renderMarkdown(s){
-    try{ if (window.marked) return window.marked.parse(String(s||'')); }catch(_){}
+    try{
+      if (window.marked) return sanitizeRenderedHtml(window.marked.parse(String(s||'')));
+    }catch(_){}
     return `<pre style="white-space:pre-wrap">${escapeHtml(s||'')}</pre>`;
   }
 
@@ -573,6 +606,8 @@ const getHeaderCollapsed = () => (localStorage.getItem(KEYS.headerCollapsed) || 
 const setHeaderCollapsed = (v) => localStorage.setItem(KEYS.headerCollapsed, v ? 'true' : 'false');
 const getChatToolbarCollapsed = () => (localStorage.getItem(KEYS.chatToolbarCollapsed) || 'false') === 'true';
 const setChatToolbarCollapsed = (v) => localStorage.setItem(KEYS.chatToolbarCollapsed, v ? 'true' : 'false');
+const getChatToolbarPinned = () => (localStorage.getItem(KEYS.chatToolbarPinned) || 'true') === 'true';
+const setChatToolbarPinned = (v) => localStorage.setItem(KEYS.chatToolbarPinned, v ? 'true' : 'false');
 const getSidebarPinned = () => (localStorage.getItem(KEYS.sidebarPinned) || 'false') === 'true';
 const setSidebarPinned = (v) => localStorage.setItem(KEYS.sidebarPinned, v ? 'true' : 'false');
 const getFocusMode = () => (localStorage.getItem(KEYS.focusMode) || 'false') === 'true';
@@ -715,12 +750,25 @@ function setupCollapsibleToolbars(){
 
 function applyUiCollapse(){
   const collapsed = getHeaderCollapsed();
+  const pinned = getChatToolbarPinned();
   document.body.classList.toggle('headerCollapsed', collapsed);
   document.body.classList.toggle('chatToolbarCollapsed', getChatToolbarCollapsed());
+  document.body.classList.toggle('chatToolbarPinned', pinned);
   const collapseBtn = $('headerCollapseBtn');
   if (collapseBtn){
     collapseBtn.textContent = collapsed ? '▴' : '▾';
     collapseBtn.title = collapsed ? 'إظهار الشريط العلوي' : 'طي الشريط العلوي';
+  }
+  const pinBtn = $('chatToolbarPinBtn');
+  if (pinBtn){
+    const icon = pinBtn.querySelector('.icon');
+    const label = pinBtn.querySelector('.label');
+    pinBtn.classList.toggle('dark', pinned);
+    pinBtn.classList.toggle('ghost', !pinned);
+    pinBtn.title = pinned ? 'إلغاء تثبيت شريط الأدوات' : 'تثبيت شريط الأدوات';
+    pinBtn.setAttribute('aria-label', pinBtn.title);
+    if (icon) icon.textContent = pinned ? '📌' : '📍';
+    if (label) label.textContent = pinned ? 'مثبت' : 'تثبيت';
   }
   const tag = document.getElementById('chatMiniModelTag');
   if (tag){ tag.textContent = (getSettings().model || '—'); }
@@ -1703,6 +1751,37 @@ function refreshDeepSearchBtn(){
     ];
   }
 
+  const buildGuideSectionsBase = buildGuideSections;
+  buildGuideSections = function(){
+    const sections = buildGuideSectionsBase().map((section) => ({
+      ...section,
+      steps: [...(section.steps || [])],
+      tips: [...(section.tips || [])]
+    }));
+    const chat = sections.find((section) => section.id === 'chat');
+    if (chat){
+      chat.steps.push('إذا أنشأ المساعد ملفًا داخل الرد فستجد رابط تنزيل مباشر داخل الرسالة نفسها، ويمكنك أيضًا فتح قسم التحميلات للاحتفاظ به.');
+      chat.tips.push('زر تثبيت الشريط يبقي إعدادات النموذج والوضع ظاهرة أثناء التمرير الطويل.', 'المرفقات المضافة من الدردشة تُفهم الآن بعمق أكبر قبل الإرسال بدل الاعتماد على مقتطف صغير فقط.');
+    }
+    const files = sections.find((section) => section.id === 'files');
+    if (files){
+      files.tips.push('مرفقات الدردشة تستفيد من مسار قراءة أوسع، خصوصًا ملفات PDF والصور، قبل دخولها إلى سياق المحادثة.');
+    }
+    sections.push({
+      id: 'chatDownloads',
+      page: 'chat',
+      title: 'ملفات الدردشة والتنزيل',
+      body: 'إذا أنشأ المساعد ملفًا داخل المحادثة فإن التطبيق يحوّله تلقائيًا إلى بطاقة تنزيل ظاهرة داخل نفس الرسالة ويؤرشفه أيضًا داخل صفحة التحميلات.',
+      steps: [
+        'اطلب من المساعد إنشاء ملف عند الحاجة مثل تقرير أو JSON أو Markdown.',
+        'اضغط بطاقة التنزيل داخل الرسالة لتنزيل الملف مباشرة.',
+        'افتح قسم التحميلات إذا أردت إعادة تنزيل الملف أو تثبيته أو إعادة تسميته لاحقًا.'
+      ],
+      tips: ['إذا احتوت الرسالة على أكثر من ملف فسيعرض التطبيق بطاقة مستقلة لكل ملف.', 'الروابط الخارجية القابلة للتنزيل تبقى قابلة للفتح أيضًا مع حماية أفضل داخل الواجهة.']
+    });
+    return sections;
+  };
+
   function renderGuidePage(){
     const sections = buildGuideSections();
     const query = String($('guideSearch')?.value || '').trim().toLowerCase();
@@ -2659,13 +2738,16 @@ async function fileToText(file){
     return await callOpenAIChat({ apiKey: settings.apiKey, baseUrl, model, messages, max_tokens: clamp(Number(settings.maxOut||2000), 256, 8000) });
   }
 
-  async function fileToTextSmart(file){
+  async function fileToTextSmart(file, opts={}){
     const name = (file?.name || '').toLowerCase();
     const type = (file?.type || '').toLowerCase();
     const isImg = type.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif|tiff?)$/i.test(name);
     if (isImg){
       const dataUrl = await fileToDataUrl(file);
       return await ocrDataUrl(dataUrl, undefined, { fileName: file?.name || "image", page: 1 });
+    }
+    if (name.endsWith('.pdf')){
+      return await extractTextFromPdfSmart(file, opts);
     }
     return await fileToText(file);
   }
@@ -2695,6 +2777,94 @@ async function fileToText(file){
   // ---------------- Downloads (```file blocks) ----------------
   function loadDownloads(){ return loadJSON(KEYS.downloads, []) || []; }
   function saveDownloads(arr){ saveJSON(KEYS.downloads, arr); }
+  function getFileBlockRegex(){
+    return /```file\b([^\n]*)\n([\s\S]*?)\n```/gi;
+  }
+  function parseBlockAttributes(raw){
+    const attrs = {};
+    String(raw || '').replace(/(\w+)="([^"]*)"/g, (_, key, value) => {
+      attrs[String(key || '').toLowerCase()] = value || '';
+      return '';
+    });
+    return attrs;
+  }
+  function normalizeDownloadEntry(entry = {}){
+    const normalized = {
+      id: String(entry.id || makeId('dl')),
+      name: String(entry.name || 'output.txt').trim() || 'output.txt',
+      mime: String(entry.mime || 'text/plain').trim() || 'text/plain',
+      encoding: String(entry.encoding || 'text').trim().toLowerCase() === 'base64' ? 'base64' : 'text',
+      content: String(entry.content || ''),
+      createdAt: Number(entry.createdAt || nowTs()),
+      pinned: !!entry.pinned,
+      sourceMessageId: String(entry.sourceMessageId || ''),
+      fingerprint: String(entry.fingerprint || '')
+    };
+    if (!normalized.fingerprint){
+      const seed = `${normalized.name}\u241f${normalized.mime}\u241f${normalized.encoding}\u241f${normalized.content}`;
+      let hash = 2166136261;
+      for (let i=0; i<seed.length; i++){
+        hash ^= seed.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+      }
+      normalized.fingerprint = `dl_${(hash >>> 0).toString(16)}`;
+    }
+    return normalized;
+  }
+  function upsertDownload(entry = {}){
+    const normalized = normalizeDownloadEntry(entry);
+    const downloads = loadDownloads().map(normalizeDownloadEntry);
+    const existing = downloads.find((item) => item.fingerprint === normalized.fingerprint);
+    if (existing){
+      let changed = false;
+      if (!existing.sourceMessageId && normalized.sourceMessageId){
+        existing.sourceMessageId = normalized.sourceMessageId;
+        changed = true;
+      }
+      if (changed) saveDownloads(downloads.slice(0, 160));
+      return { entry: existing, created: false };
+    }
+    downloads.unshift(normalized);
+    saveDownloads(downloads.slice(0, 160));
+    return { entry: normalized, created: true };
+  }
+  function addDownload(_pid, entry = {}){
+    return upsertDownload(entry).entry;
+  }
+  function resolveDownloadEntry(downloadId){
+    return loadDownloads().map(normalizeDownloadEntry).find((item) => item.id === downloadId) || null;
+  }
+  function buildBlobFromDownload(entry){
+    const normalized = normalizeDownloadEntry(entry);
+    if (normalized.encoding === 'base64'){
+      return new Blob([decodeBase64Bytes(normalized.content)], { type: normalized.mime });
+    }
+    const needsCharset = /^text\//i.test(normalized.mime) || /(json|xml|javascript|svg)/i.test(normalized.mime);
+    const type = !needsCharset || /charset=/i.test(normalized.mime)
+      ? normalized.mime
+      : `${normalized.mime};charset=utf-8`;
+    return new Blob([normalized.content], { type });
+  }
+  function downloadStoredItem(downloadId){
+    const entry = resolveDownloadEntry(downloadId);
+    if (!entry) return false;
+    downloadBlob(entry.name, buildBlobFromDownload(entry));
+    return true;
+  }
+  function estimateDownloadBytes(entry){
+    const normalized = normalizeDownloadEntry(entry);
+    if (normalized.encoding === 'base64'){
+      return Math.floor((String(normalized.content || '').replace(/\s+/g,'').length * 3) / 4);
+    }
+    return new Blob([String(normalized.content || '')]).size;
+  }
+  function formatCompactBytes(size){
+    const value = Number(size || 0);
+    if (value <= 0) return '0 B';
+    if (value < 1024) return `${value} B`;
+    if (value < 1024 * 1024) return `${(value / 1024).toFixed(value >= 10 * 1024 ? 0 : 1)} KB`;
+    return `${(value / (1024 * 1024)).toFixed(value >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+  }
 
   function downloadBlob(filename, blob){
     const url = URL.createObjectURL(blob);
@@ -2710,23 +2880,42 @@ async function fileToText(file){
 
   function parseFileBlocks(text){
     const s = String(text || '');
-    const re = /```file\s+name="([^"]+)"\s+mime="([^"]+)"(?:\s+encoding="([^"]+)")?\s*\n([\s\S]*?)\n```/g;
+    const re = getFileBlockRegex();
     const out = [];
     let m;
     while ((m = re.exec(s))){
-      out.push({ name:m[1], mime:m[2], encoding: m[3] || 'text', content: m[4] || '' });
+      const attrs = parseBlockAttributes(m[1]);
+      if (!attrs.name || !attrs.mime) continue;
+      out.push({ name:attrs.name, mime:attrs.mime, encoding: attrs.encoding || 'text', content: m[2] || '' });
     }
     return out;
   }
-  function ingestDownloadsFromText(text){
+  function stripFileBlocks(text){
+    return String(text || '')
+      .replace(getFileBlockRegex(), '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+  function ensureDownloadsFromText(text, sourceMessageId=''){
     const blocks = parseFileBlocks(text);
-    if (!blocks.length) return 0;
-    const dl = loadDownloads();
+    if (!blocks.length) return { entries: [], newCount: 0 };
+    const entries = [];
+    let newCount = 0;
     for (const b of blocks){
-      dl.unshift({ id: makeId('dl'), name: b.name, mime: b.mime, encoding: b.encoding, content: b.content, createdAt: nowTs(), pinned:false });
+      const saved = upsertDownload({
+        name: b.name,
+        mime: b.mime,
+        encoding: b.encoding,
+        content: b.content,
+        sourceMessageId
+      });
+      entries.push(saved.entry);
+      if (saved.created) newCount += 1;
     }
-    saveDownloads(dl.slice(0, 120));
-    return blocks.length;
+    return { entries, newCount };
+  }
+  function ingestDownloadsFromText(text){
+    return ensureDownloadsFromText(text).entries.length;
   }
 
   // ---------------- Provider calls ----------------
@@ -2943,6 +3132,9 @@ async function fileToText(file){
           + "\\n```tool name=\"download_file\"\\n{\"name\":\"report.md\",\"mime\":\"text/markdown\",\"content\":\"...\"}\\n```"
           + "\\n- لا تكتب إجابة نهائية في نفس الرد الذي يطلب أداة. بعد نتيجة الأداة سأطلب منك المتابعة.";
     }
+    sys += "\\n\\n[Files] إذا أنشأت ملفًا للمستخدم فضعه داخل بلوك file بهذا الشكل:"
+        + "\\n```file name=\"report.md\" mime=\"text/markdown\"\\nمحتوى الملف هنا\\n```"
+        + "\\nوسيحوّل التطبيق هذا البلوك تلقائيًا إلى رابط وزر تنزيل داخل الدردشة. لا تكرر محتوى الملف خارج هذا البلوك إلا إذا طلب المستخدم ذلك.";
     return sys;
   }
 
@@ -3171,14 +3363,24 @@ async function maybeUpdateThreadSummary(pid, tid){
 
   function buildAttachmentsBlock(settings){
     if (!pendingChatAttachments.length) return '';
-    const totalLimit = Math.min(14000, Number(settings.fileClip || 12000));
-    let out = '[مرفقات المستخدم]\n';
-    for (const a of pendingChatAttachments){
-      const block = `--- ${a.name} (${a.kind}) ---\n` + (a.text ? a.text : '(لا يوجد نص — صورة/ملف غير مقروء)');
-      if ((out + "\n\n" + block).length > totalLimit) break;
-      out += "\n\n" + block;
-    }
-    return out.trim();
+    const totalLimit = clamp(Math.max(Number(settings.fileClip || 12000), 18000), 18000, 42000);
+    let remaining = totalLimit;
+    const blocks = ['[مرفقات الدردشة]'];
+    pendingChatAttachments.forEach((a, idx) => {
+      const fullText = String(a.textFull || a.text || '').trim();
+      const itemsLeft = Math.max(1, pendingChatAttachments.length - idx);
+      const budget = Math.max(1400, Math.floor(remaining / itemsLeft));
+      const snippet = fullText ? (fullText.length <= budget ? fullText : clipText(fullText, budget)) : '';
+      const state = snippet
+        ? (snippet.length >= fullText.length ? 'مضمن كاملًا' : 'مضمن مختصرًا')
+        : (a.kind === 'image' && a.dataUrl ? 'مرئي للنموذج' : 'بدون نص');
+      const note = snippet || (a.kind === 'image' && a.dataUrl
+        ? '(سيتم إرسال الصورة مباشرة للنموذج مع أي نص OCR متاح)'
+        : '(لا يوجد نص مستخرج)');
+      blocks.push(`--- ${a.name} (${formatAttachmentKindLabel(a)} • ${state}) ---\n${note}`);
+      remaining = Math.max(0, remaining - snippet.length);
+    });
+    return blocks.join('\n\n').trim();
   }
 
   function modelSupportsVision(settings){
@@ -3190,6 +3392,23 @@ async function maybeUpdateThreadSummary(pid, tid){
     return /(vision|multimodal|gpt-4o|gemini|claude-3|llava|pixtral)/i.test(id);
   }
 
+  function formatAttachmentKindLabel(att){
+    const kind = String(att?.kind || '').toLowerCase();
+    if (kind === 'image') return 'صورة';
+    if (kind === 'pdf') return 'PDF';
+    if (kind === 'docx') return 'Word';
+    if (kind === 'text') return 'نص';
+    return 'ملف';
+  }
+
+  function formatCompactChars(count){
+    const value = Number(count || 0);
+    if (value <= 0) return '0';
+    if (value < 1000) return String(value);
+    if (value < 1000000) return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}K`;
+    return `${(value / 1000000).toFixed(1)}M`;
+  }
+
   function buildUserMessageWithAttachments(userText, settings, attachments){
     const list = Array.isArray(attachments) ? attachments : [];
     if (!list.length) return { role:'user', content: String(userText||'') };
@@ -3197,11 +3416,33 @@ async function maybeUpdateThreadSummary(pid, tid){
     const textParts = [];
     const vision = modelSupportsVision(settings);
     const content = [{ type:'text', text: String(userText||'') }];
+    const totalBudget = clamp(Math.max(Number(settings.fileClip || 12000) * 2, 18000), 18000, 42000);
+    let remainingBudget = totalBudget;
 
-    list.forEach((a) => {
-      const label = `المرفق: ${a.name} (${a.kind})`;
-      if (a.text && a.text.trim()) textParts.push(`${label}\n${a.text}`);
-      else textParts.push(`${label}\n(لا يوجد نص مستخرج)`);
+    list.forEach((a, idx) => {
+      const fullText = String(a.textFull || a.text || '').trim();
+      const itemsLeft = Math.max(1, list.length - idx);
+      const budget = Math.max(1400, Math.floor(remainingBudget / itemsLeft));
+      const snippet = fullText ? (fullText.length <= budget ? fullText : clipText(fullText, budget)) : '';
+      const inclusion = snippet
+        ? (snippet.length >= fullText.length ? 'مضمن كاملًا' : 'مضمن مختصرًا')
+        : (a.kind === 'image' && a.dataUrl ? 'صورة مرئية للنموذج' : 'بدون نص مستخرج');
+      const label = [
+        `الملف: ${a.name}`,
+        `النوع: ${formatAttachmentKindLabel(a)}`,
+        a.size ? `الحجم: ${formatCompactBytes(a.size)}` : '',
+        a.extractionMode ? `المعالجة: ${a.extractionMode}` : '',
+        a.hasText && a.chars ? `النص: ${formatCompactChars(a.chars)} حرف` : '',
+        `حالة الإرسال: ${inclusion}`
+      ].filter(Boolean).join(' • ');
+      if (snippet){
+        textParts.push(`${label}\n${snippet}`);
+        remainingBudget = Math.max(0, remainingBudget - snippet.length);
+      } else if (a.kind === 'image' && a.dataUrl){
+        textParts.push(`${label}\n(سيُرسل هذا المرفق كصورة مرئية للنموذج حتى مع غياب نص OCR كامل)`);
+      } else {
+        textParts.push(`${label}\n(لا يوجد نص مستخرج قابل للإرسال)`);
+      }
 
       if (vision && a.kind === 'image' && a.dataUrl){
         content.push({ type:'image_url', image_url:{ url: a.dataUrl } });
@@ -3262,6 +3503,51 @@ ${clip}` });
       .find(Boolean);
     if (!first) return fallback;
     return first.length > 56 ? `${first.slice(0, 56)}…` : first;
+  }
+
+  function renderAssistantDownloadCards(downloads){
+    const list = Array.isArray(downloads) ? downloads : [];
+    if (!list.length) return '';
+    return `
+      <div class="assistant-downloads">
+        ${list.map((entry) => `
+          <a href="#" class="assistant-download-link" data-download-id="${escapeHtml(entry.id)}">
+            <span class="assistant-download-name">${escapeHtml(entry.name)}</span>
+            <span class="assistant-download-meta">${escapeHtml(entry.mime)} • ${escapeHtml(formatCompactBytes(estimateDownloadBytes(entry)))}</span>
+          </a>
+        `).join('')}
+      </div>`;
+  }
+
+  function renderAssistantMessageHtml(text, downloads=[]){
+    const visibleText = stripFileBlocks(text);
+    const main = visibleText
+      ? renderMarkdown(visibleText)
+      : (downloads.length
+          ? `<div class="assistant-files-placeholder">${downloads.length > 1 ? 'تم إنشاء ملفات قابلة للتنزيل داخل هذه الرسالة.' : 'تم إنشاء ملف قابل للتنزيل داخل هذه الرسالة.'}</div>`
+          : renderMarkdown(text || ''));
+    return `${main}${renderAssistantDownloadCards(downloads)}`;
+  }
+
+  function bindAssistantDownloadLinks(scope){
+    scope?.querySelectorAll?.('[data-download-id]')?.forEach((el) => {
+      if (el.dataset.bound === 'true') return;
+      el.dataset.bound = 'true';
+      el.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        const ok = downloadStoredItem(el.dataset.downloadId);
+        if (!ok) toast('⚠️ تعذر العثور على الملف المطلوب');
+      });
+    });
+  }
+
+  function describeAttachmentChip(a){
+    const parts = [formatAttachmentKindLabel(a)];
+    if (a.hasText && a.chars) parts.push(`${formatCompactChars(a.chars)} حرف`);
+    else if (a.kind === 'image' && a.dataUrl) parts.push('مرئي');
+    else parts.push('بدون نص');
+    if (a.textWasClippedForPrompt) parts.push('مختصر للإرسال');
+    return parts.join(' • ');
   }
 
   function sendMessageToCanvas(message){
@@ -3335,7 +3621,11 @@ ${clip}` });
 
       const body = document.createElement('div');
       body.className = 'body';
-      body.innerHTML = (m.role === 'assistant') ? renderMarkdown(m.content || '') : `<pre style="margin:0; white-space:pre-wrap">${escapeHtml(m.content||'')}</pre>`;
+      const downloadState = m.role === 'assistant' ? ensureDownloadsFromText(m.content || '', m.id || '') : { entries: [], newCount: 0 };
+      body.innerHTML = (m.role === 'assistant')
+        ? renderAssistantMessageHtml(m.content || '', downloadState.entries)
+        : `<pre style="margin:0; white-space:pre-wrap">${escapeHtml(m.content||'')}</pre>`;
+      if (m.role === 'assistant') bindAssistantDownloadLinks(body);
 
       const actions = document.createElement('div');
       actions.className = 'actions';
@@ -3453,6 +3743,216 @@ ${clip}` });
     showStatus('', false);
     updateChatAttachChips();
     toast('✅ تم إرفاق الملفات');
+  }
+
+  function renderChat(){
+    const log = $('chatLog');
+    if (!log) return;
+    const thread = getCurThread();
+    const msgs = thread.messages || [];
+    log.innerHTML = '';
+
+    if (!msgs.length){
+      renderEmptyChatState(log);
+      log.scrollTop = 0;
+      refreshNavMeta();
+      renderDownloads();
+      refreshStrategicWorkspace().catch(()=>{});
+      return;
+    }
+
+    msgs.forEach((m) => {
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble ' + (m.role === 'user' ? 'user' : 'assistant');
+      bubble.dataset.mid = m.id || '';
+
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = (m.role === 'user' ? 'المستخدم' : 'المساعد') + ' • ' + new Date(m.ts || nowTs()).toLocaleString('ar');
+
+      const body = document.createElement('div');
+      body.className = 'body';
+      const downloadState = m.role === 'assistant'
+        ? ensureDownloadsFromText(m.content || '', m.id || '')
+        : { entries: [], newCount: 0 };
+      body.innerHTML = m.role === 'assistant'
+        ? renderAssistantMessageHtml(m.content || '', downloadState.entries)
+        : `<pre style="margin:0; white-space:pre-wrap">${escapeHtml(m.content || '')}</pre>`;
+      if (m.role === 'assistant') bindAssistantDownloadLinks(body);
+
+      const actions = document.createElement('div');
+      actions.className = 'actions';
+
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'btn ghost sm';
+      copyBtn.textContent = 'نسخ';
+      copyBtn.addEventListener('click', async () => {
+        const ok = await copyToClipboard(m.content || '');
+        toast(ok ? '✅ تم النسخ' : '⚠️ تعذر النسخ');
+      });
+      actions.appendChild(copyBtn);
+
+      if (m.role === 'assistant'){
+        const canvasBtn = document.createElement('button');
+        canvasBtn.className = 'btn ghost sm';
+        canvasBtn.textContent = 'إلى اللوحة';
+        canvasBtn.addEventListener('click', () => sendMessageToCanvas(m));
+        actions.appendChild(canvasBtn);
+
+        if (downloadState.entries.length){
+          const dlBtn = document.createElement('button');
+          dlBtn.className = 'btn ghost sm';
+          dlBtn.textContent = `التحميلات (${downloadState.entries.length})`;
+          dlBtn.addEventListener('click', () => {
+            setActiveNav('downloads');
+            renderDownloads();
+          });
+          actions.appendChild(dlBtn);
+
+          const info = document.createElement('span');
+          info.className = 'hint';
+          info.textContent = downloadState.newCount
+            ? `⬇️ تمت إضافة ${downloadState.newCount} ملف جديد`
+            : `⬇️ ${downloadState.entries.length} ملف قابل للتنزيل`;
+          actions.appendChild(info);
+        }
+      }
+
+      bubble.appendChild(meta);
+      bubble.appendChild(body);
+      bubble.appendChild(actions);
+      log.appendChild(bubble);
+    });
+
+    log.scrollTop = log.scrollHeight + 1000;
+    refreshNavMeta();
+    renderDownloads();
+    renderThreadHistory();
+    refreshStrategicWorkspace().catch(()=>{});
+  }
+
+  function updateChatAttachChips(){
+    const box = $('chatAttachChips');
+    if (!box) return;
+    box.innerHTML = '';
+    pendingChatAttachments.forEach((a, idx) => {
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.title = `${a.name}\n${describeAttachmentChip(a)}`;
+      chip.innerHTML = `<span>${escapeHtml(a.name)}</span><span class="meta">${escapeHtml(describeAttachmentChip(a))}</span>`;
+      const x = document.createElement('button');
+      x.className = 'x';
+      x.textContent = '✕';
+      x.addEventListener('click', () => {
+        pendingChatAttachments.splice(idx, 1);
+        updateChatAttachChips();
+      });
+      chip.appendChild(x);
+      box.appendChild(chip);
+    });
+    syncComposerMeta();
+  }
+
+  function syncComposerMeta(){
+    const meta = $('composerContextMeta');
+    if (!meta) return;
+    const pid = getCurProjectId();
+    const files = loadFiles(pid);
+    const thread = getCurThread();
+    const flags = [];
+    if (hasProjectBrief(getProjectBrief(pid))) flags.push('ذاكرة المشروع مفعّلة');
+    if (getStudyMode()) flags.push('وضع دراسي');
+
+    const recognized = pendingChatAttachments.filter((a) => a.hasText).length;
+    const visibleImages = pendingChatAttachments.filter((a) => a.kind === 'image' && a.dataUrl).length;
+    const attachmentChars = pendingChatAttachments.reduce((sum, a) => sum + Number(a.chars || 0), 0);
+    const parts = [
+      `الملفات ${files.length}`,
+      `الرسائل ${(thread.messages || []).length}`,
+      `المرفقات ${pendingChatAttachments.length}`
+    ];
+    if (pendingChatAttachments.length){
+      parts.push(`مقروء ${recognized}/${pendingChatAttachments.length}`);
+      if (attachmentChars) parts.push(`نص مرفق ${formatCompactChars(attachmentChars)} حرف`);
+      if (visibleImages) parts.push(`صور ${visibleImages}`);
+    }
+    if (flags.length) parts.push(...flags);
+    meta.textContent = parts.join(' • ');
+    resizeComposerInput();
+  }
+
+  function inferAttachmentKind(file){
+    const name = String(file?.name || '').toLowerCase();
+    const type = String(file?.type || '').toLowerCase();
+    if (type.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif|tiff?)$/i.test(name)) return 'image';
+    if (name.endsWith('.pdf')) return 'pdf';
+    if (name.endsWith('.docx')) return 'docx';
+    if (/\.(txt|md|csv|json|xml|html|htm)$/i.test(name)) return 'text';
+    return 'file';
+  }
+
+  async function addChatAttachments(fileList){
+    const settings = getSettings();
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+
+    showStatus('إرفاق الملفات وتحليلها…', true);
+    for (let idx=0; idx<files.length; idx++){
+      const file = files[idx];
+      const name = file.name || 'file';
+      const kind = inferAttachmentKind(file);
+      const stepLabel = `إرفاق ${idx + 1}/${files.length}: ${name}`;
+      let textFull = '';
+      let dataUrl = '';
+      let extractionMode = kind === 'image' ? 'صورة' : 'استخراج نص';
+
+      try{
+        showStatus(`${stepLabel}…`, true);
+        if (kind === 'image'){
+          dataUrl = await fileToDataUrl(file);
+          extractionMode = 'OCR + صورة مرئية';
+          try{
+            textFull = await ocrDataUrl(dataUrl, getOcrLang(), { fileName: name, page: 1 });
+          }catch(_){
+            textFull = '';
+          }
+        } else if (kind === 'pdf'){
+          extractionMode = `PDF ${getTranscribeProfileLabel()}`;
+          textFull = await fileToTextSmart(file, {
+            onProgress: (done, total, meta = {}) => {
+              const method = meta.method === 'ocr' ? 'OCR' : 'نص رقمي';
+              showStatus(`${stepLabel} • ${done}/${total} • ${method}`, true);
+            }
+          });
+        } else {
+          extractionMode = kind === 'docx' ? 'Word قابل للقراءة' : 'تحليل نص مباشر';
+          textFull = await fileToTextSmart(file);
+        }
+      }catch(_){
+        textFull = '';
+        extractionMode = kind === 'image' ? 'صورة مرئية فقط' : 'تعذر استخراج النص';
+      }
+
+      const cleanText = String(textFull || '').trim();
+      pendingChatAttachments.push({
+        id: makeId('att'),
+        name,
+        kind,
+        type: file.type || '',
+        size: file.size || 0,
+        dataUrl,
+        text: cleanText ? clipText(cleanText, 360) : '',
+        textFull: cleanText,
+        chars: cleanText.length,
+        hasText: !!cleanText,
+        extractionMode,
+        textWasClippedForPrompt: false
+      });
+    }
+
+    showStatus('', false);
+    updateChatAttachChips();
+    toast('✅ تم إرفاق الملفات وإدراجها في سياق الدردشة');
   }
 
 function updateChips(){
@@ -4838,6 +5338,12 @@ $('chatToolbarExpandBtn')?.addEventListener('click', () => {
     }catch(_){ }
 
   toast('✅ تم إظهار أدوات الدردشة');
+});
+
+$('chatToolbarPinBtn')?.addEventListener('click', () => {
+  setChatToolbarPinned(!getChatToolbarPinned());
+  applyUiCollapse();
+  toast(getChatToolbarPinned() ? '📌 تم تثبيت شريط أدوات الدردشة' : '📍 تم إلغاء تثبيت شريط الأدوات');
 });
 
 

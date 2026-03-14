@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v7.0</title>
+    <title>AI Workspace Studio v7.1</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%231b66ff'/><stop offset='1' stop-color='%230b1020'/></linearGradient></defs><rect width='100' height='100' rx='18' fill='url(%23g)'/><path d='M28 30h44v40H28z' fill='%23ffffff' opacity='.92'/><path d='M34 40h32M34 50h32M34 60h22' stroke='%230b1020' stroke-width='3' stroke-linecap='round'/><circle cx='68' cy='64' r='6' fill='%231b66ff'/></svg>" />
@@ -118,6 +118,7 @@
     .chatbar input{flex:1;}
     .chips{display:flex; flex-wrap:wrap; gap:8px; padding:0 10px 10px;}
     .chip{display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; background:#0b1020; color:#fff; font-size:12px; font-weight:900;}
+    .chip .meta{opacity:.78; font-weight:700}
     .chip .x{border:none; background:rgba(255,255,255,.18); color:#fff; width:22px; height:22px; border-radius:999px; cursor:pointer;}
     .split{display:grid; grid-template-columns:1fr 1fr; gap:10px; flex:1; min-height:0; padding:10px;}
     .panel{border:1px solid rgba(10,20,60,0.08); border-radius:16px; background:#fbfcff; overflow:hidden; display:flex; flex-direction:column; min-height:0;}
@@ -377,11 +378,11 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
 
     /* Strategic responsive refinement */
     :root{
-      --shell-max: 1880px;
-      --toolbar-max: 1680px;
-      --reading-width: 1260px;
-      --assistant-width: 1120px;
-      --user-width: 920px;
+      --shell-max: 1940px;
+      --toolbar-max: 1760px;
+      --reading-width: 1380px;
+      --assistant-width: 1280px;
+      --user-width: 1040px;
       --page-gutter: clamp(12px, 2vw, 24px);
     }
     .app{
@@ -421,6 +422,22 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       gap: 12px;
       padding: 14px var(--page-gutter) 12px;
       overflow: visible;
+      margin-top: 12px;
+      margin-bottom: 12px;
+      border: 1px solid rgba(10,20,60,.08);
+      border-radius: 24px;
+      background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(246,249,255,.96));
+      box-shadow: 0 18px 38px rgba(15,23,42,.08);
+      scrollbar-gutter: stable both-edges;
+    }
+    body.chatToolbarPinned #page-chat > .toolbar.mainToolbar{
+      position: sticky;
+      top: 0;
+      z-index: 18;
+      max-height: min(72vh, 760px);
+      overflow: auto;
+      -webkit-backdrop-filter: blur(18px);
+      backdrop-filter: blur(18px);
     }
     #page-chat .tool-group{
       height: 100%;
@@ -524,6 +541,49 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       max-width: 100%;
       overflow-x: auto;
     }
+    .bubble .body a{
+      word-break: break-word;
+    }
+    .assistant-files-placeholder{
+      padding: 14px 16px;
+      border-radius: 16px;
+      border: 1px dashed rgba(27,102,255,.28);
+      background: linear-gradient(180deg, rgba(27,102,255,.07), rgba(27,102,255,.03));
+      color: #1d4ed8;
+      font-weight: 900;
+    }
+    .assistant-downloads{
+      display: grid;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .assistant-download-link{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding: 12px 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(10,20,60,.08);
+      background: linear-gradient(180deg, #f8fbff, #ffffff);
+      text-decoration: none;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.7);
+    }
+    .assistant-download-link:hover{
+      transform: translateY(-1px);
+      border-color: rgba(27,102,255,.24);
+      box-shadow: 0 10px 24px rgba(27,102,255,.08);
+    }
+    .assistant-download-name{
+      color: #0b1020;
+      font-weight: 1000;
+    }
+    .assistant-download-meta{
+      color: #5d6a86;
+      font-size: 12px;
+      font-weight: 700;
+    }
     .chatlog .empty-chat-state{
       width: min(100%, 900px);
       padding: 18px 20px;
@@ -608,6 +668,9 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       #page-chat > .toolbar.mainToolbar{
         grid-template-columns: 1fr;
         padding-top: 12px;
+      }
+      body.chatToolbarPinned #page-chat > .toolbar.mainToolbar{
+        max-height: min(68vh, 620px);
       }
       .workspace-deck{
         padding: 12px var(--page-gutter);
@@ -1293,6 +1356,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
               <button class="btn ghost sm with-label" id="scrollTopBtn" type="button" title="الانتقال للأعلى" aria-label="للأعلى"><span class="icon">⬆️</span><span class="label">للأعلى</span></button>
               <button class="btn ghost sm with-label" id="scrollBottomBtn" type="button" title="الانتقال للأسفل" aria-label="للأسفل"><span class="icon">⬇️</span><span class="label">للأسفل</span></button>
               <button class="btn ghost sm with-label" id="clearChatBtn" type="button" title="مسح الدردشة الحالية" aria-label="مسح الدردشة"><span class="icon">🗑️</span><span class="label">مسح</span></button>
+              <button class="btn ghost sm with-label" id="chatToolbarPinBtn" type="button" title="تثبيت شريط الأدوات" aria-label="تثبيت شريط الأدوات"><span class="icon">📌</span><span class="label">تثبيت</span></button>
               <button class="btn ghost sm with-label" id="chatToolbarCollapseBtn" type="button" title="طي الأدوات" aria-label="طي الأدوات"><span class="icon">▾</span><span class="label">إخفاء</span></button>
               </div>
             </div>
@@ -1775,11 +1839,11 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     })();
   </script>
 
-  <script src="app.js?v=70"></script>
+  <script src="app.js?v=71"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js?v=70").then((registration) => {
+        navigator.serviceWorker.register("./sw.js?v=71").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {
