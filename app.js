@@ -1,4 +1,4 @@
-/* AI Workspace Studio v7.9 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v8.0 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -1553,6 +1553,21 @@ function refreshDeepSearchBtn(){
     return value.length > 34 ? `${value.slice(0, 34)}…` : value;
   }
 
+  function getNumericModelPrice(value){
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  }
+
+  function isFreeTierModel(model){
+    const id = String(model?.id || model || '').trim().toLowerCase();
+    if (!id) return false;
+    if (id === 'openrouter/free' || id.includes(':free')) return true;
+    const promptPrice = getNumericModelPrice(model?.pp);
+    const completionPrice = getNumericModelPrice(model?.pc);
+    if (promptPrice !== null && promptPrice <= 0 && (completionPrice === null || completionPrice <= 0)) return true;
+    return false;
+  }
+
   function getAuthStateLabel(settings){
     if (settings.provider === 'gemini') return (settings.geminiKey || '').trim() ? 'مفتاح Gemini جاهز' : 'يلزم مفتاح Gemini';
     if (settings.authMode === 'gateway') return (settings.gatewayUrl || '').trim() ? 'ربط عبر البوابة' : 'البوابة غير مضبوطة';
@@ -1621,6 +1636,22 @@ function refreshDeepSearchBtn(){
       if (freeLocked) $('costGuard').value = 'strict';
       $('costGuard').disabled = freeLocked;
       $('costGuard').title = freeLocked ? 'الخطة المجانية تفرض سياسة تكلفة اقتصادية صارمة.' : '';
+    }
+    if ($('provider')){
+      if (freeLocked) $('provider').value = 'openrouter';
+      $('provider').disabled = freeLocked;
+      $('provider').title = freeLocked ? 'الخطة المجانية تفرض تشغيل OpenRouter Free فقط.' : '';
+    }
+    if ($('model')){
+      if (freeLocked) $('model').value = 'openrouter/free';
+      $('model').disabled = freeLocked;
+      $('model').title = freeLocked ? 'الخطة المجانية تمنع تفعيل أي موديل مدفوع.' : '';
+    }
+    if ($('pickModelBtn')){
+      $('pickModelBtn').disabled = false;
+      $('pickModelBtn').title = freeLocked
+        ? 'يمكنك استعراض النماذج المجانية فقط داخل الخطة المجانية.'
+        : 'الموديلات';
     }
   }
 
@@ -1723,12 +1754,13 @@ function refreshDeepSearchBtn(){
             </div>
             <span class="plan-pill" id="settingsPlanPill">الخطة المجانية</span>
           </div>
+          <div class="status" id="settingsPlanBanner" data-tone="info">الخطة المجانية تفعّل نموذجًا مجانيًا فقط وتوقف الميزات الأعلى تكلفة تلقائيًا.</div>
           <div class="account-actions">
             <button class="btn sm with-label" type="button" id="accountSignInBtn"><span class="icon">🔐</span><span class="label">تسجيل الدخول</span></button>
             <button class="btn ghost sm with-label" type="button" id="accountUpgradeRequestBtn"><span class="icon">✉️</span><span class="label">طلب ترقية</span></button>
             <button class="btn ghost sm with-label" type="button" id="accountLogoutBtn"><span class="icon">↩</span><span class="label">تسجيل الخروج</span></button>
           </div>
-          <div class="upgrade-inline">
+          <div class="upgrade-inline" id="upgradeRedeemRow">
             <input id="upgradeCodeInput" type="text" placeholder="أدخل كود الترقية الذي وصلك عبر البريد" />
             <button class="btn dark sm with-label" type="button" id="activateUpgradeBtn"><span class="icon">⚡</span><span class="label">تفعيل الكود</span></button>
           </div>
@@ -1802,10 +1834,22 @@ function refreshDeepSearchBtn(){
       $('settingsPlanPill').textContent = planLabel;
       $('settingsPlanPill').classList.toggle('premium', plan === 'premium');
     }
+    if ($('settingsPlanBanner')){
+      $('settingsPlanBanner').dataset.tone = role === 'admin' || plan === 'premium' ? 'success' : 'info';
+      $('settingsPlanBanner').textContent = role === 'admin'
+        ? 'حساب الإدارة يعمل بصلاحيات كاملة ويمكنه إدارة الأكواد والمزايا المدفوعة من نفس الواجهة.'
+        : plan === 'premium'
+        ? 'الخطة المدفوعة نشطة. يمكنك استخدام جميع الموديلات والميزات حسب إعدادات التكلفة.'
+        : 'الخطة المجانية تفرض OpenRouter Free فقط وتمنع تفعيل الموديلات المدفوعة والميزات الأعلى تكلفة.';
+    }
     if ($('accountSignInBtn')) $('accountSignInBtn').textContent = signedIn ? 'إعادة المصادقة' : 'تسجيل الدخول';
-    if ($('accountUpgradeRequestBtn')) $('accountUpgradeRequestBtn').disabled = !signedIn;
+    if ($('accountUpgradeRequestBtn')){
+      $('accountUpgradeRequestBtn').disabled = !signedIn || role === 'admin';
+      $('accountUpgradeRequestBtn').style.display = signedIn && role === 'admin' ? 'none' : '';
+    }
     if ($('accountLogoutBtn')) $('accountLogoutBtn').disabled = !signedIn;
     if ($('activateUpgradeBtn')) $('activateUpgradeBtn').disabled = !signedIn;
+    if ($('upgradeRedeemRow')) $('upgradeRedeemRow').style.display = signedIn && role === 'admin' ? 'none' : '';
     if ($('upgradeCodeInput') && auth.upgradeCode && !$('upgradeCodeInput').value) $('upgradeCodeInput').value = auth.upgradeCode;
 
     if ($('upgradeEmail')) $('upgradeEmail').value = settings.upgradeEmail || config.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail;
@@ -2022,7 +2066,7 @@ function refreshDeepSearchBtn(){
     try{
       const payload = await fetchAuthJson('/auth/upgrade/request', {
         method: 'POST',
-        body: JSON.stringify({ appVersion: '7.9' })
+        body: JSON.stringify({ appVersion: '8.0' })
       }).catch(() => null);
       const mailto = payload?.mailto || buildUpgradeMailto(account, getEffectiveAuthConfig());
       window.location.href = mailto;
@@ -6388,6 +6432,10 @@ let pinOnly = false;
     const allowCloudOcr = $('allowCloudOcr') ? !!$('allowCloudOcr').checked : true;
     const allowCloudPolish = $('allowCloudPolish') ? !!$('allowCloudPolish').checked : true;
     const toolsEnabled = $('toolsDefault') ? !!$('toolsDefault').checked : (!!$('toolsToggle')?.checked);
+    const account = getAccountRuntimeState();
+    const freeLocked = account.authRequired && !account.premium;
+    const selectedProvider = freeLocked ? 'openrouter' : $('provider').value;
+    const selectedModel = freeLocked ? 'openrouter/free' : $('model').value.trim();
 
     // if gateway is enabled and url provided, we force baseUrl to gateway/v1
     let baseUrl = $('baseUrl').value.trim();
@@ -6409,9 +6457,9 @@ let pinOnly = false;
     }
 
     const s = setSettings({
-      provider: $('provider').value,
+      provider: selectedProvider,
       baseUrl,
-      model: $('model').value.trim(),
+      model: selectedModel,
 
       apiKey: $('apiKey').value.trim(),
       geminiKey: $('geminiKey').value.trim(),
@@ -6454,6 +6502,10 @@ let pinOnly = false;
     if ($('toolsToggle')) $('toolsToggle').checked = !!s.toolsEnabled;
 
     toast('✅ تم حفظ الإعدادات');
+    if (freeLocked){
+      if ($('provider')) $('provider').value = 'openrouter';
+      if ($('model')) $('model').value = 'openrouter/free';
+    }
     loadRemoteAuthConfig(true).then(() => syncAccountUi()).catch(() => syncAccountUi());
     refreshModeButtons();
     refreshStrategicWorkspace().catch(()=>{});
@@ -6514,7 +6566,7 @@ let pinOnly = false;
     if (!force && cache?.ts && (nowTs() - cache.ts) < freshMs && Array.isArray(cache.models) && cache.models.length){
       return cache.models;
     }
-    const s = getSettings();
+    const s = getAppRuntimePolicy(getSettings()).runtime;
     if (!hasAuthReady(s)) throw new Error('المصادقة غير مكتملة (API Key أو Gateway URL)');
     const headers = { 'Content-Type':'application/json', ...buildAuthHeaders(s) };
     Object.assign(headers, buildProviderHeaders(s));
@@ -6566,18 +6618,24 @@ let pinOnly = false;
   }
 
   async function renderModelHub(){
-    const models = await fetchOpenRouterModels(false).catch(()=>[]);
+    const policy = getAppRuntimePolicy(getSettings());
+    const seeded = await fetchOpenRouterModels(false).catch(()=>[]);
+    const models = seeded.some(m => m.id === 'openrouter/free')
+      ? seeded.slice()
+      : [{ id:'openrouter/free', name:'OpenRouter Free Router', provider:'openrouter', ctx:null, pp:0, pc:0, tools:false, vision:false }, ...seeded];
     const list = $('modelList');
     const q = String($('modelSearch')?.value || '').trim().toLowerCase();
     const providerFilter = String($('modelProviderFilter')?.value || '');
     const sort = String($('modelSort')?.value || 'name');
     const favOnly = ($('modelFavOnlyBtn')?.dataset.on === '1');
     const favs = new Set(loadFavs());
+    const hint = $('modelHubHint');
 
     let filtered = models.slice();
     if (q) filtered = filtered.filter(m => (m.id.toLowerCase().includes(q) || (m.name||'').toLowerCase().includes(q)));
     if (providerFilter) filtered = filtered.filter(m => m.provider === providerFilter);
     if (favOnly) filtered = filtered.filter(m => favs.has(m.id));
+    if (policy.freeMode) filtered = filtered.filter(isFreeTierModel);
 
     const num = (x) => (x==null ? Number.POSITIVE_INFINITY : Number(x));
     if (sort === 'context_desc') filtered.sort((a,b)=> num(b.ctx)-num(a.ctx));
@@ -6585,15 +6643,29 @@ let pinOnly = false;
     else if (sort === 'price_completion_asc') filtered.sort((a,b)=> num(a.pc)-num(b.pc));
     else filtered.sort((a,b)=> String(a.id).localeCompare(String(b.id)));
 
+    if (hint){
+      hint.textContent = policy.freeMode
+        ? 'الخطة المجانية تعرض النماذج المجانية فقط، وسيتم فرض OpenRouter Free عند الحفظ والتنفيذ.'
+        : '⭐ لحفظه كمفضلة. يمكنك اختيار أي موديل أو كتابته يدويًا.';
+    }
+
     list.innerHTML = '';
+    if (!filtered.length){
+      list.innerHTML = `<div class="status" data-tone="info">لا توجد نماذج مطابقة للفلترة الحالية${policy.freeMode ? ' داخل الفئة المجانية' : ''}.</div>`;
+      return;
+    }
+
     filtered.slice(0, 400).forEach(m => {
       const row = document.createElement('div');
-      row.className = 'bubble';
+      const freeTier = isFreeTierModel(m);
+      row.className = `bubble model-card ${freeTier ? 'is-free' : 'is-paid'}`;
       const badges = [];
       if (m.ctx) badges.push(`<span class="tag">ctx ${escapeHtml(m.ctx)}</span>`);
       if (m.vision) badges.push(`<span class="tag">vision</span>`);
       if (m.tools) badges.push(`<span class="tag">tools</span>`);
+      badges.push(`<span class="tag ${freeTier ? 'tag-free' : 'tag-paid'}">${freeTier ? 'مجاني' : 'مدفوع'}</span>`);
       const prices = [];
+      if (freeTier) prices.push('متاح ضمن الخطة المجانية');
       if (m.pp!=null) prices.push(`prompt: ${m.pp}`);
       if (m.pc!=null) prices.push(`completion: ${m.pc}`);
 
@@ -6633,13 +6705,18 @@ let pinOnly = false;
 
     // provider dropdown
     const provSel = $('modelProviderFilter');
-    if (provSel && provSel.options.length <= 1 && models.length){
-      const providers = Array.from(new Set(models.map(x => x.provider).filter(Boolean))).sort();
+    if (provSel){
+      provSel.innerHTML = '<option value="">كل المزوّدين</option>';
+    }
+    if (provSel && models.length){
+      const providerSource = policy.freeMode ? filtered : models;
+      const providers = Array.from(new Set(providerSource.map(x => x.provider).filter(Boolean))).sort();
       for (const p of providers){
         const o = document.createElement('option');
         o.value = p; o.textContent = p;
         provSel.appendChild(o);
       }
+      provSel.value = providerFilter && providers.includes(providerFilter) ? providerFilter : '';
     }
   }
 

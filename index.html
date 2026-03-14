@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v7.9</title>
+    <title>AI Workspace Studio v8.0</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -461,6 +461,30 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       flex-wrap:wrap;
       gap:10px;
       margin-top:10px;
+    }
+    #modelList{
+      display:grid;
+      gap:12px;
+    }
+    .model-card{
+      border-radius:20px;
+      border:1px solid rgba(10,20,60,.08);
+      background:linear-gradient(180deg,#ffffff,#f7faff);
+      box-shadow:0 14px 34px rgba(15,23,42,.05);
+    }
+    .model-card.is-free{
+      border-color:rgba(16,185,129,.22);
+      box-shadow:0 14px 34px rgba(16,185,129,.08);
+    }
+    .tag-free{
+      background:rgba(16,185,129,.12);
+      color:#047857;
+      border-color:rgba(16,185,129,.2);
+    }
+    .tag-paid{
+      background:rgba(245,158,11,.12);
+      color:#b45309;
+      border-color:rgba(245,158,11,.2);
     }
     @media (max-width:1080px){
       .workspace-deck,.settings-overview{grid-template-columns:1fr;}
@@ -2030,7 +2054,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
             <option value="price_completion_asc">ترتيب: سعر الإخراج (تصاعدي)</option>
           </select></div>
         </div>
-        <div class="hint" style="margin-top:8px">⭐ لحفظه كمفضلة. يمكنك اختيار أي موديل أو كتابته يدويًا.</div>
+        <div class="hint" id="modelHubHint" style="margin-top:8px">⭐ لحفظه كمفضلة. يمكنك اختيار أي موديل أو كتابته يدويًا.</div>
         <div id="modelList" style="margin-top:12px"></div>
       </div>
     </div>
@@ -2051,11 +2075,11 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     })();
   </script>
 
-<script src="app.js?v=79"></script>
+<script src="app.js?v=80"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-navigator.serviceWorker.register("./sw.js?v=79").then((registration) => {
+navigator.serviceWorker.register("./sw.js?v=80").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {
