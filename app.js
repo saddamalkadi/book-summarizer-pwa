@@ -1,4 +1,4 @@
-/* AI Workspace Studio v7.7 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v7.8 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -416,11 +416,11 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   function getLocalAuthConfig(settings = getSettings()){
     return {
       ...DEFAULT_AUTH_CONFIG,
-      googleClientId: String(settings.googleClientId || '').trim(),
+      googleClientId: '',
       upgradeEmail: String(settings.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail).trim() || DEFAULT_AUTH_CONFIG.upgradeEmail,
-      adminEmail: String(settings.upgradeEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim() || DEFAULT_AUTH_CONFIG.adminEmail,
+      adminEmail: DEFAULT_AUTH_CONFIG.adminEmail,
       adminEnabled: true,
-      clientIdConfigured: !!String(settings.googleClientId || '').trim()
+      clientIdConfigured: false
     };
   }
 
@@ -614,11 +614,11 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       const remote = payload || {};
       return setAuthConfigCached({
         ...remote,
-        googleClientId: String(remote.googleClientId || local.googleClientId || '').trim(),
+        googleClientId: String(remote.googleClientId || '').trim(),
         upgradeEmail: String(remote.upgradeEmail || local.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail).trim(),
         adminEmail: String(remote.adminEmail || local.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim(),
         adminEnabled: remote.adminEnabled !== false,
-        clientIdConfigured: !!String(remote.googleClientId || local.googleClientId || '').trim()
+        clientIdConfigured: !!String(remote.googleClientId || '').trim()
       });
     }).catch(() => {
       return setAuthConfigCached(getLocalAuthConfig(settings));
@@ -1599,7 +1599,7 @@ function refreshDeepSearchBtn(){
 
   function getAuthGoogleClientId(settings = getSettings()){
     const config = getEffectiveAuthConfig(settings);
-    return String(config.googleClientId || settings.googleClientId || '').trim();
+    return String(config.googleClientId || '').trim();
   }
 
   function setAuthGateStatus(message, tone = 'info'){
@@ -1705,35 +1705,6 @@ function refreshDeepSearchBtn(){
                 <button class="btn ghost sm with-label" type="button" id="authRetryBtn"><span class="icon">↻</span><span class="label">إعادة التهيئة</span></button>
                 <button class="btn ghost sm with-label" type="button" id="authCloseBtn"><span class="icon">✕</span><span class="label">إغلاق</span></button>
               </div>
-              <div class="divider"></div>
-              <details class="tool-group" open>
-                <summary class="workspace-section-toggle">
-                  <span class="workspace-section-head">
-                    <span class="workspace-section-title">تهيئة الدخول المحلية</span>
-                    <span class="workspace-section-summary">استخدمها فقط إذا لم يكن Google Client ID مضبوطًا على الـ Worker بعد.</span>
-                  </span>
-                  <span class="workspace-section-chevron">⌄</span>
-                </summary>
-                <div class="tool-group-body" style="padding-top:14px">
-                  <div class="auth-config-grid">
-                    <div>
-                      <label class="hint">Google Client ID</label>
-                      <input id="authGateGoogleClientId" type="text" placeholder="أدخل Google Client ID للتطبيق" />
-                    </div>
-                    <div>
-                      <label class="hint">بريد طلب الترقية</label>
-                      <input id="authGateUpgradeEmail" type="email" placeholder="tntntt830@gmail.com" />
-                    </div>
-                    <div style="grid-column:1/-1">
-                      <label class="hint">رابط البوابة</label>
-                      <input id="authGateGatewayUrl" type="text" placeholder="https://sadam-key.tntntt830.workers.dev" />
-                    </div>
-                  </div>
-                  <div class="account-actions" style="margin-top:12px">
-                    <button class="btn sm with-label" type="button" id="authSaveLocalConfigBtn"><span class="icon">💾</span><span class="label">حفظ التهيئة المحلية</span></button>
-                  </div>
-                </div>
-              </details>
             </section>
           </div>
         </div>`);
@@ -1762,11 +1733,7 @@ function refreshDeepSearchBtn(){
             <button class="btn dark sm with-label" type="button" id="activateUpgradeBtn"><span class="icon">⚡</span><span class="label">تفعيل الكود</span></button>
           </div>
           <div class="row" style="margin-top:10px">
-            <div class="col">
-              <label class="hint">Google Client ID</label>
-              <input id="googleClientId" type="text" placeholder="Google Client ID للتطبيق" />
-            </div>
-            <div class="col">
+            <div class="col" style="grid-column:1/-1">
               <label class="hint">بريد طلب الترقية</label>
               <input id="upgradeEmail" type="email" placeholder="tntntt830@gmail.com" />
             </div>
@@ -1812,11 +1779,7 @@ function refreshDeepSearchBtn(){
     if ($('activateUpgradeBtn')) $('activateUpgradeBtn').disabled = !signedIn;
     if ($('upgradeCodeInput') && auth.upgradeCode && !$('upgradeCodeInput').value) $('upgradeCodeInput').value = auth.upgradeCode;
 
-    if ($('googleClientId')) $('googleClientId').value = settings.googleClientId || config.googleClientId || '';
     if ($('upgradeEmail')) $('upgradeEmail').value = settings.upgradeEmail || config.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail;
-    if ($('authGateGoogleClientId')) $('authGateGoogleClientId').value = settings.googleClientId || config.googleClientId || '';
-    if ($('authGateUpgradeEmail')) $('authGateUpgradeEmail').value = settings.upgradeEmail || config.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail;
-    if ($('authGateGatewayUrl')) $('authGateGatewayUrl').value = settings.gatewayUrl || DEFAULT_SETTINGS.gatewayUrl;
     if ($('authEntryName') && !$('authEntryName').value && signedIn) $('authEntryName').value = auth.name || '';
     if ($('authEntryEmail') && !$('authEntryEmail').value && signedIn) $('authEntryEmail').value = auth.email || '';
     if ($('authGatePlanNote')) $('authGatePlanNote').textContent = role === 'admin'
@@ -1873,7 +1836,7 @@ function refreshDeepSearchBtn(){
     if (!slot) return;
     const clientId = getAuthGoogleClientId();
     if (!clientId){
-      slot.innerHTML = '<div class="hint">يمكنك المتابعة بالبريد الإلكتروني مباشرة. تسجيل Google اختياري ولم يُفعّل بعد.</div>';
+      slot.innerHTML = '<div class="hint">سيظهر زر Google هنا تلقائيًا عند تفعيل الربط على الخادم. يمكنك الآن الدخول بالبريد من النموذج نفسه.</div>';
       return;
     }
     const ready = await waitForGoogleIdentity();
@@ -1889,16 +1852,18 @@ function refreshDeepSearchBtn(){
         callback: handleGoogleCredentialResponse,
         auto_select: false,
         cancel_on_tap_outside: false,
-        context: 'signin'
+        context: 'signin',
+        use_fedcm_for_prompt: true
       });
       slot.innerHTML = '';
       window.google.accounts.id.renderButton(slot, {
-        theme: 'outline',
+        theme: 'filled_blue',
         size: 'large',
         shape: 'pill',
-        text: 'continue_with',
+        text: 'signin_with',
         logo_alignment: 'right',
-        width: Math.min(360, Math.max(260, slot.clientWidth || 320))
+        width: Math.min(360, Math.max(260, slot.clientWidth || 320)),
+        use_fedcm_for_button: true
       });
     }catch(error){
       slot.innerHTML = '<div class="hint">تعذر تهيئة زر تسجيل الدخول حاليًا.</div>';
@@ -2074,32 +2039,6 @@ function refreshDeepSearchBtn(){
     window.setTimeout(() => {
       $('settingsAccountCard')?.scrollIntoView({ behavior:'smooth', block:'start' });
     }, 60);
-  }
-
-  function saveLocalAuthConfigFromUi(source = 'settings'){
-    const googleClientId = source === 'gate'
-      ? String($('authGateGoogleClientId')?.value || '').trim()
-      : String($('googleClientId')?.value || '').trim();
-    const upgradeEmail = source === 'gate'
-      ? String($('authGateUpgradeEmail')?.value || '').trim()
-      : String($('upgradeEmail')?.value || '').trim();
-    const gatewayUrl = source === 'gate'
-      ? normalizeEndpointUrl($('authGateGatewayUrl')?.value || '')
-      : normalizeEndpointUrl($('gatewayUrl')?.value || '');
-
-    setSettings({
-      googleClientId,
-      upgradeEmail: upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail,
-      gatewayUrl: gatewayUrl || getSettings().gatewayUrl
-    });
-    AUTH_RUNTIME.config = null;
-    loadRemoteAuthConfig(true).then(() => {
-      syncAccountUi();
-      renderGoogleButton(true).catch(()=>{});
-      renderSettings();
-      refreshStrategicWorkspace().catch(()=>{});
-      toast('✅ تم حفظ تهيئة تسجيل الدخول');
-    });
   }
 
   async function initializeAuthExperience(){
@@ -6327,7 +6266,6 @@ let pinOnly = false;
     if ($('cloudRetryMax')) $('cloudRetryMax').value = String(s.cloudRetryMax || 2);
     if ($('freeMode')) $('freeMode').checked = !!s.freeMode;
     if ($('costGuard')) $('costGuard').value = s.costGuard || 'balanced';
-    if ($('googleClientId')) $('googleClientId').value = s.googleClientId || '';
     if ($('upgradeEmail')) $('upgradeEmail').value = s.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail;
     if ($('maxCloudPdfPages')) $('maxCloudPdfPages').value = String(s.maxCloudPdfPages || DEFAULT_SETTINGS.maxCloudPdfPages);
     if ($('maxCloudFileMB')) $('maxCloudFileMB').value = String(s.maxCloudFileMB || DEFAULT_SETTINGS.maxCloudFileMB);
@@ -6360,7 +6298,6 @@ let pinOnly = false;
     const cloudRetryMax = $('cloudRetryMax') ? clamp(Number($('cloudRetryMax').value || 2), 1, 5) : 2;
     const freeMode = $('freeMode') ? !!$('freeMode').checked : false;
     const costGuard = $('costGuard') ? $('costGuard').value : 'balanced';
-    const googleClientId = $('googleClientId') ? $('googleClientId').value.trim() : '';
     const upgradeEmail = $('upgradeEmail') ? $('upgradeEmail').value.trim() : DEFAULT_AUTH_CONFIG.upgradeEmail;
     const maxCloudPdfPages = $('maxCloudPdfPages') ? clamp(Number($('maxCloudPdfPages').value || DEFAULT_SETTINGS.maxCloudPdfPages), 1, 400) : DEFAULT_SETTINGS.maxCloudPdfPages;
     const maxCloudFileMB = $('maxCloudFileMB') ? clamp(Number($('maxCloudFileMB').value || DEFAULT_SETTINGS.maxCloudFileMB), 1, 200) : DEFAULT_SETTINGS.maxCloudFileMB;
@@ -6415,7 +6352,7 @@ let pinOnly = false;
       ocrLang: ocrLang || 'ara+eng',
       freeMode,
       costGuard,
-      googleClientId,
+      googleClientId: '',
       upgradeEmail: upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail,
       maxCloudPdfPages,
       maxCloudFileMB,
@@ -6683,7 +6620,6 @@ let pinOnly = false;
       renderGoogleButton(true).catch(()=>{});
     });
     $('authCloseBtn')?.addEventListener('click', () => closeAuthGate());
-    $('authSaveLocalConfigBtn')?.addEventListener('click', () => saveLocalAuthConfigFromUi('gate'));
     $('upgradeCodeInput')?.addEventListener('keydown', (event) => {
       if (event.key === 'Enter'){
         event.preventDefault();
