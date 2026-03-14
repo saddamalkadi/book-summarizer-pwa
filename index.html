@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v7.2</title>
+    <title>AI Workspace Studio v7.3</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%231b66ff'/><stop offset='1' stop-color='%230b1020'/></linearGradient></defs><rect width='100' height='100' rx='18' fill='url(%23g)'/><path d='M28 30h44v40H28z' fill='%23ffffff' opacity='.92'/><path d='M34 40h32M34 50h32M34 60h22' stroke='%230b1020' stroke-width='3' stroke-linecap='round'/><circle cx='68' cy='64' r='6' fill='%231b66ff'/></svg>" />
@@ -88,6 +88,8 @@
     .btn.ghost{background:#eef3ff; color:var(--pri)}
     .btn.dark{background:var(--pri2)}
     .btn.danger{background:#ff3b30}
+    .btn:disabled, .pill:disabled, input:disabled, select:disabled, textarea:disabled{opacity:.55; cursor:not-allowed; filter:saturate(.7);}
+    .is-disabled{opacity:.55; cursor:not-allowed; filter:saturate(.7);}
     .btn.sm{height:30px; padding:0 8px; border-radius:10px; font-size:11px;}
     .btn.icon{width:30px; height:30px; min-width:30px; padding:0; display:inline-flex; align-items:center; justify-content:center; font-size:14px;}
     .btn.with-label{display:inline-flex; align-items:center; gap:6px; min-height:34px;}
@@ -1317,6 +1319,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
           <button class="btn ghost sm" id="openSideBtn" title="قائمة">☰</button>
           <div class="title" id="topTitle">الدردشة</div>
           <span class="hint" id="topSubtitle">مشروع: <b id="curProjectName">افتراضي</b></span>
+          <span class="tag" id="topRuntimeBadge">—</span>
         </div>
         <div class="row topbar-actions">
           <button class="btn ghost sm with-label" id="headerCollapseBtn" title="طي الشريط العلوي" aria-label="طي الشريط العلوي"><span class="icon">▾</span><span class="label">طي</span></button>
@@ -1935,11 +1938,11 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     })();
   </script>
 
-  <script src="app.js?v=72"></script>
+  <script src="app.js?v=73"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js?v=72").then((registration) => {
+        navigator.serviceWorker.register("./sw.js?v=73").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

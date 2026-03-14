@@ -1,4 +1,4 @@
-/* AI Workspace Studio v7.2 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v7.3 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -199,12 +199,12 @@ async function ensureKbStats(){
   return count;
 }
 
-async function callEmbeddings({ apiKey, baseUrl, model, inputs, signal, extraHeaders={} }){
+async function callEmbeddings({ settings = getSettings(), apiKey, baseUrl, model, inputs, signal, extraHeaders={} }){
   const url = baseUrl.replace(/\/+$/,'') + '/embeddings';
   const body = { model, input: inputs };
   const r = await fetch(url, {
     method:'POST',
-    headers: { 'Content-Type':'application/json', ...extraHeaders, ...buildAuthHeaders(getSettings()) },
+    headers: { 'Content-Type':'application/json', ...extraHeaders, ...buildAuthHeaders({ ...settings, apiKey }) },
     body: JSON.stringify(body),
     signal
   });
@@ -215,13 +215,15 @@ async function callEmbeddings({ apiKey, baseUrl, model, inputs, signal, extraHea
   return data.map(d => d.embedding).filter(Boolean);
 }
 
-async function buildKbIndex(){
+async function buildKbIndex(rawSettings = getSettings()){
   const pid = getCurProjectId();
   const kb = getKbSettings(pid);
-  const settings = getSettings();
+  const policy = getAppRuntimePolicy(rawSettings);
+  if (!policy.allowEmbeddings) return toast(getPolicyFeatureReason('embeddings', policy));
+  const settings = policy.runtime;
   const embedModel = (kb.embedModel || '').trim();
   if (!embedModel) return toast('⚠️ حدّد نموذج التضمين في صفحة المعرفة.');
-  if (!settings.apiKey) return toast('⚠️ أضف مفتاح API.');
+  if (!hasAuthReady(settings)) return toast(getMissingAuthMessage(settings));
 
   const files = loadFiles(pid).filter(f => (f.text||'').trim());
   if (!files.length) return toast('⚠️ لا توجد نصوص مستخرجة من الملفات.');
@@ -245,7 +247,7 @@ async function buildKbIndex(){
   for (let i=0;i<chunks.length;i+=batchSize){
     const batch = chunks.slice(i, i+batchSize);
     const inputs = batch.map(x => x.text);
-    const embs = await callEmbeddings({ apiKey: settings.apiKey, baseUrl, model: embedModel, inputs, signal: abort.signal, extraHeaders });
+    const embs = await callEmbeddings({ settings, apiKey: settings.apiKey, baseUrl, model: embedModel, inputs, signal: abort.signal, extraHeaders });
     for (let k=0;k<batch.length;k++){
       const vec = embs[k];
       if (!vec) continue;
@@ -262,10 +264,12 @@ async function buildKbIndex(){
   await ensureKbStats();
 }
 
-async function searchKb(query){
+async function searchKb(query, rawSettings = getSettings()){
   const pid = getCurProjectId();
   const kb = getKbSettings(pid);
-  const settings = getSettings();
+  const policy = getAppRuntimePolicy(rawSettings);
+  if (!policy.allowEmbeddings) throw new Error(getPolicyFeatureReason('embeddings', policy));
+  const settings = policy.runtime;
   const embedModel = (kb.embedModel || '').trim();
   const topK = clamp(Number(kb.topK||6), 1, 20);
   if (!embedModel) throw new Error('نموذج التضمين غير محدد');
@@ -279,7 +283,7 @@ async function searchKb(query){
   const extraHeaders = buildProviderHeaders(settings);
 
   const abort = new AbortController();
-  const qEmb = (await callEmbeddings({ apiKey: settings.apiKey, baseUrl, model: embedModel, inputs:[query], signal: abort.signal, extraHeaders }))[0];
+  const qEmb = (await callEmbeddings({ settings, apiKey: settings.apiKey, baseUrl, model: embedModel, inputs:[query], signal: abort.signal, extraHeaders }))[0];
   const qv = new Float32Array(qEmb.length);
   for (let i=0;i<qEmb.length;i++) qv[i] = qEmb[i];
 
@@ -313,10 +317,12 @@ async function renderKbUI(){
   await ensureKbStats();
 }
 
-async function buildRagContextIfEnabled(userText){
-  if (!getRagToggle()) return { ctx:'', results:[] };
+async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
+  const policy = getAppRuntimePolicy(rawSettings);
+  const modes = getEffectiveModeState(rawSettings, policy);
+  if (!policy.allowRag || !modes.rag) return { ctx:'', results:[] };
   try{
-    const results = await searchKb(userText);
+    const results = await searchKb(userText, rawSettings);
     if (!results.length) return { ctx:'', results:[] };
     const kb = getKbSettings(getCurProjectId());
     const hint = (kb.ragHint || DEFAULT_KB.ragHint).trim();
@@ -466,6 +472,151 @@ async function buildRagContextIfEnabled(userText){
     return enabled ? 'الوضع المجاني' : 'الوضع الاحترافي';
   }
 
+  function getMissingAuthMessage(settings){
+    if (settings.provider === 'gemini') return 'أضف مفتاح Gemini من صفحة الإعدادات قبل المتابعة.';
+    if (settings.authMode === 'gateway') return 'أضف رابط البوابة أو فعّل Cloudflare Worker المتوافق قبل المتابعة.';
+    return 'أضف مفتاح API من صفحة الإعدادات قبل المتابعة.';
+  }
+
+  function getCostGuardCaps(mode = getSettings().costGuard){
+    return ({
+      strict: { maxOut: 1200, fileClip: 9000 },
+      balanced: { maxOut: 2000, fileClip: 14000 },
+      open: { maxOut: 3200, fileClip: 24000 }
+    })[mode] || { maxOut: 2000, fileClip: 14000 };
+  }
+
+  function getBudgetModelForSettings(settings = getSettings()){
+    if (settings.provider === 'gemini') return 'gemini-2.5-flash';
+    if (settings.provider === 'openai') return 'gpt-4o-mini';
+    return 'openai/gpt-4o-mini';
+  }
+
+  function getPolicyFeatureReason(feature, policy = getAppRuntimePolicy()){
+    const reasons = {
+      chat: policy.blockedReason || '',
+      deepMode: policy.freeMode
+        ? 'الوضع المجاني يوقف التفكير العميق على مستوى التطبيق لتقليل التكلفة.'
+        : 'وضع التكلفة الصارم يوقف التفكير العميق حتى تبقى الجلسات أقل كلفة.',
+      agentMode: policy.freeMode
+        ? 'الوضع المجاني يوقف وضع الوكيل لأنه قد يضاعف عدد الطلبات.'
+        : 'وضع التكلفة الصارم يوقف وضع الوكيل لأنه قد يطلق خطوات إضافية.',
+      web: policy.freeMode
+        ? 'الوضع المجاني يوقف الويب والبحث الشبكي على مستوى التطبيق.'
+        : 'وضع التكلفة الصارم يوقف الويب والبحث الشبكي للتحكم في التكلفة.',
+      deepSearch: policy.freeMode
+        ? 'الوضع المجاني يوقف البحث العميق متعدد الخطوات.'
+        : 'وضع التكلفة الصارم يوقف البحث العميق لأنه يستهلك عدة طلبات.',
+      research: policy.freeMode
+        ? 'الوضع المجاني يوقف البحث التفصيلي متعدد الخطوات.'
+        : 'وضع التكلفة الصارم يوقف البحث التفصيلي لأنه يطلق عدة مراحل.',
+      tools: policy.freeMode
+        ? 'الوضع المجاني يوقف الأدوات الآلية مثل KB والويب والتنزيلات الذكية.'
+        : 'وضع التكلفة الصارم يوقف الأدوات الآلية لتقليل الاستدعاءات الإضافية.',
+      rag: policy.freeMode
+        ? 'الوضع المجاني يوقف RAG لأنه يعتمد على استدعاءات تضمين واسترجاع إضافية.'
+        : 'وضع التكلفة الصارم يوقف RAG لتقليل كلفة الفهرسة والاسترجاع.',
+      embeddings: policy.freeMode
+        ? 'الوضع المجاني يوقف فهرسة المعرفة والبحث الدلالي على مستوى التطبيق.'
+        : 'وضع التكلفة الصارم يوقف فهرسة المعرفة والبحث الدلالي لتقليل الكلفة.',
+      summary: policy.freeMode
+        ? 'الوضع المجاني يوقف تلخيص السجل التلقائي لأنه يستهلك طلبات إضافية.'
+        : 'وضع التكلفة الصارم يوقف تلخيص السجل التلقائي للحفاظ على الحد الأدنى من الكلفة.'
+    };
+    return reasons[feature] || policy.blockedReason || 'هذه الميزة متوقفة حسب سياسة التشغيل الحالية.';
+  }
+
+  function getAppRuntimePolicy(raw = getSettings()){
+    const source = { ...DEFAULT_SETTINGS, ...(raw || {}) };
+    const freeMode = !!source.freeMode;
+    const costGuard = freeMode ? 'strict' : (source.costGuard || 'balanced');
+    const caps = getCostGuardCaps(costGuard);
+    const notes = [];
+    const runtime = { ...source };
+
+    const strictLike = freeMode || costGuard === 'strict';
+    const allowTools = !strictLike;
+    const allowWeb = !strictLike;
+    const allowDeepMode = !strictLike;
+    const allowAgentMode = !strictLike;
+    const allowDeepSearch = !strictLike;
+    const allowResearch = !strictLike;
+    const allowEmbeddings = !strictLike;
+    const allowRag = !strictLike;
+    const allowThreadSummary = !strictLike;
+
+    if (freeMode){
+      const gatewayRoot = normalizeUrl(resolveGatewayApiRoot(source));
+      if (gatewayRoot){
+        runtime.provider = 'openrouter';
+        runtime.authMode = 'gateway';
+        runtime.gatewayUrl = gatewayRoot;
+        runtime.baseUrl = `${gatewayRoot}/v1`;
+        runtime.model = 'openrouter/free';
+        notes.push('تشغيل مجاني عبر البوابة');
+      } else if (isOpenRouter(source)){
+        runtime.provider = 'openrouter';
+        runtime.baseUrl = effectiveBaseUrl(source) || normalizeUrl(source.baseUrl || DEFAULT_SETTINGS.baseUrl) || 'https://openrouter.ai/api/v1';
+        runtime.model = 'openrouter/free';
+        notes.push('تشغيل مجاني عبر OpenRouter');
+      }
+    } else if (costGuard === 'strict'){
+      runtime.model = getBudgetModelForSettings(source);
+      notes.push('فرض نموذج اقتصادي');
+    }
+
+    if (!runtime.model) runtime.model = getBudgetModelForSettings(runtime);
+    runtime.maxOut = clamp(Number(source.maxOut || DEFAULT_SETTINGS.maxOut), 256, caps.maxOut);
+    runtime.fileClip = clamp(Number(source.fileClip || DEFAULT_SETTINGS.fileClip), 2000, caps.fileClip);
+    runtime.toolsEnabled = !!source.toolsEnabled && allowTools;
+    runtime.rag = !!source.rag && allowRag;
+    runtime.webMode = allowWeb ? (source.webMode || 'off') : 'off';
+
+    let blockedReason = '';
+    if (freeMode && !(normalizeUrl(resolveGatewayApiRoot(runtime)) || isOpenRouter(runtime))){
+      blockedReason = 'الوضع المجاني يحتاج Gateway أو OpenRouter مباشر حتى يعمل على مستوى التطبيق بالكامل.';
+    } else if (!hasAuthReady(runtime)){
+      blockedReason = freeMode
+        ? 'الوضع المجاني يحتاج Gateway أو OpenRouter مباشر مع إعداد مصادقة صالح.'
+        : getMissingAuthMessage(runtime);
+    }
+
+    return {
+      freeMode,
+      costGuard,
+      caps,
+      runtime,
+      notes,
+      allowChat: !blockedReason,
+      blockedReason,
+      allowTools,
+      allowWeb,
+      allowDeepMode,
+      allowAgentMode,
+      allowDeepSearch,
+      allowResearch,
+      allowEmbeddings,
+      allowRag,
+      allowThreadSummary,
+      modeLabel: `${getFreeModeLabel(freeMode)} • ${getCostGuardLabel(costGuard)}`
+    };
+  }
+
+  function getRuntimeSettings(raw = getSettings()){
+    return getAppRuntimePolicy(raw).runtime;
+  }
+
+  function getEffectiveModeState(raw = getSettings(), policy = getAppRuntimePolicy(raw)){
+    return {
+      deep: policy.allowDeepMode && isDeep(),
+      agent: policy.allowAgentMode && isAgent(),
+      web: policy.allowWeb && getWebToggle(),
+      deepSearch: policy.allowDeepSearch && isDeepSearch(),
+      rag: policy.allowRag && getRagToggle(),
+      tools: !!policy.runtime.toolsEnabled
+    };
+  }
+
   function estimateTranscribeComplexity(meta = {}){
     const pages = Math.max(0, Number(meta.pages || meta.pageCount || 0));
     const sizeMB = Math.max(0, Number(meta.sizeMB || 0));
@@ -594,7 +745,9 @@ async function buildRagContextIfEnabled(userText){
 
   function renderTranscribeOperationalState(meta = transcribeRuntimeMeta){
     transcribeRuntimeMeta = buildTranscribeSourceMeta(meta?.file || null, meta);
-    const settings = getSettings();
+    const rawSettings = getSettings();
+    const policy = getAppRuntimePolicy(rawSettings);
+    const settings = policy.runtime;
     const routeDecision = decidePdfDocxRoute(getTranscribeDocxMode(), transcribeRuntimeMeta, settings);
     const cloudRoot = getConvertWorkerRoot(settings);
 
@@ -615,12 +768,12 @@ async function buildRagContextIfEnabled(userText){
     sourceBits.push(transcribeRuntimeMeta.complexity || 'غير محسوب');
 
     if ($('transcribeRouteState')) $('transcribeRouteState').textContent = routeDecision.route === 'cloud' ? 'سحابي' : 'محلي';
-    if ($('transcribeBudgetState')) $('transcribeBudgetState').textContent = `${getCostGuardLabel(settings.costGuard)} • ${settings.freeMode ? 'مجاني' : 'مدفوع حسب الاستخدام'}`;
+    if ($('transcribeBudgetState')) $('transcribeBudgetState').textContent = `${getCostGuardLabel(policy.costGuard)} • ${policy.freeMode ? 'مجاني' : 'مدفوع حسب الاستخدام'}`;
     if ($('transcribeCloudState')) $('transcribeCloudState').textContent = cloudLabel;
     if ($('transcribeDocProfile')) $('transcribeDocProfile').textContent = sourceBits.join(' • ');
 
     if ($('settingsConvertState')) $('settingsConvertState').textContent = cloudRoot ? cloudLabel : 'غير مضبوط';
-    if ($('settingsCostState')) $('settingsCostState').textContent = `${getFreeModeLabel(settings.freeMode)} • ${getCostGuardLabel(settings.costGuard)}`;
+    if ($('settingsCostState')) $('settingsCostState').textContent = policy.modeLabel;
   }
 
   function getChatBaseUrlCandidates(settings){
@@ -1100,28 +1253,68 @@ function applyShellLayout(){
 function refreshDeepSearchBtn(){
     const b = $('deepSearchToggleBtn');
     if (!b) return;
-    b.classList.toggle('dark', isDeepSearch());
-    b.textContent = isDeepSearch() ? '🔬 بحث عميق ✓' : '🔬 بحث عميق';
+    const raw = getSettings();
+    const policy = getAppRuntimePolicy(raw);
+    const modes = getEffectiveModeState(raw, policy);
+    b.classList.toggle('dark', modes.deepSearch);
+    b.textContent = modes.deepSearch ? '🔬 بحث عميق ✓' : '🔬 بحث عميق';
+    b.disabled = !policy.allowDeepSearch;
+    b.title = policy.allowDeepSearch ? 'تشغيل/إيقاف البحث العميق' : getPolicyFeatureReason('deepSearch', policy);
+  }
+
+  function setControlAvailability(el, enabled, note=''){
+    if (!el) return;
+    if (!el.dataset.baseTitle) el.dataset.baseTitle = el.getAttribute('title') || '';
+    el.disabled = !enabled;
+    el.classList.toggle('is-disabled', !enabled);
+    if (enabled){
+      el.removeAttribute('aria-disabled');
+      if (el.dataset.baseTitle) el.setAttribute('title', el.dataset.baseTitle);
+    } else {
+      el.setAttribute('aria-disabled', 'true');
+      if (note) el.setAttribute('title', note);
+    }
   }
 
   function refreshModeButtons(){
+    const raw = getSettings();
+    const policy = getAppRuntimePolicy(raw);
+    const modes = getEffectiveModeState(raw, policy);
+
     const deepBtn = $('modeDeepBtn');
     if (deepBtn){
-      deepBtn.classList.toggle('dark', isDeep());
+      deepBtn.classList.toggle('dark', modes.deep);
       deepBtn.innerHTML = '<span class="icon">🧠</span><span class="label">عميق</span>';
+      setControlAvailability(deepBtn, policy.allowDeepMode, getPolicyFeatureReason('deepMode', policy));
     }
     const agentBtn = $('modeAgentBtn');
     if (agentBtn){
-      agentBtn.classList.toggle('dark', isAgent());
+      agentBtn.classList.toggle('dark', modes.agent);
       agentBtn.innerHTML = '<span class="icon">🤖</span><span class="label">وكيل</span>';
+      setControlAvailability(agentBtn, policy.allowAgentMode, getPolicyFeatureReason('agentMode', policy));
     }
     const webBtn = $('webToggleBtn');
     if (webBtn){
-      webBtn.classList.toggle('dark', getWebToggle());
+      webBtn.classList.toggle('dark', modes.web);
       webBtn.innerHTML = '<span class="icon">🔎</span><span class="label">ويب</span>';
+      setControlAvailability(webBtn, policy.allowWeb, getPolicyFeatureReason('web', policy));
     }
-    $('streamToggle') && ($('streamToggle').checked = !!getSettings().streaming);
-    $('ragToggle') && ($('ragToggle').checked = getRagToggle());
+    $('streamToggle') && ($('streamToggle').checked = !!raw.streaming);
+    if ($('ragToggle')){
+      $('ragToggle').checked = modes.rag;
+      setControlAvailability($('ragToggle'), policy.allowRag, getPolicyFeatureReason('rag', policy));
+    }
+    if ($('toolsToggle')){
+      $('toolsToggle').checked = !!policy.runtime.toolsEnabled;
+      setControlAvailability($('toolsToggle'), policy.allowTools, getPolicyFeatureReason('tools', policy));
+    }
+    if ($('toolsDefault')){
+      $('toolsDefault').checked = !!policy.runtime.toolsEnabled;
+      setControlAvailability($('toolsDefault'), policy.allowTools, getPolicyFeatureReason('tools', policy));
+    }
+    if ($('researchBtn')) setControlAvailability($('researchBtn'), policy.allowResearch, getPolicyFeatureReason('research', policy));
+    if ($('kbBuildBtn')) setControlAvailability($('kbBuildBtn'), policy.allowEmbeddings, getPolicyFeatureReason('embeddings', policy));
+    if ($('kbSearchBtn')) setControlAvailability($('kbSearchBtn'), policy.allowEmbeddings, getPolicyFeatureReason('embeddings', policy));
     refreshDeepSearchBtn();
     refreshStrategicWorkspace().catch(()=>{});
   }
@@ -1843,6 +2036,18 @@ function refreshDeepSearchBtn(){
         tips: ['يتم إنشاء عنوان تلقائي من أول رسالة، ويمكنك تغييره يدويًا.', 'يمكنك الاحتفاظ بعدة محادثات منفصلة داخل نفس المشروع.']
       },
       {
+        id: 'cost_control',
+        page: 'settings',
+        title: 'الوضع المجاني والتحكم في التكلفة',
+        body: 'سياسة التكلفة أصبحت تعمل على مستوى التطبيق بالكامل، وليس فقط على التفريغ النصي. هذا يعني أن الدردشة والبحث والأدوات وKB وRAG تتأثر فورًا حسب الوضع المختار.',
+        steps: [
+          'فعّل الوضع المجاني إذا كنت تريد تشغيلًا أساسيًا على مستوى التطبيق مع نموذج مجاني وإيقاف الميزات الأعلى تكلفة.',
+          'استخدم الوضع الاقتصادي الصارم إذا أردت استمرار الدردشة والتحرير مع تعطيل الأدوات والبحث العميق وKB.',
+          'اختر الوضع المتوازن للإبقاء على أغلب الميزات مع حدود إخراج وسياق أقل، أو الجودة القصوى لفتح كامل القدرات.'
+        ],
+        tips: ['المنصة تعرض الآن التشغيل الفعلي في بطاقات الإشارات حتى لو كانت الإعدادات الخام مختلفة.', 'إذا كانت ميزة ما متوقفة بسبب السياسة فستظهر لك رسالة واضحة بدل تنفيذ صامت مكلف.']
+      },
+      {
         id: 'brief',
         page: 'chat',
         title: 'ذاكرة المشروع',
@@ -2086,7 +2291,10 @@ function refreshDeepSearchBtn(){
   }
 
   async function refreshStrategicWorkspace(){
-    const settings = getSettings();
+    const rawSettings = getSettings();
+    const policy = getAppRuntimePolicy(rawSettings);
+    const settings = policy.runtime;
+    const modes = getEffectiveModeState(rawSettings, policy);
     const pid = getCurProjectId();
     const project = getCurProject();
     const thread = getCurThread();
@@ -2097,15 +2305,16 @@ function refreshDeepSearchBtn(){
     const downloads = loadDownloads().length;
     const modeLabels = [
       settings.streaming ? 'بث مباشر' : 'دفعة واحدة',
-      getRagToggle() ? 'RAG مفعّل' : 'RAG متوقف',
+      modes.rag ? 'RAG مفعّل' : 'RAG متوقف',
       settings.toolsEnabled ? 'الأدوات مفعّلة' : 'الأدوات متوقفة',
-      getWebToggle() ? 'ويب' : 'محلي',
+      modes.web ? 'ويب' : 'محلي',
+      policy.modeLabel,
       getStudyMode() ? 'وضع دراسي' : ''
     ];
-    const readiness = getAuthStateLabel(settings);
+    const readiness = policy.blockedReason || getAuthStateLabel(settings);
     syncStrategicLayoutState(messageCount > 0);
     const runtimeBadge = $('topRuntimeBadge');
-    if (runtimeBadge) runtimeBadge.textContent = `${settings.provider.toUpperCase()} • ${readiness}`;
+    if (runtimeBadge) runtimeBadge.textContent = `${settings.provider.toUpperCase()} • ${policy.freeMode ? 'مجاني' : getCostGuardLabel(policy.costGuard)}`;
     if ($('curProjectName')) $('curProjectName').textContent = project.name;
     if ($('workspaceHeadline')){
       $('workspaceHeadline').textContent = messageCount
@@ -2114,16 +2323,17 @@ function refreshDeepSearchBtn(){
     }
     if ($('workspaceSummary')){
       const briefPart = hasProjectBrief(brief) ? ` • الذاكرة: ${summarizeProjectBrief(brief)}` : '';
-      $('workspaceSummary').textContent = `المزوّد ${settings.provider} • النموذج ${getDisplayModelName(settings.model)} • ${files.length} ملفًا • ${chunks} مقطع معرفة • ${downloads} ملفًا مؤرشفًا${briefPart}.`;
+      const policyPart = policy.blockedReason ? ` • تنبيه: ${policy.blockedReason}` : '';
+      $('workspaceSummary').textContent = `التشغيل الفعلي ${policy.modeLabel} • المزوّد ${settings.provider} • النموذج ${getDisplayModelName(settings.model)} • ${files.length} ملفًا • ${chunks} مقطع معرفة • ${downloads} ملفًا مؤرشفًا${briefPart}${policyPart}.`;
     }
     if ($('signalProvider')) $('signalProvider').textContent = settings.provider.toUpperCase();
     if ($('signalProviderNote')) $('signalProviderNote').textContent = `${readiness} • ${settings.authMode === 'gateway' ? 'اتصال محمي عبر البوابة' : 'اتصال مباشر من المتصفح'}`;
     if ($('signalModel')) $('signalModel').textContent = getDisplayModelName(settings.model);
-    if ($('signalModelNote')) $('signalModelNote').textContent = `حد الإخراج ${settings.maxOut || 2000} • نمط الويب ${settings.webMode || 'off'}`;
+    if ($('signalModelNote')) $('signalModelNote').textContent = `حد الإخراج ${settings.maxOut || 2000} • قص الملفات ${settings.fileClip || 12000} • ${policy.freeMode ? 'نموذج مجاني' : getCostGuardLabel(policy.costGuard)}`;
     if ($('signalContext')) $('signalContext').textContent = `${files.length} ملف • ${chunks} معرفة`;
-    if ($('signalContextNote')) $('signalContextNote').textContent = `${messageCount} رسالة • قصّ الملفات ${settings.fileClip || 12000}`;
+    if ($('signalContextNote')) $('signalContextNote').textContent = `${messageCount} رسالة • ${modes.rag ? 'RAG متاح' : 'RAG موقوف'} • ${policy.allowEmbeddings ? 'KB متاحة' : 'KB اقتصادية'}`;
     if ($('signalModes')) $('signalModes').textContent = modeLabels.filter(Boolean).join(' • ');
-    if ($('signalModesNote')) $('signalModesNote').textContent = `${isDeep() ? 'عميق' : 'قياسي'} • ${isAgent() ? 'وكيل' : 'مساعد'} • ${isDeepSearch() ? 'بحث عميق' : 'محادثة'}`;
+    if ($('signalModesNote')) $('signalModesNote').textContent = `${modes.deep ? 'عميق' : 'قياسي'} • ${modes.agent ? 'وكيل' : 'مساعد'} • ${modes.deepSearch ? 'بحث عميق' : 'محادثة'}`;
 
     if ($('sideProjectMeta')) $('sideProjectMeta').textContent = `${project.name} (${messageCount})`;
     if ($('sideModelMeta')) $('sideModelMeta').textContent = getDisplayModelName(settings.model);
@@ -2137,6 +2347,7 @@ function refreshDeepSearchBtn(){
     if ($('settingsGatewayState')) $('settingsGatewayState').textContent = settings.authMode === 'gateway' ? (settings.gatewayUrl || 'البوابة غير مضبوطة') : 'وضع مباشر من المتصفح';
     if ($('settingsModelState')) $('settingsModelState').textContent = getDisplayModelName(settings.model);
     if ($('settingsSecurityState')) $('settingsSecurityState').textContent = settings.authMode === 'gateway' ? 'المفاتيح محفوظة على الخادم' : ((settings.apiKey || '').trim() ? 'مفتاح المتصفح مستخدم' : 'لا يوجد مفتاح في المتصفح');
+    if ($('settingsCostState')) $('settingsCostState').textContent = policy.modeLabel;
 
     if ($('historyDrawerBtn')){
       $('historyDrawerBtn').innerHTML = `<span class="icon">🕘</span><span class="label">السجل (${loadThreads(pid).length})</span>`;
@@ -2319,8 +2530,10 @@ function refreshDeepSearchBtn(){
 
   function recommendStrategicModel(){
     const settings = getSettings();
+    const policy = getAppRuntimePolicy(settings);
     let recommended = settings.model || '';
-    if (settings.freeMode && settings.provider !== 'gemini') recommended = 'openrouter/free';
+    if (policy.freeMode && settings.provider !== 'gemini') recommended = 'openrouter/free';
+    else if (policy.costGuard === 'strict') recommended = getBudgetModelForSettings(settings);
     else if (settings.provider === 'gemini') recommended = 'gemini-2.5-flash';
     else if (settings.provider === 'openai') recommended = 'gpt-4o-mini';
     else {
@@ -3508,11 +3721,13 @@ async function fileToText(file){
 
   // ---------------- Prompts and messages ----------------
   function buildSystemPrompt(settings){
+    const policy = getAppRuntimePolicy(settings);
+    const modes = getEffectiveModeState(settings, policy);
     let sys = settings.systemPrompt || 'أنت مساعد احترافي. أجب بدقة وبأسلوب منظم.';
-    if (isDeep()){
+    if (modes.deep){
       sys += '\n\n[وضع التفكير العميق] التزم بالبنية: (1) ملخص سريع (2) شرح مفصل (3) خطوات/أمثلة (4) مخاطر/تحقق (5) خلاصة.';
     }
-    if (isAgent()){
+    if (modes.agent){
       sys += '\n\n[وضع الوكيل] ابدأ بـ "الخطة:" (3-6 خطوات مرقمة) ثم "التنفيذ:" ثم "النتيجة النهائية:". إذا استخدمت الويب اذكر "المصادر:" بروابط.';
     }
     if (settings.toolsEnabled){
@@ -3544,15 +3759,18 @@ async function fileToText(file){
   }
 
   async function executeToolCall(tool, settings){
+    const policy = getAppRuntimePolicy(settings);
     const name = tool.name;
     const args = tool.args || {};
     if (name === 'kb_search'){
+      if (!policy.allowEmbeddings) throw new Error(getPolicyFeatureReason('embeddings', policy));
       const q = String(args.query || '').trim();
       if (!q) throw new Error('kb_search: query مطلوب');
-      const hits = await searchKb(q);
+      const hits = await searchKb(q, settings);
       return String(hits || '').trim();
     }
     if (name === 'web_search'){
+      if (!policy.allowWeb) throw new Error(getPolicyFeatureReason('web', policy));
       const q = String(args.query || '').trim();
       if (!q) throw new Error('web_search: query مطلوب');
       // Use :online suffix for OpenRouter models
@@ -3590,7 +3808,9 @@ async function fileToText(file){
   }
 
   async function maybeRunToolsLoop(pid, tid, initialAnswer, settings){
-    if (!settings.toolsEnabled) return null;
+    const policy = getAppRuntimePolicy(settings);
+    const runtimeSettings = policy.runtime;
+    if (!runtimeSettings.toolsEnabled || !policy.allowTools) return null;
     let ans = String(initialAnswer || '').trim();
     let steps = 0;
     while (steps < 5){
@@ -3600,7 +3820,7 @@ async function fileToText(file){
       showStatus(`🧰 Tool: ${tc.name}…`, true);
       let result = '';
       try{
-        result = await executeToolCall(tc, settings);
+        result = await executeToolCall(tc, runtimeSettings);
       }catch(e){
         result = `❌ Tool error: ${e?.message||e}`;
       }
@@ -3619,29 +3839,29 @@ async function fileToText(file){
 
       // ask model to continue based on tool result
       const filesText = String($('filesText')?.value || '');
-      const rag = await buildRagContextIfEnabled(''); // keep rag stable
+      const rag = await buildRagContextIfEnabled('', settings); // keep rag stable
       const follow = `تابع الآن بناءً على نتيجة الأداة أعلاه. لا تكرر مخرجات الأداة حرفيًا. إذا احتجت أداة أخرى اطلبها ببلوك tool فقط.`;
       const threadSnapshot = getCurThread();
       const messages = buildMessagesForChat({
         userText: follow,
-        settings,
+        settings: runtimeSettings,
         filesText,
         ragCtx: rag.ctx,
         historyMessages: threadSnapshot.messages || [],
         threadSummary: threadSnapshot.summary || ''
       });
 
-      const extraHeaders = buildProviderHeaders(settings);
-      const baseUrl = effectiveBaseUrl(settings) || (settings.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1');
-      let model = settings.model;
-      if (settings.provider === 'openrouter') model = maybeOnlineModel(model, settings);
+      const extraHeaders = buildProviderHeaders(runtimeSettings);
+      const baseUrl = effectiveBaseUrl(runtimeSettings) || (runtimeSettings.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1');
+      let model = runtimeSettings.model;
+      if (runtimeSettings.provider === 'openrouter') model = maybeOnlineModel(model, runtimeSettings);
 
       ans = await callOpenAIChat({
-        apiKey: settings.apiKey,
+        apiKey: runtimeSettings.apiKey,
         baseUrl,
         model,
         messages,
-        max_tokens: clamp(Number(settings.maxOut||2000), 256, 8000),
+        max_tokens: clamp(Number(runtimeSettings.maxOut||2000), 256, 8000),
         signal: abortCtl?.signal,
         extraHeaders
       });
@@ -3666,7 +3886,10 @@ async function fileToText(file){
 
 
 async function maybeUpdateThreadSummary(pid, tid){
-  const settings = getSettings();
+  const rawSettings = getSettings();
+  const policy = getAppRuntimePolicy(rawSettings);
+  if (!policy.allowThreadSummary) return;
+  const settings = policy.runtime;
   if (!hasAuthReady(settings)) return;
 
   const threads = loadThreads(pid);
@@ -3703,7 +3926,9 @@ async function maybeUpdateThreadSummary(pid, tid){
 }
 
   function maybeOnlineModel(model, settings){
-    if (isOpenRouter(settings) && settings.webMode === 'openrouter_online' && getWebToggle()){
+    const policy = getAppRuntimePolicy(settings);
+    const modes = getEffectiveModeState(settings, policy);
+    if (isOpenRouter(settings) && settings.webMode === 'openrouter_online' && modes.web){
       if (!String(model).includes(':online')) return String(model) + ':online';
     }
     return model;
@@ -4379,14 +4604,11 @@ function updateChips(){
     const text = (input.value || '').trim();
     if (!text) return;
 
-    const settings = getSettings();
-    if (settings.provider === 'gemini'){
-      if (!(settings.geminiKey||'').trim()) return toast('⚠️ ضع مفتاح Gemini في الإعدادات.');
-    } else if (settings.authMode === 'gateway'){
-      if (!(settings.gatewayUrl||'').trim()) return toast('⚠️ ضع رابط البوابة في الإعدادات (نمط المصادقة = بوابة).');
-    } else {
-      if (!(settings.apiKey||'').trim()) return toast('⚠️ ضع مفتاح API في الإعدادات.');
-    }
+    const rawSettings = getSettings();
+    const policy = getAppRuntimePolicy(rawSettings);
+    const settings = policy.runtime;
+    if (!policy.allowChat) return toast(`⚠️ ${policy.blockedReason}`);
+    if (!hasAuthReady(settings)) return toast(`⚠️ ${getMissingAuthMessage(settings)}`);
 
     const pid = getCurProjectId();
     const tid = getCurThreadId(pid);
@@ -4412,7 +4634,7 @@ function updateChips(){
     const filesText = buildAutoFilesContext(settings);
     const attachmentsForRequest = pendingChatAttachments.slice();
     
-    const rag = await buildRagContextIfEnabled(text);
+    const rag = await buildRagContextIfEnabled(text, rawSettings);
     const messages = buildMessagesForChat({
       userText: text,
       settings,
@@ -4529,7 +4751,7 @@ function updateChips(){
 
         if (!String(ans || '').trim()) throw new Error('EMPTY_ASSISTANT_RESPONSE');
 
-        if (isAgent() && ans && !answerHasAgentPlan(ans)){
+      if (getEffectiveModeState(rawSettings, policy).agent && ans && !answerHasAgentPlan(ans)){
         ans = `الخطة:\n1) تحليل\n2) تنفيذ\n3) نتيجة\n\nالتنفيذ:\n${ans}\n\nالنتيجة النهائية:\n—`;
       }
 
@@ -4586,9 +4808,11 @@ async function runResearchAgent(topicOverride){
   const topic = (topicOverride != null ? String(topicOverride) : (prompt('موضوع البحث التفصيلي:', '') || '')) || '';
   if (!topic.trim()) return;
 
-  const settings = getSettings();
-  if (settings.provider !== 'gemini' && !settings.apiKey) return toast('⚠️ ضع مفتاح API في الإعدادات.');
-  if (settings.provider === 'gemini' && !settings.geminiKey) return toast('⚠️ ضع مفتاح Gemini في الإعدادات.');
+  const rawSettings = getSettings();
+  const policy = getAppRuntimePolicy(rawSettings);
+  if (!policy.allowResearch) return toast(`⚠️ ${getPolicyFeatureReason('research', policy)}`);
+  const settings = policy.runtime;
+  if (!hasAuthReady(settings)) return toast(`⚠️ ${getMissingAuthMessage(settings)}`);
 
   const pid = getCurProjectId();
   const tid = getCurThreadId(pid);
@@ -4633,7 +4857,7 @@ async function runResearchAgent(topicOverride){
 
   let kbNotes = '';
   try{
-    const res = await searchKb(topic);
+    const res = await searchKb(topic, rawSettings);
     if (res.length){
       kbNotes = 'مقاطع KB (للاستشهاد):\n' + res.map(r => `[KB:${r.fileName}#${r.chunkIdx}]\n${r.text}`).join('\n\n');
     }
@@ -4799,8 +5023,11 @@ async function runResearchAgent(topicOverride){
   }
 
   async function canvasAi(action){
-    const settings = getSettings();
-    if (settings.provider !== 'gemini' && !settings.apiKey) return toast('⚠️ ضع مفتاح API في الإعدادات.');
+    const rawSettings = getSettings();
+    const policy = getAppRuntimePolicy(rawSettings);
+    const settings = policy.runtime;
+    if (!policy.allowChat) return toast(`⚠️ ${policy.blockedReason}`);
+    if (!hasAuthReady(settings)) return toast(`⚠️ ${getMissingAuthMessage(settings)}`);
     const raw = $('canvasEditor').value || '';
     if (!raw.trim()) return;
 
@@ -5700,8 +5927,20 @@ let pinOnly = false;
     });
 
     // modes
-    $('modeDeepBtn').addEventListener('click', () => { setDeep(!isDeep()); refreshModeButtons(); toast(isDeep() ? '🧠 تم تفعيل التفكير العميق' : '🧠 تم إيقاف التفكير العميق'); });
-    $('modeAgentBtn').addEventListener('click', () => { setAgent(!isAgent()); refreshModeButtons(); toast(isAgent() ? '🤖 تم تفعيل وضع الوكيل' : '🤖 تم إيقاف وضع الوكيل'); });
+    $('modeDeepBtn').addEventListener('click', () => {
+      const policy = getAppRuntimePolicy();
+      if (!policy.allowDeepMode) return toast(`⚠️ ${getPolicyFeatureReason('deepMode', policy)}`);
+      setDeep(!isDeep());
+      refreshModeButtons();
+      toast(isDeep() ? '🧠 تم تفعيل التفكير العميق' : '🧠 تم إيقاف التفكير العميق');
+    });
+    $('modeAgentBtn').addEventListener('click', () => {
+      const policy = getAppRuntimePolicy();
+      if (!policy.allowAgentMode) return toast(`⚠️ ${getPolicyFeatureReason('agentMode', policy)}`);
+      setAgent(!isAgent());
+      refreshModeButtons();
+      toast(isAgent() ? '🤖 تم تفعيل وضع الوكيل' : '🤖 تم إيقاف وضع الوكيل');
+    });
     $('modeOffBtn').addEventListener('click', disableModes);
 
 // v5: Collapse UI
@@ -5760,7 +5999,13 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
 });
 
 
-    $('webToggleBtn').addEventListener('click', () => { setWebToggle(!getWebToggle()); refreshModeButtons(); toast(getWebToggle() ? '🔎 تم تفعيل الويب' : '🔎 تم إيقاف الويب'); });
+    $('webToggleBtn').addEventListener('click', () => {
+      const policy = getAppRuntimePolicy();
+      if (!policy.allowWeb) return toast(`⚠️ ${getPolicyFeatureReason('web', policy)}`);
+      setWebToggle(!getWebToggle());
+      refreshModeButtons();
+      toast(getWebToggle() ? '🔎 تم تفعيل الويب' : '🔎 تم إيقاف الويب');
+    });
 
     $('newThreadBtn').addEventListener('click', () => { newThread(); setActiveNav('chat'); });
 
@@ -5807,6 +6052,8 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
 
     // Deep Search toggle (send = Research)
     $('deepSearchToggleBtn') && $('deepSearchToggleBtn').addEventListener('click', () => {
+      const policy = getAppRuntimePolicy();
+      if (!policy.allowDeepSearch) return toast(`⚠️ ${getPolicyFeatureReason('deepSearch', policy)}`);
       setDeepSearch(!isDeepSearch());
       refreshDeepSearchBtn();
       toast(isDeepSearch() ? '🔬 Deep Search ON' : '🔬 Deep Search OFF');
@@ -5884,18 +6131,38 @@ $('sendBtn').addEventListener('click', sendMessage);
     });
 
     $('ragToggle') && $('ragToggle').addEventListener('change', (e) => {
+      const policy = getAppRuntimePolicy();
+      if (!policy.allowRag){
+        e.preventDefault();
+        e.target.checked = false;
+        return toast(`⚠️ ${getPolicyFeatureReason('rag', policy)}`);
+      }
       setRagToggle(!!e.target.checked);
       toast(e.target.checked ? '🧠 تم تفعيل RAG' : '🧠 تم إيقاف RAG');
     });
 
 
     $('toolsToggle') && $('toolsToggle').addEventListener('change', (e) => {
+      const policy = getAppRuntimePolicy();
+      if (!policy.allowTools){
+        e.preventDefault();
+        e.target.checked = false;
+        if ($('toolsDefault')) $('toolsDefault').checked = false;
+        return toast(`⚠️ ${getPolicyFeatureReason('tools', policy)}`);
+      }
       const s = setSettings({ toolsEnabled: !!e.target.checked });
       if ($('toolsDefault')) $('toolsDefault').checked = !!s.toolsEnabled;
       toast(s.toolsEnabled ? '🧰 تم تفعيل الأدوات' : '🧰 تم إيقاف الأدوات');
     });
 
     $('toolsDefault') && $('toolsDefault').addEventListener('change', (e) => {
+      const policy = getAppRuntimePolicy();
+      if (!policy.allowTools){
+        e.preventDefault();
+        e.target.checked = false;
+        if ($('toolsToggle')) $('toolsToggle').checked = false;
+        return toast(`⚠️ ${getPolicyFeatureReason('tools', policy)}`);
+      }
       const s = setSettings({ toolsEnabled: !!e.target.checked });
       if ($('toolsToggle')) $('toolsToggle').checked = !!s.toolsEnabled;
       toast(s.toolsEnabled ? '🧰 تم تفعيل الأدوات' : '🧰 تم إيقاف الأدوات');
