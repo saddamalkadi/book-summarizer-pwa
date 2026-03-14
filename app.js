@@ -1,4 +1,4 @@
-/* AI Workspace Studio v8.3 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v8.4 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -117,6 +117,12 @@
     configLoadedAt: 0,
     configPromise: null,
     booting: false
+  };
+
+  const NATIVE_GOOGLE_RUNTIME = {
+    initialized: false,
+    initPromise: null,
+    autoAttempted: false
   };
 
 // ---------------- KB (IndexedDB + RAG) ----------------
@@ -1617,6 +1623,124 @@ function refreshDeepSearchBtn(){
     return String(config.googleClientId || '').trim();
   }
 
+  function getCapacitorPlatform(){
+    try{
+      const platform = window.Capacitor?.getPlatform?.();
+      return platform ? String(platform).toLowerCase() : 'web';
+    }catch(_){
+      return 'web';
+    }
+  }
+
+  function isNativePlatform(){
+    try{
+      return !!window.Capacitor?.isNativePlatform?.();
+    }catch(_){
+      return getCapacitorPlatform() !== 'web';
+    }
+  }
+
+  function isNativeAndroidPlatform(){
+    return isNativePlatform() && getCapacitorPlatform() === 'android';
+  }
+
+  function getNativeGoogleAuthPlugin(){
+    return window.Capacitor?.Plugins?.GoogleOneTapAuth || null;
+  }
+
+  async function ensureNativeGoogleAuthReady(){
+    if (!isNativeAndroidPlatform()) return null;
+    const plugin = getNativeGoogleAuthPlugin();
+    const clientId = getAuthGoogleClientId();
+    if (!plugin || !clientId) return null;
+    if (NATIVE_GOOGLE_RUNTIME.initialized) return plugin;
+    if (!NATIVE_GOOGLE_RUNTIME.initPromise){
+      NATIVE_GOOGLE_RUNTIME.initPromise = Promise.resolve(plugin.initialize({ clientId }))
+        .then(() => {
+          NATIVE_GOOGLE_RUNTIME.initialized = true;
+          return plugin;
+        })
+        .catch((error) => {
+          NATIVE_GOOGLE_RUNTIME.initPromise = null;
+          throw error;
+        });
+    }
+    return NATIVE_GOOGLE_RUNTIME.initPromise;
+  }
+
+  function getNativeGoogleFailureMessage(result, fallback = 'تعذر تسجيل الدخول من Google على هذا الجهاز.'){
+    const reason = String(result?.noSuccess?.noSuccessReasonCode || '').trim();
+    const info = String(result?.noSuccess?.noSuccessAdditionalInfo || '').trim();
+    if (reason === 'SIGN_IN_CANCELLED') return 'تم إلغاء تسجيل الدخول من Google.';
+    if (reason === 'NO_CREDENTIAL'){
+      return 'لم يجد Android جلسة Google جاهزة لهذا التطبيق بعد. اضغط زر المتابعة لاختيار الحساب من الجهاز.';
+    }
+    if (info) return `${fallback}\n${info}`;
+    return fallback;
+  }
+
+  async function handleNativeGoogleSignInResult(result, { silent = false } = {}){
+    if (result?.isSuccess && result?.success?.idToken){
+      await handleGoogleCredentialResponse({ credential: result.success.idToken });
+      return true;
+    }
+    if (!silent){
+      const tone = String(result?.noSuccess?.noSuccessReasonCode || '').trim() === 'SIGN_IN_CANCELLED' ? 'info' : 'error';
+      setAuthGateStatus(getNativeGoogleFailureMessage(result), tone);
+    }
+    return false;
+  }
+
+  async function tryNativeGoogleAutoSignIn(){
+    if (!isNativeAndroidPlatform() || NATIVE_GOOGLE_RUNTIME.autoAttempted || hasValidAuthSession()) return false;
+    NATIVE_GOOGLE_RUNTIME.autoAttempted = true;
+    try{
+      const plugin = await ensureNativeGoogleAuthReady();
+      if (!plugin) return false;
+      const result = await plugin.tryAutoSignIn();
+      return await handleNativeGoogleSignInResult(result, { silent: true });
+    }catch(error){
+      setAuthGateStatus(`تعذر تهيئة Google على Android: ${error?.message || error}`, 'error');
+      return false;
+    }
+  }
+
+  async function startNativeGoogleButtonFlow(){
+    try{
+      setAuthGateStatus('جارٍ فتح تسجيل Google الأصلي على Android...', 'busy');
+      const plugin = await ensureNativeGoogleAuthReady();
+      if (!plugin){
+        throw new Error('Google Sign-In غير متاح داخل نسخة Android الحالية.');
+      }
+      const result = await plugin.signInWithGoogleButtonFlowForNativePlatform();
+      const success = await handleNativeGoogleSignInResult(result);
+      if (!success && String(result?.noSuccess?.noSuccessReasonCode || '').trim() === 'SIGN_IN_CANCELLED'){
+        setAuthGateStatus('تم إلغاء تسجيل الدخول من Google.', 'info');
+      }
+    }catch(error){
+      setAuthGateStatus(`تعذر فتح تسجيل Google على Android: ${error?.message || error}`, 'error');
+    }
+  }
+
+  async function renderNativeGoogleButton(slot){
+    const plugin = getNativeGoogleAuthPlugin();
+    if (!plugin){
+      slot.innerHTML = '<div class="hint">نسخة Android الحالية لا تحتوي على إضافة Google الأصلية. أعد تثبيت التطبيق بعد التحديث.</div>';
+      setAuthGateStatus('إضافة Google الأصلية غير متاحة داخل نسخة Android الحالية.', 'error');
+      return;
+    }
+    slot.innerHTML = `
+      <div class="native-google-auth">
+        <button class="native-google-btn" type="button" id="nativeGoogleSignInBtn">
+          <span class="native-google-mark" aria-hidden="true">G</span>
+          <span>المتابعة باستخدام Google</span>
+        </button>
+        <div class="hint">على Android سيظهر تسجيل Google الأصلي للجهاز بدل زر الويب.</div>
+      </div>`;
+    $('nativeGoogleSignInBtn')?.addEventListener('click', startNativeGoogleButtonFlow);
+    await tryNativeGoogleAutoSignIn();
+  }
+
   function setAuthGateStatus(message, tone = 'info'){
     const box = $('authGateStatus');
     if (!box) return;
@@ -1945,6 +2069,10 @@ function refreshDeepSearchBtn(){
       slot.innerHTML = '<div class="hint">سيظهر زر Google هنا تلقائيًا عند تفعيل الربط على الخادم. يمكنك الآن الدخول بالبريد من النموذج نفسه.</div>';
       return;
     }
+    if (isNativeAndroidPlatform()){
+      await renderNativeGoogleButton(slot);
+      return;
+    }
     const ready = await waitForGoogleIdentity();
     if (!ready){
       slot.innerHTML = '<div class="hint">تعذر تحميل خدمة Google Sign-In. تأكد من الاتصال ثم أعد المحاولة.</div>';
@@ -2178,6 +2306,10 @@ function refreshDeepSearchBtn(){
   function logoutCurrentAccount(){
     clearAuthState();
     try{ window.google?.accounts?.id?.disableAutoSelect(); }catch(_){}
+    try{
+      const plugin = getNativeGoogleAuthPlugin();
+      plugin?.signOut?.().catch?.(()=>{});
+    }catch(_){}
     syncAccountUi();
     refreshModeButtons();
     refreshStrategicWorkspace().catch(()=>{});
