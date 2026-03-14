@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>تنزيل التطبيقات - AI Workspace Studio</title>
+  <meta name="theme-color" content="#081121" />
+  <style>
+    :root{
+      --bg:#081121;
+      --panel:#ffffff;
+      --muted:#61708f;
+      --text:#0d1a33;
+      --line:#d9e3f5;
+      --pri:#1b66ff;
+      --pri2:#0d2148;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      background:
+        radial-gradient(circle at top right, rgba(27,102,255,.22), transparent 30%),
+        radial-gradient(circle at bottom left, rgba(94,234,212,.16), transparent 28%),
+        var(--bg);
+      color:#fff;
+      min-height:100vh;
+      padding:24px;
+    }
+    .wrap{max-width:1100px; margin:0 auto; display:grid; gap:18px;}
+    .hero{
+      display:grid; gap:16px;
+      background:linear-gradient(145deg, rgba(255,255,255,.07), rgba(255,255,255,.03));
+      border:1px solid rgba(255,255,255,.12);
+      border-radius:28px;
+      padding:24px;
+      box-shadow:0 24px 70px rgba(0,0,0,.22);
+    }
+    .brand{display:flex; align-items:center; gap:14px;}
+    .brand img{width:64px; height:64px; border-radius:18px; box-shadow:0 14px 30px rgba(0,0,0,.22);}
+    .brand strong{display:block; font-size:28px;}
+    .brand span{display:block; color:rgba(255,255,255,.8); margin-top:4px;}
+    .hero p{margin:0; line-height:1.9; color:rgba(255,255,255,.9);}
+    .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px;}
+    .card{
+      background:var(--panel);
+      color:var(--text);
+      border-radius:24px;
+      padding:22px;
+      border:1px solid rgba(8,18,40,.08);
+      display:grid;
+      gap:12px;
+      box-shadow:0 22px 50px rgba(7,17,31,.16);
+    }
+    .tag{
+      display:inline-flex; align-items:center; justify-content:center;
+      width:max-content; padding:6px 12px; border-radius:999px;
+      background:#edf3ff; color:#123164; font-size:12px; font-weight:1000;
+    }
+    .card h2{margin:0; font-size:22px;}
+    .card p,.card li{margin:0; color:var(--muted); line-height:1.9;}
+    .card ul{margin:0; padding:0 18px 0 0; display:grid; gap:6px;}
+    .actions{display:flex; flex-wrap:wrap; gap:10px; margin-top:4px;}
+    .btn{
+      text-decoration:none; border-radius:14px; padding:12px 16px; font-weight:1000;
+      display:inline-flex; align-items:center; justify-content:center;
+    }
+    .btn.primary{background:var(--pri); color:#fff;}
+    .btn.ghost{background:#eef3ff; color:var(--pri2);}
+    .meta{font-size:12px; color:var(--muted);}
+    .note{
+      background:rgba(255,255,255,.08);
+      border:1px solid rgba(255,255,255,.12);
+      border-radius:18px;
+      padding:16px 18px;
+      line-height:1.9;
+      color:rgba(255,255,255,.9);
+    }
+    a.inline{color:#fff; font-weight:1000;}
+    @media (max-width:640px){
+      body{padding:14px;}
+      .hero,.card{border-radius:22px; padding:18px;}
+      .brand strong{font-size:24px;}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <div class="brand">
+        <img src="../logo.svg" alt="شعار AI Workspace Studio" />
+        <div>
+          <strong>AI Workspace Studio</strong>
+          <span>روابط التنزيل المباشر</span>
+        </div>
+      </div>
+      <p>هذه الصفحة تجمع الملفات الجاهزة للتنزيل المباشر. نسخة Android قابلة للتنزيل الآن، ونسخة iPhone مرفقة كحزمة مشروع جاهزة للفتح في Xcode على macOS.</p>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <span class="tag">Android APK</span>
+        <h2>ملف التثبيت المباشر</h2>
+        <p>هذا الملف مناسب للتنزيل والتثبيت المباشر على أجهزة Android.</p>
+        <div class="actions">
+          <a class="btn primary" href="./ai-workspace-studio-v8.2-android.apk">تنزيل APK</a>
+        </div>
+        <div class="meta">الإصدار: v8.2</div>
+      </article>
+
+      <article class="card">
+        <span class="tag">Android AAB</span>
+        <h2>حزمة Google Play</h2>
+        <p>هذا الملف مناسب للنشر أو الرفع إلى Google Play، وليس للتثبيت المباشر على الهاتف.</p>
+        <div class="actions">
+          <a class="btn primary" href="./ai-workspace-studio-v8.2-android.aab">تنزيل AAB</a>
+        </div>
+        <div class="meta">الإصدار: v8.2</div>
+      </article>
+
+      <article class="card">
+        <span class="tag">iPhone Project</span>
+        <h2>حزمة مشروع iPhone</h2>
+        <p>هذه الحزمة تحتوي على مشروع iOS الجاهز للفتح في Xcode وبناء نسخة iPhone النهائية على macOS.</p>
+        <div class="actions">
+          <a class="btn primary" href="./ai-workspace-studio-v8.2-ios-project.zip">تنزيل مشروع iPhone</a>
+          <a class="btn ghost" href="../">فتح نسخة الويب</a>
+        </div>
+        <div class="meta">يتطلب macOS + Xcode + Apple Developer للتصدير النهائي.</div>
+      </article>
+    </section>
+
+    <section class="note">
+      إذا كنت تريد تشغيل التطبيق على iPhone الآن بدون انتظار بناء App Store، يمكنك استخدام نسخة الويب من
+      <a class="inline" href="../">الموقع المباشر</a>
+      ثم اختيار "إضافة إلى الشاشة الرئيسية" من Safari.
+    </section>
+  </div>
+</body>
+</html>
