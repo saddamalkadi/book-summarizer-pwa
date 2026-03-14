@@ -1,4 +1,4 @@
-/* AI Workspace Studio v7.8 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v7.9 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -1732,6 +1732,35 @@ function refreshDeepSearchBtn(){
             <input id="upgradeCodeInput" type="text" placeholder="أدخل كود الترقية الذي وصلك عبر البريد" />
             <button class="btn dark sm with-label" type="button" id="activateUpgradeBtn"><span class="icon">⚡</span><span class="label">تفعيل الكود</span></button>
           </div>
+          <details class="tool-group" id="adminUpgradePanel" style="margin-top:12px; display:none">
+            <summary class="workspace-section-toggle">
+              <span class="workspace-section-head">
+                <span class="workspace-section-title">إدارة أكواد الترقية</span>
+                <span class="workspace-section-summary">إنشاء كود ترقية مرتبط ببريد مستخدم محدد من داخل حساب الإدارة.</span>
+              </span>
+              <span class="workspace-section-chevron">⌄</span>
+            </summary>
+            <div class="tool-group-body" style="padding-top:14px">
+              <div class="auth-config-grid">
+                <div>
+                  <label class="hint">بريد المستخدم</label>
+                  <input id="adminUpgradeEmail" type="email" placeholder="user@gmail.com" />
+                </div>
+                <div>
+                  <label class="hint">مدة الكود بالأيام</label>
+                  <input id="adminUpgradeDays" type="number" min="1" max="3650" value="365" />
+                </div>
+              </div>
+              <div class="account-actions" style="margin-top:12px">
+                <button class="btn dark sm with-label" type="button" id="adminGenerateUpgradeBtn"><span class="icon">⚙</span><span class="label">إنشاء كود ترقية</span></button>
+                <button class="btn ghost sm with-label" type="button" id="adminCopyUpgradeBtn" disabled><span class="icon">⧉</span><span class="label">نسخ الكود</span></button>
+              </div>
+              <div class="upgrade-inline" style="margin-top:12px">
+                <input id="adminGeneratedCode" type="text" placeholder="سيظهر كود الترقية هنا" readonly />
+              </div>
+              <div class="hint" id="adminUpgradeMeta" style="margin-top:10px">هذا القسم متاح فقط لحساب الإدارة، والكود الناتج يرتبط ببريد المستخدم المحدد.</div>
+            </div>
+          </details>
           <div class="row" style="margin-top:10px">
             <div class="col" style="grid-column:1/-1">
               <label class="hint">بريد طلب الترقية</label>
@@ -1780,6 +1809,13 @@ function refreshDeepSearchBtn(){
     if ($('upgradeCodeInput') && auth.upgradeCode && !$('upgradeCodeInput').value) $('upgradeCodeInput').value = auth.upgradeCode;
 
     if ($('upgradeEmail')) $('upgradeEmail').value = settings.upgradeEmail || config.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail;
+    if ($('adminUpgradePanel')) $('adminUpgradePanel').style.display = signedIn && role === 'admin' ? '' : 'none';
+    if ($('adminUpgradeEmail') && signedIn && role === 'admin' && !$('adminUpgradeEmail').value) $('adminUpgradeEmail').value = '';
+    if ($('adminGenerateUpgradeBtn')) $('adminGenerateUpgradeBtn').disabled = !(signedIn && role === 'admin');
+    if ($('adminCopyUpgradeBtn')) $('adminCopyUpgradeBtn').disabled = !String($('adminGeneratedCode')?.value || '').trim();
+    if ($('adminUpgradeMeta') && signedIn && role === 'admin'){
+      $('adminUpgradeMeta').textContent = 'أنشئ الكود ثم أرسله للمستخدم. لن يعمل الكود إلا مع البريد الذي أدخلته هنا.';
+    }
     if ($('authEntryName') && !$('authEntryName').value && signedIn) $('authEntryName').value = auth.name || '';
     if ($('authEntryEmail') && !$('authEntryEmail').value && signedIn) $('authEntryEmail').value = auth.email || '';
     if ($('authGatePlanNote')) $('authGatePlanNote').textContent = role === 'admin'
@@ -1986,7 +2022,7 @@ function refreshDeepSearchBtn(){
     try{
       const payload = await fetchAuthJson('/auth/upgrade/request', {
         method: 'POST',
-        body: JSON.stringify({ appVersion: '7.5' })
+        body: JSON.stringify({ appVersion: '7.9' })
       }).catch(() => null);
       const mailto = payload?.mailto || buildUpgradeMailto(account, getEffectiveAuthConfig());
       window.location.href = mailto;
@@ -2017,6 +2053,54 @@ function refreshDeepSearchBtn(){
       toast('✅ تم تفعيل الخطة المدفوعة');
     }catch(error){
       toast(`⚠️ تعذر تفعيل الكود: ${error?.message || error}`);
+    }
+  }
+
+  async function generateAdminUpgradeCodeFromUi(){
+    const auth = getAuthState();
+    if (!hasValidAuthSession(auth) || auth.role !== 'admin'){
+      return toast('⚠️ هذا الإجراء متاح فقط داخل حساب الإدارة.');
+    }
+    const email = String($('adminUpgradeEmail')?.value || '').trim().toLowerCase();
+    const days = clamp(Number($('adminUpgradeDays')?.value || 365), 1, 3650);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+      return toast('⚠️ أدخل بريد المستخدم أولاً.');
+    }
+    try{
+      if ($('adminUpgradeMeta')) $('adminUpgradeMeta').textContent = 'جارٍ إنشاء كود الترقية...';
+      const payload = await fetchAuthJson('/auth/admin/generate-upgrade-code', {
+        method: 'POST',
+        body: JSON.stringify({
+          email,
+          plan: 'premium',
+          days
+        })
+      });
+      const code = String(payload?.code || '').trim();
+      if (!code) throw new Error('لم يتم استلام كود من الخادم.');
+      if ($('adminGeneratedCode')) $('adminGeneratedCode').value = code;
+      if ($('adminCopyUpgradeBtn')) $('adminCopyUpgradeBtn').disabled = false;
+      if ($('adminUpgradeMeta')){
+        const expiresAt = Number(payload?.expiresAt || 0);
+        const expiresLabel = expiresAt ? new Date(expiresAt).toLocaleString('ar-SA') : `بعد ${days} يوم`;
+        $('adminUpgradeMeta').textContent = `تم إنشاء كود مرتبط بالبريد ${email} وصالح حتى ${expiresLabel}.`;
+      }
+      toast('✅ تم إنشاء كود الترقية');
+    }catch(error){
+      if ($('adminUpgradeMeta')) $('adminUpgradeMeta').textContent = `تعذر إنشاء الكود: ${error?.message || error}`;
+      toast(`⚠️ تعذر إنشاء كود الترقية: ${error?.message || error}`);
+    }
+  }
+
+  async function copyAdminUpgradeCode(){
+    const code = String($('adminGeneratedCode')?.value || '').trim();
+    if (!code) return toast('⚠️ لا يوجد كود لنسخه بعد.');
+    try{
+      await navigator.clipboard.writeText(code);
+      toast('✅ تم نسخ كود الترقية');
+    }catch(_){
+      $('adminGeneratedCode')?.select?.();
+      toast('ℹ️ تم تحديد الكود. انسخه يدويًا إذا لزم.');
     }
   }
 
@@ -6612,6 +6696,8 @@ let pinOnly = false;
     $('accountUpgradeRequestBtn')?.addEventListener('click', requestUpgradeByEmail);
     $('accountLogoutBtn')?.addEventListener('click', logoutCurrentAccount);
     $('activateUpgradeBtn')?.addEventListener('click', activateUpgradeCodeFromUi);
+    $('adminGenerateUpgradeBtn')?.addEventListener('click', generateAdminUpgradeCodeFromUi);
+    $('adminCopyUpgradeBtn')?.addEventListener('click', copyAdminUpgradeCode);
     $('authEntrySubmitBtn')?.addEventListener('click', submitUnifiedAuthEntry);
     $('authRetryBtn')?.addEventListener('click', async () => {
       AUTH_RUNTIME.config = null;
@@ -6625,6 +6711,14 @@ let pinOnly = false;
         event.preventDefault();
         activateUpgradeCodeFromUi();
       }
+    });
+    ['adminUpgradeEmail', 'adminUpgradeDays'].forEach((id) => {
+      $(id)?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter'){
+          event.preventDefault();
+          generateAdminUpgradeCodeFromUi();
+        }
+      });
     });
     ['authEntryName', 'authEntryEmail', 'authEntryPassword'].forEach((id) => {
       $(id)?.addEventListener('keydown', (event) => {

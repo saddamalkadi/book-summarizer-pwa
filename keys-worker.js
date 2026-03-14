@@ -386,9 +386,20 @@ async function handleUpgradeActivation(request, env) {
 async function handleAdminUpgradeCode(request, env) {
   const expected = getUpgradeAdminToken(env);
   const provided = String(request.headers.get('X-Admin-Token') || '').trim();
-  if (!expected || !provided || provided !== expected) {
+  let adminAuthorized = false;
+  if (expected && provided && provided === expected) {
+    adminAuthorized = true;
+  } else {
+    try {
+      const session = await requireSession(request, env);
+      adminAuthorized = session?.role === 'admin';
+    } catch (_) {
+      adminAuthorized = false;
+    }
+  }
+  if (!adminAuthorized) {
     return jsonResponse({
-      error: 'Unauthorized admin token.',
+      error: 'Admin access is required to generate an upgrade code.',
       code: 'UPGRADE_ADMIN_UNAUTHORIZED'
     }, 401);
   }
