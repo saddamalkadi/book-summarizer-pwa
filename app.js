@@ -1,4 +1,4 @@
-/* AI Workspace Studio v7.6 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v7.7 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -787,7 +787,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     let blockedReason = '';
     if (account.authRequired && !account.signedIn){
       blockedReason = account.config.clientIdConfigured
-        ? 'سجّل الدخول بحساب Gmail للمتابعة والوصول إلى الخطة المجانية أو المدفوعة.'
+        ? 'سجّل الدخول ببريدك الشخصي للمتابعة والوصول إلى الخطة المجانية أو المدفوعة.'
         : 'تسجيل Google غير مضبوط بعد. أضف Google Client ID في إعدادات المنصة أو من تهيئة الـ Worker.';
     }
     if (!blockedReason && freeMode && !(normalizeUrl(resolveGatewayApiRoot(runtime)) || isOpenRouter(runtime))){
@@ -1606,7 +1606,7 @@ function refreshDeepSearchBtn(){
     const box = $('authGateStatus');
     if (!box) return;
     box.dataset.tone = tone;
-    box.textContent = message || 'سجّل الدخول بحساب Gmail للدخول إلى المنصة ومتابعة العمل على خطتك.';
+    box.textContent = message || 'أدخل بريدك الشخصي لبدء الخطة المجانية، أو استخدم بريد الإدارة مع كلمة المرور من النموذج نفسه.';
   }
 
   function syncAccountPlanControls(){
@@ -1666,9 +1666,9 @@ function refreshDeepSearchBtn(){
                   <div class="sub">دردشة • معرفة • ملفات • مشاريع • تحويلات</div>
                 </div>
               </div>
-              <div class="auth-kicker">GMAIL ACCESS</div>
-              <h1 class="auth-title">ابدأ من حساب Gmail ثم تحكّم بالخطة المجانية أو المدفوعة من نفس المنصة.</h1>
-              <p class="auth-copy">تسجيل الدخول يفعّل الهوية، يربط الخطة المجانية افتراضيًا، ويتيح طلب الترقية وإدخال كود التفعيل عند وصوله على بريدك.</p>
+              <div class="auth-kicker">ONE ACCESS LAYER</div>
+              <h1 class="auth-title">أدخل بريدك الشخصي لفتح الخطة المجانية، أو استخدم بريد الإدارة نفسه من الشاشة ذاتها لفتح الصلاحيات الكاملة.</h1>
+              <p class="auth-copy">واجهة دخول واحدة لكل الحسابات: المستخدم العادي يبدأ بالخطة المجانية، ويمكنه طلب الترقية من داخل التطبيق، بينما بريد الإدارة يعمل من النموذج نفسه عند إدخال كلمة المرور.</p>
               <div class="auth-feature-grid">
                 <div class="auth-feature"><strong>خطة مجانية</strong><span>تشغيل اقتصادي آمن ومحدود التكلفة على مستوى التطبيق بالكامل.</span></div>
                 <div class="auth-feature"><strong>ترقية مرنة</strong><span>إرسال طلب ترقية إلى بريد الإدارة ثم تفعيل الكود داخل الحساب نفسه.</span></div>
@@ -1679,34 +1679,28 @@ function refreshDeepSearchBtn(){
             </section>
             <section class="auth-card">
               <h2>تسجيل الدخول إلى المنصة</h2>
-              <div class="auth-status status" id="authGateStatus" data-tone="info">سجّل الدخول بحساب Gmail للدخول إلى المنصة ومتابعة العمل على خطتك.</div>
-              <div class="auth-google-slot" id="googleSignInSlot"></div>
-              <div class="auth-note" id="authGatePlanNote">بعد تسجيل الدخول ستدخل تلقائيًا إلى الخطة المجانية، ويمكنك لاحقًا تفعيل كود الترقية للخطة المدفوعة.</div>
-              <div class="divider"></div>
-              <details class="tool-group" open>
-                <summary class="workspace-section-toggle">
-                  <span class="workspace-section-head">
-                    <span class="workspace-section-title">دخول الإدارة</span>
-                    <span class="workspace-section-summary">يتطلب Gmail الإدارة وكلمة المرور لفتح الحساب الإداري والمزايا المدفوعة.</span>
-                  </span>
-                  <span class="workspace-section-chevron">⌄</span>
-                </summary>
-                <div class="tool-group-body" style="padding-top:14px">
-                  <div class="auth-config-grid">
-                    <div>
-                      <label class="hint">Gmail الإدارة</label>
-                      <input id="adminLoginEmail" type="email" placeholder="tntntt830@gmail.com" />
-                    </div>
-                    <div>
-                      <label class="hint">كلمة المرور</label>
-                      <input id="adminLoginPassword" type="password" placeholder="كلمة مرور الإدارة" />
-                    </div>
-                  </div>
-                  <div class="account-actions" style="margin-top:12px">
-                    <button class="btn dark sm with-label" type="button" id="adminLoginBtn"><span class="icon">🔐</span><span class="label">دخول الإدارة</span></button>
-                  </div>
+              <div class="auth-status status" id="authGateStatus" data-tone="info">أدخل اسمك وبريدك الشخصي لبدء الخطة المجانية، وإذا كان البريد هو بريد الإدارة فأضف كلمة المرور من نفس النموذج.</div>
+              <div class="auth-config-grid" style="margin-top:12px">
+                <div>
+                  <label class="hint">الاسم</label>
+                  <input id="authEntryName" type="text" placeholder="الاسم الظاهر داخل التطبيق" />
                 </div>
-              </details>
+                <div>
+                  <label class="hint">البريد الإلكتروني</label>
+                  <input id="authEntryEmail" type="email" placeholder="name@example.com" />
+                </div>
+                <div style="grid-column:1/-1">
+                  <label class="hint" id="authEntryPasswordLabel">كلمة المرور للإدارة فقط</label>
+                  <input id="authEntryPassword" type="password" placeholder="اختيارية للمستخدم العادي، ومطلوبة فقط إذا كان هذا بريد الإدارة" />
+                </div>
+              </div>
+              <div class="auth-note" id="authEntryModeHint">أي بريد شخصي صالح يفتح لك الخطة المجانية تلقائيًا. إذا أدخلت بريد الإدارة، سيتحول الزر تلقائيًا إلى دخول الإدارة.</div>
+              <div class="account-actions" style="margin-top:12px">
+                <button class="btn dark sm with-label" type="button" id="authEntrySubmitBtn"><span class="icon">→</span><span class="label" id="authEntrySubmitLabel">متابعة بالخطة المجانية</span></button>
+              </div>
+              <div class="divider"></div>
+              <div class="auth-google-slot" id="googleSignInSlot"></div>
+              <div class="auth-note" id="authGatePlanNote">بعد تسجيل الدخول ستدخل تلقائيًا إلى الخطة المجانية، ويمكنك لاحقًا طلب الترقية أو تفعيل كود الترقية للخطة المدفوعة.</div>
               <div class="account-actions">
                 <button class="btn ghost sm with-label" type="button" id="authRetryBtn"><span class="icon">↻</span><span class="label">إعادة التهيئة</span></button>
                 <button class="btn ghost sm with-label" type="button" id="authCloseBtn"><span class="icon">✕</span><span class="label">إغلاق</span></button>
@@ -1753,7 +1747,7 @@ function refreshDeepSearchBtn(){
             <img class="account-avatar" id="settingsAccountAvatar" alt="" />
             <div class="account-meta">
               <strong id="settingsAccountName">الحساب غير مسجل</strong>
-              <span id="settingsAccountEmail">سجّل الدخول بحساب Gmail لتفعيل الخطة المجانية أو المدفوعة.</span>
+              <span id="settingsAccountEmail">سجّل الدخول ببريدك الشخصي لتفعيل الخطة المجانية أو المدفوعة.</span>
               <span id="settingsAccountHint">تُفرض الخطة المجانية تلقائيًا بعد تسجيل الدخول، ويمكنك ترقية الحساب بكود يصل إليك عبر البريد.</span>
             </div>
             <span class="plan-pill" id="settingsPlanPill">الخطة المجانية</span>
@@ -1790,7 +1784,7 @@ function refreshDeepSearchBtn(){
     const plan = signedIn && auth.plan === 'premium' ? 'premium' : 'free';
     const role = auth.role === 'admin' ? 'admin' : 'user';
     const displayName = signedIn ? (auth.name || auth.email || 'الحساب') : 'تسجيل الدخول';
-    const displayEmail = signedIn ? (auth.email || 'حساب Gmail') : 'سجّل الدخول بحساب Gmail';
+    const displayEmail = signedIn ? (auth.email || 'الحساب المسجل') : 'سجّل الدخول ببريدك الشخصي';
     const planLabel = getAccountPlanLabel(plan);
     const avatar = signedIn && auth.picture ? auth.picture : 'logo.svg';
 
@@ -1823,14 +1817,36 @@ function refreshDeepSearchBtn(){
     if ($('authGateGoogleClientId')) $('authGateGoogleClientId').value = settings.googleClientId || config.googleClientId || '';
     if ($('authGateUpgradeEmail')) $('authGateUpgradeEmail').value = settings.upgradeEmail || config.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail;
     if ($('authGateGatewayUrl')) $('authGateGatewayUrl').value = settings.gatewayUrl || DEFAULT_SETTINGS.gatewayUrl;
-    if ($('adminLoginEmail') && !$('adminLoginEmail').value) $('adminLoginEmail').value = config.adminEmail || settings.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail;
+    if ($('authEntryName') && !$('authEntryName').value && signedIn) $('authEntryName').value = auth.name || '';
+    if ($('authEntryEmail') && !$('authEntryEmail').value && signedIn) $('authEntryEmail').value = auth.email || '';
     if ($('authGatePlanNote')) $('authGatePlanNote').textContent = role === 'admin'
       ? 'الحساب الإداري يفتح التطبيق مباشرة مع الصلاحيات الكاملة والمزايا المدفوعة.'
       : plan === 'premium'
       ? 'الحساب الحالي مدفوع. يمكنك إغلاق هذه الشاشة أو إعادة المصادقة إذا لزم.'
       : 'بعد تسجيل الدخول ستبدأ بالخطة المجانية. للترقية اطلب كودًا ثم فعّله من صفحة الإعدادات.';
 
+    syncUnifiedAuthEntry();
     syncAccountPlanControls();
+  }
+
+  function syncUnifiedAuthEntry(){
+    const config = getEffectiveAuthConfig();
+    const email = String($('authEntryEmail')?.value || '').trim().toLowerCase();
+    const isAdminEntry = !!email && email === String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
+    const label = $('authEntrySubmitLabel');
+    const hint = $('authEntryModeHint');
+    const passwordLabel = $('authEntryPasswordLabel');
+    const passwordInput = $('authEntryPassword');
+    if (label) label.textContent = isAdminEntry ? 'دخول الإدارة' : 'متابعة بالخطة المجانية';
+    if (hint) hint.textContent = isAdminEntry
+      ? 'تم التعرف على بريد الإدارة. أدخل كلمة المرور لفتح الحساب الإداري من نفس الشاشة.'
+      : 'أي بريد شخصي صالح يفتح لك الخطة المجانية فورًا، ويمكنك طلب الترقية لاحقًا من داخل التطبيق.';
+    if (passwordLabel) passwordLabel.textContent = isAdminEntry ? 'كلمة مرور الإدارة' : 'كلمة المرور للإدارة فقط';
+    if (passwordInput){
+      passwordInput.placeholder = isAdminEntry
+        ? 'أدخل كلمة مرور الإدارة'
+        : 'اختيارية للمستخدم العادي، ومطلوبة فقط إذا كان هذا بريد الإدارة';
+    }
   }
 
   function waitForGoogleIdentity(timeoutMs = 12000){
@@ -1857,8 +1873,7 @@ function refreshDeepSearchBtn(){
     if (!slot) return;
     const clientId = getAuthGoogleClientId();
     if (!clientId){
-      slot.innerHTML = '<div class="hint">تسجيل Google غير مفعّل بعد. يمكنك استخدام دخول الإدارة الآن، أو إضافة Google Client ID لتفعيل دخول المستخدمين.</div>';
-      setAuthGateStatus('دخول Google غير مفعّل حاليًا. استخدم دخول الإدارة أو أضف Google Client ID لتفعيل تسجيل المستخدمين.', 'info');
+      slot.innerHTML = '<div class="hint">يمكنك المتابعة بالبريد الإلكتروني مباشرة. تسجيل Google اختياري ولم يُفعّل بعد.</div>';
       return;
     }
     const ready = await waitForGoogleIdentity();
@@ -1885,7 +1900,6 @@ function refreshDeepSearchBtn(){
         logo_alignment: 'right',
         width: Math.min(360, Math.max(260, slot.clientWidth || 320))
       });
-      setAuthGateStatus('سجّل الدخول بحساب Gmail للدخول إلى المنصة ومتابعة العمل على خطتك.', 'info');
     }catch(error){
       slot.innerHTML = '<div class="hint">تعذر تهيئة زر تسجيل الدخول حاليًا.</div>';
       setAuthGateStatus(`تعذر تهيئة Google Sign-In: ${error?.message || error}`, 'error');
@@ -1895,7 +1909,8 @@ function refreshDeepSearchBtn(){
   function openAuthGate(message = ''){
     ensureAccountChrome();
     $('authGate')?.classList.add('show');
-    setAuthGateStatus(message || '', 'info');
+    setAuthGateStatus(message || 'أدخل بريدك الشخصي لفتح الخطة المجانية، أو استخدم بريد الإدارة مع كلمة المرور من النموذج نفسه.', 'info');
+    syncUnifiedAuthEntry();
     renderGoogleButton().catch((error) => {
       setAuthGateStatus(`تعذر تهيئة تسجيل Google: ${error?.message || error}`, 'error');
     });
@@ -1933,29 +1948,50 @@ function refreshDeepSearchBtn(){
     }
   }
 
-  async function loginAsAdmin(){
-    const email = String($('adminLoginEmail')?.value || '').trim();
-    const password = String($('adminLoginPassword')?.value || '').trim();
-    if (!email || !password){
-      setAuthGateStatus('أدخل Gmail الإدارة وكلمة المرور أولاً.', 'error');
+  async function submitUnifiedAuthEntry(){
+    const name = String($('authEntryName')?.value || '').trim();
+    const email = String($('authEntryEmail')?.value || '').trim().toLowerCase();
+    const password = String($('authEntryPassword')?.value || '').trim();
+    const config = getEffectiveAuthConfig();
+    const adminEmail = String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
+    const isAdminEntry = !!email && email === adminEmail;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+      setAuthGateStatus('أدخل بريدًا إلكترونيًا صالحًا أولًا.', 'error');
       return;
     }
     try{
-      setAuthGateStatus('جارٍ التحقق من حساب الإدارة...', 'busy');
-      const payload = await fetchAuthJson('/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ email, password })
-      });
-      applyAuthResponse(payload);
+      let payload = null;
+      if (isAdminEntry){
+        if (!password){
+          setAuthGateStatus('هذا هو بريد الإدارة. أدخل كلمة المرور للمتابعة.', 'error');
+          return;
+        }
+        setAuthGateStatus('جارٍ التحقق من حساب الإدارة...', 'busy');
+        payload = await fetchAuthJson('/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email, password })
+        });
+      } else {
+        setAuthGateStatus('جارٍ إنشاء جلسة الخطة المجانية...', 'busy');
+        payload = await fetchAuthJson('/auth/register', {
+          method: 'POST',
+          body: JSON.stringify({
+            name,
+            email,
+            upgradeCode: ($('upgradeCodeInput')?.value || getAuthState().upgradeCode || '').trim()
+          })
+        });
+      }
+      applyAuthResponse(payload, { upgradeCode: payload?.plan === 'premium' ? (($('upgradeCodeInput')?.value || getAuthState().upgradeCode || '').trim()) : getAuthState().upgradeCode || '' });
       syncAccountUi();
       refreshModeButtons();
       renderSettings();
       refreshStrategicWorkspace().catch(()=>{});
       closeAuthGate(true);
-      $('adminLoginPassword').value = '';
-      toast('✅ تم تسجيل الدخول الإداري');
+      if ($('authEntryPassword')) $('authEntryPassword').value = '';
+      toast(isAdminEntry ? '✅ تم تسجيل الدخول الإداري' : '✅ تم فتح الخطة المجانية بنجاح');
     }catch(error){
-      setAuthGateStatus(`فشل دخول الإدارة: ${error?.message || error}`, 'error');
+      setAuthGateStatus(`${isAdminEntry ? 'فشل دخول الإدارة' : 'فشل تسجيل الدخول'}: ${error?.message || error}`, 'error');
     }
   }
 
@@ -2025,7 +2061,7 @@ function refreshDeepSearchBtn(){
     syncAccountUi();
     refreshModeButtons();
     refreshStrategicWorkspace().catch(()=>{});
-    openAuthGate('تم تسجيل الخروج. سجّل الدخول مرة أخرى بحساب Gmail للمتابعة.');
+    openAuthGate('تم تسجيل الخروج. سجّل الدخول مرة أخرى ببريدك الشخصي للمتابعة.');
   }
 
   function openAccountCenter(){
@@ -6639,7 +6675,7 @@ let pinOnly = false;
     $('accountUpgradeRequestBtn')?.addEventListener('click', requestUpgradeByEmail);
     $('accountLogoutBtn')?.addEventListener('click', logoutCurrentAccount);
     $('activateUpgradeBtn')?.addEventListener('click', activateUpgradeCodeFromUi);
-    $('adminLoginBtn')?.addEventListener('click', loginAsAdmin);
+    $('authEntrySubmitBtn')?.addEventListener('click', submitUnifiedAuthEntry);
     $('authRetryBtn')?.addEventListener('click', async () => {
       AUTH_RUNTIME.config = null;
       await loadRemoteAuthConfig(true);
@@ -6654,14 +6690,15 @@ let pinOnly = false;
         activateUpgradeCodeFromUi();
       }
     });
-    ['adminLoginEmail', 'adminLoginPassword'].forEach((id) => {
+    ['authEntryName', 'authEntryEmail', 'authEntryPassword'].forEach((id) => {
       $(id)?.addEventListener('keydown', (event) => {
         if (event.key === 'Enter'){
           event.preventDefault();
-          loginAsAdmin();
+          submitUnifiedAuthEntry();
         }
       });
     });
+    $('authEntryEmail')?.addEventListener('input', syncUnifiedAuthEntry);
 
     // nav
     $('nav').addEventListener('click', (e) => {

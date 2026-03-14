@@ -30,6 +30,10 @@ export default {
         return withCors(await handlePasswordLogin(request, env), request);
       }
 
+      if (url.pathname === '/auth/register' && request.method === 'POST') {
+        return withCors(await handleEmailRegistration(request, env), request);
+      }
+
       if (url.pathname === '/auth/session' && request.method === 'GET') {
         return withCors(await handleSessionLookup(request, env), request);
       }
@@ -266,6 +270,51 @@ async function handlePasswordLogin(request, env) {
     return jsonResponse({
       error: String(error?.message || error || 'Admin login failed.'),
       code: 'AUTH_LOGIN_FAILED'
+    }, 401);
+  }
+}
+
+async function handleEmailRegistration(request, env) {
+  try {
+    const body = await parseJson(request);
+    const email = String(body?.email || '').trim().toLowerCase();
+    const name = String(body?.name || '').trim();
+    const upgradeCode = String(body?.upgradeCode || '').trim();
+    const adminEmail = getAdminEmail(env);
+
+    if (!isValidEmail(email)) {
+      return jsonResponse({
+        error: 'A valid personal email is required.',
+        code: 'AUTH_REGISTER_EMAIL_REQUIRED'
+      }, 400);
+    }
+
+    if (email === adminEmail) {
+      return jsonResponse({
+        error: 'This email is configured as the admin account. Use the same form with the admin password.',
+        code: 'AUTH_ADMIN_PASSWORD_REQUIRED'
+      }, 400);
+    }
+
+    let plan = 'free';
+    if (upgradeCode) {
+      await verifyUpgradeCodeForEmail(upgradeCode, email, env);
+      plan = 'premium';
+    }
+
+    const session = await issueSessionToken({
+      email,
+      name: name || deriveDisplayName(email),
+      picture: '',
+      plan,
+      role: 'user'
+    }, env);
+
+    return jsonResponse(session, 200);
+  } catch (error) {
+    return jsonResponse({
+      error: String(error?.message || error || 'Email registration failed.'),
+      code: 'AUTH_REGISTER_FAILED'
     }, 401);
   }
 }
@@ -652,6 +701,16 @@ async function parseJson(request) {
   } catch (_) {
     return {};
   }
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+}
+
+function deriveDisplayName(email) {
+  const local = String(email || '').split('@')[0] || 'مستخدم';
+  const normalized = local.replace(/[._-]+/g, ' ').trim();
+  return normalized || 'مستخدم';
 }
 
 function base64UrlEncode(value) {
