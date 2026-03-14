@@ -1,4 +1,4 @@
-/* AI Workspace Studio v7.5 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v7.6 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -90,6 +90,7 @@
   const DEFAULT_AUTH_STATE = {
     signedIn: false,
     plan: 'free',
+    role: 'user',
     email: '',
     name: '',
     picture: '',
@@ -104,6 +105,8 @@
     brandName: 'AI Workspace Studio',
     developerName: 'صدام القاضي',
     upgradeEmail: 'tntntt830@gmail.com',
+    adminEmail: 'tntntt830@gmail.com',
+    adminEnabled: true,
     googleClientId: '',
     clientIdConfigured: false,
     premiumEnabled: true
@@ -415,6 +418,8 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       ...DEFAULT_AUTH_CONFIG,
       googleClientId: String(settings.googleClientId || '').trim(),
       upgradeEmail: String(settings.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail).trim() || DEFAULT_AUTH_CONFIG.upgradeEmail,
+      adminEmail: String(settings.upgradeEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim() || DEFAULT_AUTH_CONFIG.adminEmail,
+      adminEnabled: true,
       clientIdConfigured: !!String(settings.googleClientId || '').trim()
     };
   }
@@ -554,8 +559,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   function getAccountRuntimeState(settings = getSettings()){
     const auth = getAuthState();
     const config = getEffectiveAuthConfig(settings);
-    const authConfigured = !!String(config.googleClientId || settings.googleClientId || '').trim();
-    const authRequired = config.authRequired !== false && authConfigured;
+    const authRequired = config.authRequired !== false;
     const signedIn = hasValidAuthSession(auth);
     const premium = signedIn && auth.plan === 'premium';
     return {
@@ -564,6 +568,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       authRequired,
       signedIn,
       premium,
+      admin: signedIn && auth.role === 'admin',
       plan: premium ? 'premium' : 'free'
     };
   }
@@ -611,6 +616,8 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
         ...remote,
         googleClientId: String(remote.googleClientId || local.googleClientId || '').trim(),
         upgradeEmail: String(remote.upgradeEmail || local.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail).trim(),
+        adminEmail: String(remote.adminEmail || local.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim(),
+        adminEnabled: remote.adminEnabled !== false,
         clientIdConfigured: !!String(remote.googleClientId || local.googleClientId || '').trim()
       });
     }).catch(() => {
@@ -625,6 +632,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     const next = saveAuthState({
       signedIn: true,
       plan: payload?.plan === 'premium' ? 'premium' : 'free',
+      role: payload?.role === 'admin' ? 'admin' : 'user',
       email: payload?.email || '',
       name: payload?.name || payload?.email || '',
       picture: payload?.picture || '',
@@ -1674,6 +1682,31 @@ function refreshDeepSearchBtn(){
               <div class="auth-status status" id="authGateStatus" data-tone="info">سجّل الدخول بحساب Gmail للدخول إلى المنصة ومتابعة العمل على خطتك.</div>
               <div class="auth-google-slot" id="googleSignInSlot"></div>
               <div class="auth-note" id="authGatePlanNote">بعد تسجيل الدخول ستدخل تلقائيًا إلى الخطة المجانية، ويمكنك لاحقًا تفعيل كود الترقية للخطة المدفوعة.</div>
+              <div class="divider"></div>
+              <details class="tool-group" open>
+                <summary class="workspace-section-toggle">
+                  <span class="workspace-section-head">
+                    <span class="workspace-section-title">دخول الإدارة</span>
+                    <span class="workspace-section-summary">يتطلب Gmail الإدارة وكلمة المرور لفتح الحساب الإداري والمزايا المدفوعة.</span>
+                  </span>
+                  <span class="workspace-section-chevron">⌄</span>
+                </summary>
+                <div class="tool-group-body" style="padding-top:14px">
+                  <div class="auth-config-grid">
+                    <div>
+                      <label class="hint">Gmail الإدارة</label>
+                      <input id="adminLoginEmail" type="email" placeholder="tntntt830@gmail.com" />
+                    </div>
+                    <div>
+                      <label class="hint">كلمة المرور</label>
+                      <input id="adminLoginPassword" type="password" placeholder="كلمة مرور الإدارة" />
+                    </div>
+                  </div>
+                  <div class="account-actions" style="margin-top:12px">
+                    <button class="btn dark sm with-label" type="button" id="adminLoginBtn"><span class="icon">🔐</span><span class="label">دخول الإدارة</span></button>
+                  </div>
+                </div>
+              </details>
               <div class="account-actions">
                 <button class="btn ghost sm with-label" type="button" id="authRetryBtn"><span class="icon">↻</span><span class="label">إعادة التهيئة</span></button>
                 <button class="btn ghost sm with-label" type="button" id="authCloseBtn"><span class="icon">✕</span><span class="label">إغلاق</span></button>
@@ -1755,20 +1788,23 @@ function refreshDeepSearchBtn(){
     const config = getEffectiveAuthConfig(settings);
     const signedIn = hasValidAuthSession(auth);
     const plan = signedIn && auth.plan === 'premium' ? 'premium' : 'free';
+    const role = auth.role === 'admin' ? 'admin' : 'user';
     const displayName = signedIn ? (auth.name || auth.email || 'الحساب') : 'تسجيل الدخول';
     const displayEmail = signedIn ? (auth.email || 'حساب Gmail') : 'سجّل الدخول بحساب Gmail';
     const planLabel = getAccountPlanLabel(plan);
     const avatar = signedIn && auth.picture ? auth.picture : 'logo.svg';
 
     if ($('accountTriggerAvatar')) $('accountTriggerAvatar').src = avatar;
-    if ($('accountTriggerName')) $('accountTriggerName').textContent = displayName;
+    if ($('accountTriggerName')) $('accountTriggerName').textContent = signedIn && role === 'admin' ? `الإدارة • ${displayName}` : displayName;
     if ($('accountTriggerPlan')) $('accountTriggerPlan').textContent = planLabel;
 
     if ($('settingsAccountAvatar')) $('settingsAccountAvatar').src = avatar;
-    if ($('settingsAccountName')) $('settingsAccountName').textContent = signedIn ? displayName : 'الحساب غير مسجل';
+    if ($('settingsAccountName')) $('settingsAccountName').textContent = signedIn ? (role === 'admin' ? `حساب الإدارة • ${displayName}` : displayName) : 'الحساب غير مسجل';
     if ($('settingsAccountEmail')) $('settingsAccountEmail').textContent = displayEmail;
     if ($('settingsAccountHint')) $('settingsAccountHint').textContent = signedIn
-      ? (plan === 'premium'
+      ? (role === 'admin'
+        ? 'أنت داخل حساب الإدارة. جميع المزايا المدفوعة وطبقات التحكم متاحة لهذا الحساب.'
+        : plan === 'premium'
         ? 'الحساب يعمل الآن على الخطة المدفوعة. يمكنك استخدام المزايا المدفوعة أو تشغيل الوضع المجاني يدويًا لتقليل التكلفة.'
         : 'الحساب يعمل الآن على الخطة المجانية. الترقية متاحة عبر طلب بريدي ثم كود تفعيل.')
       : 'سجّل الدخول أولاً، ثم اطلب الترقية أو فعّل الكود إذا وصلك من الإدارة.';
@@ -1787,7 +1823,10 @@ function refreshDeepSearchBtn(){
     if ($('authGateGoogleClientId')) $('authGateGoogleClientId').value = settings.googleClientId || config.googleClientId || '';
     if ($('authGateUpgradeEmail')) $('authGateUpgradeEmail').value = settings.upgradeEmail || config.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail;
     if ($('authGateGatewayUrl')) $('authGateGatewayUrl').value = settings.gatewayUrl || DEFAULT_SETTINGS.gatewayUrl;
-    if ($('authGatePlanNote')) $('authGatePlanNote').textContent = plan === 'premium'
+    if ($('adminLoginEmail') && !$('adminLoginEmail').value) $('adminLoginEmail').value = config.adminEmail || settings.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail;
+    if ($('authGatePlanNote')) $('authGatePlanNote').textContent = role === 'admin'
+      ? 'الحساب الإداري يفتح التطبيق مباشرة مع الصلاحيات الكاملة والمزايا المدفوعة.'
+      : plan === 'premium'
       ? 'الحساب الحالي مدفوع. يمكنك إغلاق هذه الشاشة أو إعادة المصادقة إذا لزم.'
       : 'بعد تسجيل الدخول ستبدأ بالخطة المجانية. للترقية اطلب كودًا ثم فعّله من صفحة الإعدادات.';
 
@@ -1818,8 +1857,8 @@ function refreshDeepSearchBtn(){
     if (!slot) return;
     const clientId = getAuthGoogleClientId();
     if (!clientId){
-      slot.innerHTML = '<div class="hint">أدخل Google Client ID أولاً من التهيئة المحلية أو من إعدادات المنصة.</div>';
-      setAuthGateStatus('تسجيل Google غير مضبوط بعد. أضف Google Client ID ثم أعد التهيئة.', 'error');
+      slot.innerHTML = '<div class="hint">تسجيل Google غير مفعّل بعد. يمكنك استخدام دخول الإدارة الآن، أو إضافة Google Client ID لتفعيل دخول المستخدمين.</div>';
+      setAuthGateStatus('دخول Google غير مفعّل حاليًا. استخدم دخول الإدارة أو أضف Google Client ID لتفعيل تسجيل المستخدمين.', 'info');
       return;
     }
     const ready = await waitForGoogleIdentity();
@@ -1891,6 +1930,32 @@ function refreshDeepSearchBtn(){
       toast('✅ تم تسجيل الدخول بنجاح');
     }catch(error){
       setAuthGateStatus(`فشل تسجيل الدخول: ${error?.message || error}`, 'error');
+    }
+  }
+
+  async function loginAsAdmin(){
+    const email = String($('adminLoginEmail')?.value || '').trim();
+    const password = String($('adminLoginPassword')?.value || '').trim();
+    if (!email || !password){
+      setAuthGateStatus('أدخل Gmail الإدارة وكلمة المرور أولاً.', 'error');
+      return;
+    }
+    try{
+      setAuthGateStatus('جارٍ التحقق من حساب الإدارة...', 'busy');
+      const payload = await fetchAuthJson('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password })
+      });
+      applyAuthResponse(payload);
+      syncAccountUi();
+      refreshModeButtons();
+      renderSettings();
+      refreshStrategicWorkspace().catch(()=>{});
+      closeAuthGate(true);
+      $('adminLoginPassword').value = '';
+      toast('✅ تم تسجيل الدخول الإداري');
+    }catch(error){
+      setAuthGateStatus(`فشل دخول الإدارة: ${error?.message || error}`, 'error');
     }
   }
 
@@ -6574,6 +6639,7 @@ let pinOnly = false;
     $('accountUpgradeRequestBtn')?.addEventListener('click', requestUpgradeByEmail);
     $('accountLogoutBtn')?.addEventListener('click', logoutCurrentAccount);
     $('activateUpgradeBtn')?.addEventListener('click', activateUpgradeCodeFromUi);
+    $('adminLoginBtn')?.addEventListener('click', loginAsAdmin);
     $('authRetryBtn')?.addEventListener('click', async () => {
       AUTH_RUNTIME.config = null;
       await loadRemoteAuthConfig(true);
@@ -6587,6 +6653,14 @@ let pinOnly = false;
         event.preventDefault();
         activateUpgradeCodeFromUi();
       }
+    });
+    ['adminLoginEmail', 'adminLoginPassword'].forEach((id) => {
+      $(id)?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter'){
+          event.preventDefault();
+          loginAsAdmin();
+        }
+      });
     });
 
     // nav

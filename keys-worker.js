@@ -26,6 +26,10 @@ export default {
         return withCors(await handleGoogleAuth(request, env), request);
       }
 
+      if (url.pathname === '/auth/login' && request.method === 'POST') {
+        return withCors(await handlePasswordLogin(request, env), request);
+      }
+
       if (url.pathname === '/auth/session' && request.method === 'GET') {
         return withCors(await handleSessionLookup(request, env), request);
       }
@@ -115,10 +119,19 @@ function getUpgradeAdminToken(env) {
   ).trim();
 }
 
+function getAdminEmail(env) {
+  return String(env.APP_ADMIN_EMAIL || env.ADMIN_EMAIL || 'tntntt830@gmail.com').trim().toLowerCase();
+}
+
+function getAdminPassword(env) {
+  return String(env.APP_ADMIN_PASSWORD || env.ADMIN_PASSWORD || '').trim();
+}
+
 function getPublicAuthConfig(env) {
   const googleClientId = String(env.GOOGLE_CLIENT_ID_WEB || env.GOOGLE_CLIENT_ID || '').trim();
-  const authFlag = String(env.AUTH_REQUIRE_GOOGLE || 'true').trim().toLowerCase() !== 'false';
-  const authRequired = authFlag && !!googleClientId;
+  const authRequired = String(env.AUTH_REQUIRE_LOGIN || 'true').trim().toLowerCase() !== 'false';
+  const adminEmail = getAdminEmail(env);
+  const adminEnabled = !!getAdminPassword(env);
   return {
     ok: true,
     authRequired,
@@ -126,6 +139,8 @@ function getPublicAuthConfig(env) {
     brandName: String(env.APP_BRAND_NAME || 'AI Workspace Studio').trim(),
     developerName: String(env.APP_DEVELOPER_NAME || 'صدام القاضي').trim(),
     upgradeEmail: String(env.APP_UPGRADE_EMAIL || 'tntntt830@gmail.com').trim(),
+    adminEmail,
+    adminEnabled,
     googleClientId,
     clientIdConfigured: !!googleClientId
   };
@@ -137,6 +152,7 @@ function getWorkerHealth(env) {
   const authConfig = getPublicAuthConfig(env);
   const hasSessionSecret = !!getSessionSecret(env);
   const hasUpgradeSecret = !!getUpgradeSecret(env);
+  const adminLoginReady = !!getAdminPassword(env);
   return {
     status: configured ? 200 : 503,
     body: {
@@ -148,6 +164,7 @@ function getWorkerHealth(env) {
       client_token_required: clientTokenRequired,
       auth_required: authConfig.authRequired,
       google_client_configured: authConfig.clientIdConfigured,
+      admin_login_ready: adminLoginReady,
       session_ready: hasSessionSecret,
       upgrade_flow_ready: hasUpgradeSecret
     }
@@ -207,6 +224,52 @@ async function handleGoogleAuth(request, env) {
   }
 }
 
+async function handlePasswordLogin(request, env) {
+  try {
+    const body = await parseJson(request);
+    const email = String(body?.email || '').trim().toLowerCase();
+    const password = String(body?.password || '').trim();
+    const adminEmail = getAdminEmail(env);
+    const adminPassword = getAdminPassword(env);
+
+    if (!email || !password) {
+      return jsonResponse({
+        error: 'Email and password are required.',
+        code: 'AUTH_LOGIN_REQUIRED_FIELDS'
+      }, 400);
+    }
+
+    if (!adminPassword) {
+      return jsonResponse({
+        error: 'Admin password login is not configured on the worker.',
+        code: 'AUTH_ADMIN_PASSWORD_NOT_CONFIGURED'
+      }, 503);
+    }
+
+    if (email !== adminEmail || !timingSafeEqual(password, adminPassword)) {
+      return jsonResponse({
+        error: 'Invalid admin credentials.',
+        code: 'AUTH_INVALID_ADMIN_CREDENTIALS'
+      }, 401);
+    }
+
+    const session = await issueSessionToken({
+      email,
+      name: 'صدام القاضي',
+      picture: '',
+      plan: 'premium',
+      role: 'admin'
+    }, env);
+
+    return jsonResponse(session, 200);
+  } catch (error) {
+    return jsonResponse({
+      error: String(error?.message || error || 'Admin login failed.'),
+      code: 'AUTH_LOGIN_FAILED'
+    }, 401);
+  }
+}
+
 async function handleSessionLookup(request, env) {
   try {
     const session = await requireSession(request, env);
@@ -216,6 +279,7 @@ async function handleSessionLookup(request, env) {
       name: session.name,
       picture: session.picture,
       plan: session.plan,
+      role: session.role || 'user',
       sessionExp: session.exp * 1000
     }, 200);
   } catch (error) {
@@ -258,7 +322,8 @@ async function handleUpgradeActivation(request, env) {
       email: session.email,
       name: session.name,
       picture: session.picture,
-      plan: 'premium'
+      plan: 'premium',
+      role: session.role === 'admin' ? 'admin' : 'user'
     }, env);
     return jsonResponse({ ...upgraded, upgradeAccepted: true }, 200);
   } catch (error) {
@@ -408,6 +473,7 @@ async function issueSessionToken(profile, env) {
     name: String(profile.name || '').trim(),
     picture: String(profile.picture || '').trim(),
     plan: profile.plan === 'premium' ? 'premium' : 'free',
+    role: profile.role === 'admin' ? 'admin' : 'user',
     iat: Math.floor(now / 1000),
     exp: Math.floor((now + SESSION_TTL_MS) / 1000)
   };
@@ -418,6 +484,7 @@ async function issueSessionToken(profile, env) {
     name: payload.name,
     picture: payload.picture,
     plan: payload.plan,
+    role: payload.role,
     sessionToken,
     sessionExp: payload.exp * 1000
   };
