@@ -39,16 +39,23 @@ export default {
 function buildHealth(env) {
   const limits = resolveBudgetLimits(env, "balanced");
   const ocrReady = Boolean(String(env.OCR_UPSTREAM_URL || "").trim() || String(env.OPENROUTER_API_KEY || "").trim());
+  const docxUpstreamReady = Boolean(String(env.DOCX_UPSTREAM_URL || "").trim());
   return {
     ok: true,
     service: "sadam-convert",
     configured: true,
     ready: true,
     docxReady: true,
+    docxMode: docxUpstreamReady ? "upstream" : "structured",
+    fidelityReady: docxUpstreamReady,
     ocrReady,
-    message: ocrReady
-      ? "DOCX and OCR routes are ready."
-      : "DOCX route is ready. OCR cloud path still needs OPENROUTER_API_KEY or OCR_UPSTREAM_URL.",
+    message: docxUpstreamReady
+      ? (ocrReady
+        ? "DOCX fidelity route and OCR are ready."
+        : "DOCX fidelity route is ready. OCR cloud path still needs OPENROUTER_API_KEY or OCR_UPSTREAM_URL.")
+      : (ocrReady
+        ? "DOCX structured route and OCR are ready."
+        : "DOCX structured route is ready. OCR cloud path still needs OPENROUTER_API_KEY or OCR_UPSTREAM_URL."),
     limits: {
       maxPdfPages: limits.maxPdfPages,
       maxFileMB: limits.maxFileMB,
@@ -75,6 +82,11 @@ async function handlePdfToDocx(request, env) {
 
   if (payload.freeMode) {
     return errorResponse(403, "FREE_MODE_BLOCKS_CLOUD", "الوضع المجاني يمنع استخدام التحويل السحابي.");
+  }
+
+  const docxUpstream = String(env.DOCX_UPSTREAM_URL || "").trim();
+  if (docxUpstream) {
+    return proxyDocxUpstream(docxUpstream, payload, env);
   }
 
   const structured = payload.structured;
@@ -113,6 +125,7 @@ async function handlePdfToDocx(request, env) {
 
   return jsonResponse({
     ok: true,
+    mode: "structured",
     fileName,
     docxBase64: bytesToBase64(docxBytes),
     text: String(structured?.text || ""),
@@ -120,6 +133,112 @@ async function handlePdfToDocx(request, env) {
     quality: String(structured?.quality || ""),
     message: "تم بناء ملف DOCX من الهيكل المنظم للصفحات.",
     limits
+  });
+}
+
+async function proxyDocxUpstream(upstream, payload, env) {
+  const fileBase64 = String(payload.fileBase64 || "").replace(/^data:[^,]+,/, "").trim();
+  if (!fileBase64) {
+    return errorResponse(400, "FILE_BASE64_REQUIRED", "المسار السحابي عالي المطابقة يحتاج ملف PDF خامًا داخل fileBase64.");
+  }
+
+  const fileName = String(payload.fileName || "converted.pdf").trim() || "converted.pdf";
+  const mimeType = String(payload.mimeType || "application/pdf").trim() || "application/pdf";
+  const bytes = decodeBase64Bytes(fileBase64);
+  const format = String(env.DOCX_UPSTREAM_FORMAT || "json").trim().toLowerCase();
+  const headers = {};
+  const token = String(env.DOCX_UPSTREAM_TOKEN || "").trim();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  let body = null;
+  if (format === "multipart") {
+    const form = new FormData();
+    form.append("file", new Blob([bytes], { type: mimeType }), fileName);
+    form.append("payload", JSON.stringify({
+      fileName,
+      mimeType,
+      pageCount: payload.pageCount || 0,
+      fileSizeMB: payload.fileSizeMB || 0,
+      preserveLayout: true,
+      editable: true,
+      rtl: true,
+      structured: payload.structured || null
+    }));
+    body = form;
+  } else {
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify({
+      fileName,
+      mimeType,
+      fileBase64,
+      pageCount: payload.pageCount || 0,
+      fileSizeMB: payload.fileSizeMB || 0,
+      preserveLayout: true,
+      editable: true,
+      rtl: true,
+      structured: payload.structured || null
+    });
+  }
+
+  const resp = await fetch(upstream, {
+    method: "POST",
+    headers,
+    body
+  });
+
+  if (!resp.ok) {
+    const raw = await resp.text().catch(() => "");
+    return errorResponse(502, "DOCX_UPSTREAM_FAILED", raw || `DOCX upstream failed with ${resp.status}`);
+  }
+
+  const contentType = String(resp.headers.get("content-type") || "").toLowerCase();
+  if (contentType.includes("application/json")) {
+    const raw = await resp.text();
+    let json;
+    try {
+      json = JSON.parse(raw);
+    } catch (_) {
+      return errorResponse(502, "DOCX_UPSTREAM_BAD_JSON", "تعذر قراءة استجابة JSON من خدمة التحويل السحابي.");
+    }
+
+    const binaryUrl = String(json?.url || json?.fileUrl || json?.data?.url || "").trim();
+    if (binaryUrl) {
+      return fetchDocxFromUrl(binaryUrl, fileName);
+    }
+
+    const directBase64 = String(json?.docxBase64 || json?.fileBase64 || json?.data?.docxBase64 || json?.data?.fileBase64 || "").trim();
+    if (!directBase64) {
+      return errorResponse(502, "DOCX_UPSTREAM_EMPTY", String(json?.message || json?.error || "خدمة التحويل السحابي لم ترجع ملف Word صالحًا."));
+    }
+
+    return jsonResponse({
+      ...json,
+      ok: json?.ok !== false,
+      mode: "upstream",
+      fileName: String(json?.fileName || sanitizeOutputName(fileName))
+    });
+  }
+
+  const buffer = await resp.arrayBuffer();
+  const outHeaders = new Headers({
+    "Content-Type": DOCX_MIME,
+    "Content-Disposition": `attachment; filename="${sanitizeOutputName(fileName)}"`
+  });
+  return new Response(buffer, { status: 200, headers: outHeaders });
+}
+
+async function fetchDocxFromUrl(url, fileName) {
+  const resp = await fetch(url);
+  if (!resp.ok) {
+    return errorResponse(502, "DOCX_URL_FETCH_FAILED", `تعذر تنزيل ملف Word من الرابط المرجع (${resp.status}).`);
+  }
+  const buffer = await resp.arrayBuffer();
+  return new Response(buffer, {
+    status: 200,
+    headers: {
+      "Content-Type": DOCX_MIME,
+      "Content-Disposition": `attachment; filename="${sanitizeOutputName(fileName)}"`
+    }
   });
 }
 
@@ -650,4 +769,10 @@ function bytesToBase64(bytes) {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
   }
   return btoa(binary);
+}
+
+function decodeBase64Bytes(value) {
+  const normalized = String(value || "").trim().replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized + "=".repeat((4 - (normalized.length % 4 || 4)) % 4);
+  return Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
 }

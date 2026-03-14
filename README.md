@@ -175,3 +175,17 @@ wrangler deploy
 ```bash
 wrangler deploy -c wrangler.convert.jsonc
 ```
+
+## v7.4
+- تطوير: مسار `PDF -> DOCX` السحابي يرسل الآن ملف PDF الخام أيضًا إلى `sadam-convert` لدعم محرك تحويل خارجي عالي المطابقة إذا كان موصولًا.
+- إضافة: `/health` في `convert-worker` يعرض `docxMode` و`fidelityReady` لتمييز المسار الهيكلي عن المسار عالي المطابقة.
+- تحسين: الواجهة تعرض للمستخدم هل التحويل السحابي الحالي `مطابق` أم `هيكلي قابل للتعديل`.
+
+### أسرار إضافية اختيارية لمسار المطابقة العالية
+- `DOCX_UPSTREAM_URL` لربط محرك تحويل خارجي متخصص في `PDF -> DOCX`
+- `DOCX_UPSTREAM_TOKEN` إذا كانت الخدمة الخارجية تحتاج Authorization
+- `DOCX_UPSTREAM_FORMAT` ويمكن أن تكون `json` أو `multipart`
+
+### ملاحظة مهمة
+- المطابقة الكاملة 100% مع بقاء الملف قابلاً للتعديل لا يمكن ضمانها عبر Cloudflare Worker وحده.
+- لتحقيق ذلك فعليًا يجب ضبط `DOCX_UPSTREAM_URL` لخدمة تحويل خارجية متخصصة في `PDF -> DOCX` عالي المطابقة.
