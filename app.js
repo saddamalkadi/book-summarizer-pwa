@@ -1024,8 +1024,8 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       if (transcribeCloudHealthState.docxReady === true || transcribeCloudHealthState.ready === true){
         if (transcribeCloudHealthState.fidelityReady){
           cloudLabel = transcribeCloudHealthState.ocrReady === false
-            ? 'DOCX مطابق • جاهز • OCR فقط غير مهيأ'
-            : 'DOCX مطابق • جاهز';
+            ? 'DOCX عالي المطابقة • جاهز • OCR فقط غير مهيأ'
+            : 'DOCX عالي المطابقة • جاهز';
         } else {
           cloudLabel = transcribeCloudHealthState.ocrReady === false
             ? 'DOCX جاهز • المطابقة العالية غير مفعلة • OCR فقط غير مهيأ'
@@ -3605,8 +3605,12 @@ function refreshDeepSearchBtn(){
           };
           lines.push(`محول الوثائق: ${convertResp.status}`);
           lines.push(`DOCX السحابي: ${convertJson?.docxReady === true ? 'جاهز' : 'غير جاهز'}`);
-          lines.push(`مطابقة طبق الأصل: ${convertJson?.fidelityReady === true ? 'مفعلة' : 'غير مفعلة بعد'}`);
-          lines.push(`وضع التحويل: ${convertJson?.docxMode === 'upstream' ? 'مطابقة عالية عبر محرك خارجي' : 'تحويل هيكلي قابل للتعديل'}`);
+          lines.push(`المطابقة العالية للأصل: ${convertJson?.fidelityReady === true ? 'مفعلة' : 'غير مفعلة بعد'}`);
+          lines.push(`وضع التحويل: ${String(convertJson?.docxMode || '') === 'cloudconvert'
+            ? 'مطابقة عالية عبر CloudConvert'
+            : (String(convertJson?.docxMode || '') === 'upstream'
+              ? 'مطابقة عالية عبر محرك خارجي'
+              : 'تحويل هيكلي قابل للتعديل')}`);
           lines.push(`OCR السحابي: ${convertJson?.ocrReady === true ? 'جاهز' : 'غير جاهز أو غير مهيأ'}`);
           if (convertJson?.limits){
             lines.push(`حدود السحابة: ${convertJson.limits.maxPdfPages || '-'} صفحة • ${convertJson.limits.maxFileMB || '-'}MB`);
@@ -5114,6 +5118,8 @@ async function maybeUpdateThreadSummary(pid, tid){
     if (/rابط تحويل pdf.*غير مضبوط|cloud pdf|pdf.*word.*غير مضبوط|endpoint.*غير مضبوط/i.test(msg)) return 'رابط التحويل السحابي PDF إلى Word غير مضبوط في الإعدادات.';
     if (/no\s+(?:cookie|kookie)\s+auth\s+credential/i.test(msg)) return 'رابط خدمة التحويل السحابي محمي بـ Cookies أو Cloudflare Access، لذلك لا يستطيع التطبيق استخدامه. استخدم رابط Worker مباشر.';
     if (/insufficient\s+(credits?|balance)|not enough credits?|quota.*exceeded|billing|payment required|402\b/i.test(msg)) return 'نفد رصيد خدمة التحويل أو رصيد المزود المرتبط بها. يلزم شحن الرصيد أو استخدام المسار المحلي.';
+    if (/cloudconvert_base64_limit_exceeded/i.test(msg)) return 'هذا الملف يتجاوز حد الحجم المسموح لمسار المطابقة العالية عبر CloudConvert في الخطة الحالية. استخدم ملفًا أصغر أو المسار المحلي.';
+    if (/cloudconvert_(?:job_failed|job_error|export_missing)/i.test(msg)) return 'محرك CloudConvert للمطابقة العالية لم يكمل إنشاء ملف Word صالح. تحقق من الرصيد أو أعد المحاولة أو استخدم المسار المحلي.';
     if (/docx_upstream_failed|docx_upstream_empty|docx_upstream_bad_json/i.test(msg)) return 'خدمة المطابقة العالية لتحويل PDF إلى Word متصلة لكنها لم ترجع ملف Word صالحًا. يمكن استخدام المسار الهيكلي أو ضبط محرك المطابقة العالية.';
     if (/failed to fetch|networkerror|load failed|network request failed|cors/i.test(msg)) return 'تعذر الاتصال بخدمة التحويل السحابي. تحقق من الرابط أو من الحماية على الخدمة.';
     return msg;
@@ -7742,16 +7748,20 @@ ${txt}`;
         if (route !== mode && routeDecision.reason) toast(`ℹ️ ${routeDecision.reason}`);
         if (route === 'cloud'){
           $('transcribeStats').textContent = 'تحويل عبر المسار السحابي...';
-          const cloudEngineLabel = transcribeCloudHealthState?.fidelityReady
-            ? 'تحويل DOCX • سحابي مطابق'
-            : 'تحويل DOCX • سحابي هيكلي';
+          const cloudEngineLabel = transcribeCloudHealthState?.docxMode === 'cloudconvert'
+            ? 'تحويل DOCX • CloudConvert مطابق'
+            : (transcribeCloudHealthState?.fidelityReady
+              ? 'تحويل DOCX • سحابي مطابق'
+              : 'تحويل DOCX • سحابي هيكلي');
           updateTranscribeLabState({
             source: briefSnippet(transcribeSelectedFile.name, 26),
             engine: cloudEngineLabel,
             quality: 'سحابي',
-            note: transcribeCloudHealthState?.fidelityReady
-              ? 'تم اختيار المسار السحابي المرتبط بمحرك تحويل خارجي لهذا الملف.'
-              : 'تم اختيار المسار السحابي الهيكلي لهذا الملف. قد يحتاج المستند النهائي إلى مراجعة إذا كان معقدًا.'
+            note: transcribeCloudHealthState?.docxMode === 'cloudconvert'
+              ? 'تم اختيار مسار CloudConvert للمطابقة العالية لهذا الملف.'
+              : (transcribeCloudHealthState?.fidelityReady
+                ? 'تم اختيار المسار السحابي المرتبط بمحرك تحويل خارجي لهذا الملف.'
+                : 'تم اختيار المسار السحابي الهيكلي لهذا الملف. قد يحتاج المستند النهائي إلى مراجعة إذا كان معقدًا.')
           });
           if (!transcribeLastStructured){
             $('transcribeStats').textContent = 'تحضير الملف للمسار السحابي...';
@@ -7795,10 +7805,13 @@ ${txt}`;
         $('transcribeStats').textContent = 'اكتمل التحويل';
         updateTranscribeLiveStats();
         if (route === 'cloud'){
-          const exactMode = result?.cloudMode === 'upstream';
+          const exactMode = ['upstream', 'cloudconvert'].includes(String(result?.cloudMode || ''));
+          const exactEngineLabel = result?.cloudMode === 'cloudconvert'
+            ? 'تحويل DOCX • CloudConvert مطابق'
+            : (exactMode ? 'تحويل DOCX • سحابي مطابق' : 'تحويل DOCX • سحابي هيكلي');
           updateTranscribeLabState({
             source: briefSnippet(transcribeSelectedFile.name, 26),
-            engine: exactMode ? 'تحويل DOCX • سحابي مطابق' : 'تحويل DOCX • سحابي هيكلي',
+            engine: exactEngineLabel,
             quality: exactMode ? 'مطابقة عالية' : 'مطابقة جيدة قابلة للتعديل',
             note: exactMode
               ? (result?.cloudMessage || 'اكتمل التحويل عبر المسار السحابي الخارجي.')

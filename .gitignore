@@ -5,3 +5,4 @@ android/keystore.properties
 android/release-keystore.jks
 android/*.jks
 android/RELEASE_SIGNING_INFO.local.txt
+*.idsig

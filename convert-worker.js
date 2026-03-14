@@ -1,5 +1,6 @@
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const CLOUDCONVERT_SYNC_JOBS_URL = "https://sync.api.cloudconvert.com/v2/jobs";
 const encoder = new TextEncoder();
 const crcTable = buildCrc32Table();
 
@@ -40,26 +41,37 @@ function buildHealth(env) {
   const limits = resolveBudgetLimits(env, "balanced");
   const ocrReady = Boolean(String(env.OCR_UPSTREAM_URL || "").trim() || String(env.OPENROUTER_API_KEY || "").trim());
   const docxUpstreamReady = Boolean(String(env.DOCX_UPSTREAM_URL || "").trim());
+  const cloudConvertReady = Boolean(String(env.CLOUDCONVERT_API_KEY || "").trim());
+  const docxMode = docxUpstreamReady ? "upstream" : (cloudConvertReady ? "cloudconvert" : "structured");
+  const fidelityReady = docxUpstreamReady || cloudConvertReady;
+  const fidelityLimitMB = docxUpstreamReady
+    ? limits.maxFileMB
+    : (cloudConvertReady ? Math.min(limits.maxFileMB, numberEnv(env, "CLOUDCONVERT_BASE64_MAX_MB", 10)) : 0);
   return {
     ok: true,
     service: "sadam-convert",
     configured: true,
     ready: true,
     docxReady: true,
-    docxMode: docxUpstreamReady ? "upstream" : "structured",
-    fidelityReady: docxUpstreamReady,
+    docxMode,
+    fidelityReady,
     ocrReady,
     message: docxUpstreamReady
       ? (ocrReady
-        ? "DOCX fidelity route and OCR are ready."
-        : "DOCX fidelity route is ready. OCR cloud path still needs OPENROUTER_API_KEY or OCR_UPSTREAM_URL.")
+        ? "DOCX high-fidelity upstream route and OCR are ready."
+        : "DOCX high-fidelity upstream route is ready. OCR cloud path still needs OPENROUTER_API_KEY or OCR_UPSTREAM_URL.")
+      : cloudConvertReady
+      ? (ocrReady
+        ? "DOCX high-fidelity CloudConvert route and OCR are ready."
+        : "DOCX high-fidelity CloudConvert route is ready. OCR cloud path still needs OPENROUTER_API_KEY or OCR_UPSTREAM_URL.")
       : (ocrReady
         ? "DOCX structured route and OCR are ready."
         : "DOCX structured route is ready. OCR cloud path still needs OPENROUTER_API_KEY or OCR_UPSTREAM_URL."),
     limits: {
       maxPdfPages: limits.maxPdfPages,
       maxFileMB: limits.maxFileMB,
-      maxOcrImageMB: numberEnv(env, "MAX_OCR_IMAGE_MB", 8)
+      maxOcrImageMB: numberEnv(env, "MAX_OCR_IMAGE_MB", 8),
+      fidelityMaxFileMB: fidelityLimitMB
     },
     budgetModes: ["strict", "balanced", "open"]
   };
@@ -87,6 +99,11 @@ async function handlePdfToDocx(request, env) {
   const docxUpstream = String(env.DOCX_UPSTREAM_URL || "").trim();
   if (docxUpstream) {
     return proxyDocxUpstream(docxUpstream, payload, env);
+  }
+
+  const cloudConvertKey = String(env.CLOUDCONVERT_API_KEY || "").trim();
+  if (cloudConvertKey) {
+    return proxyCloudConvertDocx(payload, env);
   }
 
   const structured = payload.structured;
@@ -133,6 +150,96 @@ async function handlePdfToDocx(request, env) {
     quality: String(structured?.quality || ""),
     message: "تم بناء ملف DOCX من الهيكل المنظم للصفحات.",
     limits
+  });
+}
+
+async function proxyCloudConvertDocx(payload, env) {
+  const fileBase64 = String(payload.fileBase64 || "").replace(/^data:[^,]+,/, "").trim();
+  if (!fileBase64) {
+    return errorResponse(400, "FILE_BASE64_REQUIRED", "مسار CloudConvert يحتاج ملف PDF خامًا داخل fileBase64.");
+  }
+
+  const fileName = String(payload.fileName || "converted.pdf").trim() || "converted.pdf";
+  const fileSizeMB = Math.max(0, Number(payload.fileSizeMB || 0));
+  const maxBase64MB = Math.min(resolveBudgetLimits(env, sanitizeBudgetMode(payload.budgetMode)).maxFileMB, numberEnv(env, "CLOUDCONVERT_BASE64_MAX_MB", 10));
+  if (fileSizeMB && fileSizeMB > maxBase64MB) {
+    return errorResponse(
+      413,
+      "CLOUDCONVERT_BASE64_LIMIT_EXCEEDED",
+      `مسار المطابقة العالية عبر CloudConvert في هذه النسخة يدعم حتى ${maxBase64MB}MB لكل ملف. الملف الحالي حجمه ${fileSizeMB.toFixed(1)}MB.`,
+      { maxBase64MB }
+    );
+  }
+
+  const response = await fetch(CLOUDCONVERT_SYNC_JOBS_URL, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${String(env.CLOUDCONVERT_API_KEY || "").trim()}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      tasks: {
+        import_pdf: {
+          operation: "import/base64",
+          file: fileBase64,
+          filename: fileName
+        },
+        convert_docx: {
+          operation: "convert",
+          input: "import_pdf",
+          input_format: "pdf",
+          output_format: "docx"
+        },
+        export_docx: {
+          operation: "export/url",
+          input: "convert_docx",
+          inline: false,
+          archive_multiple_files: false
+        }
+      },
+      redirect: false,
+      tag: "aistudio-pdf-docx"
+    })
+  });
+
+  const raw = await response.text().catch(() => "");
+  let json = null;
+  try {
+    json = raw ? JSON.parse(raw) : null;
+  } catch (_) {
+    json = null;
+  }
+
+  if (!response.ok) {
+    return errorResponse(
+      response.status || 502,
+      "CLOUDCONVERT_JOB_FAILED",
+      extractCloudConvertError(json) || raw || `CloudConvert request failed with ${response.status}`
+    );
+  }
+
+  const job = json?.data || json;
+  const tasks = Array.isArray(job?.tasks) ? job.tasks : [];
+  const failedTask = tasks.find((task) => String(task?.status || "").toLowerCase() === "error");
+  if (String(job?.status || "").toLowerCase() === "error" || failedTask) {
+    return errorResponse(
+      502,
+      "CLOUDCONVERT_JOB_ERROR",
+      extractCloudConvertError(json) || extractCloudConvertTaskMessage(failedTask) || "CloudConvert did not finish the DOCX job successfully."
+    );
+  }
+
+  const exportTask = tasks.find((task) => String(task?.operation || "").toLowerCase() === "export/url");
+  const exportFile = exportTask?.result?.files?.[0];
+  const downloadUrl = String(exportFile?.url || "").trim();
+  if (!downloadUrl) {
+    return errorResponse(502, "CLOUDCONVERT_EXPORT_MISSING", "CloudConvert finished without returning a DOCX download URL.");
+  }
+
+  return fetchDocxFromUrl(downloadUrl, String(exportFile?.filename || fileName), {
+    asJson: true,
+    mode: "cloudconvert",
+    message: "تم تحويل الملف عبر CloudConvert بمسار مطابقة عالية قابل للتعديل."
   });
 }
 
@@ -227,12 +334,21 @@ async function proxyDocxUpstream(upstream, payload, env) {
   return new Response(buffer, { status: 200, headers: outHeaders });
 }
 
-async function fetchDocxFromUrl(url, fileName) {
+async function fetchDocxFromUrl(url, fileName, options = {}) {
   const resp = await fetch(url);
   if (!resp.ok) {
     return errorResponse(502, "DOCX_URL_FETCH_FAILED", `تعذر تنزيل ملف Word من الرابط المرجع (${resp.status}).`);
   }
   const buffer = await resp.arrayBuffer();
+  if (options?.asJson) {
+    return jsonResponse({
+      ok: true,
+      mode: String(options.mode || "upstream"),
+      fileName: sanitizeOutputName(fileName),
+      docxBase64: bytesToBase64(new Uint8Array(buffer)),
+      message: String(options.message || "")
+    });
+  }
   return new Response(buffer, {
     status: 200,
     headers: {
@@ -380,7 +496,7 @@ function sanitizeBudgetMode(value) {
 function sanitizeOutputName(name) {
   const safe = String(name || "converted")
     .replace(/[\\/:*?"<>|]+/g, "_")
-    .replace(/\.pdf$/i, "")
+    .replace(/\.(pdf|docx)$/i, "")
     .trim() || "converted";
   return `${safe}.docx`;
 }
@@ -398,6 +514,20 @@ function jsonResponse(payload, status = 200) {
 
 function errorResponse(status, error, message, extra = {}) {
   return jsonResponse({ ok: false, error, message, ...extra }, status);
+}
+
+function extractCloudConvertError(payload) {
+  return String(
+    payload?.message ||
+    payload?.error ||
+    payload?.data?.message ||
+    extractCloudConvertTaskMessage((payload?.data?.tasks || payload?.tasks || []).find((task) => String(task?.status || "").toLowerCase() === "error")) ||
+    ""
+  ).trim();
+}
+
+function extractCloudConvertTaskMessage(task) {
+  return String(task?.message || task?.code || task?.result?.message || "").trim();
 }
 
 function withCors(response, env) {
