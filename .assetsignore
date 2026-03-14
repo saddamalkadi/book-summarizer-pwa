@@ -5,5 +5,7 @@
 README.md
 server.mjs
 keys-worker.js
+convert-worker.js
 wrangler.jsonc
+wrangler.convert.jsonc
 .assetsignore

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v7.1</title>
+    <title>AI Workspace Studio v7.2</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%231b66ff'/><stop offset='1' stop-color='%230b1020'/></linearGradient></defs><rect width='100' height='100' rx='18' fill='url(%23g)'/><path d='M28 30h44v40H28z' fill='%23ffffff' opacity='.92'/><path d='M34 40h32M34 50h32M34 60h22' stroke='%230b1020' stroke-width='3' stroke-linecap='round'/><circle cx='68' cy='64' r='6' fill='%231b66ff'/></svg>" />
@@ -352,7 +352,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     .settings-overview-card h3{margin:0 0 6px; font-size:22px;}
     .settings-overview-card p{margin:0; color:#516079; line-height:1.85;}
     .settings-actions{display:flex; flex-wrap:wrap; gap:10px; margin-top:16px;}
-    .settings-kpis{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:14px;}
+    .settings-kpis{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-top:14px;}
     .settings-kpi{
       border-radius:16px; padding:14px; background:linear-gradient(180deg,#f8fbff,#fbfcff); border:1px solid rgba(10,20,60,.08);
     }
@@ -361,6 +361,12 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     .settings-health-output{
       margin-top:14px; min-height:54px; border-radius:16px; padding:12px 14px; white-space:pre-wrap;
       background:#f8fafc; border:1px solid rgba(10,20,60,.08); color:#334155; line-height:1.8;
+    }
+    .settings-inline-pills{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      margin-top:10px;
     }
     @media (max-width:1080px){
       .workspace-deck,.settings-overview{grid-template-columns:1fr;}
@@ -1201,6 +1207,39 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       line-height: 1.9;
       font-size: 13px;
     }
+    #page-transcription .split{
+      grid-template-columns: minmax(0, 1.35fr) minmax(320px, .75fr);
+      align-items: stretch;
+    }
+    .transcribe-side-stack{
+      display:grid;
+      gap:12px;
+    }
+    .transcribe-side-card{
+      border:1px solid rgba(10,20,60,.08);
+      border-radius:18px;
+      padding:14px;
+      background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(245,248,255,.96));
+      box-shadow:0 10px 24px rgba(15,23,42,.04);
+    }
+    .transcribe-side-card h4{
+      margin:0 0 8px;
+      font-size:15px;
+      color:#12213f;
+    }
+    .transcribe-side-card p{
+      margin:0;
+      color:#526076;
+      line-height:1.85;
+      font-size:13px;
+    }
+    .transcribe-checklist{
+      margin:0;
+      padding-inline-start:18px;
+      color:#334155;
+      line-height:1.9;
+      font-size:13px;
+    }
     @media (max-width:1180px){
       .thread-drawer{
         width: min(420px, 88vw);
@@ -1210,6 +1249,9 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       }
       .guide-index{
         position: static;
+      }
+      #page-transcription .split{
+        grid-template-columns: 1fr;
       }
       .transcribe-lab-grid{
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1588,14 +1630,24 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
             <div class="panel">
               <div class="head"><span>محرك تحويل احترافي PDF → Word</span><span class="hint">الحفاظ على التنسيق قدر الإمكان</span></div>
               <div class="body">
-                <p class="hint" style="line-height:1.9">
-                  يتم أولًا تنفيذ استخراج متعدد الطبقات: نص PDF الأصلي + OCR محلي محسن + تحسين سحابي اختياري.
-                  ثم يتم بناء تمثيل منظم للصفحات والأسطر لمحاكاة التنسيق الأصلي داخل ملف Word قابل للتعديل.
-                </p>
-                <div class="tag">الخطوة 1: اختيار ملف PDF</div>
-                <div class="tag" style="margin-top:8px">الخطوة 2: استخراج استراتيجي كامل (مع تتبع التقدم)</div>
-                <div class="tag" style="margin-top:8px">الخطوة 3: تصدير TXT / JSON / DOCX</div>
-                <div class="tag" style="margin-top:8px">الخطوة 4: تحويل PDF إلى DOCX قابل للتحرير</div>
+                <div class="transcribe-side-stack">
+                  <section class="transcribe-side-card">
+                    <h4>المسار الذكي</h4>
+                    <p>التطبيق يختار بين المحلي والسحابي حسب الوضع المجاني، حدود التكلفة، حجم الملف، وعدد الصفحات. عند السماح بالسحابة يتم إرسال تمثيل منظم للصفحات بدل الملف الخام لتقليل النقل وتحسين المطابقة.</p>
+                  </section>
+                  <section class="transcribe-side-card">
+                    <h4>أفضل نتيجة ممكنة</h4>
+                    <ol class="transcribe-checklist">
+                      <li>استخدم PDF رقمي إذا كان متاحًا بدل النسخ الممسوحة ضوئيًا.</li>
+                      <li>فعّل الوضع السحابي فقط للملفات التي تحتاج مطابقة أعلى.</li>
+                      <li>راجع المخرجات النهائية إذا كان المستند يحتوي على جداول معقدة أو هوامش كثيرة.</li>
+                    </ol>
+                  </section>
+                  <section class="transcribe-side-card">
+                    <h4>الوضع المجاني والتحكم بالتكلفة</h4>
+                    <p>يمكنك فرض المعالجة المحلية بالكامل، أو استخدام وضع متوازن، أو فتح المسار السحابي للجودة القصوى. كل قرار يظهر في بطاقة المختبر أعلى الصفحة قبل بدء التحويل.</p>
+                  </section>
+                </div>
               </div>
             </div>
           </div>
@@ -1723,6 +1775,50 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
                   <div class="hint" style="margin-top:6px">يسمح للموديل باستدعاء أدوات: KB/Web/Files.</div>
                 </div>
               </div>
+              <div class="row" style="margin-top:10px">
+                <div class="col">
+                  <label class="hint">وضع التشغيل والتكلفة</label>
+                  <select id="costGuard">
+                    <option value="strict">اقتصادي صارم</option>
+                    <option value="balanced" selected>متوازن</option>
+                    <option value="open">جودة قصوى</option>
+                  </select>
+                  <div class="settings-inline-pills">
+                    <label class="pill" style="display:flex; align-items:center; gap:8px;">
+                      <input type="checkbox" id="freeMode" />
+                      تفعيل الوضع المجاني
+                    </label>
+                    <label class="pill" style="display:flex; align-items:center; gap:8px;">
+                      <input type="checkbox" id="allowCloudOcr" checked />
+                      OCR سحابي عند الحاجة
+                    </label>
+                    <label class="pill" style="display:flex; align-items:center; gap:8px;">
+                      <input type="checkbox" id="allowCloudPolish" checked />
+                      تحسين سحابي للنص
+                    </label>
+                  </div>
+                  <div class="hint" style="margin-top:6px">الوضع المجاني يفرض المعالجة المحلية. وضع التكلفة يحدد متى يسمح بالتحويل أو OCR السحابي.</div>
+                </div>
+                <div class="col">
+                  <label class="hint">حدود التحويل السحابي</label>
+                  <div class="row" style="margin-top:0">
+                    <div class="col">
+                      <input id="maxCloudPdfPages" type="number" min="1" max="400" placeholder="25" />
+                      <div class="hint" style="margin-top:6px">الحد الأقصى لصفحات PDF.</div>
+                    </div>
+                    <div class="col">
+                      <input id="maxCloudFileMB" type="number" min="1" max="200" step="0.5" placeholder="12" />
+                      <div class="hint" style="margin-top:6px">الحد الأقصى لحجم الملف (MB).</div>
+                    </div>
+                  </div>
+                  <div class="row" style="margin-top:10px">
+                    <div class="col">
+                      <input id="cloudRetryMax" type="number" min="1" max="5" placeholder="2" />
+                      <div class="hint" style="margin-top:6px">عدد محاولات السحابة قبل العودة للمسار المحلي.</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
 <div class="row">
                 <div class="col">
                   <label class="hint">مفتاح API (OpenRouter/OpenAI)</label>
@@ -1839,11 +1935,11 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     })();
   </script>
 
-  <script src="app.js?v=71"></script>
+  <script src="app.js?v=72"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js?v=71").then((registration) => {
+        navigator.serviceWorker.register("./sw.js?v=72").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

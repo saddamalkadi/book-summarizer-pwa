@@ -157,3 +157,21 @@ wrangler secret put OPENROUTER_API_KEY
 wrangler secret put GATEWAY_CLIENT_TOKEN
 wrangler deploy
 ```
+
+## v7.2
+- إضافة: `convert-worker.js` كخدمة مستقلة للتحويل السحابي `PDF -> DOCX` مع `/health` حقيقي وحدود صفحات/حجم.
+- إضافة: `wrangler.convert.jsonc` لنشر خدمة `sadam-convert` بشكل مستقل عن بوابة الدردشة.
+- تطوير: شاشة التفريغ النصي تعرض قرار المسار، التكلفة، حالة السحابة، وتعقيد الملف قبل التحويل.
+- إضافة: `freeMode` + `costGuard` + حدود `maxCloudPdfPages` و `maxCloudFileMB`.
+- تحسين: التحويل السحابي أصبح يعتمد على `structured.pages` بدل رفع الملف الخام فقط عندما تستخدم الواجهة الجديدة.
+
+### أسرار خدمة التحويل السحابي
+- `OPENROUTER_API_KEY` لتفعيل OCR السحابي عبر OpenRouter Vision
+- `GATEWAY_CLIENT_TOKEN` اختياري لحماية إضافية
+- `OCR_UPSTREAM_URL` اختياري إذا كان لديك OCR خارجي جاهز
+- `OCR_UPSTREAM_TOKEN` اختياري إذا كان الـ upstream يحتاج Authorization
+
+### نشر خدمة التحويل
+```bash
+wrangler deploy -c wrangler.convert.jsonc
+```

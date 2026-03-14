@@ -1,4 +1,4 @@
-/* AI Workspace Studio v6.2 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v7.2 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -72,6 +72,12 @@
     cloudRetryMax: 2,
     ocrCloudEndpoint: 'https://sadam-convert.tntntt830.workers.dev/ocr',
     ocrLang: 'ara+eng',
+    freeMode: false,
+    costGuard: 'balanced',
+    maxCloudPdfPages: 25,
+    maxCloudFileMB: 12,
+    allowCloudOcr: true,
+    allowCloudPolish: true,
 
     orReferer: '',
     orTitle: 'AI Workspace Studio'
@@ -437,6 +443,184 @@ async function buildRagContextIfEnabled(userText){
     if (settings.provider === 'gemini') return !!(settings.geminiKey || '').trim();
     if (settings.authMode === 'gateway') return !!(settings.gatewayUrl || '').trim();
     return !!(settings.apiKey || '').trim();
+  }
+
+  function getConvertWorkerRoot(settings = getSettings()){
+    const origins = [
+      endpointOrigin(settings?.cloudConvertEndpoint || ''),
+      endpointOrigin(settings?.cloudConvertFallbackEndpoint || ''),
+      endpointOrigin(settings?.ocrCloudEndpoint || '')
+    ].filter(Boolean);
+    return origins[0] || '';
+  }
+
+  function getCostGuardLabel(value = getSettings().costGuard){
+    return ({
+      strict: 'اقتصادي صارم',
+      balanced: 'متوازن',
+      open: 'جودة قصوى'
+    })[value] || 'متوازن';
+  }
+
+  function getFreeModeLabel(enabled = !!getSettings().freeMode){
+    return enabled ? 'الوضع المجاني' : 'الوضع الاحترافي';
+  }
+
+  function estimateTranscribeComplexity(meta = {}){
+    const pages = Math.max(0, Number(meta.pages || meta.pageCount || 0));
+    const sizeMB = Math.max(0, Number(meta.sizeMB || 0));
+    if (pages >= 80 || sizeMB >= 30) return 'ضخم';
+    if (pages >= 36 || sizeMB >= 15) return 'كبير';
+    if (pages >= 12 || sizeMB >= 5) return 'متوسط';
+    if (pages || sizeMB) return 'خفيف';
+    return 'غير محسوب';
+  }
+
+  function buildTranscribeSourceMeta(file, partial = {}){
+    const fallbackName = partial?.name || partial?.fileName || file?.name || 'document';
+    const isPdf = (typeof partial?.isPdf === 'boolean')
+      ? partial.isPdf
+      : (/\.pdf$/i.test(String(fallbackName || '')) || String(partial?.mimeType || file?.type || '').includes('pdf'));
+    const sizeMB = Number.isFinite(Number(partial?.sizeMB))
+      ? Number(partial.sizeMB)
+      : Number(((Number(file?.size || 0) || 0) / 1048576).toFixed(2));
+    const pages = Number.isFinite(Number(partial?.pages || partial?.pageCount))
+      ? Number(partial.pages || partial.pageCount)
+      : 0;
+    const textLength = Number.isFinite(Number(partial?.textLength))
+      ? Number(partial.textLength)
+      : Number(String(partial?.text || '').length || 0);
+    const base = {
+      name: fallbackName,
+      mimeType: partial?.mimeType || file?.type || '',
+      isPdf,
+      isImage: !isPdf && String(partial?.mimeType || file?.type || '').startsWith('image/'),
+      sizeMB,
+      pages,
+      pageCount: pages,
+      textLength
+    };
+    return {
+      ...base,
+      ...partial,
+      complexity: partial?.complexity || estimateTranscribeComplexity({ ...base, ...partial })
+    };
+  }
+
+  function getCloudPolicyLimits(settings = getSettings()){
+    return {
+      maxPages: clamp(Number(settings.maxCloudPdfPages || DEFAULT_SETTINGS.maxCloudPdfPages), 1, 400),
+      maxFileMB: clamp(Number(settings.maxCloudFileMB || DEFAULT_SETTINGS.maxCloudFileMB), 1, 200)
+    };
+  }
+
+  function canUseCloudFeature(feature, meta = {}, settings = getSettings()){
+    const sourceMeta = buildTranscribeSourceMeta(meta?.file || null, meta);
+    const { maxPages, maxFileMB } = getCloudPolicyLimits(settings);
+
+    if (settings.freeMode){
+      return { ok:false, reason:'الوضع المجاني يفرض المعالجة المحلية ويوقف الخدمات السحابية.' };
+    }
+    if (feature === 'ocr' && !settings.allowCloudOcr){
+      return { ok:false, reason:'OCR السحابي متوقف من الإعدادات.' };
+    }
+    if (feature === 'polish' && !settings.allowCloudPolish){
+      return { ok:false, reason:'التحسين السحابي متوقف من الإعدادات.' };
+    }
+    if (feature === 'docx' && !normalizeEndpointUrl(settings.cloudConvertEndpoint || settings.cloudConvertFallbackEndpoint || '')){
+      return { ok:false, reason:'رابط تحويل PDF إلى Word السحابي غير مضبوط.' };
+    }
+    if ((feature === 'docx' || feature === 'ocr') && sourceMeta.isPdf){
+      if (sourceMeta.pages && sourceMeta.pages > maxPages){
+        return { ok:false, reason:`عدد الصفحات ${sourceMeta.pages} يتجاوز حد السحابة (${maxPages}).` };
+      }
+      if (sourceMeta.sizeMB && sourceMeta.sizeMB > maxFileMB){
+        return { ok:false, reason:`حجم الملف ${sourceMeta.sizeMB.toFixed(1)}MB يتجاوز حد السحابة (${maxFileMB}MB).` };
+      }
+    }
+    if (settings.costGuard === 'strict'){
+      if (feature === 'polish'){
+        return { ok:false, reason:'وضع التكلفة الصارم يمنع التحسين السحابي للنص.' };
+      }
+      if (feature === 'ocr' && sourceMeta.pages && sourceMeta.pages > Math.max(6, Math.floor(maxPages * 0.5))){
+        return { ok:false, reason:'وضع التكلفة الصارم يقيّد OCR السحابي للملفات الكبيرة.' };
+      }
+    }
+    if (settings.costGuard === 'balanced' && feature === 'polish' && sourceMeta.textLength > 24000){
+      return { ok:false, reason:'النص طويل جدًا للتحسين السحابي ضمن وضع التكلفة المتوازن.' };
+    }
+    return {
+      ok: true,
+      reason: settings.costGuard === 'open'
+        ? 'وضع الجودة القصوى يسمح باستخدام السحابة لهذا الملف.'
+        : 'الملف ضمن حدود التكلفة الحالية.'
+    };
+  }
+
+  function decidePdfDocxRoute(mode, meta = {}, settings = getSettings()){
+    if (mode === 'local'){
+      return { route:'local', reason:'تم اختيار التحويل المحلي يدويًا.' };
+    }
+    const policy = canUseCloudFeature('docx', meta, settings);
+    if (mode === 'cloud'){
+      return policy.ok
+        ? { route:'cloud', reason:'تم اختيار التحويل السحابي وهو متاح لهذا الملف.' }
+        : { route:'local', reason:`تعذر استخدام التحويل السحابي: ${policy.reason}` };
+    }
+    if (policy.ok){
+      return {
+        route:'cloud',
+        reason: settings.costGuard === 'open'
+          ? 'المسار السحابي مفعل للحصول على أعلى مطابقة ممكنة مع تنسيق الملف الأصلي.'
+          : 'المسار السحابي متاح لهذا الملف وسيعطي مطابقة أعلى مع إبقاء التكلفة تحت السيطرة.'
+      };
+    }
+    return { route:'local', reason: policy.reason || 'تمت العودة إلى التحويل المحلي.' };
+  }
+
+  async function readPdfPageCount(file){
+    if (!file || !window.pdfjsLib) return 0;
+    const pdfjsLib = window.pdfjsLib;
+    try{ pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }catch(_){ }
+    const ab = await file.arrayBuffer();
+    const doc = await pdfjsLib.getDocument({ data: ab }).promise;
+    const pages = Number(doc?.numPages || 0);
+    try{ await doc.destroy(); }catch(_){ }
+    return pages;
+  }
+
+  let transcribeRuntimeMeta = buildTranscribeSourceMeta(null, { name:'بدون ملف', sizeMB:0, pages:0 });
+  let transcribeCloudHealthState = { ready:null, docxReady:null, ocrReady:null, note:'' };
+
+  function renderTranscribeOperationalState(meta = transcribeRuntimeMeta){
+    transcribeRuntimeMeta = buildTranscribeSourceMeta(meta?.file || null, meta);
+    const settings = getSettings();
+    const routeDecision = decidePdfDocxRoute(getTranscribeDocxMode(), transcribeRuntimeMeta, settings);
+    const cloudRoot = getConvertWorkerRoot(settings);
+
+    let cloudLabel = 'غير مضبوط';
+    if (cloudRoot){
+      if (transcribeCloudHealthState.docxReady === true || transcribeCloudHealthState.ready === true){
+        cloudLabel = transcribeCloudHealthState.ocrReady === false ? 'DOCX جاهز • OCR غير مهيأ' : 'جاهز';
+      } else if (transcribeCloudHealthState.ready === false){
+        cloudLabel = transcribeCloudHealthState.note || 'الخدمة غير جاهزة';
+      } else {
+        cloudLabel = 'مضبوط • بانتظار الفحص';
+      }
+    }
+
+    const sourceBits = [];
+    if (transcribeRuntimeMeta.isPdf && transcribeRuntimeMeta.pages) sourceBits.push(`${transcribeRuntimeMeta.pages} صفحة`);
+    if (transcribeRuntimeMeta.sizeMB) sourceBits.push(`${transcribeRuntimeMeta.sizeMB.toFixed(1)}MB`);
+    sourceBits.push(transcribeRuntimeMeta.complexity || 'غير محسوب');
+
+    if ($('transcribeRouteState')) $('transcribeRouteState').textContent = routeDecision.route === 'cloud' ? 'سحابي' : 'محلي';
+    if ($('transcribeBudgetState')) $('transcribeBudgetState').textContent = `${getCostGuardLabel(settings.costGuard)} • ${settings.freeMode ? 'مجاني' : 'مدفوع حسب الاستخدام'}`;
+    if ($('transcribeCloudState')) $('transcribeCloudState').textContent = cloudLabel;
+    if ($('transcribeDocProfile')) $('transcribeDocProfile').textContent = sourceBits.join(' • ');
+
+    if ($('settingsConvertState')) $('settingsConvertState').textContent = cloudRoot ? cloudLabel : 'غير مضبوط';
+    if ($('settingsCostState')) $('settingsCostState').textContent = `${getFreeModeLabel(settings.freeMode)} • ${getCostGuardLabel(settings.costGuard)}`;
   }
 
   function getChatBaseUrlCandidates(settings){
@@ -1159,7 +1343,7 @@ function refreshDeepSearchBtn(){
               <button class="btn ghost sm with-label" id="settingsDefaultsBtn" type="button"><span class="icon">⚙️</span><span class="label">إعدادات احترافية</span></button>
               <button class="btn ghost sm with-label" id="settingsRecommendModelBtn" type="button"><span class="icon">✨</span><span class="label">اقتراح نموذج</span></button>
             </div>
-            <div class="settings-health-output" id="settingsHealthOutput">شغّل فحص الصحة للتأكد من جاهزية البوابة، مسار النموذج، وحالة التشغيل العامة.</div>
+            <div class="settings-health-output" id="settingsHealthOutput">شغّل فحص الصحة للتأكد من جاهزية البوابة، النموذج، ومحول الوثائق السحابي.</div>
           </div>
           <div class="settings-overview-card">
             <h3>جاهزية التشغيل</h3>
@@ -1168,6 +1352,8 @@ function refreshDeepSearchBtn(){
               <div class="settings-kpi"><span>البوابة</span><strong id="settingsGatewayState">—</strong></div>
               <div class="settings-kpi"><span>النموذج</span><strong id="settingsModelState">—</strong></div>
               <div class="settings-kpi"><span>الأمان</span><strong id="settingsSecurityState">—</strong></div>
+              <div class="settings-kpi"><span>التحويل السحابي</span><strong id="settingsConvertState">—</strong></div>
+              <div class="settings-kpi"><span>التكلفة</span><strong id="settingsCostState">—</strong></div>
             </div>
           </div>
         </div>`);
@@ -1246,8 +1432,12 @@ function refreshDeepSearchBtn(){
               <div class="transcribe-lab-metric"><span>الملف الشخصي</span><strong id="transcribeProfileState">متوازن</strong></div>
               <div class="transcribe-lab-metric"><span>المعالجة</span><strong id="transcribeEngineState">جاهز</strong></div>
               <div class="transcribe-lab-metric"><span>المطابقة</span><strong id="transcribeQualityState">—</strong></div>
+              <div class="transcribe-lab-metric"><span>قرار المسار</span><strong id="transcribeRouteState">محلي افتراضي</strong></div>
+              <div class="transcribe-lab-metric"><span>الميزانية</span><strong id="transcribeBudgetState">متوازن</strong></div>
+              <div class="transcribe-lab-metric"><span>السحابة</span><strong id="transcribeCloudState">قيد الفحص</strong></div>
+              <div class="transcribe-lab-metric"><span>ملف المصدر</span><strong id="transcribeDocProfile">بدون بيانات</strong></div>
             </div>
-            <div class="transcribe-lab-note" id="transcribeLabNote">اختر ملفًا ثم حدّد السرعة أو الدقة المطلوبة. للمطابقة الأعلى يفضّل استخدام التحويل السحابي مع ملفات PDF الرقمية.</div>
+            <div class="transcribe-lab-note" id="transcribeLabNote">اختر ملفًا ثم حدّد السرعة أو الدقة المطلوبة. سيعرض المختبر قرار المسار وحدود التكلفة قبل أي تحويل سحابي.</div>
           </div>`);
       }
     }
@@ -1713,6 +1903,18 @@ function refreshDeepSearchBtn(){
         tips: ['التحويل المطابق تمامًا يعتمد على طبيعة الملف الأصلي ونوعية الخطوط والصور.', 'ملفات PDF الرقمية ذات طبقة النص تعطي نتائج أفضل من الملفات الممسوحة ضوئيًا.']
       },
       {
+        id: 'transcription_cost',
+        page: 'settings',
+        title: 'التكلفة والوضع المجاني',
+        body: 'يمكنك التحكم في التكلفة من الإعدادات عبر الوضع المجاني، حدود الصفحات والحجم، وتحديد ما إذا كان OCR السحابي أو تحسين النص السحابي مسموحًا.',
+        steps: [
+          'افتح الإعدادات ثم اختر وضع التكلفة المناسب: اقتصادي صارم، متوازن، أو جودة قصوى.',
+          'فعّل الوضع المجاني إذا أردت فرض المعالجة المحلية بالكامل داخل قسم الوثائق.',
+          'اضبط الحد الأقصى للصفحات والحجم قبل السماح بالتحويل السحابي للملفات الكبيرة.'
+        ],
+        tips: ['عند تفعيل الوضع المجاني سيعود التطبيق تلقائيًا للمسار المحلي حتى لو اخترت الوضع السحابي.', 'بطاقة المختبر في قسم الوثائق تعرض قرار المسار والحدود قبل بدء التحويل.']
+      },
+      {
         id: 'workflows',
         page: 'workflows',
         title: 'سير العمل',
@@ -1847,6 +2049,7 @@ function refreshDeepSearchBtn(){
       const labels = { fast:'سريع', balanced:'متوازن', fidelity:'دقة أعلى' };
       $('transcribeProfileState').textContent = labels[getTranscribeProfile()] || 'متوازن';
     }
+    renderTranscribeOperationalState();
   }
 
   function getTranscribeProfileLabel(value = getTranscribeProfile()){
@@ -1941,6 +2144,7 @@ function refreshDeepSearchBtn(){
 
     syncComposerMeta();
     syncWorkspaceSectionSummaries();
+    renderTranscribeOperationalState();
   }
 
   async function runStrategicHealthCheck(){
@@ -1995,6 +2199,92 @@ function refreshDeepSearchBtn(){
     await refreshStrategicWorkspace();
   }
 
+  async function runStrategicHealthCheckPro(){
+    const output = $('settingsHealthOutput');
+    const settings = saveSettingsFromUI();
+    if (output) output.textContent = 'جاري فحص صحة مساحة العمل...';
+    try{
+      const lines = [];
+      let runtimeReady = false;
+
+      if (settings.provider === 'gemini'){
+        runtimeReady = !!(settings.geminiKey || '').trim();
+        lines.push(runtimeReady
+          ? 'Gemini: جاهز والمفتاح موجود.'
+          : 'Gemini: تم اختياره لكن مفتاح Gemini غير موجود.');
+      } else if (settings.authMode === 'gateway'){
+        const root = normalizeUrl(resolveGatewayApiRoot(settings));
+        if (!root) throw new Error('رابط البوابة غير موجود.');
+        const headers = {};
+        if (settings.gatewayToken) headers['X-Client-Token'] = settings.gatewayToken;
+        const healthResp = await fetch(`${root}/health`, { headers });
+        const healthText = await healthResp.text();
+        let healthJson; try{ healthJson = JSON.parse(healthText); }catch(_){ healthJson = null; }
+        const modelsResp = await fetch(`${root}/v1/models`, { headers: { Accept:'application/json', ...headers } });
+        const modelsText = await modelsResp.text();
+        let modelsJson; try{ modelsJson = JSON.parse(modelsText); }catch(_){ modelsJson = null; }
+        const modelsCount = Array.isArray(modelsJson?.data) ? modelsJson.data.length : 0;
+        runtimeReady = !!(healthResp.ok && modelsResp.ok && healthJson?.ready === true);
+        lines.push(
+          `حالة البوابة: ${healthResp.status}`,
+          `جاهزية البوابة: ${healthJson?.ready === true ? 'نعم' : 'لا'}`,
+          `الإعدادات مكتملة: ${healthJson?.configured === true ? 'نعم' : 'لا'}`,
+          `مسار النماذج: ${modelsResp.status}`,
+          `عدد النماذج: ${modelsCount}`
+        );
+      } else {
+        runtimeReady = !!(settings.apiKey || '').trim();
+        lines.push(runtimeReady
+          ? 'وضع المتصفح المباشر نشط والمفتاح موجود.'
+          : 'وضع المتصفح المباشر نشط لكن مفتاح API مفقود.');
+      }
+
+      const convertRoot = getConvertWorkerRoot(settings);
+      if (convertRoot){
+        try{
+          const convertResp = await fetch(`${convertRoot}/health`, {
+            headers: { Accept:'application/json', ...buildAuthHeaders(settings) }
+          });
+          const convertText = await convertResp.text();
+          let convertJson; try{ convertJson = JSON.parse(convertText); }catch(_){ convertJson = null; }
+          transcribeCloudHealthState = {
+            ready: convertJson?.ready === true,
+            docxReady: convertJson?.docxReady === true,
+            ocrReady: convertJson?.ocrReady === true,
+            note: convertJson?.message || (convertResp.ok ? 'جاهز' : `HTTP ${convertResp.status}`)
+          };
+          lines.push(`محول الوثائق: ${convertResp.status}`);
+          lines.push(`DOCX السحابي: ${convertJson?.docxReady === true ? 'جاهز' : 'غير جاهز'}`);
+          lines.push(`OCR السحابي: ${convertJson?.ocrReady === true ? 'جاهز' : 'غير جاهز أو غير مهيأ'}`);
+          if (convertJson?.limits){
+            lines.push(`حدود السحابة: ${convertJson.limits.maxPdfPages || '-'} صفحة • ${convertJson.limits.maxFileMB || '-'}MB`);
+          }
+        }catch(err){
+          transcribeCloudHealthState = {
+            ready: false,
+            docxReady: false,
+            ocrReady: false,
+            note: String(err?.message || err || 'تعذر الاتصال')
+          };
+          lines.push(`محول الوثائق: تعذر الاتصال (${transcribeCloudHealthState.note})`);
+        }
+      } else {
+        transcribeCloudHealthState = { ready:null, docxReady:null, ocrReady:null, note:'غير مضبوط' };
+        lines.push('محول الوثائق: غير مضبوط في الإعدادات.');
+      }
+
+      renderTranscribeOperationalState();
+      if (output) output.textContent = lines.join('\n');
+      const convertReady = !convertRoot || transcribeCloudHealthState.docxReady === true || transcribeCloudHealthState.ready === true;
+      toast((runtimeReady && convertReady) ? '✅ الخدمات جاهزة' : '⚠️ اكتمل الفحص مع تنبيهات');
+    }catch(e){
+      const msg = String(e?.message || e || 'فشل فحص الصحة');
+      if (output) output.textContent = msg;
+      toast(`⛌ ${msg}`);
+    }
+    await refreshStrategicWorkspace();
+  }
+
   function applyStrategicDefaults(){
     const current = getSettings();
     const nextGateway = normalizeEndpointUrl(current.gatewayUrl || DEFAULT_SETTINGS.gatewayUrl);
@@ -2008,6 +2298,12 @@ function refreshDeepSearchBtn(){
       webMode: 'openrouter_online',
       maxOut: 2400,
       fileClip: 18000,
+      freeMode: false,
+      costGuard: 'balanced',
+      maxCloudPdfPages: DEFAULT_SETTINGS.maxCloudPdfPages,
+      maxCloudFileMB: DEFAULT_SETTINGS.maxCloudFileMB,
+      allowCloudOcr: true,
+      allowCloudPolish: true,
       orTitle: 'AI Workspace Studio',
       systemPrompt: current.systemPrompt || 'أنت مساعد استراتيجي احترافي. ابدأ دائمًا بفهم الهدف، ثم قدّم مخرجات تنفيذية واضحة، مختصرة، وقابلة للعمل.'
     });
@@ -2024,11 +2320,13 @@ function refreshDeepSearchBtn(){
   function recommendStrategicModel(){
     const settings = getSettings();
     let recommended = settings.model || '';
-    if (settings.provider === 'gemini') recommended = 'gemini-2.5-flash';
+    if (settings.freeMode && settings.provider !== 'gemini') recommended = 'openrouter/free';
+    else if (settings.provider === 'gemini') recommended = 'gemini-2.5-flash';
     else if (settings.provider === 'openai') recommended = 'gpt-4o-mini';
     else {
       const cached = loadJSON(KEYS.modelCache, {})?.models || [];
       const preferred = [
+        'openrouter/free',
         'openai/gpt-4o-mini',
         'openai/gpt-4o',
         'openai/gpt-4.1',
@@ -2388,6 +2686,8 @@ async function fileToText(file){
 
   async function cloudOcrDataUrl(dataUrl, meta={}){
     const settings = getSettings();
+    const policy = canUseCloudFeature('ocr', meta, settings);
+    if (!policy.ok) return '';
     const endpoints = buildEndpointCandidates(settings.ocrCloudEndpoint, ['ocr', 'ocr/image', 'api/ocr']).filter(Boolean);
     if (!endpoints.length) return '';
     const b64 = String(dataUrl || '').split(',')[1] || '';
@@ -2538,14 +2838,29 @@ async function fileToText(file){
       const lineHeight = idx === 0 ? 18 : Math.max(14, gap || 18);
       const align = line.align || 'left';
       if (!current || gap > 26 || current.align !== align){
-        current = { align, marginTop: prevY === null ? 0 : Math.min(36, gap * 0.55), lines: [] };
+        current = {
+          align,
+          marginTop: prevY === null ? 0 : Math.min(36, gap * 0.55),
+          lines: [],
+          xMin: Number.POSITIVE_INFINITY,
+          xMax: 0
+        };
         blocks.push(current);
       }
-      current.lines.push({ text: line.text, y: line.y, lineHeight: Math.max(18, lineHeight) });
+      const entry = {
+        text: line.text,
+        y: line.y,
+        lineHeight: Math.max(18, lineHeight),
+        xMin: Number(line.xMin || 0),
+        xMax: Number(line.xMax || 0)
+      };
+      current.lines.push(entry);
+      current.xMin = Math.min(current.xMin, entry.xMin);
+      current.xMax = Math.max(current.xMax, entry.xMax);
       prevY = line.y;
     });
     if (!blocks.length){
-      return [{ align:'left', marginTop:0, lines:[{ text:'', y: pageHeight, lineHeight:20 }] }];
+      return [{ align:'left', marginTop:0, xMin:0, xMax:0, lines:[{ text:'', y: pageHeight, lineHeight:20, xMin:0, xMax:0 }] }];
     }
     return blocks;
   }
@@ -2588,7 +2903,13 @@ async function fileToText(file){
 
         if (shouldRunOcr){
           const dataUrl = await renderPdfPageToDataUrl(page, Math.max(1.6, profile.scale));
-          const ocrText = await ocrDataUrl(dataUrl, undefined, { fileName: file?.name || 'document.pdf', page: p });
+          const ocrText = await ocrDataUrl(dataUrl, undefined, {
+            file,
+            fileName: file?.name || 'document.pdf',
+            page: p,
+            pages: doc.numPages,
+            sizeMB: Number(((Number(file?.size || 0) || 0) / 1048576).toFixed(2))
+          });
           if (ocrText && (!pageText || !profile.preferNative || ocrText.length > pageText.length || scoreArabicQuality(ocrText) >= scoreArabicQuality(pageText))){
             pageText = ocrText.trim();
             method = 'ocr';
@@ -2707,11 +3028,81 @@ async function fileToText(file){
     throw new Error(`فشل التحويل السحابي بعد عدة محاولات: ${lastErr?.message || 'unknown'}`);
   }
 
+  async function convertPdfToDocxByWorkerPro(file, opts={}){
+    const settings = getSettings();
+    const fileMeta = buildTranscribeSourceMeta(file, {
+      ...(opts.meta || {}),
+      file,
+      pages: Number(opts?.structured?.totalPages || opts?.meta?.pages || 0)
+    });
+    const policy = canUseCloudFeature('docx', fileMeta, settings);
+    if (!policy.ok) throw new Error(policy.reason);
+
+    const endpoints = [
+      ...buildEndpointCandidates(settings.cloudConvertEndpoint, ['convert/pdf-to-docx', 'pdf-to-docx', 'api/convert/pdf-to-docx']),
+      ...buildEndpointCandidates(settings.cloudConvertFallbackEndpoint, ['convert/pdf-to-docx', 'pdf-to-docx', 'api/convert/pdf-to-docx'])
+    ].filter(Boolean);
+    if (!endpoints.length) throw new Error('رابط تحويل PDF إلى Word السحابي غير مضبوط في الإعدادات');
+
+    const structured = opts.structured || await extractPdfStrategic(file, opts);
+    const tries = clamp(Number(settings.cloudRetryMax || 2), 1, 5);
+    let lastErr = null;
+    for (const endpoint of endpoints){
+      for (let t=1; t<=tries; t++){
+        try{
+          const r = await fetch(endpoint, {
+            method:'POST',
+            headers: { 'Content-Type':'application/json', ...buildAuthHeaders(settings) },
+            body: JSON.stringify({
+              fileName: file.name,
+              mimeType: file.type || 'application/pdf',
+              budgetMode: settings.costGuard || 'balanced',
+              freeMode: !!settings.freeMode,
+              fileSizeMB: fileMeta.sizeMB,
+              pageCount: structured?.totalPages || fileMeta.pages || 0,
+              structured
+            })
+          });
+          if (!r.ok){
+            const msg = await r.text().catch(()=> '');
+            throw new Error(msg || `HTTP ${r.status}`);
+          }
+          const ct = (r.headers.get('content-type') || '').toLowerCase();
+          if (ct.includes('application/json')){
+            const j = await r.json();
+            const b64 = String(j?.docxBase64 || j?.fileBase64 || j?.data?.docxBase64 || '').trim();
+            if (!b64) throw new Error(String(j?.error || j?.message || 'استجابة التحويل السحابي غير صالحة'));
+            const bin = decodeBase64Bytes(b64);
+            return {
+              blob: new Blob([bin], { type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }),
+              fileName: String(j?.fileName || file.name.replace(/\.pdf$/i, '.docx')),
+              text: String(j?.text || structured?.text || ''),
+              structured
+            };
+          }
+          const blob = await r.blob();
+          return {
+            blob: toDocxBlob(blob),
+            fileName: file.name.replace(/\.pdf$/i, '.docx'),
+            text: structured?.text || '',
+            structured
+          };
+        }catch(err){
+          lastErr = err;
+          await new Promise(res => setTimeout(res, 500 * t));
+        }
+      }
+    }
+    throw new Error(`فشل التحويل السحابي بعد عدة محاولات: ${lastErr?.message || 'unknown'}`);
+  }
+
   async function cloudPolishText(rawText){
     const source = String(rawText || '').trim();
     if (!source) return '';
     const settings = getSettings();
     if (!hasAuthReady(settings)) throw new Error('المصادقة غير مكتملة (API Key أو Gateway URL)');
+    const policy = canUseCloudFeature('polish', { textLength: source.length }, settings);
+    if (!policy.ok) throw new Error(policy.reason);
 
     const prompt = [
       'نظّف النص التالي المستخرج من OCR بدون تغيير المعنى.',
@@ -4939,8 +5330,16 @@ let pinOnly = false;
     if ($('cloudConvertFallbackEndpoint')) $('cloudConvertFallbackEndpoint').value = s.cloudConvertFallbackEndpoint || '';
     if ($('ocrCloudEndpoint')) $('ocrCloudEndpoint').value = s.ocrCloudEndpoint || '';
     if ($('ocrLang')) $('ocrLang').value = s.ocrLang || 'ara+eng';
+    if ($('cloudRetryMax')) $('cloudRetryMax').value = String(s.cloudRetryMax || 2);
+    if ($('freeMode')) $('freeMode').checked = !!s.freeMode;
+    if ($('costGuard')) $('costGuard').value = s.costGuard || 'balanced';
+    if ($('maxCloudPdfPages')) $('maxCloudPdfPages').value = String(s.maxCloudPdfPages || DEFAULT_SETTINGS.maxCloudPdfPages);
+    if ($('maxCloudFileMB')) $('maxCloudFileMB').value = String(s.maxCloudFileMB || DEFAULT_SETTINGS.maxCloudFileMB);
+    if ($('allowCloudOcr')) $('allowCloudOcr').checked = !!s.allowCloudOcr;
+    if ($('allowCloudPolish')) $('allowCloudPolish').checked = !!s.allowCloudPolish;
     if ($('toolsDefault')) $('toolsDefault').checked = !!s.toolsEnabled;
     if ($('toolsToggle')) $('toolsToggle').checked = !!s.toolsEnabled;
+    renderTranscribeOperationalState();
 
     $('streamDefault').checked = !!s.streaming;
     $('streamToggle').checked = !!s.streaming;
@@ -4961,6 +5360,13 @@ let pinOnly = false;
     const cloudConvertFallbackEndpoint = $('cloudConvertFallbackEndpoint') ? normalizeEndpointUrl($('cloudConvertFallbackEndpoint').value) : '';
     const ocrCloudEndpoint = $('ocrCloudEndpoint') ? normalizeEndpointUrl($('ocrCloudEndpoint').value) : '';
     const ocrLang = $('ocrLang') ? $('ocrLang').value.trim() : 'ara+eng';
+    const cloudRetryMax = $('cloudRetryMax') ? clamp(Number($('cloudRetryMax').value || 2), 1, 5) : 2;
+    const freeMode = $('freeMode') ? !!$('freeMode').checked : false;
+    const costGuard = $('costGuard') ? $('costGuard').value : 'balanced';
+    const maxCloudPdfPages = $('maxCloudPdfPages') ? clamp(Number($('maxCloudPdfPages').value || DEFAULT_SETTINGS.maxCloudPdfPages), 1, 400) : DEFAULT_SETTINGS.maxCloudPdfPages;
+    const maxCloudFileMB = $('maxCloudFileMB') ? clamp(Number($('maxCloudFileMB').value || DEFAULT_SETTINGS.maxCloudFileMB), 1, 200) : DEFAULT_SETTINGS.maxCloudFileMB;
+    const allowCloudOcr = $('allowCloudOcr') ? !!$('allowCloudOcr').checked : true;
+    const allowCloudPolish = $('allowCloudPolish') ? !!$('allowCloudPolish').checked : true;
     const toolsEnabled = $('toolsDefault') ? !!$('toolsDefault').checked : (!!$('toolsToggle')?.checked);
 
     // if gateway is enabled and url provided, we force baseUrl to gateway/v1
@@ -5005,8 +5411,15 @@ let pinOnly = false;
       gatewayToken,
       cloudConvertEndpoint,
       cloudConvertFallbackEndpoint,
+      cloudRetryMax,
       ocrCloudEndpoint,
       ocrLang: ocrLang || 'ara+eng',
+      freeMode,
+      costGuard,
+      maxCloudPdfPages,
+      maxCloudFileMB,
+      allowCloudOcr,
+      allowCloudPolish,
 
       orReferer: $('orReferer').value.trim(),
       orTitle: $('orTitle').value.trim()
@@ -5592,10 +6005,36 @@ $('sendBtn').addEventListener('click', sendMessage);
     // transcription
     let transcribeSelectedFile = null;
     let transcribeLastStructured = null;
+    let transcribeFileMeta = buildTranscribeSourceMeta(null, { name:'بدون ملف', pages:0, sizeMB:0 });
+    let transcribeFileInspectNonce = 0;
+
+    const inspectTranscribeFile = async (f) => {
+      const nonce = ++transcribeFileInspectNonce;
+      if (!f){
+        transcribeFileMeta = buildTranscribeSourceMeta(null, { name:'بدون ملف', pages:0, sizeMB:0 });
+        renderTranscribeOperationalState(transcribeFileMeta);
+        return;
+      }
+      const baseMeta = buildTranscribeSourceMeta(f, { file:f });
+      transcribeFileMeta = baseMeta;
+      renderTranscribeOperationalState(baseMeta);
+      if (!baseMeta.isPdf) return;
+      try{
+        const pages = await readPdfPageCount(f);
+        if (nonce !== transcribeFileInspectNonce || transcribeSelectedFile !== f) return;
+        transcribeFileMeta = buildTranscribeSourceMeta(f, { file:f, pages });
+        renderTranscribeOperationalState(transcribeFileMeta);
+      }catch(_){
+        if (nonce !== transcribeFileInspectNonce || transcribeSelectedFile !== f) return;
+        transcribeFileMeta = buildTranscribeSourceMeta(f, { file:f });
+        renderTranscribeOperationalState(transcribeFileMeta);
+      }
+    };
 
     const setTranscribeFile = (f) => {
       transcribeSelectedFile = f || null;
       transcribeLastStructured = null;
+      transcribeFileMeta = buildTranscribeSourceMeta(f, { file:f });
       if ($('transcribeFileName')) $('transcribeFileName').textContent = f ? `الملف: ${f.name}` : 'لم يتم اختيار ملف بعد';
       if ($('transcribeStats')) $('transcribeStats').textContent = f ? 'جاهز للاستخراج' : 'جاهز';
       updateTranscribeLabState({
@@ -5606,6 +6045,8 @@ $('sendBtn').addEventListener('click', sendMessage);
           ? `تم اختيار الملف. يمكنك الآن استخراج النص أو التحويل إلى Word عبر وضع ${getTranscribeDocxModeLabel()}.`
           : 'اختر ملفًا لبدء الاستخراج أو التحويل.'
       });
+      renderTranscribeOperationalState(transcribeFileMeta);
+      inspectTranscribeFile(f);
     };
     const updateTranscribeLiveStats = () => {
       const txt = String($('transcribeOutput')?.value || '');
@@ -5699,7 +6140,13 @@ $('sendBtn').addEventListener('click', sendMessage);
               : 'لم يتم العثور على نص واضح داخل الملف الحالي.'
           });
         }
+        transcribeFileMeta = buildTranscribeSourceMeta(f, {
+          file:f,
+          pages: transcribeLastStructured?.totalPages || transcribeFileMeta.pages || 0,
+          textLength: String($('transcribeOutput')?.value || '').length
+        });
         updateTranscribeLiveStats();
+        renderTranscribeOperationalState(transcribeFileMeta);
         showStatus('', false);
       }catch(e){
         updateTranscribeLabState({ engine:'فشل الاستخراج', quality:'توقف', note:String(e?.message || e) });
@@ -5758,10 +6205,11 @@ ${txt}`;
         $('transcribeStats').textContent = 'جاري التحويل...';
         const s = getSettings();
         const mode = getTranscribeDocxMode();
-        const hasCloud = !!String(s.cloudConvertEndpoint || s.cloudConvertFallbackEndpoint || '').trim();
-        let route = mode === 'auto' ? (hasCloud ? 'cloud' : 'local') : mode;
-        if (route === 'cloud' && !hasCloud) route = 'local';
+        const routeDecision = decidePdfDocxRoute(mode, transcribeFileMeta, s);
+        const route = routeDecision.route;
         let result = null;
+        renderTranscribeOperationalState(transcribeFileMeta);
+        if (route !== mode && routeDecision.reason) toast(`ℹ️ ${routeDecision.reason}`);
         if (route === 'cloud'){
           $('transcribeStats').textContent = 'تحويل عبر المسار السحابي...';
           updateTranscribeLabState({
@@ -5770,7 +6218,21 @@ ${txt}`;
             quality: 'أعلى مطابقة ممكنة',
             note: 'يتم الآن استخدام المسار السحابي للحصول على أعلى تطابق ممكن ضمن حدود الملف الأصلي.'
           });
-          result = await convertPdfToDocxByWorker(transcribeSelectedFile);
+          if (!transcribeLastStructured){
+            $('transcribeStats').textContent = 'تحضير الملف للمسار السحابي...';
+            transcribeLastStructured = await extractPdfStrategic(transcribeSelectedFile, {
+              onProgress: (p, total, info) => { $('transcribeStats').textContent = `تحضير صفحة ${p}/${total} • ${info?.method || 'native'}`; }
+            });
+            transcribeFileMeta = buildTranscribeSourceMeta(transcribeSelectedFile, {
+              file: transcribeSelectedFile,
+              pages: transcribeLastStructured?.totalPages || 0
+            });
+            renderTranscribeOperationalState(transcribeFileMeta);
+          }
+          result = await convertPdfToDocxByWorkerPro(transcribeSelectedFile, {
+            structured: transcribeLastStructured,
+            meta: transcribeFileMeta
+          });
         } else {
           $('transcribeStats').textContent = 'تحويل محلي قابل للتعديل...';
           result = await convertPdfToEditableDocx(transcribeSelectedFile, {
@@ -5785,6 +6247,14 @@ ${txt}`;
             note: 'اكتمل التحويل المحلي. الملف الناتج قابل للتعديل ويهدف إلى أفضل محاكاة عملية للتنسيق الأصلي، لكنه قد يحتاج مراجعة نهائية في المستندات المعقدة جدًا.'
           });
         }
+        transcribeLastStructured = result?.structured || transcribeLastStructured;
+        if ($('transcribeOutput') && result?.text) $('transcribeOutput').value = result.text;
+        transcribeFileMeta = buildTranscribeSourceMeta(transcribeSelectedFile, {
+          file: transcribeSelectedFile,
+          pages: transcribeLastStructured?.totalPages || transcribeFileMeta.pages || 0,
+          textLength: String($('transcribeOutput')?.value || '').length
+        });
+        renderTranscribeOperationalState(transcribeFileMeta);
         downloadBlob(result.fileName, result.blob);
         showStatus('', false);
         $('transcribeStats').textContent = 'اكتمل التحويل';
@@ -5856,7 +6326,7 @@ ${e?.message||e}`, false);
 
     // settings
     $('saveSettingsBtn').addEventListener('click', saveSettingsFromUI);
-    $('settingsHealthBtn')?.addEventListener('click', runStrategicHealthCheck);
+    $('settingsHealthBtn')?.addEventListener('click', runStrategicHealthCheckPro);
     $('settingsDefaultsBtn')?.addEventListener('click', applyStrategicDefaults);
     $('settingsRecommendModelBtn')?.addEventListener('click', recommendStrategicModel);
     $('resetSettingsBtn').addEventListener('click', () => { saveJSON(KEYS.settings, DEFAULT_SETTINGS); renderSettings();
