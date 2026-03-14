@@ -1,4 +1,4 @@
-/* AI Workspace Studio v8.1 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v8.2 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -1621,7 +1621,7 @@ function refreshDeepSearchBtn(){
     const box = $('authGateStatus');
     if (!box) return;
     box.dataset.tone = tone;
-    box.textContent = message || 'أدخل بريدك الشخصي لبدء الخطة المجانية، أو استخدم بريد الإدارة مع كلمة المرور من النموذج نفسه.';
+    box.textContent = message || 'سجّل الدخول ببريدك الشخصي لفتح الخطة المجانية، أو استخدم بريد الإدارة مع كلمة المرور من نفس الشاشة.';
   }
 
   function syncAccountPlanControls(){
@@ -1697,20 +1697,30 @@ function refreshDeepSearchBtn(){
                   <div class="sub">دردشة • معرفة • ملفات • مشاريع • تحويلات</div>
                 </div>
               </div>
-              <div class="auth-kicker">ONE ACCESS LAYER</div>
-              <h1 class="auth-title">أدخل بريدك الشخصي لفتح الخطة المجانية، أو استخدم بريد الإدارة نفسه من الشاشة ذاتها لفتح الصلاحيات الكاملة.</h1>
-              <p class="auth-copy">واجهة دخول واحدة لكل الحسابات: المستخدم العادي يبدأ بالخطة المجانية، ويمكنه طلب الترقية من داخل التطبيق، بينما بريد الإدارة يعمل من النموذج نفسه عند إدخال كلمة المرور.</p>
+              <div class="auth-kicker">بوابة الدخول</div>
+              <h1 class="auth-title">واجهة دخول واحدة، وخطة مناسبة لكل حساب.</h1>
+              <p class="auth-copy">ابدأ بالخطة المجانية من بريدك الشخصي، ثم اطلب الترقية من داخل التطبيق عند الحاجة. إذا كان البريد هو بريد الإدارة فسيُفعّل نفس النموذج دخول الإدارة.</p>
+              <div class="auth-plan-row">
+                <div class="auth-plan-pill"><b>الخطة المجانية</b><span>نماذج مجانية وحدود تكلفة آمنة</span></div>
+                <div class="auth-plan-pill"><b>الخطة المدفوعة</b><span>تُفعّل بعد كود ترقية أو دخول الإدارة</span></div>
+              </div>
               <div class="auth-feature-grid">
-                <div class="auth-feature"><strong>خطة مجانية</strong><span>تشغيل اقتصادي آمن ومحدود التكلفة على مستوى التطبيق بالكامل.</span></div>
-                <div class="auth-feature"><strong>ترقية مرنة</strong><span>إرسال طلب ترقية إلى بريد الإدارة ثم تفعيل الكود داخل الحساب نفسه.</span></div>
-                <div class="auth-feature"><strong>سجل موحّد</strong><span>المشاريع والمحادثات والملفات تبقى مرتبطة بجلسة حسابك الحالية.</span></div>
-                <div class="auth-feature"><strong>إدارة عربية</strong><span>واجهة عربية احترافية مع طبقة تشغيل واضحة للخطة والتكلفة.</span></div>
+                <div class="auth-feature"><strong>دخول مباشر</strong><span>Google أو البريد من نفس الشاشة، بدون خطوات منفصلة.</span></div>
+                <div class="auth-feature"><strong>ترقية داخلية</strong><span>طلب الترقية وإدخال الكود يتمان من داخل الحساب نفسه.</span></div>
+                <div class="auth-feature"><strong>سجل مرتبط بالحساب</strong><span>المشاريع والمحادثات والملفات تبقى ضمن جلستك الحالية.</span></div>
+                <div class="auth-feature"><strong>سياسة تكلفة واضحة</strong><span>الخطة المجانية لا تفعّل الموديلات المدفوعة أو المزايا الأعلى تكلفة.</span></div>
               </div>
               <div class="auth-developer">تم تطوير التطبيق بواسطة صدام القاضي</div>
             </section>
             <section class="auth-card">
-              <h2>تسجيل الدخول إلى المنصة</h2>
-              <div class="auth-status status" id="authGateStatus" data-tone="info">أدخل اسمك وبريدك الشخصي لبدء الخطة المجانية، وإذا كان البريد هو بريد الإدارة فأضف كلمة المرور من نفس النموذج.</div>
+              <div class="auth-form-head">
+                <div class="auth-form-head-copy">
+                  <h2>تسجيل الدخول إلى المنصة</h2>
+                  <p>استخدم بريدك الشخصي للدخول إلى الخطة المجانية، أو تابع عبر Google إذا كان الربط متاحًا.</p>
+                </div>
+                <span class="plan-pill" id="authCurrentPlanPill">الخطة المجانية</span>
+              </div>
+              <div class="auth-status status" id="authGateStatus" data-tone="info">سجّل الدخول ببريدك الشخصي لفتح الخطة المجانية، أو استخدم بريد الإدارة مع كلمة المرور من نفس الشاشة.</div>
               <div class="auth-config-grid" style="margin-top:12px">
                 <div>
                   <label class="hint">الاسم</label>
@@ -1726,12 +1736,16 @@ function refreshDeepSearchBtn(){
                 </div>
               </div>
               <div class="auth-note" id="authEntryModeHint">أي بريد شخصي صالح يفتح لك الخطة المجانية تلقائيًا. إذا أدخلت بريد الإدارة، سيتحول الزر تلقائيًا إلى دخول الإدارة.</div>
+              <div class="auth-access-note">
+                <strong>ماذا يحدث بعد الدخول؟</strong>
+                <span>يفتح الحساب العادي بالخطة المجانية مع الميزات المسموح بها فقط، ويمكن طلب الترقية لاحقًا من صفحة الإعدادات.</span>
+              </div>
               <div class="account-actions" style="margin-top:12px">
                 <button class="btn dark sm with-label" type="button" id="authEntrySubmitBtn"><span class="icon">→</span><span class="label" id="authEntrySubmitLabel">متابعة بالخطة المجانية</span></button>
               </div>
               <div class="divider"></div>
               <div class="auth-google-slot" id="googleSignInSlot"></div>
-              <div class="auth-note" id="authGatePlanNote">بعد تسجيل الدخول ستدخل تلقائيًا إلى الخطة المجانية، ويمكنك لاحقًا طلب الترقية أو تفعيل كود الترقية للخطة المدفوعة.</div>
+              <div class="auth-note" id="authGatePlanNote">بعد تسجيل الدخول ستبدأ بالخطة المناسبة للحساب. يمكن الترقية لاحقًا عبر طلب ترقية وكود تفعيل.</div>
               <div class="account-actions">
                 <button class="btn ghost sm with-label" type="button" id="authRetryBtn"><span class="icon">↻</span><span class="label">إعادة التهيئة</span></button>
                 <button class="btn ghost sm with-label" type="button" id="authCloseBtn"><span class="icon">✕</span><span class="label">إغلاق</span></button>
@@ -1867,6 +1881,14 @@ function refreshDeepSearchBtn(){
       : plan === 'premium'
       ? 'الحساب الحالي مدفوع. يمكنك إغلاق هذه الشاشة أو إعادة المصادقة إذا لزم.'
       : 'بعد تسجيل الدخول ستبدأ بالخطة المجانية. للترقية اطلب كودًا ثم فعّله من صفحة الإعدادات.';
+    if ($('authCurrentPlanPill')){
+      $('authCurrentPlanPill').textContent = role === 'admin'
+        ? 'الإدارة'
+        : plan === 'premium'
+        ? 'الخطة المدفوعة'
+        : 'الخطة المجانية';
+      $('authCurrentPlanPill').classList.toggle('premium', role === 'admin' || plan === 'premium');
+    }
 
     syncUnifiedAuthEntry();
     syncAccountPlanControls();
@@ -1884,6 +1906,10 @@ function refreshDeepSearchBtn(){
     if (hint) hint.textContent = isAdminEntry
       ? 'تم التعرف على بريد الإدارة. أدخل كلمة المرور لفتح الحساب الإداري من نفس الشاشة.'
       : 'أي بريد شخصي صالح يفتح لك الخطة المجانية فورًا، ويمكنك طلب الترقية لاحقًا من داخل التطبيق.';
+    if ($('authCurrentPlanPill')){
+      $('authCurrentPlanPill').textContent = isAdminEntry ? 'الإدارة' : 'الخطة المجانية';
+      $('authCurrentPlanPill').classList.toggle('premium', isAdminEntry);
+    }
     if (passwordLabel) passwordLabel.textContent = isAdminEntry ? 'كلمة مرور الإدارة' : 'كلمة المرور للإدارة فقط';
     if (passwordInput){
       passwordInput.placeholder = isAdminEntry
@@ -1954,8 +1980,9 @@ function refreshDeepSearchBtn(){
   function openAuthGate(message = ''){
     ensureAccountChrome();
     $('authGate')?.classList.add('show');
-    setAuthGateStatus(message || 'أدخل بريدك الشخصي لفتح الخطة المجانية، أو استخدم بريد الإدارة مع كلمة المرور من النموذج نفسه.', 'info');
+    setAuthGateStatus(message || 'سجّل الدخول ببريدك الشخصي لفتح الخطة المجانية، أو استخدم بريد الإدارة مع كلمة المرور من نفس الشاشة.', 'info');
     syncUnifiedAuthEntry();
+    if ($('authCloseBtn')) $('authCloseBtn').style.display = hasValidAuthSession() ? '' : 'none';
     renderGoogleButton().catch((error) => {
       setAuthGateStatus(`تعذر تهيئة تسجيل Google: ${error?.message || error}`, 'error');
     });

@@ -10,6 +10,7 @@ const files = [
   'manifest.webmanifest',
   'logo.svg'
 ];
+const directories = ['icons'];
 
 if (existsSync(webDir)) {
   rmSync(webDir, { recursive: true, force: true });
@@ -19,4 +20,10 @@ mkdirSync(webDir, { recursive: true });
 
 for (const file of files) {
   cpSync(join(root, file), join(webDir, file), { force: true });
+}
+
+for (const dir of directories) {
+  const source = join(root, dir);
+  if (!existsSync(source)) continue;
+  cpSync(source, join(webDir, dir), { recursive: true, force: true });
 }

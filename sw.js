@@ -1,12 +1,14 @@
 // AI Workspace Studio - Service Worker
-const APP_VERSION = "81";
+const APP_VERSION = "82";
 const CACHE_NAME = `aistudio-cache-v${APP_VERSION}`;
 const CORE = [
   "./",
   "./index.html",
   `./app.js?v=${APP_VERSION}`,
   "./manifest.webmanifest",
-  "./logo.svg"
+  "./logo.svg",
+  "./icons/icon-192.webp",
+  "./icons/icon-512.webp"
 ];
 
 self.addEventListener("install", (event) => {

@@ -3,10 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.1</title>
+    <title>AI Workspace Studio v8.2</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
+  <link rel="apple-touch-icon" href="icons/icon-192.webp" />
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 
@@ -333,6 +334,14 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     .auth-kicker{font-size:12px; font-weight:1000; letter-spacing:.18em; text-transform:uppercase; opacity:.82;}
     .auth-title{margin:0; font-size:clamp(28px,4vw,44px); line-height:1.12; font-weight:1000;}
     .auth-copy{margin:0; color:rgba(255,255,255,.84); line-height:1.95; font-size:14px;}
+    .auth-plan-row{display:flex; flex-wrap:wrap; gap:10px;}
+    .auth-plan-pill{
+      display:inline-flex; align-items:center; gap:8px; padding:9px 14px; border-radius:999px;
+      background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.14);
+      font-size:12px; font-weight:1000;
+    }
+    .auth-plan-pill b{font-size:12px;}
+    .auth-plan-pill span{opacity:.82; font-weight:800;}
     .auth-feature-grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px;}
     .auth-feature{
       border-radius:18px; padding:14px; background:rgba(255,255,255,.08);
@@ -341,6 +350,15 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     .auth-feature strong{font-size:14px;}
     .auth-feature span{font-size:12px; color:rgba(255,255,255,.78); line-height:1.7;}
     .auth-developer{font-size:12px; font-weight:900; color:rgba(255,255,255,.86);}
+    .auth-form-head{display:flex; align-items:flex-start; justify-content:space-between; gap:14px; flex-wrap:wrap;}
+    .auth-form-head-copy{display:grid; gap:6px;}
+    .auth-form-head-copy p{margin:0; color:#5a6988; line-height:1.8; font-size:13px;}
+    .auth-access-note{
+      border-radius:16px; border:1px solid rgba(10,20,60,.08); background:#f8fbff;
+      padding:12px 14px; display:grid; gap:8px;
+    }
+    .auth-access-note strong{font-size:13px; color:#0f1e39;}
+    .auth-access-note span{font-size:12px; color:#5a6988; line-height:1.8;}
     .auth-card{
       background:linear-gradient(180deg,#ffffff,#f7faff);
       padding:28px; display:grid; gap:14px; align-content:start;
@@ -2071,11 +2089,11 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     })();
   </script>
 
-<script src="app.js?v=81"></script>
+<script src="app.js?v=82"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-navigator.serviceWorker.register("./sw.js?v=81").then((registration) => {
+navigator.serviceWorker.register("./sw.js?v=82").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {
