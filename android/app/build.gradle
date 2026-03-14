@@ -1,4 +1,17 @@
+import java.util.Properties
+
 apply plugin: 'com.android.application'
+
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+def hasReleaseKeystore = false
+
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+    hasReleaseKeystore = ['storeFile', 'storePassword', 'keyAlias', 'keyPassword'].every {
+        String.valueOf(keystoreProperties[it] ?: '').trim()
+    }
+}
 
 android {
     namespace "com.saddamalkadi.aiworkspace"
@@ -7,8 +20,8 @@ android {
         applicationId "com.saddamalkadi.aiworkspace"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 83
+        versionName "8.3.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +29,23 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (hasReleaseKeystore) {
+                storeFile rootProject.file(String.valueOf(keystoreProperties['storeFile']))
+                storePassword String.valueOf(keystoreProperties['storePassword'])
+                keyAlias String.valueOf(keystoreProperties['keyAlias'])
+                keyPassword String.valueOf(keystoreProperties['keyPassword'])
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasReleaseKeystore) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }
