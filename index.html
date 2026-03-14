@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.4</title>
+    <title>AI Workspace Studio v8.5</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -796,6 +796,15 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     }
     .chips{
       padding-bottom: 12px;
+    }
+    body.keyboardEditing .topbar,
+    body.keyboardEditing #page-chat > .toolbar.mainToolbar{
+      position: static !important;
+    }
+    body.keyboardEditing .page,
+    body.keyboardEditing .chatlog{
+      overflow-anchor: none;
+      scroll-behavior: auto;
     }
     .topbar .row{
       row-gap: 6px;
@@ -2091,24 +2100,43 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
 
   <script>
     (function(){
-      const setAppViewportHeight = () => {
-        const viewportHeight = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
-        document.documentElement.style.setProperty('--app-vh', `${viewportHeight}px`);
+      const isAndroidLike = /Android/i.test(navigator.userAgent || '');
+      let resizeTimer = 0;
+      let lastHeight = 0;
+      const isEditable = (el = document.activeElement) => {
+        if (!el) return false;
+        if (el.isContentEditable) return true;
+        const tag = String(el.tagName || '').toUpperCase();
+        return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
       };
-      setAppViewportHeight();
-      window.addEventListener('resize', setAppViewportHeight);
-      window.addEventListener('orientationchange', setAppViewportHeight);
+      const commitViewportHeight = (force = false) => {
+        const viewportHeight = Math.round((window.visualViewport && window.visualViewport.height) || window.innerHeight || document.documentElement.clientHeight || 0);
+        if (!force && lastHeight && Math.abs(viewportHeight - lastHeight) < 4) return;
+        lastHeight = viewportHeight;
+        document.documentElement.style.setProperty('--app-vh', `${viewportHeight}px`);
+        document.body.classList.toggle('keyboardEditing', isAndroidLike && isEditable());
+      };
+      const scheduleViewportHeight = (force = false) => {
+        clearTimeout(resizeTimer);
+        const delay = isAndroidLike && isEditable() ? 140 : 0;
+        resizeTimer = window.setTimeout(() => commitViewportHeight(force), delay);
+      };
+      commitViewportHeight(true);
+      window.addEventListener('resize', () => scheduleViewportHeight(false));
+      window.addEventListener('orientationchange', () => scheduleViewportHeight(true));
+      document.addEventListener('focusin', () => scheduleViewportHeight(false), true);
+      document.addEventListener('focusout', () => window.setTimeout(() => scheduleViewportHeight(false), 120), true);
       if (window.visualViewport) {
-        window.visualViewport.addEventListener('resize', setAppViewportHeight);
+        window.visualViewport.addEventListener('resize', () => scheduleViewportHeight(false));
       }
     })();
   </script>
 
-<script src="app.js?v=84"></script>
+<script src="app.js?v=85"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-navigator.serviceWorker.register("./sw.js?v=84").then((registration) => {
+navigator.serviceWorker.register("./sw.js?v=85").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

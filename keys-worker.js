@@ -643,8 +643,16 @@ async function verifyGoogleCredential(credential, env, clientIdHint = '') {
   const allowedClientIds = [
     String(env.GOOGLE_CLIENT_ID_WEB || '').trim(),
     String(env.GOOGLE_CLIENT_ID || '').trim(),
+    String(env.GOOGLE_CLIENT_ID_ANDROID || '').trim(),
+    String(env.GOOGLE_CLIENT_ID_ANDROID_DEBUG || '').trim(),
     String(clientIdHint || '').trim()
   ].filter(Boolean);
+  const audienceValues = Array.isArray(payload?.aud)
+    ? payload.aud.map((value) => String(value || '').trim()).filter(Boolean)
+    : [String(payload?.aud || '').trim()].filter(Boolean);
+  const authorizedParty = String(payload?.azp || '').trim();
+  const audienceMatches = audienceValues.some((value) => allowedClientIds.includes(value));
+  const azpMatches = authorizedParty ? allowedClientIds.includes(authorizedParty) : false;
 
   if (!['accounts.google.com', 'https://accounts.google.com'].includes(iss)) {
     throw new Error('Unsupported Google issuer.');
@@ -658,8 +666,8 @@ async function verifyGoogleCredential(credential, env, clientIdHint = '') {
   if (!String(payload?.email || '').toLowerCase().match(/@(gmail|googlemail)\.com$/)) {
     throw new Error('Only Gmail accounts are allowed for sign in.');
   }
-  if (allowedClientIds.length && !allowedClientIds.includes(String(payload?.aud || '').trim())) {
-    throw new Error('Google credential audience mismatch.');
+  if (allowedClientIds.length && !audienceMatches && !azpMatches) {
+    throw new Error(`Google credential audience mismatch. aud=${audienceValues.join(',') || 'n/a'} azp=${authorizedParty || 'n/a'}`);
   }
   if (!allowedClientIds.length) {
     throw new Error('Google Client ID is not configured.');

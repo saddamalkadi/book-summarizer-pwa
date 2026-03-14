@@ -1,4 +1,4 @@
-/* AI Workspace Studio v8.4 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v8.5 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -117,6 +117,11 @@
     configLoadedAt: 0,
     configPromise: null,
     booting: false
+  };
+
+  const ANDROID_GOOGLE_SETUP = {
+    packageName: 'com.saddamalkadi.aiworkspace',
+    releaseSha1: '56:DA:BC:F0:F5:A4:7A:19:05:1A:07:F2:94:0F:FD:FA:DF:7C:AF:03'
   };
 
   const NATIVE_GOOGLE_RUNTIME = {
@@ -1623,6 +1628,45 @@ function refreshDeepSearchBtn(){
     return String(config.googleClientId || '').trim();
   }
 
+  function getAndroidGoogleSetupHint(){
+    return `أضف Android OAuth Client في Google Cloud باستخدام Package Name: ${ANDROID_GOOGLE_SETUP.packageName} وSHA-1: ${ANDROID_GOOGLE_SETUP.releaseSha1}.`;
+  }
+
+  function explainAuthError(error, { nativeGoogle = false } = {}){
+    const raw = String(error?.message || error || '').trim();
+    if (!raw) return 'تعذر إكمال عملية تسجيل الدخول.';
+    if (/Only Gmail accounts are allowed/i.test(raw)){
+      return 'هذا التطبيق يسمح حاليًا فقط بحسابات Gmail الشخصية.';
+    }
+    if (/Google credential audience mismatch/i.test(raw)){
+      return nativeGoogle
+        ? `تم اختيار الحساب لكن الخادم رفض رمز Google لهذا التطبيق على Android. ${getAndroidGoogleSetupHint()}`
+        : 'رمز Google لا يطابق إعدادات التطبيق الحالية. تحقق من Google Client ID.';
+    }
+    if (/Google Client ID is not configured/i.test(raw)){
+      return 'Google Client ID غير مضبوط على الخادم بعد.';
+    }
+    if (/This email is configured as the admin account/i.test(raw)){
+      return 'هذا البريد هو بريد الإدارة. استخدم كلمة مرور الإدارة من نفس شاشة الدخول.';
+    }
+    return raw;
+  }
+
+  function isEditableElement(element = document.activeElement){
+    if (!element || !(element instanceof HTMLElement)) return false;
+    if (element.isContentEditable) return true;
+    const tag = String(element.tagName || '').toUpperCase();
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+  }
+
+  function isAndroidKeyboardEditing(){
+    return isNativeAndroidPlatform() && isEditableElement();
+  }
+
+  function syncKeyboardEditingState(){
+    document.body.classList.toggle('keyboardEditing', isAndroidKeyboardEditing());
+  }
+
   function getCapacitorPlatform(){
     try{
       const platform = window.Capacitor?.getPlatform?.();
@@ -1675,6 +1719,12 @@ function refreshDeepSearchBtn(){
     if (reason === 'NO_CREDENTIAL'){
       return 'لم يجد Android جلسة Google جاهزة لهذا التطبيق بعد. اضغط زر المتابعة لاختيار الحساب من الجهاز.';
     }
+    if (/Caller not whitelisted|ApiException:\s*10|OAuth 2\.0 Client ID of type 'Android'/i.test(info)){
+      return `تم اختيار الحساب لكن Google رفض إصدار رمز الدخول لهذا التطبيق على Android. ${getAndroidGoogleSetupHint()}`;
+    }
+    if (/GooglePlayService|GooglePlay is not installed|must be logged in/i.test(info)){
+      return 'خدمات Google Play غير جاهزة على الجهاز. حدّث Google Play وسجّل الدخول فيه ثم أعد المحاولة.';
+    }
     if (info) return `${fallback}\n${info}`;
     return fallback;
   }
@@ -1686,7 +1736,9 @@ function refreshDeepSearchBtn(){
     }
     if (!silent){
       const tone = String(result?.noSuccess?.noSuccessReasonCode || '').trim() === 'SIGN_IN_CANCELLED' ? 'info' : 'error';
-      setAuthGateStatus(getNativeGoogleFailureMessage(result), tone);
+      const message = getNativeGoogleFailureMessage(result);
+      setAuthGateStatus(message, tone);
+      toast(`${tone === 'info' ? 'ℹ️' : '⚠️'} ${message}`);
     }
     return false;
   }
@@ -2144,7 +2196,9 @@ function refreshDeepSearchBtn(){
       closeAuthGate(true);
       toast('✅ تم تسجيل الدخول بنجاح');
     }catch(error){
-      setAuthGateStatus(`فشل تسجيل الدخول: ${error?.message || error}`, 'error');
+      const message = explainAuthError(error, { nativeGoogle: isNativeAndroidPlatform() });
+      setAuthGateStatus(`فشل تسجيل الدخول: ${message}`, 'error');
+      toast(`⚠️ ${message}`);
     }
   }
 
@@ -2314,6 +2368,20 @@ function refreshDeepSearchBtn(){
     refreshModeButtons();
     refreshStrategicWorkspace().catch(()=>{});
     openAuthGate('تم تسجيل الخروج. سجّل الدخول مرة أخرى ببريدك الشخصي للمتابعة.');
+  }
+
+  let shellResizeTimer = 0;
+  function scheduleShellLayoutRefresh(){
+    clearTimeout(shellResizeTimer);
+    const keyboardEditing = isAndroidKeyboardEditing();
+    shellResizeTimer = window.setTimeout(() => {
+      syncKeyboardEditingState();
+      resizeComposerInput();
+      if (!keyboardEditing){
+        applyShellLayout();
+        refreshStrategicWorkspace().catch(()=>{});
+      }
+    }, keyboardEditing ? 180 : 60);
   }
 
   function openAccountCenter(){
@@ -7166,11 +7234,14 @@ $('sendBtn').addEventListener('click', sendMessage);
     $('chatInput').addEventListener('input', () => {
       syncComposerMeta();
     });
-    window.addEventListener('resize', () => {
-      resizeComposerInput();
-      applyShellLayout();
-      refreshStrategicWorkspace().catch(()=>{});
-    });
+    window.addEventListener('resize', scheduleShellLayoutRefresh);
+    document.addEventListener('focusin', syncKeyboardEditingState, true);
+    document.addEventListener('focusout', () => {
+      window.setTimeout(() => {
+        syncKeyboardEditingState();
+        scheduleShellLayoutRefresh();
+      }, 120);
+    }, true);
     $('chatInput').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey){
         e.preventDefault();
@@ -7760,6 +7831,7 @@ ${e?.message||e}`, false);
     updateChips();
 
     bind();
+    syncKeyboardEditingState();
     applyShellLayout();
     initializeAuthExperience().catch(()=>{});
     refreshStrategicWorkspace().catch(()=>{});
