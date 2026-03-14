@@ -127,7 +127,8 @@
   const NATIVE_GOOGLE_RUNTIME = {
     initialized: false,
     initPromise: null,
-    autoAttempted: false
+    autoAttempted: false,
+    lastDialogMessage: ''
   };
 
 // ---------------- KB (IndexedDB + RAG) ----------------
@@ -1632,9 +1633,27 @@ function refreshDeepSearchBtn(){
     return `أضف Android OAuth Client في Google Cloud باستخدام Package Name: ${ANDROID_GOOGLE_SETUP.packageName} وSHA-1: ${ANDROID_GOOGLE_SETUP.releaseSha1}.`;
   }
 
+  function maybeShowNativeAuthDialog(message, tone = 'error'){
+    if (!isNativeAndroidPlatform() || tone !== 'error') return;
+    if (!$('authGate')?.classList.contains('show')) return;
+    const text = String(message || '').trim();
+    if (!text) return;
+    const signature = `${tone}:${text}`;
+    if (NATIVE_GOOGLE_RUNTIME.lastDialogMessage === signature) return;
+    NATIVE_GOOGLE_RUNTIME.lastDialogMessage = signature;
+    window.setTimeout(() => {
+      try{ window.alert(text); }catch(_){}
+    }, 30);
+  }
+
   function explainAuthError(error, { nativeGoogle = false } = {}){
     const raw = String(error?.message || error || '').trim();
     if (!raw) return 'تعذر إكمال عملية تسجيل الدخول.';
+    if (/Missing Google credential|Malformed Google credential/i.test(raw)){
+      return nativeGoogle
+        ? `تم اختيار الحساب لكن التطبيق لم يستلم رمز الدخول الكامل من Google على Android. ${getAndroidGoogleSetupHint()}`
+        : 'لم يصل رمز الدخول الكامل من Google. حاول مرة أخرى.';
+    }
     if (/Only Gmail accounts are allowed/i.test(raw)){
       return 'هذا التطبيق يسمح حاليًا فقط بحسابات Gmail الشخصية.';
     }
@@ -1713,6 +1732,12 @@ function refreshDeepSearchBtn(){
   }
 
   function getNativeGoogleFailureMessage(result, fallback = 'تعذر تسجيل الدخول من Google على هذا الجهاز.'){
+    if (result?.isSuccess && !String(result?.success?.idToken || '').trim()){
+      const info = String(result?.success?.message || result?.noSuccess?.noSuccessAdditionalInfo || '').trim();
+      return info
+        ? `تم اختيار الحساب لكن Google لم يرسل رمز الدخول الكامل لهذا التطبيق على Android.\n${info}`
+        : `تم اختيار الحساب لكن Google لم يرسل رمز الدخول الكامل لهذا التطبيق على Android. ${getAndroidGoogleSetupHint()}`;
+    }
     const reason = String(result?.noSuccess?.noSuccessReasonCode || '').trim();
     const info = String(result?.noSuccess?.noSuccessAdditionalInfo || '').trim();
     if (reason === 'SIGN_IN_CANCELLED') return 'تم إلغاء تسجيل الدخول من Google.';
@@ -1731,6 +1756,8 @@ function refreshDeepSearchBtn(){
 
   async function handleNativeGoogleSignInResult(result, { silent = false } = {}){
     if (result?.isSuccess && result?.success?.idToken){
+      NATIVE_GOOGLE_RUNTIME.lastDialogMessage = '';
+      setAuthGateStatus('تم اختيار حساب Google بنجاح. جارٍ إنشاء الجلسة...', 'busy');
       await handleGoogleCredentialResponse({ credential: result.success.idToken });
       return true;
     }
@@ -1759,6 +1786,7 @@ function refreshDeepSearchBtn(){
 
   async function startNativeGoogleButtonFlow(){
     try{
+      NATIVE_GOOGLE_RUNTIME.lastDialogMessage = '';
       setAuthGateStatus('جارٍ فتح تسجيل Google الأصلي على Android...', 'busy');
       const plugin = await ensureNativeGoogleAuthReady();
       if (!plugin){
@@ -1796,8 +1824,24 @@ function refreshDeepSearchBtn(){
   function setAuthGateStatus(message, tone = 'info'){
     const box = $('authGateStatus');
     if (!box) return;
+    const text = String(message || 'سجّل الدخول ببريدك الشخصي لفتح الخطة المجانية، أو استخدم بريد الإدارة مع كلمة المرور من نفس الشاشة.').trim();
+    if (!text){
+      box.hidden = true;
+      box.style.display = 'none';
+      box.textContent = '';
+      delete box.dataset.tone;
+      return;
+    }
+    box.hidden = false;
+    box.style.display = 'block';
     box.dataset.tone = tone;
-    box.textContent = message || 'سجّل الدخول ببريدك الشخصي لفتح الخطة المجانية، أو استخدم بريد الإدارة مع كلمة المرور من نفس الشاشة.';
+    box.textContent = text;
+    box.setAttribute('role', tone === 'error' ? 'alert' : 'status');
+    box.setAttribute('aria-live', tone === 'error' ? 'assertive' : 'polite');
+    requestAnimationFrame(() => {
+      try{ box.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }catch(_){}
+    });
+    maybeShowNativeAuthDialog(text, tone);
   }
 
   function syncAccountPlanControls(){
@@ -2179,11 +2223,17 @@ function refreshDeepSearchBtn(){
   async function handleGoogleCredentialResponse(response){
     try{
       setAuthGateStatus('جارٍ التحقق من حساب Google وتأسيس الجلسة...', 'busy');
+      const credential = String(response?.credential || '').trim();
+      if (!credential){
+        throw new Error(isNativeAndroidPlatform()
+          ? `تم اختيار الحساب لكن Android لم يرسل رمز Google الكامل إلى التطبيق. ${getAndroidGoogleSetupHint()}`
+          : 'لم يصل رمز تسجيل الدخول من Google. حاول مرة أخرى.');
+      }
       const code = ($('upgradeCodeInput')?.value || getAuthState().upgradeCode || '').trim();
       const payload = await fetchAuthJson('/auth/google', {
         method: 'POST',
         body: JSON.stringify({
-          credential: response?.credential || '',
+          credential,
           clientId: getAuthGoogleClientId(),
           upgradeCode: code
         })
