@@ -679,6 +679,45 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     return origins[0] || '';
   }
 
+  function validateGatewayUrlInput(gatewayUrl, settings = {}){
+    const raw = normalizeEndpointUrl(gatewayUrl || '');
+    if (!raw) return { ok:true, normalized:'', warning:'' };
+    let parsed;
+    try{
+      parsed = new URL(raw);
+    }catch(_){
+      return { ok:false, reason:'رابط البوابة غير صالح. استخدم رابطًا مباشرًا يبدأ بـ https://.' };
+    }
+    const host = String(parsed.hostname || '').toLowerCase();
+    const path = String(parsed.pathname || '').toLowerCase();
+    if (/dash\.cloudflare\.com$/.test(host) || path.includes('/workers/services/view/') || path.includes('/production/settings')){
+      return {
+        ok:false,
+        reason:'هذا رابط لوحة Cloudflare وليس رابط الـ Worker المباشر. استخدم Gateway URL مثل https://sadam-key...workers.dev'
+      };
+    }
+    if (/github\.io$/.test(host)){
+      return {
+        ok:false,
+        reason:'هذا رابط الموقع أو صفحة التنزيل، وليس رابط بوابة API. استخدم رابط الـ Worker المباشر للدردشة.'
+      };
+    }
+    if (/(^|\/)(convert\/pdf-to-docx|pdf-to-docx|ocr)(\/|$)/.test(path)){
+      return {
+        ok:false,
+        reason:'هذا رابط خدمة التحويل أو OCR، وليس رابط بوابة الدردشة. استخدم Worker الدردشة مثل sadam-key...workers.dev.'
+      };
+    }
+    const normalized = raw
+      .replace(/\/v1\/?$/i, '')
+      .replace(/\/health\/?$/i, '')
+      .replace(/\/auth\/(config|session|google|login|register)\/?$/i, '');
+    const warning = normalized !== raw
+      ? 'تم تنظيف رابط البوابة تلقائيًا إلى الجذر الصحيح.'
+      : '';
+    return { ok:true, normalized, warning };
+  }
+
   function getCostGuardLabel(value = getSettings().costGuard){
     return ({
       strict: 'اقتصادي صارم',
@@ -983,10 +1022,15 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     let cloudLabel = 'غير مضبوط';
     if (cloudRoot){
       if (transcribeCloudHealthState.docxReady === true || transcribeCloudHealthState.ready === true){
-        const docxTone = transcribeCloudHealthState.fidelityReady
-          ? 'DOCX مطابق'
-          : 'DOCX هيكلي';
-        cloudLabel = transcribeCloudHealthState.ocrReady === false ? `${docxTone} • OCR غير مهيأ` : `${docxTone} • جاهز`;
+        if (transcribeCloudHealthState.fidelityReady){
+          cloudLabel = transcribeCloudHealthState.ocrReady === false
+            ? 'DOCX مطابق • جاهز • OCR فقط غير مهيأ'
+            : 'DOCX مطابق • جاهز';
+        } else {
+          cloudLabel = transcribeCloudHealthState.ocrReady === false
+            ? 'DOCX جاهز • المطابقة العالية غير مفعلة • OCR فقط غير مهيأ'
+            : 'DOCX جاهز • المطابقة العالية غير مفعلة';
+        }
       } else if (transcribeCloudHealthState.ready === false){
         cloudLabel = transcribeCloudHealthState.note || 'الخدمة غير جاهزة';
       } else {
@@ -3561,6 +3605,7 @@ function refreshDeepSearchBtn(){
           };
           lines.push(`محول الوثائق: ${convertResp.status}`);
           lines.push(`DOCX السحابي: ${convertJson?.docxReady === true ? 'جاهز' : 'غير جاهز'}`);
+          lines.push(`مطابقة طبق الأصل: ${convertJson?.fidelityReady === true ? 'مفعلة' : 'غير مفعلة بعد'}`);
           lines.push(`وضع التحويل: ${convertJson?.docxMode === 'upstream' ? 'مطابقة عالية عبر محرك خارجي' : 'تحويل هيكلي قابل للتعديل'}`);
           lines.push(`OCR السحابي: ${convertJson?.ocrReady === true ? 'جاهز' : 'غير جاهز أو غير مهيأ'}`);
           if (convertJson?.limits){
@@ -5051,12 +5096,26 @@ async function maybeUpdateThreadSummary(pid, tid){
   function getFriendlyChatError(err){
     const msg = String(err?.message || err || '').trim();
     if (!msg) return 'حدث خطأ غير معروف أثناء الدردشة.';
+    if (/no\s+(?:cookie|kookie)\s+auth\s+credential/i.test(msg)) return 'رابط البوابة الحالي يطلب مصادقة Cookies أو Cloudflare Access، بينما التطبيق يستخدم جلسة API. استخدم Gateway URL مباشرًا للـ Worker مثل sadam-key...workers.dev.';
+    if (/insufficient\s+(credits?|balance)|not enough credits?|quota.*exceeded|billing|payment required|exceeded your current quota|402\b/i.test(msg)) return 'نفد رصيد مزود الذكاء الاصطناعي أو تم بلوغ حد الفوترة. يلزم شحن الرصيد أو استخدام وضع مجاني/نموذج مجاني.';
     if (/unauthorized client token/i.test(msg)) return 'تم الوصول إلى Gateway، لكن Gateway Client Token غير صحيح أو مفقود.';
     if (/missing api key|gateway_missing_upstream_key/i.test(msg)) return 'تم الوصول إلى Gateway، لكن مفتاح OpenRouter غير مضبوط داخل الـ Worker.';
     if (/failed to fetch|networkerror|load failed|network request failed|cors/i.test(msg)) return 'تعذر الوصول إلى خدمة الدردشة. تحقق من رابط البوابة أو CORS أو الاتصال.';
     if (/stream_empty_response|empty_assistant_response|unrecognized_assistant_response/i.test(msg)) return 'تم الاتصال بالمزوّد لكن الرد رجع فارغًا أو بصيغة غير متوقعة.';
     if (/missing authentication/i.test(msg)) return 'ضع مفتاح API الصحيح ثم احفظ الإعدادات.';
     if (/upstream/i.test(msg) || /gateway_upstream_/i.test(msg)) return 'فشل مزود الذكاء الاصطناعي في الرد من جهة الخادم.';
+    return msg;
+  }
+
+  function getFriendlyDocxCloudError(err){
+    const msg = String(err?.message || err || '').trim();
+    if (!msg) return 'تعذر إكمال التحويل السحابي إلى Word.';
+    if (/free_mode_blocks_cloud/i.test(msg) || /الوضع المجاني يمنع استخدام التحويل السحابي/i.test(msg)) return 'الوضع المجاني يوقف التحويل السحابي. عطّل الوضع المجاني أو استخدم المسار المحلي.';
+    if (/rابط تحويل pdf.*غير مضبوط|cloud pdf|pdf.*word.*غير مضبوط|endpoint.*غير مضبوط/i.test(msg)) return 'رابط التحويل السحابي PDF إلى Word غير مضبوط في الإعدادات.';
+    if (/no\s+(?:cookie|kookie)\s+auth\s+credential/i.test(msg)) return 'رابط خدمة التحويل السحابي محمي بـ Cookies أو Cloudflare Access، لذلك لا يستطيع التطبيق استخدامه. استخدم رابط Worker مباشر.';
+    if (/insufficient\s+(credits?|balance)|not enough credits?|quota.*exceeded|billing|payment required|402\b/i.test(msg)) return 'نفد رصيد خدمة التحويل أو رصيد المزود المرتبط بها. يلزم شحن الرصيد أو استخدام المسار المحلي.';
+    if (/docx_upstream_failed|docx_upstream_empty|docx_upstream_bad_json/i.test(msg)) return 'خدمة المطابقة العالية لتحويل PDF إلى Word متصلة لكنها لم ترجع ملف Word صالحًا. يمكن استخدام المسار الهيكلي أو ضبط محرك المطابقة العالية.';
+    if (/failed to fetch|networkerror|load failed|network request failed|cors/i.test(msg)) return 'تعذر الاتصال بخدمة التحويل السحابي. تحقق من الرابط أو من الحماية على الخدمة.';
     return msg;
   }
 
@@ -6693,7 +6752,7 @@ let pinOnly = false;
 
   function saveSettingsFromUI(){
     const authMode = $('authMode') ? $('authMode').value : 'browser';
-    const gatewayUrl = $('gatewayUrl') ? normalizeEndpointUrl($('gatewayUrl').value) : '';
+    const gatewayInput = $('gatewayUrl') ? normalizeEndpointUrl($('gatewayUrl').value) : '';
     const gatewayToken = $('gatewayToken') ? $('gatewayToken').value.trim() : '';
     const cloudConvertEndpoint = $('cloudConvertEndpoint') ? normalizeEndpointUrl($('cloudConvertEndpoint').value) : '';
     const cloudConvertFallbackEndpoint = $('cloudConvertFallbackEndpoint') ? normalizeEndpointUrl($('cloudConvertFallbackEndpoint').value) : '';
@@ -6712,6 +6771,17 @@ let pinOnly = false;
     const freeLocked = account.authRequired && !account.premium;
     const selectedProvider = freeLocked ? 'openrouter' : $('provider').value;
     const selectedModel = freeLocked ? 'openrouter/free' : $('model').value.trim();
+    const gatewayValidation = authMode === 'gateway'
+      ? validateGatewayUrlInput(gatewayInput, { cloudConvertEndpoint, cloudConvertFallbackEndpoint, ocrCloudEndpoint })
+      : { ok:true, normalized:gatewayInput, warning:'' };
+
+    if (!gatewayValidation.ok){
+      showStatus(`❌ ${gatewayValidation.reason}`, false);
+      if ($('gatewayUrl')) $('gatewayUrl').focus();
+      return getSettings();
+    }
+    const gatewayUrl = gatewayValidation.normalized || '';
+    if ($('gatewayUrl')) $('gatewayUrl').value = gatewayUrl;
 
     // if gateway is enabled and url provided, we force baseUrl to gateway/v1
     let baseUrl = $('baseUrl').value.trim();
@@ -6726,6 +6796,9 @@ let pinOnly = false;
       $('baseUrl').value = baseUrl;
       if (resolvedGatewayBase !== normalizeUrl(gatewayUrl)){
         toast('ℹ️ تم اكتشاف Gateway ثابت؛ تم استخدام Cloud API worker تلقائيًا.');
+      }
+      if (gatewayValidation.warning){
+        toast(`ℹ️ ${gatewayValidation.warning}`);
       }
       if ($('provider').value === 'openrouter'){
         // ok
@@ -7734,9 +7807,10 @@ ${txt}`;
         }
         toast('⬇️ تم تنزيل ملف Word قابل للتعديل');
       }catch(e){
-        updateTranscribeLabState({ engine:'فشل التحويل', quality:'توقف', note:String(e?.message || e) });
+        const friendly = getFriendlyDocxCloudError(e);
+        updateTranscribeLabState({ engine:'فشل التحويل', quality:'توقف', note:friendly });
         showStatus(`❌ فشل التحويل:
-${e?.message||e}`, false);
+${friendly}`, false);
       }
     });
     $('transcribeExportWordBtn')?.addEventListener('click', async () => {
