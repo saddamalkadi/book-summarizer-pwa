@@ -1,4 +1,4 @@
-/* AI Workspace Studio v8.0 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v8.1 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -920,7 +920,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     return {
       ok: true,
       reason: settings.costGuard === 'open'
-        ? 'وضع الجودة القصوى يسمح باستخدام السحابة لهذا الملف.'
+        ? 'إعدادات التكلفة الحالية تسمح باستخدام المسار السحابي لهذا الملف.'
         : 'الملف ضمن حدود التكلفة الحالية.'
     };
   }
@@ -939,8 +939,8 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       return {
         route:'cloud',
         reason: settings.costGuard === 'open'
-          ? 'المسار السحابي مفعل للحصول على أعلى مطابقة ممكنة مع تنسيق الملف الأصلي.'
-          : 'المسار السحابي متاح لهذا الملف وسيعطي مطابقة أعلى مع إبقاء التكلفة تحت السيطرة.'
+          ? 'المسار السحابي متاح لهذا الملف حسب الإعدادات الحالية.'
+          : 'المسار السحابي متاح لهذا الملف ضمن حدود التكلفة الحالية.'
       };
     }
     return { route:'local', reason: policy.reason || 'تمت العودة إلى التحويل المحلي.' };
@@ -2191,18 +2191,7 @@ function refreshDeepSearchBtn(){
   function ensureStrategicChrome(){
     ensureAccountChrome();
     const sideCard = document.querySelector('.sidecard');
-    if (sideCard && !sideCard.classList.contains('strategic-sidecard')){
-      sideCard.classList.add('strategic-sidecard');
-      sideCard.innerHTML = `
-        <div class="sidecard-title">التحكم الاستراتيجي</div>
-        <div class="sidecard-grid">
-          <div class="sidecard-metric"><span>المشروع</span><strong id="sideProjectMeta">—</strong></div>
-          <div class="sidecard-metric"><span>النموذج</span><strong id="sideModelMeta">—</strong></div>
-          <div class="sidecard-metric"><span>السياق</span><strong id="sideContextMeta">—</strong></div>
-          <div class="sidecard-metric"><span>الأوضاع</span><strong id="sideModeMeta">—</strong></div>
-        </div>
-        <div class="sidecard-note" id="sideHealthNote">اضبط مساحة العمل مرة واحدة ثم أدر الدردشة والملفات والمعرفة والمخرجات من لوحة عربية موحدة.</div>`;
-    }
+    if (sideCard) sideCard.remove();
 
     const brand = document.querySelector('.brand');
     if (brand && !$('pinSideBtn')){
@@ -2224,7 +2213,7 @@ function refreshDeepSearchBtn(){
       const badge = document.createElement('span');
       badge.className = 'runtime-badge';
       badge.id = 'topRuntimeBadge';
-      badge.textContent = 'Workspace online';
+      badge.textContent = 'جاهز';
       left.appendChild(stack);
       stack.appendChild(topTitle);
       row.appendChild(topSubtitle);
@@ -2307,7 +2296,7 @@ function refreshDeepSearchBtn(){
     if (chatbar && !$('composerContextMeta')){
       chatbar.insertAdjacentHTML('afterend', `
         <div class="composer-meta">
-          <span id="composerHint">Enter للإرسال • Shift+Enter لسطر جديد • المرفقات تندمج تلقائيًا مع السياق.</span>
+          <span id="composerHint">Enter للإرسال • Shift+Enter لسطر جديد • تُضاف المرفقات إلى السياق تلقائيًا.</span>
           <span class="composer-status" id="composerContextMeta">سياق مساحة العمل —</span>
         </div>`);
     }
@@ -2345,14 +2334,14 @@ function refreshDeepSearchBtn(){
       settingsToolbar.insertAdjacentHTML('afterend', `
         <div class="settings-overview">
           <div class="settings-overview-card">
-            <h3>طبقة التشغيل الاحترافية</h3>
-            <p>حوّل التطبيق من واجهة دردشة إلى مساحة عمل ذكاء اصطناعي متكاملة: ربط أكثر استقرارًا، نماذج أنسب، تشخيصات أوضح، وسياق مشروع محفوظ.</p>
+            <h3>تشغيل المنصة</h3>
+            <p>راجع حالة الاتصال، الإعدادات الحالية، ومسارات التحويل من مكان واحد.</p>
             <div class="settings-actions">
               <button class="btn dark sm with-label" id="settingsHealthBtn" type="button"><span class="icon">◎</span><span class="label">فحص الصحة</span></button>
-              <button class="btn ghost sm with-label" id="settingsDefaultsBtn" type="button"><span class="icon">⚙️</span><span class="label">إعدادات احترافية</span></button>
+              <button class="btn ghost sm with-label" id="settingsDefaultsBtn" type="button"><span class="icon">⚙️</span><span class="label">تطبيق الإعدادات</span></button>
               <button class="btn ghost sm with-label" id="settingsRecommendModelBtn" type="button"><span class="icon">✨</span><span class="label">اقتراح نموذج</span></button>
             </div>
-            <div class="settings-health-output" id="settingsHealthOutput">شغّل فحص الصحة للتأكد من جاهزية البوابة، النموذج، ومحول الوثائق السحابي.</div>
+            <div class="settings-health-output" id="settingsHealthOutput">شغّل الفحص للتحقق من البوابة والنموذج وخدمات التحويل.</div>
           </div>
           <div class="settings-overview-card">
             <h3>جاهزية التشغيل</h3>
@@ -2597,17 +2586,16 @@ function refreshDeepSearchBtn(){
 
   function applyArabicProductCopy(){
     if ($('topRuntimeBadge')){
-      $('topRuntimeBadge').textContent = 'مساحة العمل جاهزة';
+      $('topRuntimeBadge').textContent = 'جاهز';
     }
     const fixedCopy = [
-      ['workspaceHeadline', 'ابدأ من مساحة عمل عربية احترافية للدردشة والبحث والتنفيذ.'],
-      ['workspaceSummary', 'اعمل من داخل مشروع واحد يجمع الدردشة والملفات والمعرفة والمخرجات التنفيذية في واجهة منظمة.'],
+      ['workspaceHeadline', 'ابدأ من مساحة عمل عربية للدردشة والملفات والمعرفة.'],
+      ['workspaceSummary', 'اعمل داخل مشروع واحد مع واجهة منظمة وخيارات تشغيل واضحة.'],
       ['signalProviderNote', 'المزوّد الحالي وطريقة المصادقة'],
       ['signalModelNote', 'مسار النموذج الرئيسي'],
       ['signalContextNote', 'الملفات والمعرفة وذاكرة المشروع'],
       ['signalModesNote', 'البث والأدوات والويب وأنماط التشغيل'],
-      ['sideHealthNote', 'قم بضبط بيئة العمل مرة واحدة ثم أدر الدردشة والملفات والمعرفة من مكان واحد.'],
-      ['composerHint', 'Enter للإرسال • Shift+Enter لسطر جديد • المرفقات والذاكرة تُدمج تلقائيًا مع السياق.']
+      ['composerHint', 'Enter للإرسال • Shift+Enter لسطر جديد • تُضاف المرفقات والذاكرة إلى السياق تلقائيًا.']
     ];
     fixedCopy.forEach(([id, text]) => {
       const el = $(id);
@@ -3135,8 +3123,8 @@ function refreshDeepSearchBtn(){
     if ($('curProjectName')) $('curProjectName').textContent = project.name;
     if ($('workspaceHeadline')){
       $('workspaceHeadline').textContent = messageCount
-        ? `تابع العمل على ${project.name} بسياق كامل ومساحة قراءة واسعة.`
-        : 'منصة عربية للعمل والبحث والتنفيذ في مكان واحد.';
+        ? `تابع العمل على ${project.name} من شاشة دردشة واسعة وواضحة.`
+        : 'ابدأ مشروعًا جديدًا أو افتح مشروعًا موجودًا لمتابعة العمل.';
     }
     if ($('workspaceSummary')){
       const briefPart = hasProjectBrief(brief) ? ` • الذاكرة: ${summarizeProjectBrief(brief)}` : '';
@@ -3158,7 +3146,7 @@ function refreshDeepSearchBtn(){
     if ($('sideModeMeta')) $('sideModeMeta').textContent = `${settings.provider} • ${settings.authMode === 'gateway' ? 'بوابة' : 'مباشر'}`;
     if ($('sideHealthNote')) $('sideHealthNote').textContent = hasProjectBrief(brief)
       ? `${readiness}. الذاكرة الحالية: ${summarizeProjectBrief(brief)}.`
-      : `${readiness}. مساحة العمل جاهزة للدردشة والمعرفة والملفات وسير العمل.`;
+      : `${readiness}.`;
 
     if ($('settingsReadyState')) $('settingsReadyState').textContent = readiness;
     if ($('settingsGatewayState')) $('settingsGatewayState').textContent = settings.authMode === 'gateway' ? (settings.gatewayUrl || 'البوابة غير مضبوطة') : 'وضع مباشر من المتصفح';
@@ -7396,10 +7384,10 @@ ${txt}`;
           updateTranscribeLabState({
             source: briefSnippet(transcribeSelectedFile.name, 26),
             engine: cloudEngineLabel,
-            quality: 'أعلى مطابقة ممكنة',
+            quality: 'سحابي',
             note: transcribeCloudHealthState?.fidelityReady
-              ? 'يتم الآن استخدام محرك تحويل سحابي عالي المطابقة. هذا هو أفضل مسار متاح للحفاظ على تنسيق الملف الأصلي مع إبقاء الملف قابلاً للتعديل.'
-              : 'يتم الآن استخدام المسار السحابي الهيكلي. الملف الناتج قابل للتعديل، لكن المطابقة التامة تحتاج محرك تحويل خارجي متخصص.'
+              ? 'تم اختيار المسار السحابي المرتبط بمحرك تحويل خارجي لهذا الملف.'
+              : 'تم اختيار المسار السحابي الهيكلي لهذا الملف. قد يحتاج المستند النهائي إلى مراجعة إذا كان معقدًا.'
           });
           if (!transcribeLastStructured){
             $('transcribeStats').textContent = 'تحضير الملف للمسار السحابي...';
@@ -7449,8 +7437,8 @@ ${txt}`;
             engine: exactMode ? 'تحويل DOCX • سحابي مطابق' : 'تحويل DOCX • سحابي هيكلي',
             quality: exactMode ? 'مطابقة عالية' : 'مطابقة جيدة قابلة للتعديل',
             note: exactMode
-              ? (result?.cloudMessage || 'اكتمل التحويل عبر محرك سحابي عالي المطابقة.')
-              : 'اكتمل التحويل السحابي الهيكلي. للحصول على أقرب مطابقة ممكنة دون تغير التنسيق يلزم ربط محرك تحويل سحابي خارجي متخصص.'
+              ? (result?.cloudMessage || 'اكتمل التحويل عبر المسار السحابي الخارجي.')
+              : 'اكتمل التحويل عبر المسار السحابي الهيكلي. راجع النتيجة إذا كان المستند يحتوي على جداول أو هوامش معقدة.'
           });
         }
         toast('⬇️ تم تنزيل ملف Word قابل للتعديل');

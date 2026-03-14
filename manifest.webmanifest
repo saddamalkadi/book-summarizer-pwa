@@ -1,7 +1,7 @@
 {
-  "name": "AI Workspace Studio v7.6",
+  "name": "AI Workspace Studio v8.1",
   "short_name": "AI Studio",
-  "description": "منصة عربية للدردشة والملفات والمعرفة وسير العمل مع تسجيل Google وخطط مجانية ومدفوعة.",
+  "description": "منصة عربية للدردشة والملفات والمعرفة وسير العمل مع خطط مجانية ومدفوعة.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

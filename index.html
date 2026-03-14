@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.0</title>
+    <title>AI Workspace Studio v8.1</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -73,14 +73,14 @@
     .side{background:linear-gradient(180deg,#0b1020,#14214a); color:#fff; padding:14px; display:flex; flex-direction:column; gap:12px; overflow-y:auto; min-height:0; border-radius:20px; box-shadow:var(--shadow); max-height:calc(var(--app-vh) - 24px); position:sticky; top:12px;}
     .brand{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12); border-radius:16px;}
     .brand .name{font-weight:1000}
-    .brand .sub{opacity:.85; font-size:12px; margin-top:2px}
+    .brand .sub{opacity:.82; font-size:11px; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
     .iconbtn{border:none; background:rgba(255,255,255,.12); color:#fff; width:34px; height:34px; border-radius:12px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; font-size:15px;}
-    .nav{display:flex; flex-direction:column; gap:10px; overflow:auto; padding:4px;}
+    .nav{display:flex; flex:1; min-height:0; flex-direction:column; gap:10px; overflow:auto; padding:4px;}
     .navbtn{border:none; cursor:pointer; padding:12px 14px; border-radius:16px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12); color:#fff; display:flex; align-items:center; justify-content:space-between; gap:10px; font-weight:1000; width:100%; -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); transition:transform .2s ease, background .2s ease, border-color .2s ease;}
     .navbtn:hover{transform:translateY(-1px); background:rgba(255,255,255,.15); border-color:rgba(255,255,255,.26);}
     .navbtn.active{background:linear-gradient(135deg,rgba(103,145,255,.45),rgba(55,95,225,.25)); border-color:rgba(179,199,255,.65); box-shadow:0 10px 25px rgba(9,20,60,.25);}
     .navbtn .meta{opacity:.8; font-size:11px; font-weight:900; padding:2px 8px; border-radius:999px; background:rgba(255,255,255,.12);}
-    .sidecard{margin-top:auto; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12); border-radius:16px; padding:12px; font-size:12.5px; line-height:1.6; opacity:.95;}
+    .sidecard{display:none;}
     .main{display:flex; flex-direction:column; gap:12px; min-width:0; min-height:0; max-height:calc(var(--app-vh) - 24px); overflow:hidden;}
     .topbar{background:var(--card); border:1px solid rgba(10,20,60,0.06); border-radius:var(--r); box-shadow:var(--shadow); padding:10px; display:flex; align-items:center; justify-content:space-between; gap:10px; position:sticky; top:0; z-index:20;}
     .topbar .left{display:flex; align-items:center; gap:10px; min-width:0}
@@ -1428,7 +1428,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       <div class="brand">
         <div>
           <div class="name">AI Workspace Studio</div>
-          <div class="sub">الدردشة • اللوحة • الملفات • المشاريع • النماذج</div>
+          <div class="sub">منصة عمل عربية للدردشة والملفات والمشاريع</div>
         </div>
         <button class="iconbtn" id="closeSideBtn" title="إغلاق">✕</button>
       </div>
@@ -1444,10 +1444,6 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
         <button class="navbtn" data-page="projects"><span>🗂️ المشاريع</span><span class="meta" id="navProjMeta">—</span></button>
         <button class="navbtn" data-page="settings"><span>⚙️ الإعدادات</span><span class="meta" id="navSetMeta">—</span></button>
       </nav>
-
-      <div class="sidecard">
-        <b>ملاحظة أمان:</b> مفاتيح API داخل المتصفح مناسبة للتجربة. للنشر العام استخدم Proxy لحمايتها.
-      </div>
     </aside>
 
     <main class="main">
@@ -1547,9 +1543,9 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
           <div class="workspace-deck" id="workspaceDeck">
             <section class="workspace-hero">
               <div>
-                <div class="workspace-eyebrow">مساحة عمل ذكاء اصطناعي</div>
-                <div class="workspace-title" id="workspaceHeadline">منصة واحدة للدردشة والبحث والتنفيذ والتسليم.</div>
-                <div class="workspace-summary" id="workspaceSummary">أدر المحادثات والملفات والمعرفة والمخرجات التشغيلية من واجهة عربية احترافية واحدة.</div>
+                <div class="workspace-eyebrow">مساحة العمل</div>
+                <div class="workspace-title" id="workspaceHeadline">الدردشة والملفات والمعرفة في مساحة واحدة.</div>
+                <div class="workspace-summary" id="workspaceSummary">ابدأ من مشروع منظم، ثم بدّل بين الأدوات حسب حاجتك.</div>
               </div>
               <div class="workspace-actions">
                 <button class="workspace-btn primary" type="button" data-quick-prompt="strategy_brief">ملف تنفيذي</button>
@@ -1603,7 +1599,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
 
           <div class="chips" id="chatAttachChips"></div>
           <div class="chips" id="chatChips"></div>
-          <div class="hint" style="padding:0 10px 10px">تلميح: اطلب إنشاء ملفات باستخدام قالب <span class="kbd">```file</span> وسيظهر رابط في التحميلات.</div>
+          <div class="hint" style="padding:0 10px 10px">أي ملف ينشئه التطبيق سيظهر في قسم التحميلات.</div>
         </div>
 
 
@@ -1754,7 +1750,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
             <div class="panel">
               <div class="head"><span>التفريغ النصي</span><span class="hint" id="transcribeStats">جاهز</span></div>
               <div class="body">
-                <div class="hint" style="line-height:1.8; margin-bottom:8px">استخراج النص من الصور أو PDF ثم مراجعته وحفظه.</div>
+                <div class="hint" style="line-height:1.8; margin-bottom:8px">استخرج النص ثم راجعه وصدّره بصيغة مناسبة.</div>
                 <div id="transcribeDropZone" style="border:2px dashed var(--line); border-radius:14px; padding:14px; margin-bottom:10px; background:#fbfcff">
                   <strong>منطقة رفع ملفات / سحب وإفلات</strong>
                   <div class="hint" style="margin-top:6px">اسحب ملف PDF أو صورة هنا، أو استخدم أزرار الاختيار/اللصق.</div>
@@ -1768,24 +1764,24 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
               </div>
             </div>
             <div class="panel">
-              <div class="head"><span>محرك تحويل احترافي PDF → Word</span><span class="hint">الحفاظ على التنسيق قدر الإمكان</span></div>
+              <div class="head"><span>تحويل PDF إلى Word</span><span class="hint">مسار محلي أو سحابي حسب الإعدادات</span></div>
               <div class="body">
                 <div class="transcribe-side-stack">
                   <section class="transcribe-side-card">
-                    <h4>المسار الذكي</h4>
-                    <p>التطبيق يختار بين المحلي والسحابي حسب الوضع المجاني، حدود التكلفة، حجم الملف، وعدد الصفحات. عند السماح بالسحابة يتم إرسال تمثيل منظم للصفحات بدل الملف الخام لتقليل النقل وتحسين المطابقة.</p>
+                    <h4>آلية التشغيل</h4>
+                    <p>يعرض التطبيق المسار المستخدم قبل البدء: محلي أو سحابي، مع مراعاة الخطة وحدود التكلفة.</p>
                   </section>
                   <section class="transcribe-side-card">
-                    <h4>أفضل نتيجة ممكنة</h4>
+                    <h4>تنبيه جودة</h4>
                     <ol class="transcribe-checklist">
                       <li>استخدم PDF رقمي إذا كان متاحًا بدل النسخ الممسوحة ضوئيًا.</li>
-                      <li>فعّل الوضع السحابي فقط للملفات التي تحتاج مطابقة أعلى.</li>
-                      <li>راجع المخرجات النهائية إذا كان المستند يحتوي على جداول معقدة أو هوامش كثيرة.</li>
+                      <li>قد تحتاج المستندات المعقدة إلى مراجعة بعد التحويل.</li>
+                      <li>اختر المسار السحابي فقط عندما تحتاجه فعليًا.</li>
                     </ol>
                   </section>
                   <section class="transcribe-side-card">
-                    <h4>الوضع المجاني والتحكم بالتكلفة</h4>
-                    <p>يمكنك فرض المعالجة المحلية بالكامل، أو استخدام وضع متوازن، أو فتح المسار السحابي للجودة القصوى. كل قرار يظهر في بطاقة المختبر أعلى الصفحة قبل بدء التحويل.</p>
+                    <h4>الخطة والتكلفة</h4>
+                    <p>الخطة المجانية تستخدم المسارات المجانية فقط. يمكنك ضبط حدود السحابة والتكلفة من الإعدادات.</p>
                   </section>
                 </div>
               </div>
@@ -1801,7 +1797,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
             <button class="btn ghost icon" id="pinFilterBtn" title="المثبت" aria-label="المثبت">📌</button>
             <button class="btn danger icon" id="clearDlBtn" title="مسح" aria-label="مسح">🗑️</button>
           </div>
-          <div class="hint" style="padding:10px">أي ملف يتم إنشاؤه من الذكاء عبر قالب <span class="kbd">```file</span> يظهر هنا. يمكنك إعادة التسمية والتثبيت.</div>
+          <div class="hint" style="padding:10px">تظهر هنا الملفات التي ينشئها التطبيق أو التي تختار حفظها للتنزيل.</div>
           <div class="panel" style="margin:0 10px 10px; min-height:0; flex:1">
             <div class="body" id="downloadsList"></div>
           </div>
@@ -2023,7 +2019,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
                 </div>
               </div>
 
-              <div class="hint" style="margin-top:12px">* بحث الويب يعتمد على المزوّد. في v2 نستخدم OpenRouter <span class="kbd">:online</span>.</div>
+              <div class="hint" style="margin-top:12px">بحث الويب يعتمد على المزوّد والإعدادات الحالية.</div>
             </div>
           </div>
         </div>
@@ -2075,11 +2071,11 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     })();
   </script>
 
-<script src="app.js?v=80"></script>
+<script src="app.js?v=81"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-navigator.serviceWorker.register("./sw.js?v=80").then((registration) => {
+navigator.serviceWorker.register("./sw.js?v=81").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {
