@@ -1740,7 +1740,18 @@ function refreshDeepSearchBtn(){
     }
     const reason = String(result?.noSuccess?.noSuccessReasonCode || '').trim();
     const info = String(result?.noSuccess?.noSuccessAdditionalInfo || '').trim();
-    if (reason === 'SIGN_IN_CANCELLED') return 'تم إلغاء تسجيل الدخول من Google.';
+    if (reason === 'SIGN_IN_CANCELLED'){
+      if (/activity.*cancelled|cancell?ed by the user|dismissed by the user/i.test(info)){
+        return 'تم إلغاء تسجيل الدخول من Google.';
+      }
+      if (/ApiException:\s*10|Caller not whitelisted|OAuth 2\.0 Client ID of type 'Android'|SHA-1 certificate fingerprint|Package name:/i.test(info)){
+        return `تم اختيار الحساب لكن Google أوقف تسجيل الدخول لأن إعداد Android OAuth غير مكتمل أو لا يطابق توقيع التطبيق. ${getAndroidGoogleSetupHint()}\n${info}`;
+      }
+      if (info){
+        return `تم إيقاف تسجيل Google على Android بعد اختيار الحساب.\n${info}`;
+      }
+      return 'تم إلغاء تسجيل الدخول من Google.';
+    }
     if (reason === 'NO_CREDENTIAL'){
       return 'لم يجد Android جلسة Google جاهزة لهذا التطبيق بعد. اضغط زر المتابعة لاختيار الحساب من الجهاز.';
     }
