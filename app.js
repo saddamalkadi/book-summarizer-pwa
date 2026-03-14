@@ -383,13 +383,91 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     return { ctx:'', results:[] };
   }
 }
+  function normalizeDocxCloudEndpoint(raw){
+    const normalized = normalizeEndpointUrl(raw || '');
+    if (!normalized) return '';
+    try{
+      const parsed = new URL(normalized);
+      const host = String(parsed.hostname || '').toLowerCase();
+      const path = String(parsed.pathname || '').replace(/\/+$/,'');
+      const defaultOrigin = endpointOrigin(DEFAULT_SETTINGS.cloudConvertEndpoint || '');
+      const targetOrigin = (/dash\.cloudflare\.com$/.test(host) || path.includes('/workers/services/view/sadam-convert/'))
+        ? defaultOrigin
+        : parsed.origin;
+      if (!targetOrigin) return normalized.replace(/\/+$/,'');
+      if (/\/convert\/pdf-to-docx$/i.test(path)) return `${targetOrigin}/convert/pdf-to-docx`;
+      if (/\/pdf-to-docx$/i.test(path)) return `${targetOrigin}/convert/pdf-to-docx`;
+      if (/\/api\/convert\/pdf-to-docx$/i.test(path)) return `${targetOrigin}/convert/pdf-to-docx`;
+      if (/\/ocr(?:\/image)?$/i.test(path) || /\/api\/ocr$/i.test(path)) return `${targetOrigin}/convert/pdf-to-docx`;
+      if (!path || path === '/' || /^\/(?:health|v1)$/i.test(path)) return `${targetOrigin}/convert/pdf-to-docx`;
+      return normalized.replace(/\/+$/,'');
+    }catch(_){
+      return normalized.replace(/\/+$/,'');
+    }
+  }
 
+  function normalizeOcrCloudEndpoint(raw){
+    const normalized = normalizeEndpointUrl(raw || '');
+    if (!normalized) return '';
+    try{
+      const parsed = new URL(normalized);
+      const host = String(parsed.hostname || '').toLowerCase();
+      const path = String(parsed.pathname || '').replace(/\/+$/,'');
+      const defaultOrigin = endpointOrigin(DEFAULT_SETTINGS.ocrCloudEndpoint || '');
+      const targetOrigin = (/dash\.cloudflare\.com$/.test(host) || path.includes('/workers/services/view/sadam-convert/'))
+        ? defaultOrigin
+        : parsed.origin;
+      if (!targetOrigin) return normalized.replace(/\/+$/,'');
+      if (/\/ocr$/i.test(path)) return `${targetOrigin}/ocr`;
+      if (/\/ocr\/image$/i.test(path)) return `${targetOrigin}/ocr`;
+      if (/\/api\/ocr$/i.test(path)) return `${targetOrigin}/ocr`;
+      if (/\/convert\/pdf-to-docx$/i.test(path) || /\/pdf-to-docx$/i.test(path) || /\/api\/convert\/pdf-to-docx$/i.test(path)) return `${targetOrigin}/ocr`;
+      if (!path || path === '/' || /^\/(?:health|v1)$/i.test(path)) return `${targetOrigin}/ocr`;
+      return normalized.replace(/\/+$/,'');
+    }catch(_){
+      return normalized.replace(/\/+$/,'');
+    }
+  }
 
+  function buildDocxCloudEndpoints(settings = getSettings()){
+    return [...new Set([
+      normalizeDocxCloudEndpoint(settings.cloudConvertEndpoint || ''),
+      normalizeDocxCloudEndpoint(settings.cloudConvertFallbackEndpoint || '')
+    ].filter(Boolean))];
+  }
 
+  function buildOcrCloudEndpoints(settings = getSettings()){
+    return [...new Set([
+      normalizeOcrCloudEndpoint(settings.ocrCloudEndpoint || '')
+    ].filter(Boolean))];
+  }
 
-  function getSettings(){ return { ...DEFAULT_SETTINGS, ...(loadJSON(KEYS.settings, {}) || {}) }; }
+  function normalizeStoredSettings(raw = {}){
+    const next = { ...(raw || {}) };
+    if ('cloudConvertEndpoint' in next || DEFAULT_SETTINGS.cloudConvertEndpoint){
+      next.cloudConvertEndpoint = normalizeDocxCloudEndpoint(next.cloudConvertEndpoint || DEFAULT_SETTINGS.cloudConvertEndpoint);
+    }
+    if ('cloudConvertFallbackEndpoint' in next){
+      next.cloudConvertFallbackEndpoint = normalizeDocxCloudEndpoint(next.cloudConvertFallbackEndpoint || '');
+    }
+    if ('ocrCloudEndpoint' in next || DEFAULT_SETTINGS.ocrCloudEndpoint){
+      next.ocrCloudEndpoint = normalizeOcrCloudEndpoint(next.ocrCloudEndpoint || DEFAULT_SETTINGS.ocrCloudEndpoint);
+    }
+    return next;
+  }
+
+  function getSettings(){
+    const stored = loadJSON(KEYS.settings, {}) || {};
+    const normalized = normalizeStoredSettings(stored);
+    try{
+      if (JSON.stringify(stored) !== JSON.stringify(normalized)){
+        saveJSON(KEYS.settings, normalized);
+      }
+    }catch(_){ }
+    return { ...DEFAULT_SETTINGS, ...normalized };
+  }
   function setSettings(patch){
-    const s = { ...getSettings(), ...(patch||{}) };
+    const s = normalizeStoredSettings({ ...getSettings(), ...(patch||{}) });
     saveJSON(KEYS.settings, s);
     return s;
   }
@@ -4154,7 +4232,7 @@ async function fileToText(file){
     const settings = getSettings();
     const policy = canUseCloudFeature('ocr', meta, settings);
     if (!policy.ok) return '';
-    const endpoints = buildEndpointCandidates(settings.ocrCloudEndpoint, ['ocr', 'ocr/image', 'api/ocr']).filter(Boolean);
+    const endpoints = buildOcrCloudEndpoints(settings);
     if (!endpoints.length) return '';
     const b64 = String(dataUrl || '').split(',')[1] || '';
     if (!b64) return '';
@@ -4454,10 +4532,7 @@ async function fileToText(file){
 
   async function convertPdfToDocxByWorker(file){
     const settings = getSettings();
-    const endpoints = [
-      ...buildEndpointCandidates(settings.cloudConvertEndpoint, ['convert/pdf-to-docx', 'pdf-to-docx', 'api/convert/pdf-to-docx']),
-      ...buildEndpointCandidates(settings.cloudConvertFallbackEndpoint, ['convert/pdf-to-docx', 'pdf-to-docx', 'api/convert/pdf-to-docx'])
-    ].filter(Boolean);
+    const endpoints = buildDocxCloudEndpoints(settings);
     if (!endpoints.length) throw new Error('Cloud PDF→Word endpoint غير مضبوط في الإعدادات');
     const tries = clamp(Number(settings.cloudRetryMax || 2), 1, 5);
     const ab = await file.arrayBuffer();
@@ -4504,10 +4579,7 @@ async function fileToText(file){
     const policy = canUseCloudFeature('docx', fileMeta, settings);
     if (!policy.ok) throw new Error(policy.reason);
 
-    const endpoints = [
-      ...buildEndpointCandidates(settings.cloudConvertEndpoint, ['convert/pdf-to-docx', 'pdf-to-docx', 'api/convert/pdf-to-docx']),
-      ...buildEndpointCandidates(settings.cloudConvertFallbackEndpoint, ['convert/pdf-to-docx', 'pdf-to-docx', 'api/convert/pdf-to-docx'])
-    ].filter(Boolean);
+    const endpoints = buildDocxCloudEndpoints(settings);
     if (!endpoints.length) throw new Error('رابط تحويل PDF إلى Word السحابي غير مضبوط في الإعدادات');
 
     const structured = opts.structured || await extractPdfStrategic(file, opts);
@@ -5344,6 +5416,7 @@ async function maybeUpdateThreadSummary(pid, tid){
     if (/rابط تحويل pdf.*غير مضبوط|cloud pdf|pdf.*word.*غير مضبوط|endpoint.*غير مضبوط/i.test(msg)) return 'رابط التحويل السحابي PDF إلى Word غير مضبوط في الإعدادات.';
     if (/no\s+(?:cookie|kookie)\s+auth\s+credential/i.test(msg)) return 'رابط خدمة التحويل السحابي محمي بـ Cookies أو Cloudflare Access، لذلك لا يستطيع التطبيق استخدامه. استخدم رابط Worker مباشر.';
     if (/insufficient\s+(credits?|balance)|not enough credits?|quota.*exceeded|billing|payment required|402\b/i.test(msg)) return 'نفد رصيد خدمة التحويل أو رصيد المزود المرتبط بها. يلزم شحن الرصيد أو استخدام المسار المحلي.';
+    if (/not_found|المسار المطلوب غير موجود/i.test(msg)) return 'رابط التحويل السحابي الحالي غير صحيح أو قديم. تم تحديث التطبيق لاستخدام المسار الصحيح؛ حدّث الصفحة أو أعد فتح التطبيق ثم جرّب مرة أخرى.';
     if (/cloudconvert_base64_limit_exceeded/i.test(msg)) return 'هذا الملف يتجاوز حد الحجم المسموح لمسار المطابقة العالية عبر CloudConvert في الخطة الحالية. استخدم ملفًا أصغر أو المسار المحلي.';
     if (/cloudconvert_(?:job_failed|job_error|export_missing)/i.test(msg)) return 'محرك CloudConvert للمطابقة العالية لم يكمل إنشاء ملف Word صالح. تحقق من الرصيد أو أعد المحاولة أو استخدم المسار المحلي.';
     if (/docx_upstream_failed|docx_upstream_empty|docx_upstream_bad_json/i.test(msg)) return 'خدمة المطابقة العالية لتحويل PDF إلى Word متصلة لكنها لم ترجع ملف Word صالحًا. يمكن استخدام المسار الهيكلي أو ضبط محرك المطابقة العالية.';
@@ -6986,9 +7059,9 @@ let pinOnly = false;
     const authMode = $('authMode') ? $('authMode').value : 'browser';
     const gatewayInput = $('gatewayUrl') ? normalizeEndpointUrl($('gatewayUrl').value) : '';
     const gatewayToken = $('gatewayToken') ? $('gatewayToken').value.trim() : '';
-    const cloudConvertEndpoint = $('cloudConvertEndpoint') ? normalizeEndpointUrl($('cloudConvertEndpoint').value) : '';
-    const cloudConvertFallbackEndpoint = $('cloudConvertFallbackEndpoint') ? normalizeEndpointUrl($('cloudConvertFallbackEndpoint').value) : '';
-    const ocrCloudEndpoint = $('ocrCloudEndpoint') ? normalizeEndpointUrl($('ocrCloudEndpoint').value) : '';
+    const cloudConvertEndpoint = $('cloudConvertEndpoint') ? normalizeDocxCloudEndpoint($('cloudConvertEndpoint').value) : '';
+    const cloudConvertFallbackEndpoint = $('cloudConvertFallbackEndpoint') ? normalizeDocxCloudEndpoint($('cloudConvertFallbackEndpoint').value) : '';
+    const ocrCloudEndpoint = $('ocrCloudEndpoint') ? normalizeOcrCloudEndpoint($('ocrCloudEndpoint').value) : '';
     const ocrLang = $('ocrLang') ? $('ocrLang').value.trim() : 'ara+eng';
     const cloudRetryMax = $('cloudRetryMax') ? clamp(Number($('cloudRetryMax').value || 2), 1, 5) : 2;
     const freeMode = $('freeMode') ? !!$('freeMode').checked : false;
@@ -7014,6 +7087,9 @@ let pinOnly = false;
     }
     const gatewayUrl = gatewayValidation.normalized || '';
     if ($('gatewayUrl')) $('gatewayUrl').value = gatewayUrl;
+    if ($('cloudConvertEndpoint')) $('cloudConvertEndpoint').value = cloudConvertEndpoint;
+    if ($('cloudConvertFallbackEndpoint')) $('cloudConvertFallbackEndpoint').value = cloudConvertFallbackEndpoint;
+    if ($('ocrCloudEndpoint')) $('ocrCloudEndpoint').value = ocrCloudEndpoint;
 
     // if gateway is enabled and url provided, we force baseUrl to gateway/v1
     let baseUrl = $('baseUrl').value.trim();
