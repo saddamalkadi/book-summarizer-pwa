@@ -5223,6 +5223,113 @@ async function fileToText(file){
     });
     return out;
   }
+  function inferGeneratedDownloadMeta(text = '', index = 0){
+    const source = String(text || '');
+    const explicitName = source.match(/(?:name|filename|اسم الملف)\s*[:=]\s*["'`]?([^\s"'`]+?\.[a-z0-9]{2,8})/i);
+    if (explicitName?.[1]){
+      const name = String(explicitName[1] || '').trim();
+      return {
+        name,
+        mime: inferMimeFromName(name) || 'application/octet-stream'
+      };
+    }
+    const hintedName = source.match(/\b([a-z0-9._-]+\.(?:docx?|xlsx?|pptx?|pdf|zip|rar|7z|csv|txt|md|json|xml|png|jpe?g|webp|gif|svg|mp4|mov|avi|mkv|webm|mp3|wav|m4a))\b/i);
+    if (hintedName?.[1]){
+      const name = String(hintedName[1] || '').trim();
+      return {
+        name,
+        mime: inferMimeFromName(name) || 'application/octet-stream'
+      };
+    }
+    const catalog = [
+      { re: /(?:powerpoint|pptx|بوربوينت|عرض\s+تقديمي)/i, ext: 'pptx' },
+      { re: /(?:excel|xlsx|csv|اكسل|جدول)/i, ext: 'xlsx' },
+      { re: /(?:word|docx|doc|ورد|مستند)/i, ext: 'docx' },
+      { re: /(?:pdf|بي\s*دي\s*اف)/i, ext: 'pdf' },
+      { re: /(?:zip|rar|7z|أرشيف|مضغوط)/i, ext: 'zip' },
+      { re: /(?:mp4|mov|avi|mkv|webm|video|فيديو)/i, ext: 'mp4' },
+      { re: /(?:mp3|wav|m4a|audio|صوت)/i, ext: 'mp3' },
+      { re: /(?:png|jpe?g|webp|gif|svg|image|صورة)/i, ext: 'png' }
+    ];
+    const match = catalog.find((item) => item.re.test(source));
+    const ext = match?.ext || 'bin';
+    const name = `generated-file-${index + 1}.${ext}`;
+    return {
+      name,
+      mime: inferMimeFromName(name) || 'application/octet-stream'
+    };
+  }
+  function normalizeBase64Payload(raw = ''){
+    return String(raw || '')
+      .trim()
+      .replace(/^[`"'.,:;()[\]{}<>-]+|[`"'.,:;()[\]{}<>-]+$/g, '')
+      .replace(/\s+/g, '');
+  }
+  function isProbablyBase64Payload(raw = ''){
+    const value = normalizeBase64Payload(raw);
+    if (value.length < 160) return false;
+    if (!/^[A-Za-z0-9+/=]+$/.test(value)) return false;
+    const paddingCount = (value.match(/=/g) || []).length;
+    if (paddingCount > 2) return false;
+    const letters = (value.match(/[A-Za-z]/g) || []).length;
+    return letters >= Math.floor(value.length * 0.45);
+  }
+  function extractLooseBinaryPayloads(text){
+    const source = String(text || '');
+    const lines = source.split(/\r?\n/);
+    const kept = [];
+    const entries = [];
+    let fileIndex = 0;
+    for (let i = 0; i < lines.length; ){
+      const rawLine = String(lines[i] || '');
+      const trimmed = rawLine.trim();
+      const dataUrl = trimmed.match(/^(data:[^,\s]+;base64,[A-Za-z0-9+/=\s]+)$/i)?.[1] || '';
+      if (dataUrl){
+        const payload = String(dataUrl || '').split(',', 2)[1] || '';
+        if (isProbablyBase64Payload(payload)){
+          const meta = inferGeneratedDownloadMeta(source, fileIndex);
+          entries.push({
+            name: meta.name,
+            mime: meta.mime,
+            encoding: 'dataurl',
+            content: dataUrl
+          });
+          fileIndex += 1;
+          i += 1;
+          continue;
+        }
+      }
+      const chunk = [];
+      let j = i;
+      while (j < lines.length){
+        const normalized = normalizeBase64Payload(lines[j]);
+        if (!isProbablyBase64Payload(normalized)) break;
+        chunk.push(normalized);
+        j += 1;
+      }
+      if (chunk.length){
+        const joined = chunk.join('');
+        if (isProbablyBase64Payload(joined)){
+          const meta = inferGeneratedDownloadMeta(source, fileIndex);
+          entries.push({
+            name: meta.name,
+            mime: meta.mime,
+            encoding: 'base64',
+            content: joined
+          });
+          fileIndex += 1;
+          i = j;
+          continue;
+        }
+      }
+      kept.push(rawLine);
+      i += 1;
+    }
+    return {
+      entries,
+      text: kept.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+    };
+  }
   function normalizeDownloadEntry(entry = {}){
     const rawUrl = sanitizeDownloadUrl(entry.url || entry.href || '');
     const rawEncoding = String(entry.encoding || (rawUrl ? 'url' : 'text')).trim().toLowerCase();
@@ -5416,15 +5523,15 @@ async function fileToText(file){
     return out;
   }
   function stripFileBlocks(text){
-    return String(text || '')
-      .replace(getFileBlockRegex(), '')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
+    const withoutBlocks = String(text || '').replace(getFileBlockRegex(), '');
+    return extractLooseBinaryPayloads(withoutBlocks).text;
   }
   function ensureDownloadsFromText(text, sourceMessageId=''){
     const blocks = parseFileBlocks(text);
-    const links = extractDownloadLinksFromText(stripFileBlocks(text));
-    const items = [...blocks, ...links];
+    const withoutBlocks = String(text || '').replace(getFileBlockRegex(), '');
+    const loose = extractLooseBinaryPayloads(withoutBlocks);
+    const links = extractDownloadLinksFromText(loose.text);
+    const items = [...blocks, ...loose.entries, ...links];
     if (!items.length) return { entries: [], newCount: 0 };
     const entries = [];
     let newCount = 0;
@@ -5811,7 +5918,8 @@ async function fileToText(file){
         + "\\n```file name=\"slides.pptx\" mime=\"application/vnd.openxmlformats-officedocument.presentationml.presentation\" encoding=\"base64\"\\n...\\n```"
         + "\\n```file name=\"video.mp4\" mime=\"video/mp4\" url=\"https://...\"\\n```"
         + "\\nاستخدم encoding=\"base64\" للملفات الثنائية مثل PowerPoint وExcel وZIP والصور والفيديو، أو url عندما يكون الملف مستضافًا على رابط مباشر."
-        + "\\nوسيحوّل التطبيق هذا البلوك تلقائيًا إلى رابط وزر تنزيل داخل الدردشة. لا تكرر محتوى الملف خارج هذا البلوك إلا إذا طلب المستخدم ذلك.";
+        + "\\nوسيحوّل التطبيق هذا البلوك تلقائيًا إلى رابط وزر تنزيل داخل الدردشة. لا تكرر محتوى الملف خارج هذا البلوك إلا إذا طلب المستخدم ذلك."
+        + "\\nممنوع إظهار base64 الخام أو البايتات الثنائية كنص مرئي داخل الرسالة.";
     return sys;
   }
 
