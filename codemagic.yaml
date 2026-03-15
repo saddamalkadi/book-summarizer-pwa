@@ -1,0 +1,46 @@
+workflows:
+  ios-cloud-ipa:
+    name: AI Workspace Studio iPhone Cloud IPA
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    environment:
+      vars:
+        XCODE_WORKSPACE: "ios/App/App.xcworkspace"
+        XCODE_SCHEME: "App"
+        BUNDLE_ID: "com.saddamalkadi.aiworkspace"
+        IOS_MARKETING_VERSION: "8.20.0"
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.saddamalkadi.aiworkspace
+    cache:
+      cache_paths:
+        - $HOME/.npm
+        - $CM_BUILD_DIR/node_modules
+        - $HOME/Library/Caches/CocoaPods
+    scripts:
+      - name: Install project dependencies
+        script: |
+          npm ci
+      - name: Sync Capacitor web assets
+        script: |
+          npm run cap:sync
+      - name: Install CocoaPods
+        script: |
+          cd ios/App
+          pod install
+      - name: Prepare iOS build number
+        script: |
+          BUILD_NUMBER="$(date +%y%m%d%H%M)"
+          python3 scripts/prepare_ios_cloud_build.py "$BUILD_NUMBER" "$IOS_MARKETING_VERSION"
+      - name: Apply iOS signing profiles
+        script: |
+          xcode-project use-profiles
+      - name: Build signed IPA
+        script: |
+          cd ios/App
+          xcode-project build-ipa --workspace "$XCODE_WORKSPACE" --scheme "$XCODE_SCHEME"
+    artifacts:
+      - ios/App/build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.app
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
