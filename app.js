@@ -5102,31 +5102,165 @@ async function fileToText(file){
   // ---------------- Downloads (```file blocks) ----------------
   function loadDownloads(){ return loadJSON(KEYS.downloads, []) || []; }
   function saveDownloads(arr){ saveJSON(KEYS.downloads, arr); }
+  const DOWNLOAD_MIME_MAP = {
+    txt: 'text/plain',
+    md: 'text/markdown',
+    csv: 'text/csv',
+    json: 'application/json',
+    xml: 'application/xml',
+    html: 'text/html',
+    htm: 'text/html',
+    css: 'text/css',
+    js: 'text/javascript',
+    pdf: 'application/pdf',
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xls: 'application/vnd.ms-excel',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ppt: 'application/vnd.ms-powerpoint',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    zip: 'application/zip',
+    rar: 'application/vnd.rar',
+    '7z': 'application/x-7z-compressed',
+    tar: 'application/x-tar',
+    gz: 'application/gzip',
+    mp3: 'audio/mpeg',
+    wav: 'audio/wav',
+    m4a: 'audio/mp4',
+    ogg: 'audio/ogg',
+    mp4: 'video/mp4',
+    mov: 'video/quicktime',
+    avi: 'video/x-msvideo',
+    mkv: 'video/x-matroska',
+    webm: 'video/webm',
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    webp: 'image/webp',
+    gif: 'image/gif',
+    svg: 'image/svg+xml',
+    bmp: 'image/bmp'
+  };
   function getFileBlockRegex(){
     return /```file\b([^\n]*)\n([\s\S]*?)\n```/gi;
   }
   function parseBlockAttributes(raw){
     const attrs = {};
-    String(raw || '').replace(/(\w+)="([^"]*)"/g, (_, key, value) => {
+    String(raw || '').replace(/(\w+)=(?:"([^"]*)"|'([^']*)')/g, (_, key, quoted, singleQuoted) => {
+      const value = quoted != null ? quoted : (singleQuoted != null ? singleQuoted : '');
       attrs[String(key || '').toLowerCase()] = value || '';
       return '';
     });
     return attrs;
   }
+  function sanitizeDownloadUrl(raw){
+    const value = String(raw || '').trim();
+    if (!value) return '';
+    if (/^(https?:|data:|blob:)/i.test(value)) return value;
+    return '';
+  }
+  function inferMimeFromName(name = ''){
+    const cleaned = String(name || '').trim().split('?')[0].split('#')[0];
+    const match = cleaned.match(/\.([a-z0-9]{1,8})$/i);
+    const ext = String(match?.[1] || '').toLowerCase();
+    return DOWNLOAD_MIME_MAP[ext] || '';
+  }
+  function extractFilenameFromUrl(rawUrl = '', fallback = 'download.bin'){
+    const direct = String(rawUrl || '').trim();
+    if (!direct) return fallback;
+    if (/^data:/i.test(direct)) return fallback;
+    try{
+      const url = new URL(direct);
+      const fromQuery = url.searchParams.get('filename') || url.searchParams.get('file') || url.searchParams.get('name');
+      if (fromQuery) return decodeURIComponent(fromQuery);
+      const pathName = decodeURIComponent(String(url.pathname || '').split('/').pop() || '');
+      return pathName || fallback;
+    }catch(_){
+      return fallback;
+    }
+  }
+  function looksLikeDownloadUrl(rawUrl = '', label = ''){
+    const value = String(rawUrl || '').trim();
+    if (!sanitizeDownloadUrl(value)) return false;
+    if (/^data:|^blob:/i.test(value)) return true;
+    if (/\.(pdf|docx?|xlsx?|pptx?|zip|rar|7z|csv|json|xml|txt|md|png|jpe?g|webp|gif|svg|mp4|mov|avi|mkv|webm|mp3|wav|m4a)(?:[\?#]|$)/i.test(value)) return true;
+    if (/download|attachment|raw=1|response-content-disposition/i.test(value)) return true;
+    return /\.[a-z0-9]{2,8}$/i.test(String(label || '').trim());
+  }
+  function extractDownloadLinksFromText(text){
+    const out = [];
+    const seen = new Set();
+    const pushEntry = (name, url, mime = '') => {
+      const cleanUrl = sanitizeDownloadUrl(url);
+      if (!cleanUrl || !looksLikeDownloadUrl(cleanUrl, name)) return;
+      const derivedName = String(name || '').trim() || extractFilenameFromUrl(cleanUrl);
+      const key = `${derivedName}\u241f${cleanUrl}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push({
+        name: derivedName,
+        mime: mime || inferMimeFromName(derivedName) || inferMimeFromName(extractFilenameFromUrl(cleanUrl)) || 'application/octet-stream',
+        encoding: 'url',
+        url: cleanUrl,
+        content: ''
+      });
+    };
+
+    const source = String(text || '');
+    source.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+|data:[^)]+|blob:[^)]+)\)/gi, (_, label, url) => {
+      pushEntry(String(label || '').trim(), String(url || '').trim());
+      return '';
+    });
+    source.replace(/<a\b[^>]*href=(?:"([^"]+)"|'([^']+)')[^>]*>([\s\S]*?)<\/a>/gi, (_, href1, href2, inner) => {
+      const href = String(href1 || href2 || '').trim();
+      const label = String(inner || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      pushEntry(label, href);
+      return '';
+    });
+    source.replace(/\b(https?:\/\/[^\s<>"')]+|data:[^\s<>"']+|blob:[^\s<>"']+)/gi, (_, url) => {
+      pushEntry('', String(url || '').trim());
+      return '';
+    });
+    return out;
+  }
   function normalizeDownloadEntry(entry = {}){
+    const rawUrl = sanitizeDownloadUrl(entry.url || entry.href || '');
+    const rawEncoding = String(entry.encoding || (rawUrl ? 'url' : 'text')).trim().toLowerCase();
+    const encoding = rawEncoding === 'base64'
+      ? 'base64'
+      : rawEncoding === 'dataurl'
+      ? 'dataurl'
+      : rawEncoding === 'url'
+      ? 'url'
+      : 'text';
+    const derivedName = String(entry.name || '').trim() || extractFilenameFromUrl(rawUrl, 'download.bin');
+    const derivedMime = String(entry.mime || '').trim()
+      || inferMimeFromName(derivedName)
+      || inferMimeFromName(extractFilenameFromUrl(rawUrl))
+      || (encoding === 'text' ? 'text/plain' : 'application/octet-stream');
     const normalized = {
       id: String(entry.id || makeId('dl')),
-      name: String(entry.name || 'output.txt').trim() || 'output.txt',
-      mime: String(entry.mime || 'text/plain').trim() || 'text/plain',
-      encoding: String(entry.encoding || 'text').trim().toLowerCase() === 'base64' ? 'base64' : 'text',
+      name: derivedName,
+      mime: derivedMime,
+      encoding,
       content: String(entry.content || ''),
+      url: rawUrl,
+      sizeBytes: toFiniteNumber(entry.sizeBytes ?? entry.bytes),
       createdAt: Number(entry.createdAt || nowTs()),
       pinned: !!entry.pinned,
       sourceMessageId: String(entry.sourceMessageId || ''),
       fingerprint: String(entry.fingerprint || '')
     };
+    if (normalized.encoding === 'url' && !normalized.url && /^data:/i.test(normalized.content || '')){
+      normalized.url = String(normalized.content || '').trim();
+      normalized.content = '';
+    }
+    if (normalized.encoding === 'dataurl' && !/^data:/i.test(normalized.content || '') && normalized.url && /^data:/i.test(normalized.url)){
+      normalized.content = normalized.url;
+      normalized.url = '';
+    }
     if (!normalized.fingerprint){
-      const seed = `${normalized.name}\u241f${normalized.mime}\u241f${normalized.encoding}\u241f${normalized.content}`;
+      const seed = `${normalized.name}\u241f${normalized.mime}\u241f${normalized.encoding}\u241f${normalized.content}\u241f${normalized.url}\u241f${normalized.sizeBytes || ''}`;
       let hash = 2166136261;
       for (let i=0; i<seed.length; i++){
         hash ^= seed.charCodeAt(i);
@@ -5164,15 +5298,62 @@ async function fileToText(file){
     if (normalized.encoding === 'base64'){
       return new Blob([decodeBase64Bytes(normalized.content)], { type: normalized.mime });
     }
+    if (normalized.encoding === 'dataurl' && /^data:/i.test(normalized.content || '')){
+      const parts = String(normalized.content || '').split(',', 2);
+      const meta = parts[0] || '';
+      const payload = parts[1] || '';
+      if (/;base64/i.test(meta)){
+        return new Blob([decodeBase64Bytes(payload)], { type: normalized.mime || meta.replace(/^data:|;base64$/gi,'') });
+      }
+      return new Blob([decodeURIComponent(payload)], { type: normalized.mime || meta.replace(/^data:/i, '') });
+    }
     const needsCharset = /^text\//i.test(normalized.mime) || /(json|xml|javascript|svg)/i.test(normalized.mime);
     const type = !needsCharset || /charset=/i.test(normalized.mime)
       ? normalized.mime
       : `${normalized.mime};charset=utf-8`;
     return new Blob([normalized.content], { type });
   }
-  function downloadStoredItem(downloadId){
+  async function downloadUrlEntry(entry){
+    const normalized = normalizeDownloadEntry(entry);
+    if (!normalized.url) return false;
+    if (/^data:/i.test(normalized.url)){
+      const anchor = document.createElement('a');
+      anchor.href = normalized.url;
+      anchor.download = normalized.name;
+      anchor.rel = 'noopener';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      return true;
+    }
+    try{
+      const response = await fetch(normalized.url, { method:'GET' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      downloadBlob(normalized.name, new Blob([blob], { type: blob.type || normalized.mime }));
+      return true;
+    }catch(_){
+      try{
+        const anchor = document.createElement('a');
+        anchor.href = normalized.url;
+        anchor.download = normalized.name;
+        anchor.target = '_blank';
+        anchor.rel = 'noopener noreferrer';
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        return true;
+      }catch(__){
+        return false;
+      }
+    }
+  }
+  async function downloadStoredItem(downloadId){
     const entry = resolveDownloadEntry(downloadId);
     if (!entry) return false;
+    if (entry.encoding === 'url' && entry.url){
+      return await downloadUrlEntry(entry);
+    }
     downloadBlob(entry.name, buildBlobFromDownload(entry));
     return true;
   }
@@ -5180,6 +5361,13 @@ async function fileToText(file){
     const normalized = normalizeDownloadEntry(entry);
     if (normalized.encoding === 'base64'){
       return Math.floor((String(normalized.content || '').replace(/\s+/g,'').length * 3) / 4);
+    }
+    if (normalized.encoding === 'dataurl' && /^data:/i.test(normalized.content || '')){
+      const payload = String(normalized.content || '').split(',', 2)[1] || '';
+      return Math.floor((payload.replace(/\s+/g,'').length * 3) / 4);
+    }
+    if (normalized.encoding === 'url'){
+      return Number(normalized.sizeBytes || 0);
     }
     return new Blob([String(normalized.content || '')]).size;
   }
@@ -5210,8 +5398,20 @@ async function fileToText(file){
     let m;
     while ((m = re.exec(s))){
       const attrs = parseBlockAttributes(m[1]);
-      if (!attrs.name || !attrs.mime) continue;
-      out.push({ name:attrs.name, mime:attrs.mime, encoding: attrs.encoding || 'text', content: m[2] || '' });
+      const url = sanitizeDownloadUrl(attrs.url || attrs.href || '');
+      const name = String(attrs.name || '').trim() || extractFilenameFromUrl(url, '');
+      const mime = String(attrs.mime || '').trim() || inferMimeFromName(name || extractFilenameFromUrl(url)) || 'application/octet-stream';
+      const encoding = String(attrs.encoding || (url ? 'url' : 'text')).trim().toLowerCase();
+      const content = m[2] || '';
+      if (!name || (!url && !content)) continue;
+      out.push({
+        name,
+        mime,
+        encoding,
+        url,
+        sizeBytes: toFiniteNumber(attrs.size || attrs.bytes),
+        content
+      });
     }
     return out;
   }
@@ -5223,14 +5423,18 @@ async function fileToText(file){
   }
   function ensureDownloadsFromText(text, sourceMessageId=''){
     const blocks = parseFileBlocks(text);
-    if (!blocks.length) return { entries: [], newCount: 0 };
+    const links = extractDownloadLinksFromText(stripFileBlocks(text));
+    const items = [...blocks, ...links];
+    if (!items.length) return { entries: [], newCount: 0 };
     const entries = [];
     let newCount = 0;
-    for (const b of blocks){
+    for (const b of items){
       const saved = upsertDownload({
         name: b.name,
         mime: b.mime,
         encoding: b.encoding,
+        url: b.url,
+        sizeBytes: b.sizeBytes,
         content: b.content,
         sourceMessageId
       });
@@ -5598,10 +5802,15 @@ async function fileToText(file){
           + "\\n```tool name=\"kb_search\"\\n{\"query\":\"...\",\"topK\":6}\\n```"
           + "\\n```tool name=\"web_search\"\\n{\"query\":\"...\"}\\n```"
           + "\\n```tool name=\"download_file\"\\n{\"name\":\"report.md\",\"mime\":\"text/markdown\",\"content\":\"...\"}\\n```"
+          + "\\n```tool name=\"download_file\"\\n{\"name\":\"slides.pptx\",\"mime\":\"application/vnd.openxmlformats-officedocument.presentationml.presentation\",\"encoding\":\"base64\",\"content\":\"...\"}\\n```"
+          + "\\n```tool name=\"download_file\"\\n{\"name\":\"video.mp4\",\"mime\":\"video/mp4\",\"url\":\"https://...\"}\\n```"
           + "\\n- لا تكتب إجابة نهائية في نفس الرد الذي يطلب أداة. بعد نتيجة الأداة سأطلب منك المتابعة.";
     }
     sys += "\\n\\n[Files] إذا أنشأت ملفًا للمستخدم فضعه داخل بلوك file بهذا الشكل:"
         + "\\n```file name=\"report.md\" mime=\"text/markdown\"\\nمحتوى الملف هنا\\n```"
+        + "\\n```file name=\"slides.pptx\" mime=\"application/vnd.openxmlformats-officedocument.presentationml.presentation\" encoding=\"base64\"\\n...\\n```"
+        + "\\n```file name=\"video.mp4\" mime=\"video/mp4\" url=\"https://...\"\\n```"
+        + "\\nاستخدم encoding=\"base64\" للملفات الثنائية مثل PowerPoint وExcel وZIP والصور والفيديو، أو url عندما يكون الملف مستضافًا على رابط مباشر."
         + "\\nوسيحوّل التطبيق هذا البلوك تلقائيًا إلى رابط وزر تنزيل داخل الدردشة. لا تكرر محتوى الملف خارج هذا البلوك إلا إذا طلب المستخدم ذلك.";
     return sys;
   }
@@ -5658,10 +5867,19 @@ async function fileToText(file){
     }
     if (name === 'download_file'){
       const fname = String(args.name || 'output.txt').trim() || 'output.txt';
-      const mime = String(args.mime || 'text/plain').trim() || 'text/plain';
+      const mime = String(args.mime || inferMimeFromName(fname) || 'application/octet-stream').trim() || 'application/octet-stream';
       const content = String(args.content || '');
+      const encoding = String(args.encoding || (args.url ? 'url' : 'text')).trim().toLowerCase();
+      const url = sanitizeDownloadUrl(args.url || args.href || '');
       const pid = getCurProjectId();
-      addDownload(pid, { name: fname, mime, content });
+      addDownload(pid, {
+        name: fname,
+        mime,
+        encoding,
+        url,
+        content,
+        sizeBytes: toFiniteNumber(args.size || args.bytes)
+      });
       renderDownloads();
       refreshNavMeta();
       return `Saved: ${fname}`;
@@ -6008,7 +6226,7 @@ ${clip}` });
         ${list.map((entry) => `
           <a href="#" class="assistant-download-link" data-download-id="${escapeHtml(entry.id)}">
             <span class="assistant-download-name">${escapeHtml(entry.name)}</span>
-            <span class="assistant-download-meta">${escapeHtml(entry.mime)} • ${escapeHtml(formatCompactBytes(estimateDownloadBytes(entry)))}</span>
+            <span class="assistant-download-meta">${escapeHtml(entry.mime)} • ${escapeHtml(entry.encoding === 'url' ? ((estimateDownloadBytes(entry) > 0 ? formatCompactBytes(estimateDownloadBytes(entry)) : 'رابط تنزيل مباشر')) : formatCompactBytes(estimateDownloadBytes(entry)))}</span>
           </a>
         `).join('')}
       </div>`;
@@ -6028,9 +6246,9 @@ ${clip}` });
     scope?.querySelectorAll?.('[data-download-id]')?.forEach((el) => {
       if (el.dataset.bound === 'true') return;
       el.dataset.bound = 'true';
-      el.addEventListener('click', (ev) => {
+      el.addEventListener('click', async (ev) => {
         ev.preventDefault();
-        const ok = downloadStoredItem(el.dataset.downloadId);
+        const ok = await downloadStoredItem(el.dataset.downloadId);
         if (!ok) toast('⚠️ تعذر العثور على الملف المطلوب');
       });
     });
@@ -7269,25 +7487,31 @@ let pinOnly = false;
     });
     box.innerHTML = '';
     filtered.forEach(d => {
+      const metaBits = [String(d.mime || '').trim()];
+      if (d.encoding === 'url') metaBits.push('رابط مباشر');
+      const bytes = estimateDownloadBytes(d);
+      if (bytes > 0) metaBits.push(formatCompactBytes(bytes));
       const row = document.createElement('div');
       row.className='bubble';
       row.innerHTML = `<div style="font-weight:1000">${escapeHtml(d.pinned?'📌 ':'')}${escapeHtml(d.name)}</div>
-                       <div class="hint">${escapeHtml(d.mime)} • ${new Date(d.createdAt||nowTs()).toLocaleString('ar')}</div>`;
+                       <div class="hint">${escapeHtml(metaBits.join(' • '))} • ${new Date(d.createdAt||nowTs()).toLocaleString('ar')}</div>`;
       const actions = document.createElement('div');
       actions.className='actions';
 
       const b1 = document.createElement('button');
       b1.className='btn sm';
       b1.textContent='تنزيل';
-      b1.addEventListener('click', () => {
-        if (d.encoding === 'base64'){
-          const bin = atob(d.content || '');
-          const bytes = new Uint8Array(bin.length);
-          for (let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
-          downloadBlob(d.name, new Blob([bytes], { type: d.mime }));
-        } else {
-          downloadBlob(d.name, new Blob([String(d.content||'')], { type: d.mime + ';charset=utf-8' }));
-        }
+      b1.addEventListener('click', async () => {
+        const ok = await downloadStoredItem(d.id);
+        if (!ok) toast('⚠️ تعذر تنزيل الملف من هذا الرابط أو استعادته من المحادثة.');
+      });
+      const bOpen = document.createElement('button');
+      bOpen.className='btn ghost sm';
+      bOpen.textContent='فتح';
+      bOpen.style.display = d.url ? '' : 'none';
+      bOpen.addEventListener('click', () => {
+        if (!d.url) return;
+        window.open(d.url, '_blank', 'noopener,noreferrer');
       });
 
       const b2 = document.createElement('button');
@@ -7324,6 +7548,7 @@ let pinOnly = false;
       });
 
       actions.appendChild(b1);
+      actions.appendChild(bOpen);
       actions.appendChild(b2);
       actions.appendChild(b3);
       actions.appendChild(b4);
