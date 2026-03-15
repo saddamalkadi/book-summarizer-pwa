@@ -8045,6 +8045,69 @@ let pinOnly = false;
   // ---------------- Model Hub (OpenRouter) ----------------
   function loadFavs(){ const a = loadJSON(KEYS.favorites, []); return Array.isArray(a) ? a : []; }
   function saveFavs(a){ saveJSON(KEYS.favorites, a); }
+  const MODEL_CATEGORY_DEFS = [
+    { key:'general_text', label:'نصوص ومحتوى', note:'كتابة عامة، دردشة، تلخيص وصياغة.' },
+    { key:'documents', label:'مستندات وعروض', note:'تقارير، عروض، ملفات Word وPDF وقوالب العمل.' },
+    { key:'coding', label:'برمجة', note:'توليد الشيفرة، الإصلاح، الشرح والتحليل البرمجي.' },
+    { key:'research', label:'بحث واستدلال', note:'تفكير عميق، تحليل، مقارنة، واستدلال متعدد الخطوات.' },
+    { key:'vision', label:'صور ورؤية', note:'فهم الصور، OCR، واستخراج المعلومات المرئية.' },
+    { key:'image_generation', label:'توليد صور', note:'إنشاء الصور والتصميمات من الوصف النصي.' },
+    { key:'video', label:'فيديو', note:'إنشاء الفيديو أو التعامل مع مهام الفيديو المتخصصة.' },
+    { key:'audio', label:'صوت', note:'تفريغ صوتي، تحويل كلام، ومعالجة الملفات الصوتية.' }
+  ];
+  const MODEL_CATEGORY_MAP = Object.fromEntries(MODEL_CATEGORY_DEFS.map((item) => [item.key, item]));
+  function getModelCategoryLabel(key){
+    return MODEL_CATEGORY_MAP[String(key || '').trim()]?.label || 'عام';
+  }
+  function getModelCategoryNote(key){
+    return MODEL_CATEGORY_MAP[String(key || '').trim()]?.note || '';
+  }
+  function inferModelCategories(model){
+    const hay = [
+      model?.id,
+      model?.name,
+      model?.provider,
+      model?.modality
+    ].filter(Boolean).join(' ').toLowerCase();
+    const ctx = Number(model?.ctx || 0);
+    const categories = new Set();
+    const isImageGeneration = /(flux|sdxl|stable[-\s]?diffusion|recraft|imagen|dall[\s-]?e|ideogram|playground|image[-\s]?gen|text[-\s]?to[-\s]?image)/i.test(hay);
+    const isVideo = /(video|veo|runway|kling|hailuo|minimax[-\s]?video|pika|luma|wan[-\s]?video|movie[-\s]?gen|text[-\s]?to[-\s]?video)/i.test(hay);
+    const isAudio = /(whisper|tts|speech|audio|transcrib|voice|eleven|sonic|asr)/i.test(hay);
+    const isCoding = /(code|coder|coding|codestral|deepseek[-\s]?coder|qwen.*coder|codellama|starcoder|replit|devstral|programming|software\s*engineer|aider)/i.test(hay);
+    const isResearch = /(reason|reasoning|thinking|deep[-\s]?research|research|analysis|sonar|r1|o1|o3|o4|grok[-\s]?thinking)/i.test(hay);
+    const isVision = !!model?.vision || /(vision|multimodal|vl|llava|pixtral|image[-\s]?understanding|ocr|gpt-4o|gemini|claude-3|claude 3)/i.test(hay);
+    const isTextCapable = !isImageGeneration && !isVideo && !isAudio;
+    const isDocumentReady = isTextCapable && (
+      ctx >= 32000
+      || !!model?.tools
+      || /(doc|document|writer|report|office|word|presentation|slides|spreadsheet|pdf|chat|instruct|assistant|claude|gpt|gemini|qwen|mistral|llama)/i.test(hay)
+    );
+
+    if (isTextCapable) categories.add('general_text');
+    if (isDocumentReady) categories.add('documents');
+    if (isCoding) categories.add('coding');
+    if (isResearch) categories.add('research');
+    if (isVision) categories.add('vision');
+    if (isImageGeneration) categories.add('image_generation');
+    if (isVideo) categories.add('video');
+    if (isAudio) categories.add('audio');
+    if (!categories.size) categories.add('general_text');
+    return Array.from(categories);
+  }
+  function pickPrimaryModelCategory(categories = []){
+    const list = Array.isArray(categories) ? categories : [];
+    const priority = ['image_generation', 'video', 'audio', 'coding', 'research', 'vision', 'documents', 'general_text'];
+    return priority.find((key) => list.includes(key)) || 'general_text';
+  }
+  function decorateModelRecord(model = {}){
+    const categories = inferModelCategories(model);
+    return {
+      ...model,
+      categories,
+      primaryCategory: pickPrimaryModelCategory(categories)
+    };
+  }
 
   function normalizeOrModels(payload){
     const data = payload?.data || payload?.models || payload || [];
@@ -8061,7 +8124,7 @@ let pinOnly = false;
       const tools = !!m.supports_tools || !!m.tools;
       const vision = (String(modality).toLowerCase().includes('image') || String(modality).toLowerCase().includes('multimodal') || !!m.vision);
       const provider = String(id).split('/')[0] || '';
-      return { id, name, provider, ctx, pp, pc, tools, vision };
+      return decorateModelRecord({ id, name, provider, ctx, pp, pc, tools, vision, modality });
     }).filter(x => x.id);
   }
 
@@ -8069,7 +8132,11 @@ let pinOnly = false;
     const cache = loadJSON(KEYS.modelCache, null);
     const freshMs = 1000 * 60 * 60 * 12;
     if (!force && cache?.ts && (nowTs() - cache.ts) < freshMs && Array.isArray(cache.models) && cache.models.length){
-      return cache.models;
+      const upgraded = cache.models.map((model) => decorateModelRecord(model));
+      if (JSON.stringify(upgraded) !== JSON.stringify(cache.models)){
+        saveJSON(KEYS.modelCache, { ts: cache.ts, models: upgraded });
+      }
+      return upgraded;
     }
     const s = getAppRuntimePolicy(getSettings()).runtime;
     if (!hasAuthReady(s)) throw new Error('المصادقة غير مكتملة (API Key أو Gateway URL)');
@@ -8127,20 +8194,23 @@ let pinOnly = false;
     const seeded = await fetchOpenRouterModels(false).catch(()=>[]);
     const models = seeded.some(m => m.id === 'openrouter/free')
       ? seeded.slice()
-      : [{ id:'openrouter/free', name:'OpenRouter Free Router', provider:'openrouter', ctx:null, pp:0, pc:0, tools:false, vision:false }, ...seeded];
+      : [decorateModelRecord({ id:'openrouter/free', name:'OpenRouter Free Router', provider:'openrouter', ctx:null, pp:0, pc:0, tools:false, vision:false, modality:'' }), ...seeded];
     const list = $('modelList');
     const q = String($('modelSearch')?.value || '').trim().toLowerCase();
     const providerFilter = String($('modelProviderFilter')?.value || '');
+    const categoryFilter = String($('modelCategoryFilter')?.value || '');
     const sort = String($('modelSort')?.value || 'name');
     const favOnly = ($('modelFavOnlyBtn')?.dataset.on === '1');
     const favs = new Set(loadFavs());
     const hint = $('modelHubHint');
+    const summary = $('modelCategorySummary');
 
-    let filtered = models.slice();
+    const baseModels = policy.freeMode ? models.filter(isFreeTierModel) : models.slice();
+    let filtered = baseModels.slice();
     if (q) filtered = filtered.filter(m => (m.id.toLowerCase().includes(q) || (m.name||'').toLowerCase().includes(q)));
     if (providerFilter) filtered = filtered.filter(m => m.provider === providerFilter);
+    if (categoryFilter) filtered = filtered.filter(m => (Array.isArray(m.categories) && m.categories.includes(categoryFilter)) || m.primaryCategory === categoryFilter);
     if (favOnly) filtered = filtered.filter(m => favs.has(m.id));
-    if (policy.freeMode) filtered = filtered.filter(isFreeTierModel);
 
     const num = (x) => (x==null ? Number.POSITIVE_INFINITY : Number(x));
     if (sort === 'context_desc') filtered.sort((a,b)=> num(b.ctx)-num(a.ctx));
@@ -8150,8 +8220,38 @@ let pinOnly = false;
 
     if (hint){
       hint.textContent = policy.freeMode
-        ? 'الخطة المجانية تعرض النماذج المجانية فقط، وسيتم فرض OpenRouter Free عند الحفظ والتنفيذ.'
-        : '⭐ لحفظه كمفضلة. يمكنك اختيار أي موديل أو كتابته يدويًا.';
+        ? 'الخطة المجانية تعرض النماذج المجانية فقط، ويمكنك أيضًا فلترتها حسب نوع العمل مثل النصوص أو البرمجة أو الصور.'
+        : '⭐ لحفظه كمفضلة. استخدم التصنيف للوصول سريعًا إلى موديلات النصوص، البرمجة، الصور، الفيديو، والعروض.';
+    }
+    const categorySel = $('modelCategoryFilter');
+    if (categorySel){
+      categorySel.innerHTML = '<option value="">كل التصنيفات</option>';
+      const availableCategories = MODEL_CATEGORY_DEFS.filter((item) => baseModels.some((model) => (model.categories || []).includes(item.key)));
+      availableCategories.forEach((item) => {
+        const o = document.createElement('option');
+        o.value = item.key;
+        o.textContent = item.label;
+        categorySel.appendChild(o);
+      });
+      categorySel.value = categoryFilter && availableCategories.some((item) => item.key === categoryFilter) ? categoryFilter : '';
+    }
+    if (summary){
+      const chips = MODEL_CATEGORY_DEFS
+        .map((item) => {
+          const count = filtered.filter((model) => (model.categories || []).includes(item.key)).length;
+          if (!count) return '';
+          return `<button class="model-category-chip ${categoryFilter === item.key ? 'active' : ''}" type="button" data-model-category-chip="${escapeHtml(item.key)}">${escapeHtml(item.label)} <span>${count}</span></button>`;
+        })
+        .filter(Boolean)
+        .join('');
+      summary.innerHTML = chips || '<div class="hint">لا توجد تصنيفات متاحة للفلاتر الحالية.</div>';
+      summary.querySelectorAll('[data-model-category-chip]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const key = String(btn.dataset.modelCategoryChip || '');
+          if ($('modelCategoryFilter')) $('modelCategoryFilter').value = categoryFilter === key ? '' : key;
+          renderModelHub();
+        });
+      });
     }
 
     list.innerHTML = '';
@@ -8159,8 +8259,21 @@ let pinOnly = false;
       list.innerHTML = `<div class="status" data-tone="info">لا توجد نماذج مطابقة للفلترة الحالية${policy.freeMode ? ' داخل الفئة المجانية' : ''}.</div>`;
       return;
     }
-
-    filtered.slice(0, 400).forEach(m => {
+    const groups = new Map();
+    filtered.slice(0, 400).forEach((model) => {
+      const key = model.primaryCategory || 'general_text';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(model);
+    });
+    MODEL_CATEGORY_DEFS.forEach((groupDef) => {
+      const modelsInGroup = groups.get(groupDef.key);
+      if (!modelsInGroup?.length) return;
+      const section = document.createElement('section');
+      section.className = 'model-section';
+      section.innerHTML = `<div class="model-section-head"><strong>${escapeHtml(groupDef.label)} (${modelsInGroup.length})</strong><span class="hint">${escapeHtml(groupDef.note)}</span></div>`;
+      const rows = document.createElement('div');
+      rows.className = 'model-section-list';
+      modelsInGroup.forEach(m => {
       const row = document.createElement('div');
       const freeTier = isFreeTierModel(m);
       row.className = `bubble model-card ${freeTier ? 'is-free' : 'is-paid'}`;
@@ -8168,11 +8281,13 @@ let pinOnly = false;
       if (m.ctx) badges.push(`<span class="tag">ctx ${escapeHtml(m.ctx)}</span>`);
       if (m.vision) badges.push(`<span class="tag">vision</span>`);
       if (m.tools) badges.push(`<span class="tag">tools</span>`);
+      badges.push(`<span class="tag model-type-tag">${escapeHtml(getModelCategoryLabel(m.primaryCategory))}</span>`);
       badges.push(`<span class="tag ${freeTier ? 'tag-free' : 'tag-paid'}">${freeTier ? 'مجاني' : 'مدفوع'}</span>`);
       const prices = [];
       if (freeTier) prices.push('متاح ضمن الخطة المجانية');
       if (m.pp!=null) prices.push(`prompt: ${m.pp}`);
       if (m.pc!=null) prices.push(`completion: ${m.pc}`);
+      const usageLabels = Array.from(new Set((m.categories || []).map(getModelCategoryLabel))).slice(0, 4);
 
       row.innerHTML = `
         <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
@@ -8180,6 +8295,7 @@ let pinOnly = false;
             <div style="font-weight:1000; word-break:break-word">${escapeHtml(m.id)}</div>
             <div class="hint">${escapeHtml(m.name || '')}</div>
             <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">${badges.join('')}</div>
+            <div class="hint model-usage-line">الاستخدامات: ${escapeHtml(usageLabels.join(' • '))}</div>
             <div class="hint" style="margin-top:6px">${escapeHtml(prices.join(' • '))}</div>
           </div>
           <div style="display:flex; flex-direction:column; gap:8px; align-items:flex-end;">
@@ -8204,8 +8320,10 @@ let pinOnly = false;
         openModelModal(false);
         toast('✅ تم اختيار الموديل');
       });
-
-      list.appendChild(row);
+      rows.appendChild(row);
+    });
+      section.appendChild(rows);
+      list.appendChild(section);
     });
 
     // provider dropdown
@@ -8213,8 +8331,8 @@ let pinOnly = false;
     if (provSel){
       provSel.innerHTML = '<option value="">كل المزوّدين</option>';
     }
-    if (provSel && models.length){
-      const providerSource = policy.freeMode ? filtered : models;
+    if (provSel && baseModels.length){
+      const providerSource = baseModels;
       const providers = Array.from(new Set(providerSource.map(x => x.provider).filter(Boolean))).sort();
       for (const p of providers){
         const o = document.createElement('option');
@@ -8605,6 +8723,7 @@ $('sendBtn').addEventListener('click', sendMessage);
     $('modelModalBackdrop').addEventListener('click', () => openModelModal(false));
     $('modelSearch').addEventListener('input', renderModelHub);
     $('modelProviderFilter').addEventListener('change', renderModelHub);
+    $('modelCategoryFilter').addEventListener('change', renderModelHub);
     $('modelSort').addEventListener('change', renderModelHub);
     $('modelRefreshBtn').addEventListener('click', () => refreshModelHub(true));
     $('modelFavOnlyBtn').addEventListener('click', async () => {

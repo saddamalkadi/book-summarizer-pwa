@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.15</title>
+    <title>AI Workspace Studio v8.16</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -501,11 +501,81 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       display:grid;
       gap:12px;
     }
+    .model-category-summary{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      margin-top:10px;
+    }
+    .model-category-chip{
+      border:1px solid rgba(10,20,60,.08);
+      background:linear-gradient(180deg,#f8fbff,#ffffff);
+      color:#16325f;
+      border-radius:999px;
+      padding:8px 12px;
+      font-size:12px;
+      font-weight:900;
+      cursor:pointer;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+    }
+    .model-category-chip span{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-width:22px;
+      height:22px;
+      border-radius:999px;
+      background:rgba(27,102,255,.1);
+      color:#1d4ed8;
+      font-size:11px;
+      font-weight:1000;
+      padding-inline:6px;
+    }
+    .model-category-chip.active{
+      background:linear-gradient(180deg,#1b66ff,#184fd6);
+      border-color:rgba(27,102,255,.36);
+      color:#fff;
+    }
+    .model-category-chip.active span{
+      background:rgba(255,255,255,.18);
+      color:#fff;
+    }
+    .model-section{
+      display:grid;
+      gap:10px;
+    }
+    .model-section-head{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+      padding-inline:4px;
+    }
+    .model-section-head strong{
+      color:#0b1020;
+      font-size:16px;
+    }
+    .model-section-list{
+      display:grid;
+      gap:12px;
+    }
     .model-card{
       border-radius:20px;
       border:1px solid rgba(10,20,60,.08);
       background:linear-gradient(180deg,#ffffff,#f7faff);
       box-shadow:0 14px 34px rgba(15,23,42,.05);
+    }
+    .model-type-tag{
+      background:rgba(27,102,255,.09);
+      color:#1d4ed8;
+      border-color:rgba(27,102,255,.18);
+    }
+    .model-usage-line{
+      margin-top:8px;
+      line-height:1.8;
     }
     .model-card.is-free{
       border-color:rgba(16,185,129,.22);
@@ -533,6 +603,10 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       .chatbar textarea{min-width:100%; min-height:56px;}
       .composer-meta{padding:0 8px 10px;}
       .settings-overview{padding:10px;}
+      .model-section-head{
+        flex-direction:column;
+        align-items:flex-start;
+      }
     }
 
     /* Strategic responsive refinement */
@@ -2151,6 +2225,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
         <div class="row">
           <div class="col"><input id="modelSearch" type="text" placeholder="بحث (gpt, claude...)" /></div>
           <div class="col"><select id="modelProviderFilter"><option value="">كل المزوّدين</option></select></div>
+          <div class="col"><select id="modelCategoryFilter"><option value="">كل التصنيفات</option></select></div>
           <div class="col"><select id="modelSort">
             <option value="name">ترتيب: الاسم</option>
             <option value="context_desc">ترتيب: السياق (تنازلي)</option>
@@ -2159,6 +2234,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
           </select></div>
         </div>
         <div class="hint" id="modelHubHint" style="margin-top:8px">⭐ لحفظه كمفضلة. يمكنك اختيار أي موديل أو كتابته يدويًا.</div>
+        <div class="model-category-summary" id="modelCategorySummary"></div>
         <div id="modelList" style="margin-top:12px"></div>
       </div>
     </div>
@@ -2198,11 +2274,11 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     })();
   </script>
 
-<script src="app.js?v=815"></script>
+<script src="app.js?v=816"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=815").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=816").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {
