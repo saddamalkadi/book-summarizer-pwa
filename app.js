@@ -1,4 +1,4 @@
-/* AI Workspace Studio v8.18 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v8.19 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -1926,6 +1926,55 @@ function applyUiCollapse(){
   }
   const tag = document.getElementById('chatMiniModelTag');
   if (tag){ tag.textContent = (getSettings().model || '—'); }
+  syncStickyShellMetrics();
+  scheduleChatScrollDockSync();
+}
+
+let scrollDockFrame = 0;
+function scheduleChatScrollDockSync(){
+  if (scrollDockFrame) cancelAnimationFrame(scrollDockFrame);
+  scrollDockFrame = requestAnimationFrame(() => {
+    scrollDockFrame = 0;
+    syncChatScrollDock();
+  });
+}
+
+function syncStickyShellMetrics(){
+  const root = document.documentElement;
+  const topbar = document.querySelector('.topbar');
+  const chatbar = document.querySelector('#page-chat .chatbar');
+  const topbarHeight = topbar ? Math.ceil(topbar.getBoundingClientRect().height || topbar.offsetHeight || 0) : 0;
+  const chatbarHeight = chatbar ? Math.ceil(chatbar.getBoundingClientRect().height || chatbar.offsetHeight || 0) : 0;
+  const stickyGap = window.innerWidth <= 640 ? 8 : 12;
+  const floatingBottom = window.innerWidth <= 640
+    ? Math.max(92, chatbarHeight + 18)
+    : Math.max(38, chatbarHeight + 22);
+  root.style.setProperty('--sticky-toolbar-top', `${Math.max(stickyGap, topbarHeight + stickyGap)}px`);
+  root.style.setProperty('--floating-nav-bottom', `${floatingBottom}px`);
+}
+
+function syncChatScrollDock(){
+  const dock = $('chatScrollDock');
+  const log = $('chatLog');
+  if (!dock || !log) return;
+  const activeChat = !!document.querySelector('#page-chat.page.active');
+  const drawer = $('threadDrawer');
+  const side = $('side');
+  const drawerOpen = !!(drawer && drawer.classList.contains('show'));
+  const sideOpen = !!(side && side.classList.contains('show'));
+  const keyboardEditing = document.body.classList.contains('keyboardEditing');
+  const canScroll = (log.scrollHeight - log.clientHeight) > 120;
+  const visible = activeChat && canScroll && !keyboardEditing && !drawerOpen && !sideOpen;
+  dock.classList.toggle('show', visible);
+  dock.setAttribute('aria-hidden', visible ? 'false' : 'true');
+
+  const top = Math.max(0, Number(log.scrollTop || 0));
+  const max = Math.max(0, Number(log.scrollHeight - log.clientHeight || 0));
+  const nearTop = top <= 24;
+  const nearBottom = (max - top) <= 24;
+
+  if ($('floatingScrollTopBtn')) $('floatingScrollTopBtn').disabled = !visible || nearTop;
+  if ($('floatingScrollBottomBtn')) $('floatingScrollBottomBtn').disabled = !visible || nearBottom;
 }
 
 function applyShellLayout(){
@@ -1978,6 +2027,8 @@ function applyShellLayout(){
       ? '<span class="icon">📚</span><span class="label">وضع دراسي</span>'
       : '<span class="icon">📖</span><span class="label">وضع دراسي</span>';
   }
+  syncStickyShellMetrics();
+  scheduleChatScrollDockSync();
 }
 
   let composerRecognition = null;
@@ -3218,6 +3269,19 @@ function refreshDeepSearchBtn(){
       overlay.id = 'threadDrawerOverlay';
       chatPage.appendChild(overlay);
     }
+    if (chatPage && !$('chatScrollDock')){
+      chatPage.insertAdjacentHTML('beforeend', `
+        <div class="floating-scroll-nav" id="chatScrollDock" aria-label="التنقل داخل الدردشة" aria-hidden="true">
+          <button class="scroll-fab" id="floatingScrollTopBtn" type="button" title="الانتقال إلى أعلى الدردشة" aria-label="الانتقال إلى أعلى الدردشة">
+            <span class="icon">⬆️</span>
+            <span class="label">للأعلى</span>
+          </button>
+          <button class="scroll-fab" id="floatingScrollBottomBtn" type="button" title="الانتقال إلى أحدث رسالة" aria-label="الانتقال إلى أحدث رسالة">
+            <span class="icon">⬇️</span>
+            <span class="label">للأسفل</span>
+          </button>
+        </div>`);
+    }
 
     const settingsPage = $('page-settings');
     const settingsToolbar = settingsPage?.querySelector('.toolbar');
@@ -3540,11 +3604,13 @@ function refreshDeepSearchBtn(){
     $('threadDrawerOverlay')?.classList.add('show');
     renderThreadHistory();
     setTimeout(() => $('threadSearchInput')?.focus(), 40);
+    scheduleChatScrollDockSync();
   }
 
   function closeThreadDrawer(){
     $('threadDrawer')?.classList.remove('show');
     $('threadDrawerOverlay')?.classList.remove('show');
+    scheduleChatScrollDockSync();
   }
 
   function threadMessageCount(thread){
@@ -4473,6 +4539,7 @@ function newThread(){
     if (!log) return;
     const top = direction === 'top';
     log.scrollTo({ top: top ? 0 : log.scrollHeight, behavior: 'smooth' });
+    window.setTimeout(scheduleChatScrollDockSync, 260);
   }
 
   // ---------------- Files ----------------
@@ -6838,6 +6905,7 @@ ${clip}` });
       bindAssistantDownloadLinks(body);
     }
     log.scrollTop = log.scrollHeight + 1000;
+    scheduleChatScrollDockSync();
   }
 
   
@@ -6921,6 +6989,7 @@ ${clip}` });
       refreshNavMeta();
       renderDownloads();
       refreshStrategicWorkspace().catch(()=>{});
+      scheduleChatScrollDockSync();
       return;
     }
 
@@ -6998,6 +7067,7 @@ ${clip}` });
     renderDownloads();
     renderThreadHistory();
     refreshStrategicWorkspace().catch(()=>{});
+    scheduleChatScrollDockSync();
   }
 
   function updateChatAttachChips(){
@@ -8312,6 +8382,7 @@ let pinOnly = false;
     const titles = { chat:'الدردشة', knowledge:'المعرفة (KB)', canvas:'اللوحة', files:'الملفات', transcription:'مختبر الوثائق', workflows:'سير العمل', downloads:'التحميلات', projects:'المشاريع', guide:'دليل الاستخدام', settings:'الإعدادات' };
     $('topTitle').textContent = titles[page] || 'استوديو الذكاء';
     refreshStrategicWorkspace().catch(()=>{});
+    scheduleChatScrollDockSync();
   }
 
   function refreshNavMeta(){
@@ -8739,10 +8810,12 @@ let pinOnly = false;
       if (window.innerWidth > 980 && getSidebarPinned()) return;
       side.classList.add('show');
       back.classList.add('show');
+      scheduleChatScrollDockSync();
     };
     const closeSide = () => {
       side.classList.remove('show');
       back.classList.remove('show');
+      scheduleChatScrollDockSync();
     };
     $('openSideBtn').addEventListener('click', openSide);
     $('closeSideBtn').addEventListener('click', closeSide);
@@ -8939,6 +9012,9 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
     $('agentTaskTemplate') && $('agentTaskTemplate').addEventListener('change', applyAgentTaskTemplate);
     $('scrollTopBtn') && $('scrollTopBtn').addEventListener('click', () => scrollChat('top'));
     $('scrollBottomBtn') && $('scrollBottomBtn').addEventListener('click', () => scrollChat('bottom'));
+    $('floatingScrollTopBtn') && $('floatingScrollTopBtn').addEventListener('click', () => scrollChat('top'));
+    $('floatingScrollBottomBtn') && $('floatingScrollBottomBtn').addEventListener('click', () => scrollChat('bottom'));
+    $('chatLog') && $('chatLog').addEventListener('scroll', scheduleChatScrollDockSync, { passive:true });
 
     // Deep Search toggle (send = Research)
     $('deepSearchToggleBtn') && $('deepSearchToggleBtn').addEventListener('click', () => {
