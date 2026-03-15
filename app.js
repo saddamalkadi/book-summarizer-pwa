@@ -5485,6 +5485,105 @@ async function fileToText(file){
     if (value < 1024 * 1024) return `${(value / 1024).toFixed(value >= 10 * 1024 ? 0 : 1)} KB`;
     return `${(value / (1024 * 1024)).toFixed(value >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
   }
+  const downloadPreviewUrlCache = new Map();
+  function getDownloadPreviewUrl(entry){
+    const normalized = normalizeDownloadEntry(entry);
+    if (normalized.url && /^(https?:|data:|blob:)/i.test(normalized.url)) return normalized.url;
+    const cacheKey = String(normalized.id || normalized.fingerprint || '');
+    if (!cacheKey) return '';
+    const cached = downloadPreviewUrlCache.get(cacheKey);
+    if (cached) return cached;
+    try{
+      const url = URL.createObjectURL(buildBlobFromDownload(normalized));
+      downloadPreviewUrlCache.set(cacheKey, url);
+      return url;
+    }catch(_){
+      return '';
+    }
+  }
+  if (typeof window !== 'undefined' && !window.__aistudioPreviewCleanupBound){
+    window.__aistudioPreviewCleanupBound = true;
+    window.addEventListener('beforeunload', () => {
+      downloadPreviewUrlCache.forEach((url) => {
+        try { if (/^blob:/i.test(url)) URL.revokeObjectURL(url); } catch(_){}
+      });
+      downloadPreviewUrlCache.clear();
+    });
+  }
+  function isOfficeDocumentMime(mime = ''){
+    return /(wordprocessingml|msword|presentationml|ms-powerpoint|spreadsheetml|ms-excel)/i.test(String(mime || ''));
+  }
+  function isWordDocumentMime(mime = ''){
+    return /(wordprocessingml|msword)/i.test(String(mime || ''));
+  }
+  function buildOfficeViewerUrl(rawUrl = ''){
+    const direct = String(rawUrl || '').trim();
+    if (!/^https:\/\//i.test(direct)) return '';
+    return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(direct)}`;
+  }
+  function renderAssistantTextPreview(entry){
+    const text = String(entry.content || '').trim();
+    if (!text) return '';
+    const preview = text.length > 1400 ? `${text.slice(0, 1400)}\n...` : text;
+    return `<div class="assistant-preview assistant-preview--text"><pre>${escapeHtml(preview)}</pre></div>`;
+  }
+  function renderAssistantDownloadPreview(entry){
+    const normalized = normalizeDownloadEntry(entry);
+    const mime = String(normalized.mime || '').toLowerCase();
+    const name = String(normalized.name || '').toLowerCase();
+    if (/^image\//i.test(mime)){
+      const src = getDownloadPreviewUrl(normalized);
+      return src ? `<div class="assistant-preview assistant-preview--media"><img class="assistant-preview-media" loading="lazy" alt="${escapeHtml(normalized.name)}" src="${escapeHtml(src)}" /></div>` : '';
+    }
+    if (/^video\//i.test(mime)){
+      const src = getDownloadPreviewUrl(normalized);
+      return src ? `<div class="assistant-preview assistant-preview--media"><video class="assistant-preview-media" controls preload="metadata" src="${escapeHtml(src)}"></video></div>` : '';
+    }
+    if (/^audio\//i.test(mime)){
+      const src = getDownloadPreviewUrl(normalized);
+      return src ? `<div class="assistant-preview assistant-preview--audio"><audio controls preload="metadata" src="${escapeHtml(src)}"></audio></div>` : '';
+    }
+    if (mime === 'application/pdf' || /\.pdf$/i.test(name)){
+      const src = getDownloadPreviewUrl(normalized);
+      return src ? `<div class="assistant-preview assistant-preview--frame"><iframe class="assistant-preview-frame" loading="lazy" referrerpolicy="no-referrer" src="${escapeHtml(src)}#view=FitH"></iframe></div>` : '';
+    }
+    if (isWordDocumentMime(mime) && normalized.encoding !== 'url'){
+      return `<div class="assistant-preview assistant-preview--docx" data-docx-preview-id="${escapeHtml(normalized.id)}">جارٍ تجهيز معاينة Word داخل الدردشة...</div>`;
+    }
+    if (isOfficeDocumentMime(mime) && normalized.url){
+      const viewerUrl = buildOfficeViewerUrl(normalized.url);
+      return viewerUrl ? `<div class="assistant-preview assistant-preview--frame"><iframe class="assistant-preview-frame" loading="lazy" referrerpolicy="no-referrer" src="${escapeHtml(viewerUrl)}"></iframe></div>` : '';
+    }
+    if (/^text\//i.test(mime) || /(json|xml|markdown|csv)/i.test(mime)){
+      return renderAssistantTextPreview(normalized);
+    }
+    return '';
+  }
+  async function bindAssistantDocxPreviews(scope){
+    const nodes = scope?.querySelectorAll?.('[data-docx-preview-id]') || [];
+    for (const node of nodes){
+      if (node.dataset.loaded === 'true') continue;
+      node.dataset.loaded = 'true';
+      const entry = resolveDownloadEntry(node.dataset.docxPreviewId);
+      if (!entry){
+        node.textContent = 'تعذر العثور على المستند المطلوب للمعاينة.';
+        continue;
+      }
+      if (!window.mammoth?.convertToHtml){
+        node.textContent = 'معاينة Word غير متاحة في هذه الجلسة. يمكنك تنزيل المستند مباشرة.';
+        continue;
+      }
+      try{
+        const blob = buildBlobFromDownload(entry);
+        const arrayBuffer = await blob.arrayBuffer();
+        const result = await window.mammoth.convertToHtml({ arrayBuffer });
+        const html = sanitizeRenderedHtml(result?.value || '');
+        node.innerHTML = html || '<div class="assistant-preview-empty">المستند جاهز للتنزيل.</div>';
+      }catch(_){
+        node.textContent = 'تعذر معاينة Word داخل الدردشة. يمكنك تنزيله أو فتحه خارجيًا.';
+      }
+    }
+  }
 
   function downloadBlob(filename, blob){
     const url = URL.createObjectURL(blob);
@@ -6332,10 +6431,13 @@ ${clip}` });
     return `
       <div class="assistant-downloads">
         ${list.map((entry) => `
-          <a href="#" class="assistant-download-link" data-download-id="${escapeHtml(entry.id)}">
-            <span class="assistant-download-name">${escapeHtml(entry.name)}</span>
-            <span class="assistant-download-meta">${escapeHtml(entry.mime)} • ${escapeHtml(entry.encoding === 'url' ? ((estimateDownloadBytes(entry) > 0 ? formatCompactBytes(estimateDownloadBytes(entry)) : 'رابط تنزيل مباشر')) : formatCompactBytes(estimateDownloadBytes(entry)))}</span>
-          </a>
+          <div class="assistant-download-card">
+            ${renderAssistantDownloadPreview(entry)}
+            <a href="#" class="assistant-download-link" data-download-id="${escapeHtml(entry.id)}">
+              <span class="assistant-download-name">${escapeHtml(entry.name)}</span>
+              <span class="assistant-download-meta">${escapeHtml(entry.mime)} • ${escapeHtml(entry.encoding === 'url' ? ((estimateDownloadBytes(entry) > 0 ? formatCompactBytes(estimateDownloadBytes(entry)) : 'رابط تنزيل مباشر')) : formatCompactBytes(estimateDownloadBytes(entry)))}</span>
+            </a>
+          </div>
         `).join('')}
       </div>`;
   }
@@ -6360,6 +6462,7 @@ ${clip}` });
         if (!ok) toast('⚠️ تعذر العثور على الملف المطلوب');
       });
     });
+    bindAssistantDocxPreviews(scope).catch(() => {});
   }
 
   function describeAttachmentChip(a){
