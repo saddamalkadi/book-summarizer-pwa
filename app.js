@@ -1,4 +1,4 @@
-/* AI Workspace Studio v8.17 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v8.18 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -5170,6 +5170,39 @@ async function fileToText(file){
     const ext = String(match?.[1] || '').toLowerCase();
     return DOWNLOAD_MIME_MAP[ext] || '';
   }
+  function inferMimeFromDataUrl(raw = ''){
+    const match = String(raw || '').trim().match(/^data:([^;,]+)[;,]/i);
+    return String(match?.[1] || '').trim().toLowerCase();
+  }
+  function inferExtensionFromMime(mime = ''){
+    const clean = String(mime || '').trim().toLowerCase().split(';')[0];
+    if (!clean) return 'bin';
+    if (clean === 'image/jpeg') return 'jpg';
+    if (clean === 'image/png') return 'png';
+    if (clean === 'image/webp') return 'webp';
+    if (clean === 'image/gif') return 'gif';
+    if (clean === 'image/svg+xml') return 'svg';
+    if (clean === 'video/mp4') return 'mp4';
+    if (clean === 'audio/mpeg') return 'mp3';
+    const hit = Object.entries(DOWNLOAD_MIME_MAP).find(([, value]) => String(value || '').toLowerCase() === clean);
+    return hit?.[0] || 'bin';
+  }
+  function sanitizeBlockAttrValue(value = ''){
+    return String(value || '').replace(/[\r\n"]/g, ' ').trim();
+  }
+  function buildInlineFileBlock({ name, mime, url = '', content = '', encoding = 'url' } = {}){
+    const safeName = sanitizeBlockAttrValue(name || 'download.bin') || 'download.bin';
+    const safeMime = sanitizeBlockAttrValue(mime || inferMimeFromName(safeName) || 'application/octet-stream') || 'application/octet-stream';
+    const attrs = [`name="${safeName}"`, `mime="${safeMime}"`];
+    const safeUrl = sanitizeDownloadUrl(url || '');
+    const isDataUrl = /^data:/i.test(safeUrl);
+    if (safeUrl && !isDataUrl) attrs.push(`url="${sanitizeBlockAttrValue(safeUrl)}"`);
+    else attrs.push(`encoding="${sanitizeBlockAttrValue(isDataUrl ? 'dataurl' : (encoding || 'text'))}"`);
+    const body = safeUrl
+      ? (isDataUrl ? safeUrl : '')
+      : String(content || '');
+    return `\`\`\`file ${attrs.join(' ')}\n${body}\n\`\`\``;
+  }
   function extractFilenameFromUrl(rawUrl = '', fallback = 'download.bin'){
     const direct = String(rawUrl || '').trim();
     if (!direct) return fallback;
@@ -5659,9 +5692,10 @@ async function fileToText(file){
   }
 
   // ---------------- Provider calls ----------------
-  async function callOpenAIChat({ apiKey, baseUrl, model, messages, max_tokens, signal, extraHeaders={} }){
+  async function callOpenAIChat({ apiKey, baseUrl, model, messages, max_tokens, signal, extraHeaders={}, modalities=[] }){
     const url = baseUrl.replace(/\/+$/,'') + '/chat/completions';
     const body = { model, messages, max_tokens, temperature: 0.25 };
+    if (Array.isArray(modalities) && modalities.length) body.modalities = modalities;
     const r = await fetch(url, {
       method:'POST',
       headers: { 'Content-Type':'application/json', ...extraHeaders, ...buildAuthHeaders(getSettings()) },
@@ -5672,7 +5706,7 @@ async function fileToText(file){
     let j; try{ j = JSON.parse(t); }catch(_){ j = null; }
     if (!r.ok) throw new Error(extractApiErrorMessage(j, t, r.status));
 
-    const extracted = extractAssistantText(j);
+    const extracted = extractAssistantResponseData(j);
     if (!String(extracted.text || '').trim()){
       throw new Error(extracted.diagnostic || 'EMPTY_ASSISTANT_RESPONSE');
     }
@@ -5767,6 +5801,91 @@ async function fileToText(file){
     const diagnosticCode = hasStructuredPayload ? 'EMPTY_ASSISTANT_RESPONSE' : 'UNRECOGNIZED_ASSISTANT_RESPONSE';
     return { text:'', diagnostic:`${diagnosticCode} ${describeResponseShape(payload)}` };
   }
+  function normalizeGeneratedAssetEntry(raw, index){
+    if (!raw || typeof raw !== 'object') return null;
+    const directUrl = raw.image_url?.url || raw.url || raw.href || raw.data_url || '';
+    const directMime = String(raw.mime_type || raw.mime || inferMimeFromDataUrl(directUrl) || '').trim().toLowerCase();
+    const b64 = String(raw.b64_json || raw.base64 || raw.content || '').trim();
+    const url = sanitizeDownloadUrl(directUrl) || (b64 ? `data:${directMime || 'image/png'};base64,${b64}` : '');
+    if (!url) return null;
+    const mime = directMime || inferMimeFromDataUrl(url) || inferMimeFromName(raw.name || extractFilenameFromUrl(url, '')) || 'image/png';
+    const ext = inferExtensionFromMime(mime);
+    const fallbackName = `generated-asset-${index}.${ext}`;
+    const name = sanitizeBlockAttrValue(raw.name || extractFilenameFromUrl(url, fallbackName)) || fallbackName;
+    return {
+      name,
+      mime,
+      url,
+      encoding: 'url'
+    };
+  }
+  function collectGeneratedAssetEntries(target, candidate){
+    const list = Array.isArray(candidate) ? candidate : [candidate];
+    for (const item of list){
+      if (!item) continue;
+      let normalized = null;
+      if (item?.type === 'image_url' && item?.image_url?.url){
+        normalized = normalizeGeneratedAssetEntry({ image_url: item.image_url, mime_type: item.mime_type, name: item.name }, target.length + 1);
+      } else if (item?.type === 'output_image' || item?.type === 'image'){
+        normalized = normalizeGeneratedAssetEntry(item, target.length + 1);
+      } else if (item?.image_url?.url || item?.url || item?.href || item?.b64_json || item?.base64){
+        normalized = normalizeGeneratedAssetEntry(item, target.length + 1);
+      }
+      if (!normalized) continue;
+      const duplicate = target.some((entry) => entry.url === normalized.url || (entry.name === normalized.name && entry.mime === normalized.mime));
+      if (!duplicate) target.push(normalized);
+    }
+  }
+  function extractAssistantGeneratedAssets(payload){
+    const assets = [];
+    collectGeneratedAssetEntries(assets, payload?.images);
+
+    const outputEntries = [
+      ...(Array.isArray(payload?.output) ? payload.output : []),
+      ...(Array.isArray(payload?.response?.output) ? payload.response.output : [])
+    ];
+    outputEntries.forEach((entry) => {
+      collectGeneratedAssetEntries(assets, entry?.images);
+      collectGeneratedAssetEntries(assets, entry?.content);
+      collectGeneratedAssetEntries(assets, entry?.message?.images);
+    });
+
+    const choices = Array.isArray(payload?.choices) ? payload.choices : [];
+    choices.forEach((choice) => {
+      collectGeneratedAssetEntries(assets, choice?.images);
+      collectGeneratedAssetEntries(assets, choice?.message?.images);
+      collectGeneratedAssetEntries(assets, choice?.delta?.images);
+      collectGeneratedAssetEntries(assets, choice?.message?.content);
+      collectGeneratedAssetEntries(assets, choice?.delta?.content);
+    });
+    return assets;
+  }
+  function extractAssistantResponseData(payload){
+    const textResult = extractAssistantText(payload);
+    const generatedAssets = extractAssistantGeneratedAssets(payload);
+    const assetBlocks = generatedAssets.map((entry) => buildInlineFileBlock(entry));
+    const combinedText = [String(textResult.text || '').trim(), assetBlocks.join('\n\n')]
+      .filter(Boolean)
+      .join('\n\n')
+      .trim();
+    if (combinedText){
+      return { text: combinedText, diagnostic:'', assets: generatedAssets };
+    }
+    return { text:'', diagnostic:textResult.diagnostic || 'EMPTY_ASSISTANT_RESPONSE', assets: generatedAssets };
+  }
+  function getRequestedOutputModalities(settings, modelId = '', messages = []){
+    const descriptor = getModelDescriptor(modelId || settings.model || '', settings.provider || '');
+    if (!descriptor?.capabilities?.image_generation) return [];
+    const latestUser = [...(Array.isArray(messages) ? messages : [])].reverse().find((message) => message?.role === 'user');
+    const promptText = textFromPart(latestUser?.content).toLowerCase();
+    if (!/(generate|create|make|draw|render|design|illustrat|image|picture|photo|poster|logo|icon|banner|wallpaper|portrait|thumbnail|storyboard|صورة|صور|ارسم|أنشئ صورة|انشئ صورة|ولد صورة|ولّد صورة|تصميم|شعار|بوستر|بانر|خلفية|أيقونة|ايقونة)/i.test(promptText)){
+      return [];
+    }
+    const outputModalities = (Array.isArray(descriptor.outputModalities) ? descriptor.outputModalities : []).map((value) => String(value || '').toLowerCase());
+    if (outputModalities.includes('image') && outputModalities.includes('text')) return ['image', 'text'];
+    if (outputModalities.includes('image')) return ['image'];
+    return ['image', 'text'];
+  }
 
   async function callGemini({ apiKey, model, prompt, signal, maxOut=2048 }){
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
@@ -5855,11 +5974,13 @@ async function fileToText(file){
     return full;
   }
 
-  async function callOpenAIChat({ apiKey, baseUrl, model, messages, max_tokens, signal, extraHeaders={} }){
+  async function callOpenAIChat({ apiKey, baseUrl, model, messages, max_tokens, signal, extraHeaders={}, modalities=[] }){
     const run = async () => {
       const currentSettings = getSettings();
-      const url = effectiveBaseUrl(currentSettings).replace(/\/+$/,'') + '/chat/completions';
+      const resolvedBaseUrl = String(baseUrl || effectiveBaseUrl(currentSettings) || '').replace(/\/+$/,'');
+      const url = resolvedBaseUrl + '/chat/completions';
       const body = { model, messages, max_tokens, temperature: 0.25 };
+      if (Array.isArray(modalities) && modalities.length) body.modalities = modalities;
       const r = await fetch(url, {
         method:'POST',
         headers: { 'Content-Type':'application/json', ...extraHeaders, ...buildAuthHeaders(currentSettings) },
@@ -5870,7 +5991,7 @@ async function fileToText(file){
       let j; try{ j = JSON.parse(t); }catch(_){ j = null; }
       if (!r.ok) throw new Error(extractApiErrorMessage(j, t, r.status));
 
-      const extracted = extractAssistantText(j);
+      const extracted = extractAssistantResponseData(j);
       if (!String(extracted.text || '').trim()){
         throw new Error(extracted.diagnostic || 'EMPTY_ASSISTANT_RESPONSE');
       }
@@ -5892,7 +6013,8 @@ async function fileToText(file){
   async function streamChatCompletions({ apiKey, baseUrl, model, messages, max_tokens, signal, onDelta, extraHeaders={} }){
     const run = async () => {
       const currentSettings = getSettings();
-      const url = effectiveBaseUrl(currentSettings).replace(/\/+$/,'') + '/chat/completions';
+      const resolvedBaseUrl = String(baseUrl || effectiveBaseUrl(currentSettings) || '').replace(/\/+$/,'');
+      const url = resolvedBaseUrl + '/chat/completions';
       const body = { model, messages, max_tokens, temperature: 0.25, stream: true };
       const r = await fetch(url, {
         method:'POST',
@@ -5910,7 +6032,7 @@ async function fileToText(file){
       if (contentType.includes('application/json')){
         const t = await r.text();
         let j; try{ j = JSON.parse(t); }catch(_){ j = null; }
-        const oneShot = extractAssistantText(j);
+        const oneShot = extractAssistantResponseData(j);
         if (!String(oneShot.text || '').trim()){
           throw new Error(oneShot.diagnostic || 'STREAM_EMPTY_RESPONSE');
         }
@@ -7113,6 +7235,8 @@ function updateChips(){
 
     let model = settings.model;
     if (settings.provider === 'openrouter') model = maybeOnlineModel(model, settings);
+    const requestedModalities = getRequestedOutputModalities(settings, model, messages);
+    const imageGenerationMode = requestedModalities.includes('image');
     const assistantModelMeta = buildAssistantMessageModelMeta(settings, model);
 
     const extraHeaders = buildProviderHeaders(settings);
@@ -7131,7 +7255,10 @@ function updateChips(){
 
     try{
       let ans = '';
-      const wantStream = !!settings.streaming;
+      const wantStream = !!settings.streaming && !imageGenerationMode;
+      if (imageGenerationMode && settings.streaming){
+        showStatus('جاري إنشاء الصورة. هذا النوع من الردود يعود دفعة واحدة بدل البث المباشر…', true);
+      }
 
       if (settings.provider === 'gemini'){
         const prompt = messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n');
@@ -7177,7 +7304,8 @@ function updateChips(){
                   messages,
                   max_tokens: maxTokens,
                   signal: abortCtl.signal,
-                  extraHeaders
+                  extraHeaders,
+                  modalities: requestedModalities
                 });
                 callErrLast = null;
                 break;
@@ -7194,7 +7322,7 @@ function updateChips(){
           for (let i=0; i<baseCandidates.length; i++){
             const baseUrl = baseCandidates[i];
             try{
-              ans = await callOpenAIChat({ apiKey: settings.apiKey, baseUrl, model, messages, max_tokens: maxTokens, signal: abortCtl.signal, extraHeaders });
+              ans = await callOpenAIChat({ apiKey: settings.apiKey, baseUrl, model, messages, max_tokens: maxTokens, signal: abortCtl.signal, extraHeaders, modalities: requestedModalities });
               callErrLast = null;
               break;
             }catch(callErr){
@@ -8239,21 +8367,25 @@ let pinOnly = false;
     return MODEL_CAPABILITY_MAP[String(key || '').trim()]?.note || '';
   }
   function inferModelCategories(model){
+    const outputModalities = (Array.isArray(model?.outputModalities) ? model.outputModalities : [])
+      .map((value) => String(value || '').toLowerCase())
+      .filter(Boolean);
     const hay = [
       model?.id,
       model?.name,
       model?.provider,
-      model?.modality
+      model?.modality,
+      outputModalities.join(' ')
     ].filter(Boolean).join(' ').toLowerCase();
     const ctx = Number(model?.ctx || 0);
     const categories = new Set();
-    const isImageGeneration = /(flux|sdxl|stable[-\s]?diffusion|recraft|imagen|dall[\s-]?e|ideogram|playground|image[-\s]?gen|text[-\s]?to[-\s]?image)/i.test(hay);
-    const isVideo = /(video|veo|runway|kling|hailuo|minimax[-\s]?video|pika|luma|wan[-\s]?video|movie[-\s]?gen|text[-\s]?to[-\s]?video)/i.test(hay);
-    const isAudio = /(whisper|tts|speech|audio|transcrib|voice|eleven|sonic|asr)/i.test(hay);
+    const isImageGeneration = outputModalities.includes('image') || /(flux|sdxl|stable[-\s]?diffusion|recraft|imagen|dall[\s-]?e|ideogram|playground|image[-\s]?gen|text[-\s]?to[-\s]?image)/i.test(hay);
+    const isVideo = outputModalities.includes('video') || /(video|veo|runway|kling|hailuo|minimax[-\s]?video|pika|luma|wan[-\s]?video|movie[-\s]?gen|text[-\s]?to[-\s]?video)/i.test(hay);
+    const isAudio = outputModalities.includes('audio') || /(whisper|tts|speech|audio|transcrib|voice|eleven|sonic|asr)/i.test(hay);
     const isCoding = /(code|coder|coding|codestral|deepseek[-\s]?coder|qwen.*coder|codellama|starcoder|replit|devstral|programming|software\s*engineer|aider)/i.test(hay);
     const isResearch = /(reason|reasoning|thinking|deep[-\s]?research|research|analysis|sonar|r1|o1|o3|o4|grok[-\s]?thinking)/i.test(hay);
     const isVision = !!model?.vision || /(vision|multimodal|vl|llava|pixtral|image[-\s]?understanding|ocr|gpt-4o|gemini|claude-3|claude 3)/i.test(hay);
-    const isTextCapable = !isImageGeneration && !isVideo && !isAudio;
+    const isTextCapable = outputModalities.includes('text') || (!outputModalities.length && !isImageGeneration && !isVideo && !isAudio);
     const isDocumentReady = isTextCapable && (
       ctx >= 32000
       || !!model?.tools
@@ -8338,10 +8470,13 @@ let pinOnly = false;
       const pc = pricing.completion ?? pricing.output ?? null;
       const arch = m.architecture || {};
       const modality = arch.modality || arch.input_modality || '';
+      const outputModalities = Array.isArray(m.output_modalities)
+        ? m.output_modalities
+        : (Array.isArray(arch.output_modalities) ? arch.output_modalities : []);
       const tools = !!m.supports_tools || !!m.tools;
       const vision = (String(modality).toLowerCase().includes('image') || String(modality).toLowerCase().includes('multimodal') || !!m.vision);
       const provider = String(id).split('/')[0] || '';
-      return decorateModelRecord({ id, name, provider, ctx, pp, pc, tools, vision, modality });
+      return decorateModelRecord({ id, name, provider, ctx, pp, pc, tools, vision, modality, outputModalities });
     }).filter(x => x.id);
   }
 
