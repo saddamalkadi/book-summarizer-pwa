@@ -34,12 +34,17 @@
     transcribeProfile: 'aistudio_transcribe_profile_v1',
     transcribeDocxMode: 'aistudio_transcribe_docx_mode_v1',
     authState: 'aistudio_auth_state_v1',
-    authConfigCache: 'aistudio_auth_config_v1'
+    authConfigCache: 'aistudio_auth_config_v1',
+    usageState: 'aistudio_usage_state_v1'
   };
 
   const nowTs = () => Date.now();
   const makeId = (p='id') => `${p}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
   const clamp = (n, min, max) => Math.min(max, Math.max(min, Number.isFinite(n) ? n : min));
+  const toFiniteNumber = (value, fallback = null) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+  };
 
   function loadJSON(key, fallback){
     try{
@@ -112,11 +117,35 @@
     premiumEnabled: true
   };
 
+  const DEFAULT_USAGE_STATE = {
+    email: '',
+    provider: '',
+    supported: false,
+    available: false,
+    totalCredits: null,
+    totalUsage: null,
+    remainingCredits: null,
+    lastRequestCost: null,
+    lastPromptTokens: null,
+    lastCompletionTokens: null,
+    lastTotalTokens: null,
+    lastModel: '',
+    lastGenerationId: '',
+    lastUpdatedAt: 0,
+    lastCheckedAt: 0,
+    lastError: '',
+    source: ''
+  };
+
   const AUTH_RUNTIME = {
     config: null,
     configLoadedAt: 0,
     configPromise: null,
     booting: false
+  };
+
+  const USAGE_RUNTIME = {
+    creditsPromise: null
   };
 
   const ANDROID_GOOGLE_SETUP = {
@@ -495,6 +524,68 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     return !!state.sessionToken && Number(state.sessionExp || 0) > (Date.now() + 30 * 1000);
   }
 
+  function normalizeUsageState(raw = {}){
+    const next = { ...DEFAULT_USAGE_STATE, ...(raw || {}) };
+    next.email = String(next.email || '').trim().toLowerCase();
+    next.provider = String(next.provider || '').trim();
+    next.supported = !!next.supported;
+    next.available = !!next.available;
+    next.totalCredits = toFiniteNumber(next.totalCredits);
+    next.totalUsage = toFiniteNumber(next.totalUsage);
+    next.remainingCredits = toFiniteNumber(next.remainingCredits);
+    if (next.remainingCredits == null && next.totalCredits != null && next.totalUsage != null){
+      next.remainingCredits = Math.max(0, next.totalCredits - next.totalUsage);
+    }
+    next.lastRequestCost = toFiniteNumber(next.lastRequestCost);
+    next.lastPromptTokens = toFiniteNumber(next.lastPromptTokens);
+    next.lastCompletionTokens = toFiniteNumber(next.lastCompletionTokens);
+    next.lastTotalTokens = toFiniteNumber(next.lastTotalTokens);
+    next.lastModel = String(next.lastModel || '').trim();
+    next.lastGenerationId = String(next.lastGenerationId || '').trim();
+    next.lastUpdatedAt = Math.max(0, Number(next.lastUpdatedAt || 0));
+    next.lastCheckedAt = Math.max(0, Number(next.lastCheckedAt || 0));
+    next.lastError = String(next.lastError || '').trim();
+    next.source = String(next.source || '').trim();
+    return next;
+  }
+
+  function getUsageState(){
+    const currentAuth = getAuthState();
+    const expectedEmail = String(currentAuth.email || '').trim().toLowerCase();
+    const stored = normalizeUsageState(loadJSON(KEYS.usageState, {}) || {});
+    if (expectedEmail && stored.email && stored.email !== expectedEmail){
+      return clearUsageState({ email: expectedEmail });
+    }
+    if (expectedEmail && stored.email !== expectedEmail){
+      const next = normalizeUsageState({ ...stored, email: expectedEmail });
+      saveJSON(KEYS.usageState, next);
+      return next;
+    }
+    return stored;
+  }
+
+  function saveUsageState(patch){
+    const currentAuth = getAuthState();
+    const next = normalizeUsageState({
+      ...getUsageState(),
+      ...(patch || {}),
+      email: String((patch || {}).email || currentAuth.email || '').trim().toLowerCase()
+    });
+    saveJSON(KEYS.usageState, next);
+    return next;
+  }
+
+  function clearUsageState(patch = {}){
+    const currentAuth = getAuthState();
+    const next = normalizeUsageState({
+      ...DEFAULT_USAGE_STATE,
+      email: String(patch.email || currentAuth.email || '').trim().toLowerCase(),
+      ...(patch || {})
+    });
+    saveJSON(KEYS.usageState, next);
+    return next;
+  }
+
   function getAccountPlanLabel(plan = getAuthState().plan){
     return plan === 'premium' ? 'الخطة المدفوعة' : 'الخطة المجانية';
   }
@@ -829,6 +920,272 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       endpointOrigin(settings?.ocrCloudEndpoint || '')
     ].filter(Boolean);
     return origins[0] || '';
+  }
+
+  function supportsCreditVisibility(settings = getSettings()){
+    const source = String(effectiveBaseUrl(settings) || settings.baseUrl || '').toLowerCase();
+    return settings.authMode === 'gateway'
+      || settings.provider === 'openrouter'
+      || source.includes('openrouter.ai');
+  }
+
+  function getUsageApiRoot(settings = getSettings()){
+    return normalizeUrl(
+      effectiveBaseUrl(settings)
+      || settings.baseUrl
+      || (supportsCreditVisibility(settings) ? 'https://openrouter.ai/api/v1' : '')
+    );
+  }
+
+  function formatUsd(value){
+    const n = toFiniteNumber(value);
+    if (n == null) return '—';
+    const abs = Math.abs(n);
+    const maximumFractionDigits = abs >= 100 ? 0 : abs >= 1 ? 2 : abs >= 0.01 ? 3 : 4;
+    try{
+      return new Intl.NumberFormat('ar-SA', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: Math.min(2, maximumFractionDigits),
+        maximumFractionDigits
+      }).format(n);
+    }catch(_){
+      return `$${n.toFixed(maximumFractionDigits)}`;
+    }
+  }
+
+  function formatTokenCount(value){
+    const n = toFiniteNumber(value);
+    if (n == null) return '—';
+    return Number(n).toLocaleString('ar-SA');
+  }
+
+  function getShortModelLabel(value = ''){
+    const raw = String(value || '').trim();
+    if (!raw) return 'غير محدد';
+    const parts = raw.split('/');
+    return parts[parts.length - 1] || raw;
+  }
+
+  function getLastUsageLabel(usage = getUsageState()){
+    const cost = usage.lastRequestCost != null ? formatUsd(usage.lastRequestCost) : '';
+    const tokens = usage.lastTotalTokens != null ? `${formatTokenCount(usage.lastTotalTokens)} token` : '';
+    const model = usage.lastModel ? getShortModelLabel(usage.lastModel) : '';
+    const parts = [cost, tokens, model].filter(Boolean);
+    if (parts.length) return parts.join(' • ');
+    if (usage.lastCheckedAt) return `آخر مزامنة ${new Date(usage.lastCheckedAt).toLocaleString('ar-SA')}`;
+    return '—';
+  }
+
+  function renderUsageIndicators(settings = getSettings(), usage = getUsageState()){
+    const supported = supportsCreditVisibility(settings);
+    const balanceLabel = usage.available && usage.remainingCredits != null
+      ? formatUsd(usage.remainingCredits)
+      : (supported
+        ? (usage.lastError ? 'غير متاح' : 'بانتظار التحقق')
+        : 'غير مدعوم');
+    const spentLabel = usage.available && usage.totalUsage != null
+      ? formatUsd(usage.totalUsage)
+      : (usage.lastTotalTokens != null
+        ? `${formatTokenCount(usage.lastTotalTokens)} token`
+        : '—');
+    const lastLabel = (usage.lastError && usage.lastTotalTokens == null && usage.lastRequestCost == null)
+      ? briefSnippet(usage.lastError, 78)
+      : getLastUsageLabel(usage);
+
+    if ($('topUsageBadge')){
+      $('topUsageBadge').textContent = usage.available && usage.remainingCredits != null
+        ? `رصيد OpenRouter ${formatUsd(usage.remainingCredits)}`
+        : (usage.lastTotalTokens != null
+          ? `آخر استهلاك ${formatTokenCount(usage.lastTotalTokens)} token`
+          : (supported ? 'رصيد OpenRouter غير متاح' : 'الاستهلاك غير مدعوم'));
+      $('topUsageBadge').title = usage.lastError || 'إجمالي الرصيد وآخر استهلاك متى ما كان المزوّد يدعمه.';
+    }
+    if ($('settingsBalanceState')) $('settingsBalanceState').textContent = balanceLabel;
+    if ($('settingsSpentState')) $('settingsSpentState').textContent = spentLabel;
+    if ($('settingsLastUsageState')) $('settingsLastUsageState').textContent = lastLabel;
+  }
+
+  function extractUsageMeta(payload){
+    const usage = payload?.usage && typeof payload.usage === 'object'
+      ? payload.usage
+      : (payload?.response?.usage && typeof payload.response.usage === 'object' ? payload.response.usage : {});
+    const promptTokens = toFiniteNumber(
+      usage?.prompt_tokens ?? usage?.input_tokens ?? usage?.promptTokenCount ?? usage?.inputTokenCount
+    );
+    const completionTokens = toFiniteNumber(
+      usage?.completion_tokens ?? usage?.output_tokens ?? usage?.candidatesTokenCount ?? usage?.outputTokenCount
+    );
+    const totalTokens = toFiniteNumber(
+      usage?.total_tokens ?? usage?.totalTokenCount ?? ((promptTokens != null || completionTokens != null)
+        ? Number(promptTokens || 0) + Number(completionTokens || 0)
+        : null)
+    );
+    const cost = toFiniteNumber(
+      usage?.cost ?? usage?.total_cost ?? usage?.usd ?? payload?.cost ?? payload?.total_cost
+    );
+    const generationId = String(payload?.id || payload?.generation_id || payload?.response_id || '').trim();
+    const model = String(payload?.model || payload?.response?.model || '').trim();
+    return { promptTokens, completionTokens, totalTokens, cost, generationId, model };
+  }
+
+  function recordUsageFromPayload(payload, meta = {}){
+    const usageMeta = extractUsageMeta(payload);
+    const patch = {
+      provider: meta.provider || getSettings().provider || '',
+      source: meta.source || 'chat',
+      lastUpdatedAt: nowTs()
+    };
+    let changed = false;
+    if (usageMeta.promptTokens != null){
+      patch.lastPromptTokens = usageMeta.promptTokens;
+      changed = true;
+    }
+    if (usageMeta.completionTokens != null){
+      patch.lastCompletionTokens = usageMeta.completionTokens;
+      changed = true;
+    }
+    if (usageMeta.totalTokens != null){
+      patch.lastTotalTokens = usageMeta.totalTokens;
+      changed = true;
+    }
+    if (usageMeta.cost != null){
+      patch.lastRequestCost = usageMeta.cost;
+      changed = true;
+    }
+    if (usageMeta.model || meta.model){
+      patch.lastModel = String(meta.model || usageMeta.model || '').trim();
+      changed = true;
+    }
+    if (usageMeta.generationId || meta.generationId){
+      patch.lastGenerationId = String(meta.generationId || usageMeta.generationId || '').trim();
+      changed = true;
+    }
+    if (!changed) return getUsageState();
+    const next = saveUsageState(patch);
+    renderUsageIndicators(meta.settings || getSettings(), next);
+    return next;
+  }
+
+  function parseCreditsSnapshot(payload){
+    const data = payload?.data && typeof payload.data === 'object' ? payload.data : payload;
+    const totalCredits = toFiniteNumber(data?.total_credits ?? data?.totalCredits ?? data?.credits ?? data?.limit);
+    const totalUsage = toFiniteNumber(data?.total_usage ?? data?.totalUsage ?? data?.used ?? data?.usage);
+    const remainingCredits = toFiniteNumber(
+      data?.remaining_credits
+      ?? data?.remainingCredits
+      ?? ((totalCredits != null && totalUsage != null) ? Math.max(0, totalCredits - totalUsage) : null)
+    );
+    return { totalCredits, totalUsage, remainingCredits };
+  }
+
+  function getFriendlyUsageError(error){
+    const raw = String(error?.message || error || '').trim();
+    if (!raw) return 'تعذر قراءة بيانات الرصيد الآن.';
+    if (/management key|admin key|unauthorized.*credits|forbidden.*credits/i.test(raw)){
+      return 'إجمالي الرصيد يحتاج Management Key من OpenRouter، لكن آخر استهلاك الطلبات سيظل ظاهرًا عند توفره.';
+    }
+    if (/insufficient\s+(credits?|balance)|not enough credits?|quota.*exceeded|billing|payment required|402\b/i.test(raw)){
+      return 'نفد رصيد OpenRouter أو تم بلوغ حد الفوترة.';
+    }
+    if (isCloudflareAccessCookieError(raw)){
+      return 'تعذر الوصول إلى بيانات الرصيد لأن رابط البوابة محمي أو غير صحيح.';
+    }
+    return briefSnippet(raw, 120);
+  }
+
+  async function fetchCreditsPayload(settings = getSettings()){
+    const run = async (activeSettings) => {
+      const root = getUsageApiRoot(activeSettings);
+      if (!root) throw new Error('رصيد OpenRouter غير متاح مع الإعداد الحالي.');
+      const response = await fetch(`${root}/credits`, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          ...buildAuthHeaders(activeSettings)
+        }
+      });
+      const text = await response.text();
+      let json;
+      try{ json = text ? JSON.parse(text) : null; }catch(_){ json = null; }
+      if (!response.ok) throw new Error(extractApiErrorMessage(json, text, response.status));
+      return json || {};
+    };
+
+    try{
+      return await run(settings);
+    }catch(err){
+      const repaired = repairGatewayAfterAccessIssue(err, settings);
+      if (repaired){
+        return run(repaired);
+      }
+      throw err;
+    }
+  }
+
+  async function refreshUsageState(options = {}){
+    const settings = options.settings || getSettings();
+    const force = !!options.force;
+    const current = getUsageState();
+
+    if (!supportsCreditVisibility(settings)){
+      const next = saveUsageState({
+        provider: settings.provider || '',
+        supported: false,
+        available: false,
+        totalCredits: null,
+        totalUsage: null,
+        remainingCredits: null,
+        lastError: settings.provider === 'gemini'
+          ? 'إجمالي الرصيد غير مدعوم مع Gemini داخل التطبيق الحالي.'
+          : 'إجمالي الرصيد متاح حاليًا مع OpenRouter فقط.',
+        lastCheckedAt: nowTs(),
+        source: 'unsupported'
+      });
+      renderUsageIndicators(settings, next);
+      return next;
+    }
+
+    if (!force && current.lastCheckedAt && (nowTs() - current.lastCheckedAt) < 60 * 1000){
+      renderUsageIndicators(settings, current);
+      return current;
+    }
+    if (USAGE_RUNTIME.creditsPromise) return USAGE_RUNTIME.creditsPromise;
+
+    USAGE_RUNTIME.creditsPromise = (async () => {
+      try{
+        const payload = await fetchCreditsPayload(settings);
+        const snapshot = parseCreditsSnapshot(payload);
+        const next = saveUsageState({
+          provider: settings.provider || 'openrouter',
+          supported: true,
+          available: snapshot.totalCredits != null || snapshot.totalUsage != null || snapshot.remainingCredits != null,
+          totalCredits: snapshot.totalCredits,
+          totalUsage: snapshot.totalUsage,
+          remainingCredits: snapshot.remainingCredits,
+          lastError: '',
+          lastCheckedAt: nowTs(),
+          source: 'openrouter_credits'
+        });
+        renderUsageIndicators(settings, next);
+        return next;
+      }catch(err){
+        const next = saveUsageState({
+          provider: settings.provider || 'openrouter',
+          supported: true,
+          available: current.available,
+          lastError: getFriendlyUsageError(err),
+          lastCheckedAt: nowTs(),
+          source: 'credits_error'
+        });
+        renderUsageIndicators(settings, next);
+        return next;
+      }finally{
+        USAGE_RUNTIME.creditsPromise = null;
+      }
+    })();
+
+    return USAGE_RUNTIME.creditsPromise;
   }
 
   function isCloudflareAccessCookieError(value){
@@ -2349,6 +2706,7 @@ function refreshDeepSearchBtn(){
       $('authCurrentPlanPill').classList.toggle('premium', role === 'admin' || plan === 'premium');
     }
 
+    renderUsageIndicators(settings);
     syncUnifiedAuthEntry();
     syncAccountPlanControls();
   }
@@ -2648,6 +3006,7 @@ function refreshDeepSearchBtn(){
 
   function logoutCurrentAccount(){
     clearAuthState();
+    clearUsageState();
     try{ window.google?.accounts?.id?.disableAutoSelect(); }catch(_){}
     try{
       const plugin = getNativeGoogleAuthPlugin();
@@ -2730,11 +3089,24 @@ function refreshDeepSearchBtn(){
       badge.className = 'runtime-badge';
       badge.id = 'topRuntimeBadge';
       badge.textContent = 'جاهز';
+      const usageBadge = document.createElement('span');
+      usageBadge.className = 'runtime-badge';
+      usageBadge.id = 'topUsageBadge';
+      usageBadge.textContent = 'الرصيد —';
       left.appendChild(stack);
       stack.appendChild(topTitle);
       row.appendChild(topSubtitle);
       row.appendChild(badge);
+      row.appendChild(usageBadge);
       stack.appendChild(row);
+    }
+    const runtimeRow = document.querySelector('.top-runtime-row');
+    if (runtimeRow && !$('topUsageBadge')){
+      const usageBadge = document.createElement('span');
+      usageBadge.className = 'runtime-badge';
+      usageBadge.id = 'topUsageBadge';
+      usageBadge.textContent = 'الرصيد —';
+      runtimeRow.appendChild(usageBadge);
     }
 
     const topActions = document.querySelector('.topbar .topbar-actions');
@@ -2868,6 +3240,9 @@ function refreshDeepSearchBtn(){
               <div class="settings-kpi"><span>الأمان</span><strong id="settingsSecurityState">—</strong></div>
               <div class="settings-kpi"><span>التحويل السحابي</span><strong id="settingsConvertState">—</strong></div>
               <div class="settings-kpi"><span>التكلفة</span><strong id="settingsCostState">—</strong></div>
+              <div class="settings-kpi"><span>الرصيد المتبقي</span><strong id="settingsBalanceState">—</strong></div>
+              <div class="settings-kpi"><span>المستخدم من الرصيد</span><strong id="settingsSpentState">—</strong></div>
+              <div class="settings-kpi"><span>آخر استهلاك</span><strong id="settingsLastUsageState">—</strong></div>
             </div>
           </div>
         </div>`);
@@ -3669,6 +4044,8 @@ function refreshDeepSearchBtn(){
     if ($('settingsModelState')) $('settingsModelState').textContent = getDisplayModelName(settings.model);
     if ($('settingsSecurityState')) $('settingsSecurityState').textContent = settings.authMode === 'gateway' ? 'المفاتيح محفوظة على الخادم' : ((settings.apiKey || '').trim() ? 'مفتاح المتصفح مستخدم' : 'لا يوجد مفتاح في المتصفح');
     if ($('settingsCostState')) $('settingsCostState').textContent = policy.modeLabel;
+    renderUsageIndicators(settings);
+    refreshUsageState({ settings }).catch(() => {});
 
     if ($('historyDrawerBtn')){
       $('historyDrawerBtn').innerHTML = `<span class="icon">🕘</span><span class="label">السجل (${loadThreads(pid).length})</span>`;
@@ -3769,6 +4146,19 @@ function refreshDeepSearchBtn(){
         lines.push(runtimeReady
           ? 'وضع المتصفح المباشر نشط والمفتاح موجود.'
           : 'وضع المتصفح المباشر نشط لكن مفتاح API مفقود.');
+      }
+
+      const usage = await refreshUsageState({ force: true, settings });
+      if (supportsCreditVisibility(settings)){
+        if (usage.available){
+          lines.push(`رصيد OpenRouter المتبقي: ${formatUsd(usage.remainingCredits)}`);
+          lines.push(`المستخدم من الرصيد: ${formatUsd(usage.totalUsage)} من ${formatUsd(usage.totalCredits)}`);
+        } else if (usage.lastTotalTokens != null || usage.lastRequestCost != null){
+          lines.push(`آخر استهلاك معروف: ${getLastUsageLabel(usage)}`);
+        }
+        if (usage.lastError){
+          lines.push(`بيانات الرصيد: ${usage.lastError}`);
+        }
       }
 
       const convertRoot = getConvertWorkerRoot(settings);
@@ -5069,6 +5459,7 @@ async function fileToText(file){
       if (!String(extracted.text || '').trim()){
         throw new Error(extracted.diagnostic || 'EMPTY_ASSISTANT_RESPONSE');
       }
+      recordUsageFromPayload(j, { source: 'chat_completion', settings: currentSettings, model });
       return extracted.text;
     };
 
@@ -5108,6 +5499,7 @@ async function fileToText(file){
         if (!String(oneShot.text || '').trim()){
           throw new Error(oneShot.diagnostic || 'STREAM_EMPTY_RESPONSE');
         }
+        recordUsageFromPayload(j, { source: 'chat_stream_json', settings: currentSettings, model });
         return String(oneShot.text || '');
       }
 
@@ -5115,6 +5507,8 @@ async function fileToText(file){
       const dec = new TextDecoder('utf-8');
       let buf = '';
       let full = '';
+      const streamMeta = { generationId:'', model:String(model || '').trim(), usage:null };
+      let streamDone = false;
       while (true){
         const {value, done} = await reader.read();
         if (done) break;
@@ -5126,14 +5520,21 @@ async function fileToText(file){
           if (!s || !s.startsWith) continue;
           if (!s.startsWith('data:')) continue;
           const payload = s.slice(5).trim();
-          if (payload === '[DONE]') return full;
+          if (payload === '[DONE]'){
+            streamDone = true;
+            break;
+          }
           let j; try{ j = JSON.parse(payload); }catch(_){ continue; }
+          if (!streamMeta.generationId) streamMeta.generationId = String(j?.id || j?.generation_id || '').trim();
+          if (!streamMeta.model) streamMeta.model = String(j?.model || '').trim();
+          if (j?.usage && typeof j.usage === 'object') streamMeta.usage = j.usage;
           const delta = textFromPart(j?.choices?.[0]?.delta?.content) || textFromPart(j?.choices?.[0]?.delta);
           if (delta){
             full += delta;
             onDelta?.(delta, full);
           }
         }
+        if (streamDone) break;
       }
 
       const tail = (buf || '').trim();
@@ -5141,6 +5542,9 @@ async function fileToText(file){
         const payload = tail.slice(5).trim();
         if (payload && payload !== '[DONE]'){
           let j; try{ j = JSON.parse(payload); }catch(_){ j = null; }
+          if (!streamMeta.generationId) streamMeta.generationId = String(j?.id || j?.generation_id || '').trim();
+          if (!streamMeta.model) streamMeta.model = String(j?.model || '').trim();
+          if (j?.usage && typeof j.usage === 'object') streamMeta.usage = j.usage;
           const lastDelta = textFromPart(j?.choices?.[0]?.delta?.content)
             || textFromPart(j?.choices?.[0]?.delta)
             || textFromPart(j?.choices?.[0]?.message?.content)
@@ -5155,6 +5559,13 @@ async function fileToText(file){
 
       if (!String(full || '').trim()){
         throw new Error('STREAM_EMPTY_RESPONSE');
+      }
+      if (streamMeta.usage || streamMeta.generationId || streamMeta.model){
+        recordUsageFromPayload({
+          id: streamMeta.generationId,
+          model: streamMeta.model,
+          usage: streamMeta.usage || {}
+        }, { source: 'chat_stream_sse', settings: currentSettings, model: streamMeta.model || model });
       }
       return full;
     };
@@ -6238,6 +6649,7 @@ function updateChips(){
       // v6: tool loop (agent tools)
       if (settings.toolsEnabled) await maybeRunToolsLoop(pid, tid, ans, settings);
 
+      await refreshUsageState({ settings }).catch(() => {});
       showStatus('', false);
       $('stopBtn').style.display = 'none';
       renderChat();
