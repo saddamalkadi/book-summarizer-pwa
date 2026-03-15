@@ -9,6 +9,12 @@
   "assets": {
     "directory": "."
   },
+  "kv_namespaces": [
+    {
+      "binding": "USER_DATA",
+      "id": "49d87e2d4989452fb3c680ad024ae5b7"
+    }
+  ],
   "compatibility_flags": [
     "nodejs_compat"
   ],

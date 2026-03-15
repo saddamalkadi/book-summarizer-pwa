@@ -5,6 +5,7 @@ const root = process.cwd();
 const webDir = join(root, 'www');
 const files = [
   'index.html',
+  'auth-bridge.html',
   'app.js',
   'sw.js',
   'manifest.webmanifest',

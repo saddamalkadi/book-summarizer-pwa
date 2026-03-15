@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>تسجيل Google - AI Workspace Studio</title>
+  <style>
+    :root{
+      color-scheme: light;
+      --bg:#f5f8ff;
+      --card:#ffffff;
+      --ink:#0f172a;
+      --muted:#5b6884;
+      --line:rgba(15,23,42,.08);
+      --brand:#1b66ff;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      min-height:100vh;
+      font-family:"Segoe UI",Tahoma,sans-serif;
+      color:var(--ink);
+      background:
+        radial-gradient(circle at top right, rgba(27,102,255,.15), transparent 28%),
+        radial-gradient(circle at bottom left, rgba(20,184,166,.10), transparent 24%),
+        linear-gradient(180deg,#f8fbff 0%,#eef3fb 100%);
+      display:grid;
+      place-items:center;
+      padding:24px;
+    }
+    .shell{
+      width:min(560px,100%);
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:28px;
+      box-shadow:0 28px 80px rgba(15,23,42,.12);
+      padding:28px;
+      display:grid;
+      gap:16px;
+    }
+    .eyebrow{
+      font-size:12px;
+      font-weight:900;
+      letter-spacing:.14em;
+      text-transform:uppercase;
+      color:#32528b;
+    }
+    h1{
+      margin:0;
+      font-size:30px;
+      line-height:1.15;
+    }
+    p{
+      margin:0;
+      color:var(--muted);
+      line-height:1.9;
+    }
+    .slot{
+      min-height:52px;
+      display:grid;
+      place-items:center;
+    }
+    .status{
+      border:1px solid rgba(27,102,255,.14);
+      background:#f8fbff;
+      color:#244275;
+      border-radius:18px;
+      padding:14px 16px;
+      white-space:pre-wrap;
+      line-height:1.8;
+      font-size:14px;
+    }
+    .status.error{
+      border-color:#fecdd3;
+      background:#fff1f2;
+      color:#be123c;
+    }
+    .status.success{
+      border-color:#9ee6c1;
+      background:#ecfdf5;
+      color:#166534;
+    }
+    .actions{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+    }
+    .btn{
+      border:none;
+      cursor:pointer;
+      border-radius:14px;
+      padding:12px 16px;
+      font:inherit;
+      font-weight:900;
+      text-decoration:none;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:8px;
+    }
+    .btn.primary{
+      background:var(--brand);
+      color:#fff;
+    }
+    .btn.ghost{
+      background:#fff;
+      color:#16325f;
+      border:1px solid rgba(27,102,255,.14);
+    }
+    .hint{
+      font-size:12px;
+      color:var(--muted);
+    }
+    code{
+      background:#eef3ff;
+      border:1px solid rgba(15,23,42,.08);
+      border-radius:8px;
+      padding:2px 6px;
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <div class="eyebrow">Google Sign-In</div>
+    <h1>تسجيل الدخول عبر Google</h1>
+    <p>افتح هذه الصفحة من التطبيق أو من نسخة الويب، ثم اختر حساب Gmail. بعد النجاح ستعود الجلسة إلى التطبيق أو الموقع تلقائيًا.</p>
+    <div class="status" id="statusBox">جارٍ تهيئة تسجيل Google…</div>
+    <div class="slot" id="googleSlot"></div>
+    <div class="actions">
+      <a class="btn ghost" href="https://saddamalkadi.github.io/book-summarizer-pwa/">العودة إلى المنصة</a>
+    </div>
+    <div class="hint">إذا كنت تستخدم التطبيق Android فسيتم الرجوع إليه عبر الرابط <code>aiworkspace://auth</code>.</div>
+  </main>
+
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script>
+    (() => {
+      const params = new URLSearchParams(window.location.search);
+      const worker = String(params.get('worker') || '').trim().replace(/\/+$/,'');
+      const returnTo = String(params.get('return_to') || window.location.origin + window.location.pathname.replace(/auth-bridge\.html$/,'')).trim();
+      const googleSlot = document.getElementById('googleSlot');
+      const statusBox = document.getElementById('statusBox');
+
+      const setStatus = (text, tone = '') => {
+        statusBox.textContent = text;
+        statusBox.className = `status${tone ? ` ${tone}` : ''}`;
+      };
+
+      const redirectBack = (payload) => {
+        const q = new URLSearchParams();
+        q.set('sessionToken', String(payload.sessionToken || payload.session_token || ''));
+        q.set('sessionExp', String(payload.sessionExp || payload.session_exp || '0'));
+        q.set('email', String(payload.email || ''));
+        q.set('name', String(payload.name || ''));
+        q.set('picture', String(payload.picture || ''));
+        q.set('plan', String(payload.plan || 'free'));
+        q.set('role', String(payload.role || 'user'));
+        try{
+          const target = new URL(returnTo);
+          if (/^https?:$/i.test(target.protocol)){
+            target.hash = q.toString();
+          } else {
+            target.search = q.toString();
+          }
+          window.location.replace(target.toString());
+        }catch(_){
+          setStatus('تم تسجيل الدخول، لكن رابط العودة غير صالح. عد إلى التطبيق يدويًا.', 'success');
+        }
+      };
+
+      const handleGoogleCredential = async (response) => {
+        try{
+          setStatus('جارٍ التحقق من حساب Google وإنشاء الجلسة…');
+          const credential = String(response?.credential || '').trim();
+          if (!credential) throw new Error('لم يصل رمز Google الكامل.');
+          const configResp = await fetch(`${worker}/auth/config`);
+          const config = await configResp.json();
+          const resp = await fetch(`${worker}/auth/google`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              credential,
+              clientId: String(config?.googleClientId || '')
+            })
+          });
+          const payload = await resp.json().catch(() => ({}));
+          if (!resp.ok) throw new Error(payload?.error || payload?.message || `HTTP ${resp.status}`);
+          setStatus('تم تسجيل الدخول. جارٍ إعادتك…', 'success');
+          redirectBack(payload);
+        }catch(error){
+          setStatus(`فشل تسجيل Google: ${error?.message || error}`, 'error');
+        }
+      };
+
+      const boot = async () => {
+        if (!worker){
+          setStatus('رابط خدمة الحسابات غير موجود في هذا الرابط.', 'error');
+          return;
+        }
+        try{
+          const configResp = await fetch(`${worker}/auth/config`);
+          const config = await configResp.json();
+          const clientId = String(config?.googleClientId || '').trim();
+          if (!clientId){
+            setStatus('Google Client ID غير مفعّل على الخادم بعد.', 'error');
+            return;
+          }
+          let attempts = 0;
+          while (!(window.google && window.google.accounts && window.google.accounts.id) && attempts < 60){
+            attempts += 1;
+            await new Promise((resolve) => setTimeout(resolve, 200));
+          }
+          if (!(window.google && window.google.accounts && window.google.accounts.id)){
+            setStatus('تعذّر تحميل خدمة Google Sign-In. حدّث الصفحة وحاول مرة أخرى.', 'error');
+            return;
+          }
+          window.google.accounts.id.initialize({
+            client_id: clientId,
+            callback: handleGoogleCredential,
+            auto_select: false,
+            cancel_on_tap_outside: false,
+            context: 'signin',
+            use_fedcm_for_prompt: true
+          });
+          googleSlot.innerHTML = '';
+          window.google.accounts.id.renderButton(googleSlot, {
+            theme: 'filled_blue',
+            size: 'large',
+            shape: 'pill',
+            text: 'signin_with',
+            logo_alignment: 'right',
+            width: 320,
+            use_fedcm_for_button: true
+          });
+          setStatus('اختر حساب Gmail للمتابعة.');
+        }catch(error){
+          setStatus(`تعذّر تهيئة الصفحة: ${error?.message || error}`, 'error');
+        }
+      };
+
+      boot();
+    })();
+  </script>
+</body>
+</html>

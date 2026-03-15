@@ -38,6 +38,14 @@ export default {
         return withCors(await handleSessionLookup(request, env), request);
       }
 
+      if (url.pathname === '/storage/state' && request.method === 'GET') {
+        return withCors(await handleStorageStateGet(request, env), request);
+      }
+
+      if (url.pathname === '/storage/state' && request.method === 'POST') {
+        return withCors(await handleStorageStatePut(request, env), request);
+      }
+
       if (url.pathname === '/auth/upgrade/request' && request.method === 'POST') {
         return withCors(await handleUpgradeRequest(request, env), request);
       }
@@ -157,6 +165,7 @@ function getWorkerHealth(env) {
   const hasSessionSecret = !!getSessionSecret(env);
   const hasUpgradeSecret = !!getUpgradeSecret(env);
   const adminLoginReady = !!getAdminPassword(env);
+  const cloudStorageReady = !!getUserDataStore(env);
   return {
     status: configured ? 200 : 503,
     body: {
@@ -170,7 +179,8 @@ function getWorkerHealth(env) {
       google_client_configured: authConfig.clientIdConfigured,
       admin_login_ready: adminLoginReady,
       session_ready: hasSessionSecret,
-      upgrade_flow_ready: hasUpgradeSecret
+      upgrade_flow_ready: hasUpgradeSecret,
+      cloud_storage_ready: cloudStorageReady
     }
   };
 }
@@ -336,6 +346,76 @@ async function handleSessionLookup(request, env) {
       error: String(error?.message || error || 'Authentication required.'),
       code: 'AUTH_SESSION_REQUIRED'
     }, 401);
+  }
+}
+
+function getUserDataStore(env) {
+  return env.USER_DATA || env.AISTUDIO_DATA || null;
+}
+
+function getUserStorageKey(email) {
+  return `state:${String(email || '').trim().toLowerCase()}`;
+}
+
+async function handleStorageStateGet(request, env) {
+  try {
+    const session = await requireSession(request, env);
+    const store = getUserDataStore(env);
+    if (!store || typeof store.get !== 'function') {
+      return jsonResponse({
+        error: 'Cloud storage is not configured on this worker.',
+        code: 'STORAGE_NOT_CONFIGURED'
+      }, 503);
+    }
+    const payload = await store.get(getUserStorageKey(session.email), { type: 'json' });
+    return jsonResponse({
+      ok: true,
+      updatedAt: Number(payload?.updatedAt || 0),
+      state: payload?.state || null
+    }, 200);
+  } catch (error) {
+    return jsonResponse({
+      error: String(error?.message || error || 'Authentication required.'),
+      code: 'STORAGE_GET_FAILED'
+    }, 401);
+  }
+}
+
+async function handleStorageStatePut(request, env) {
+  try {
+    const session = await requireSession(request, env);
+    const store = getUserDataStore(env);
+    if (!store || typeof store.put !== 'function') {
+      return jsonResponse({
+        error: 'Cloud storage is not configured on this worker.',
+        code: 'STORAGE_NOT_CONFIGURED'
+      }, 503);
+    }
+    const body = await parseJson(request);
+    if (!body?.state || typeof body.state !== 'object') {
+      return jsonResponse({
+        error: 'A valid state object is required.',
+        code: 'STORAGE_STATE_REQUIRED'
+      }, 400);
+    }
+    const doc = {
+      email: session.email,
+      updatedAt: Date.now(),
+      appVersion: String(body?.appVersion || '').trim(),
+      reason: String(body?.reason || '').trim(),
+      state: body.state
+    };
+    await store.put(getUserStorageKey(session.email), JSON.stringify(doc));
+    return jsonResponse({
+      ok: true,
+      updatedAt: doc.updatedAt
+    }, 200);
+  } catch (error) {
+    const message = String(error?.message || error || 'Failed to store cloud state.');
+    return jsonResponse({
+      error: message,
+      code: 'STORAGE_PUT_FAILED'
+    }, /Authentication required|Missing signed session|Invalid or expired session/i.test(message) ? 401 : 500);
   }
 }
 

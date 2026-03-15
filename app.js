@@ -1,4 +1,4 @@
-/* AI Workspace Studio v8.19 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v8.20 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -35,7 +35,10 @@
     transcribeDocxMode: 'aistudio_transcribe_docx_mode_v1',
     authState: 'aistudio_auth_state_v1',
     authConfigCache: 'aistudio_auth_config_v1',
-    usageState: 'aistudio_usage_state_v1'
+    usageState: 'aistudio_usage_state_v1',
+    authRemember: 'aistudio_auth_remember_v1',
+    voiceMode: 'aistudio_voice_mode_v1',
+    cloudMeta: 'aistudio_cloud_meta_v1'
   };
 
   const nowTs = () => Date.now();
@@ -56,6 +59,33 @@
   function saveJSON(key, val){
     try{ localStorage.setItem(key, JSON.stringify(val)); }catch(_){}
   }
+
+  function shouldCloudTrackStorageKey(key){
+    const normalized = String(key || '').trim();
+    return normalized.startsWith('aistudio_') && !UNSYNCED_STORAGE_KEYS.has(normalized);
+  }
+
+  (function installStorageHooks(){
+    if (window.__AI_STUDIO_STORAGE_HOOKS__) return;
+    const storageProto = Object.getPrototypeOf(window.localStorage);
+    const rawSetItem = storageProto.setItem;
+    const rawRemoveItem = storageProto.removeItem;
+    const rawClear = storageProto.clear;
+
+    storageProto.setItem = function patchedSetItem(key, value){
+      rawSetItem.call(this, key, value);
+      if (!CLOUD_RUNTIME.muted && shouldCloudTrackStorageKey(key)) scheduleCloudSync(`set:${key}`);
+    };
+    storageProto.removeItem = function patchedRemoveItem(key){
+      rawRemoveItem.call(this, key);
+      if (!CLOUD_RUNTIME.muted && shouldCloudTrackStorageKey(key)) scheduleCloudSync(`remove:${key}`);
+    };
+    storageProto.clear = function patchedClear(){
+      rawClear.call(this);
+      if (!CLOUD_RUNTIME.muted) scheduleCloudSync('clear');
+    };
+    window.__AI_STUDIO_STORAGE_HOOKS__ = true;
+  })();
 
   const DEFAULT_SETTINGS = {
     provider: 'openrouter',
@@ -159,6 +189,35 @@
     autoAttempted: false,
     lastDialogMessage: ''
   };
+
+  const CLOUD_RUNTIME = {
+    bootPromise: null,
+    syncTimer: 0,
+    syncPromise: null,
+    muted: false,
+    hydratedFor: '',
+    lastHash: '',
+    lastRemoteUpdatedAt: 0
+  };
+
+  const VOICE_RUNTIME = {
+    speaking: false,
+    utterance: null,
+    autoSendArmed: false
+  };
+
+  const BROWSER_AUTH_BRIDGE = {
+    webPath: 'auth-bridge.html',
+    appReturnUrl: 'aiworkspace://auth'
+  };
+
+  const UNSYNCED_STORAGE_KEYS = new Set([
+    KEYS.authState,
+    KEYS.authConfigCache,
+    KEYS.usageState,
+    KEYS.modelCache,
+    KEYS.authRemember
+  ]);
 
 // ---------------- KB (IndexedDB + RAG) ----------------
 const KB_DB_NAME = 'aistudio_kb_db_v3';
@@ -523,6 +582,29 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   function hasValidAuthSession(state = getAuthState()){
     return !!state.sessionToken && Number(state.sessionExp || 0) > (Date.now() + 30 * 1000);
   }
+
+  function getRememberedAuthEntry(){
+    const saved = loadJSON(KEYS.authRemember, {}) || {};
+    return {
+      remember: !!saved.remember,
+      name: String(saved.name || '').trim(),
+      email: String(saved.email || '').trim(),
+      password: String(saved.password || '').trim()
+    };
+  }
+
+  function saveRememberedAuthEntry(patch = {}){
+    const next = { ...getRememberedAuthEntry(), ...(patch || {}) };
+    saveJSON(KEYS.authRemember, next);
+    return next;
+  }
+
+  function clearRememberedAuthEntry(){
+    saveJSON(KEYS.authRemember, { remember:false, name:'', email:'', password:'' });
+  }
+
+  const getVoiceModeEnabled = () => (localStorage.getItem(KEYS.voiceMode) || 'false') === 'true';
+  const setVoiceModeEnabled = (value) => localStorage.setItem(KEYS.voiceMode, value ? 'true' : 'false');
 
   function normalizeUsageState(raw = {}){
     const next = { ...DEFAULT_USAGE_STATE, ...(raw || {}) };
@@ -911,6 +993,258 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     }catch(_){
       return clearAuthState({ preserveUpgradeCode: true });
     }
+  }
+
+  function getCloudMeta(){
+    return {
+      email: '',
+      updatedAt: 0,
+      hydratedAt: 0,
+      ...(loadJSON(KEYS.cloudMeta, {}) || {})
+    };
+  }
+
+  function saveCloudMeta(patch = {}){
+    const next = { ...getCloudMeta(), ...(patch || {}) };
+    saveJSON(KEYS.cloudMeta, next);
+    return next;
+  }
+
+  function getCloudStorageRoot(settings = getSettings()){
+    return getAuthServiceRoot(settings);
+  }
+
+  function getSyncedSettingsSnapshot(){
+    const settings = getSettings();
+    return {
+      provider: settings.provider,
+      baseUrl: settings.baseUrl,
+      model: settings.model,
+      systemPrompt: settings.systemPrompt,
+      maxOut: settings.maxOut,
+      webMode: settings.webMode,
+      fileClip: settings.fileClip,
+      streaming: settings.streaming,
+      rag: settings.rag,
+      toolsEnabled: settings.toolsEnabled,
+      authMode: settings.authMode,
+      gatewayUrl: settings.gatewayUrl,
+      cloudConvertEndpoint: settings.cloudConvertEndpoint,
+      cloudConvertFallbackEndpoint: settings.cloudConvertFallbackEndpoint,
+      ocrCloudEndpoint: settings.ocrCloudEndpoint,
+      ocrLang: settings.ocrLang,
+      freeMode: settings.freeMode,
+      costGuard: settings.costGuard,
+      maxCloudPdfPages: settings.maxCloudPdfPages,
+      maxCloudFileMB: settings.maxCloudFileMB,
+      allowCloudOcr: settings.allowCloudOcr,
+      allowCloudPolish: settings.allowCloudPolish,
+      upgradeEmail: settings.upgradeEmail,
+      orReferer: settings.orReferer,
+      orTitle: settings.orTitle
+    };
+  }
+
+  function sanitizeFilesForCloud(files = []){
+    return (Array.isArray(files) ? files : []).map((file) => {
+      const dataUrl = String(file?.dataUrl || '');
+      return {
+        ...file,
+        dataUrl: dataUrl.length <= 2_000_000 ? dataUrl : '',
+        cloudTrimmed: dataUrl.length > 2_000_000
+      };
+    });
+  }
+
+  function buildCloudSnapshot(){
+    const projects = loadJSON(KEYS.projects, null) || loadProjects();
+    const list = Array.isArray(projects) && projects.length ? projects : loadProjects();
+    const projectIds = list.map((project) => String(project?.id || '').trim()).filter(Boolean);
+    const snapshot = {
+      schema: 1,
+      updatedAt: Date.now(),
+      settings: getSyncedSettingsSnapshot(),
+      projects: list,
+      currentProjectId: getCurProjectId(),
+      downloads: loadDownloads(),
+      favorites: loadFavs(),
+      ui: {
+        modeDeep: isDeep(),
+        modeAgent: isAgent(),
+        deepSearch: isDeepSearch(),
+        webToggle: getWebToggle(),
+        headerCollapsed: getHeaderCollapsed(),
+        chatToolbarCollapsed: getChatToolbarCollapsed(),
+        chatToolbarPinned: getChatToolbarPinned(),
+        sidebarPinned: getSidebarPinned(),
+        focusMode: getFocusMode(),
+        studyMode: getStudyMode(),
+        transcribeProfile: getTranscribeProfile(),
+        transcribeDocxMode: getTranscribeDocxMode(),
+        voiceMode: getVoiceModeEnabled()
+      },
+      currentThreadIds: {},
+      threads: {},
+      files: {},
+      canvas: {},
+      projectBriefs: {},
+      kbSettings: {}
+    };
+
+    projectIds.forEach((pid) => {
+      snapshot.currentThreadIds[pid] = getCurThreadId(pid);
+      snapshot.threads[pid] = loadThreads(pid);
+      snapshot.files[pid] = sanitizeFilesForCloud(loadFiles(pid));
+      snapshot.canvas[pid] = loadJSON(KEYS.canvas(pid), []) || [];
+      snapshot.projectBriefs[pid] = loadJSON(KEYS.projectBrief(pid), {}) || {};
+      snapshot.kbSettings[pid] = loadJSON(KEYS.kbSettings(pid), {}) || {};
+    });
+    return snapshot;
+  }
+
+  function applyCloudSnapshot(snapshot){
+    if (!snapshot || typeof snapshot !== 'object') return false;
+    const remoteProjects = Array.isArray(snapshot.projects) && snapshot.projects.length
+      ? snapshot.projects
+      : [{ id:'default', name:'افتراضي', createdAt: nowTs(), updatedAt: nowTs() }];
+    const remoteProjectIds = new Set(remoteProjects.map((project) => String(project?.id || '').trim()).filter(Boolean));
+    const localProjects = loadJSON(KEYS.projects, []) || [];
+
+    CLOUD_RUNTIME.muted = true;
+    try{
+      saveJSON(KEYS.settings, normalizeStoredSettings({ ...getSettings(), ...(snapshot.settings || {}) }));
+      saveProjects(remoteProjects);
+      localStorage.setItem(KEYS.curProject, String(snapshot.currentProjectId || remoteProjects[0]?.id || 'default'));
+      saveDownloads(Array.isArray(snapshot.downloads) ? snapshot.downloads : []);
+      saveFavs(Array.isArray(snapshot.favorites) ? snapshot.favorites : []);
+
+      localStorage.setItem(KEYS.modeDeep, snapshot.ui?.modeDeep ? 'true' : 'false');
+      localStorage.setItem(KEYS.modeAgent, snapshot.ui?.modeAgent ? 'true' : 'false');
+      localStorage.setItem(KEYS.deepSearch, snapshot.ui?.deepSearch ? 'true' : 'false');
+      localStorage.setItem(KEYS.webToggle, snapshot.ui?.webToggle ? 'true' : 'false');
+      localStorage.setItem(KEYS.headerCollapsed, snapshot.ui?.headerCollapsed ? 'true' : 'false');
+      localStorage.setItem(KEYS.chatToolbarCollapsed, snapshot.ui?.chatToolbarCollapsed ? 'true' : 'false');
+      localStorage.setItem(KEYS.chatToolbarPinned, snapshot.ui?.chatToolbarPinned !== false ? 'true' : 'false');
+      localStorage.setItem(KEYS.sidebarPinned, snapshot.ui?.sidebarPinned ? 'true' : 'false');
+      localStorage.setItem(KEYS.focusMode, snapshot.ui?.focusMode ? 'true' : 'false');
+      localStorage.setItem(KEYS.studyMode, snapshot.ui?.studyMode ? 'true' : 'false');
+      localStorage.setItem(KEYS.transcribeProfile, snapshot.ui?.transcribeProfile || 'balanced');
+      localStorage.setItem(KEYS.transcribeDocxMode, snapshot.ui?.transcribeDocxMode || 'auto');
+      localStorage.setItem(KEYS.voiceMode, snapshot.ui?.voiceMode ? 'true' : 'false');
+
+      localProjects.forEach((project) => {
+        const pid = String(project?.id || '').trim();
+        if (!pid || remoteProjectIds.has(pid)) return;
+        localStorage.removeItem(KEYS.threads(pid));
+        localStorage.removeItem(KEYS.curThread(pid));
+        localStorage.removeItem(KEYS.files(pid));
+        localStorage.removeItem(KEYS.canvas(pid));
+        localStorage.removeItem(KEYS.projectBrief(pid));
+        localStorage.removeItem(KEYS.kbSettings(pid));
+      });
+
+      remoteProjects.forEach((project) => {
+        const pid = String(project?.id || '').trim();
+        if (!pid) return;
+        saveThreads(pid, Array.isArray(snapshot.threads?.[pid]) ? snapshot.threads[pid] : []);
+        localStorage.setItem(KEYS.curThread(pid), String(snapshot.currentThreadIds?.[pid] || ''));
+        saveFiles(pid, Array.isArray(snapshot.files?.[pid]) ? snapshot.files[pid] : []);
+        saveCanvas(pid, Array.isArray(snapshot.canvas?.[pid]) ? snapshot.canvas[pid] : []);
+        saveJSON(KEYS.projectBrief(pid), snapshot.projectBriefs?.[pid] || {});
+        saveJSON(KEYS.kbSettings(pid), snapshot.kbSettings?.[pid] || {});
+      });
+    } finally {
+      CLOUD_RUNTIME.muted = false;
+    }
+
+    return true;
+  }
+
+  async function rehydrateWorkspaceUiAfterCloud(){
+    refreshNavMeta();
+    applyShellLayout();
+    renderChat();
+    renderFiles();
+    renderDownloads();
+    renderThreadHistory();
+    renderProjects();
+    renderCanvas();
+    renderSettings();
+    syncAccountUi();
+    await renderKbUI().catch(() => {});
+    await refreshStrategicWorkspace().catch(() => {});
+  }
+
+  async function syncCloudNow(reason = 'manual'){
+    const auth = getAuthState();
+    if (!hasValidAuthSession(auth) || !auth.email) return null;
+    const root = getCloudStorageRoot();
+    if (!root) return null;
+
+    const snapshot = buildCloudSnapshot();
+    const hash = JSON.stringify(snapshot);
+    if (hash === CLOUD_RUNTIME.lastHash && reason !== 'bootstrap-seed') return { ok:true, skipped:true };
+
+    if (CLOUD_RUNTIME.syncPromise) return CLOUD_RUNTIME.syncPromise;
+    CLOUD_RUNTIME.syncPromise = fetchAuthJson('/storage/state', {
+      method: 'POST',
+      body: JSON.stringify({
+        reason,
+        state: snapshot,
+        appVersion: '8.20.0'
+      })
+    }).then((payload) => {
+      CLOUD_RUNTIME.lastHash = hash;
+      CLOUD_RUNTIME.lastRemoteUpdatedAt = Number(payload?.updatedAt || snapshot.updatedAt || Date.now());
+      saveCloudMeta({
+        email: auth.email,
+        updatedAt: CLOUD_RUNTIME.lastRemoteUpdatedAt,
+        hydratedAt: Date.now()
+      });
+      return payload;
+    }).finally(() => {
+      CLOUD_RUNTIME.syncPromise = null;
+    });
+    return CLOUD_RUNTIME.syncPromise;
+  }
+
+  function scheduleCloudSync(reason = 'change'){
+    const auth = getAuthState();
+    if (!hasValidAuthSession(auth) || !auth.email || CLOUD_RUNTIME.muted) return;
+    clearTimeout(CLOUD_RUNTIME.syncTimer);
+    CLOUD_RUNTIME.syncTimer = window.setTimeout(() => {
+      syncCloudNow(reason).catch(() => {});
+    }, 3200);
+  }
+
+  async function hydrateCloudState(force = false){
+    const auth = getAuthState();
+    if (!hasValidAuthSession(auth) || !auth.email) return null;
+    if (!force && CLOUD_RUNTIME.hydratedFor === auth.email) return null;
+    if (!force && CLOUD_RUNTIME.bootPromise) return CLOUD_RUNTIME.bootPromise;
+
+    CLOUD_RUNTIME.bootPromise = fetchAuthJson('/storage/state', { method:'GET' }).then(async (payload) => {
+      const remoteState = payload?.state || null;
+      if (remoteState && typeof remoteState === 'object'){
+        applyCloudSnapshot(remoteState);
+        CLOUD_RUNTIME.lastHash = JSON.stringify(remoteState);
+        CLOUD_RUNTIME.lastRemoteUpdatedAt = Number(payload?.updatedAt || remoteState.updatedAt || Date.now());
+        saveCloudMeta({
+          email: auth.email,
+          updatedAt: CLOUD_RUNTIME.lastRemoteUpdatedAt,
+          hydratedAt: Date.now()
+        });
+        await rehydrateWorkspaceUiAfterCloud();
+      } else {
+        await syncCloudNow('bootstrap-seed').catch(() => null);
+      }
+      CLOUD_RUNTIME.hydratedFor = auth.email;
+      return payload;
+    }).catch(() => null).finally(() => {
+      CLOUD_RUNTIME.bootPromise = null;
+    });
+
+    return CLOUD_RUNTIME.bootPromise;
   }
 
   function getConvertWorkerRoot(settings = getSettings()){
@@ -1942,14 +2276,17 @@ function scheduleChatScrollDockSync(){
 function syncStickyShellMetrics(){
   const root = document.documentElement;
   const topbar = document.querySelector('.topbar');
+  const subtopbar = document.querySelector('.subtopbar');
   const chatbar = document.querySelector('#page-chat .chatbar');
   const topbarHeight = topbar ? Math.ceil(topbar.getBoundingClientRect().height || topbar.offsetHeight || 0) : 0;
+  const subtopbarHeight = subtopbar ? Math.ceil(subtopbar.getBoundingClientRect().height || subtopbar.offsetHeight || 0) : 0;
   const chatbarHeight = chatbar ? Math.ceil(chatbar.getBoundingClientRect().height || chatbar.offsetHeight || 0) : 0;
   const stickyGap = window.innerWidth <= 640 ? 8 : 12;
   const floatingBottom = window.innerWidth <= 640
     ? Math.max(92, chatbarHeight + 18)
     : Math.max(38, chatbarHeight + 22);
-  root.style.setProperty('--sticky-toolbar-top', `${Math.max(stickyGap, topbarHeight + stickyGap)}px`);
+  root.style.setProperty('--sticky-subtopbar-top', `${Math.max(stickyGap, topbarHeight + stickyGap)}px`);
+  root.style.setProperty('--sticky-toolbar-top', `${Math.max(stickyGap, topbarHeight + subtopbarHeight + (stickyGap * 2))}px`);
   root.style.setProperty('--floating-nav-bottom', `${floatingBottom}px`);
 }
 
@@ -2027,6 +2364,7 @@ function applyShellLayout(){
       ? '<span class="icon">📚</span><span class="label">وضع دراسي</span>'
       : '<span class="icon">📖</span><span class="label">وضع دراسي</span>';
   }
+  refreshVoiceModeButton();
   syncStickyShellMetrics();
   scheduleChatScrollDockSync();
 }
@@ -2051,6 +2389,69 @@ function applyShellLayout(){
       : '<span class="icon">🎤</span><span class="label">إملاء صوتي</span>';
   }
 
+  function refreshVoiceModeButton(){
+    const btn = $('voiceModeBtn');
+    if (!btn) return;
+    const active = getVoiceModeEnabled();
+    btn.classList.toggle('dark', active);
+    btn.title = active ? 'إيقاف المحادثة الصوتية' : 'تفعيل المحادثة الصوتية';
+    btn.setAttribute('aria-label', btn.title);
+    btn.innerHTML = active
+      ? '<span class="icon">🔊</span><span class="label">صوت نشط</span>'
+      : '<span class="icon">🎙️</span><span class="label">صوت</span>';
+  }
+
+  function stripTextForSpeech(content = ''){
+    const raw = stripFileBlocks(String(content || ''));
+    return raw
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/\[(?:KB|FILE|IMG):[^\]]+\]/gi, ' ')
+      .replace(/https?:\/\/\S+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function stopVoicePlayback(){
+    try{ window.speechSynthesis?.cancel?.(); }catch(_){}
+    VOICE_RUNTIME.speaking = false;
+    VOICE_RUNTIME.utterance = null;
+  }
+
+  function speakAssistantReply(content = '', { force = false } = {}){
+    if (!force && !getVoiceModeEnabled()) return false;
+    if (!('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance === 'undefined'){
+      if (force) toast('⚠️ التشغيل الصوتي غير مدعوم في هذا المتصفح.');
+      return false;
+    }
+    const text = stripTextForSpeech(content);
+    if (!text) return false;
+
+    stopVoicePlayback();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = document.documentElement.lang === 'ar' ? 'ar-SA' : 'en-US';
+    utter.rate = 1;
+    utter.pitch = 1;
+    utter.onstart = () => { VOICE_RUNTIME.speaking = true; };
+    utter.onend = utter.onerror = () => {
+      VOICE_RUNTIME.speaking = false;
+      VOICE_RUNTIME.utterance = null;
+    };
+    VOICE_RUNTIME.utterance = utter;
+    window.speechSynthesis.speak(utter);
+    return true;
+  }
+
+  function toggleVoiceMode(){
+    const next = !getVoiceModeEnabled();
+    setVoiceModeEnabled(next);
+    refreshVoiceModeButton();
+    if (!next){
+      VOICE_RUNTIME.autoSendArmed = false;
+      stopVoicePlayback();
+    }
+    toast(next ? '🎙️ تم تفعيل المحادثة الصوتية' : '🔇 تم إيقاف المحادثة الصوتية');
+  }
+
   function stopComposerDictation(showToast = false){
     try{ composerRecognition?.stop?.(); }catch(_){}
     composerRecognition = null;
@@ -2066,6 +2467,7 @@ function applyShellLayout(){
     if (!input) return;
 
     composerDictationBase = String(input.value || '').trimEnd();
+    VOICE_RUNTIME.autoSendArmed = getVoiceModeEnabled();
     composerRecognition = new Ctor();
     composerRecognition.lang = document.documentElement.lang === 'ar' ? 'ar-SA' : 'en-US';
     composerRecognition.continuous = true;
@@ -2091,15 +2493,23 @@ function applyShellLayout(){
 
     composerRecognition.onerror = (event) => {
       composerListening = false;
+      VOICE_RUNTIME.autoSendArmed = false;
       syncVoiceInputButton();
       if (event?.error !== 'no-speech') toast(`⚠️ تعذّر الإملاء الصوتي: ${event?.error || 'unknown'}`);
     };
 
     composerRecognition.onend = () => {
+      const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && String(input.value || '').trim();
+      VOICE_RUNTIME.autoSendArmed = false;
       composerListening = false;
       composerRecognition = null;
       syncVoiceInputButton();
       showStatus('', false);
+      if (shouldAutoSend){
+        window.setTimeout(() => {
+          if (String($('chatInput')?.value || '').trim()) sendMessage();
+        }, 90);
+      }
     };
 
     try{
@@ -2452,22 +2862,15 @@ function refreshDeepSearchBtn(){
   }
 
   async function renderNativeGoogleButton(slot){
-    const plugin = getNativeGoogleAuthPlugin();
-    if (!plugin){
-      slot.innerHTML = '<div class="hint">نسخة Android الحالية لا تحتوي على إضافة Google الأصلية. أعد تثبيت التطبيق بعد التحديث.</div>';
-      setAuthGateStatus('إضافة Google الأصلية غير متاحة داخل نسخة Android الحالية.', 'error');
-      return;
-    }
     slot.innerHTML = `
       <div class="native-google-auth">
         <button class="native-google-btn" type="button" id="nativeGoogleSignInBtn">
           <span class="native-google-mark" aria-hidden="true">G</span>
-          <span>المتابعة باستخدام Google</span>
+          <span>المتابعة باستخدام Google عبر المتصفح</span>
         </button>
-        <div class="hint">على Android سيظهر تسجيل Google الأصلي للجهاز بدل زر الويب.</div>
+        <div class="hint">سيتم فتح متصفح الجهاز لتسجيل الدخول ثم العودة إلى التطبيق تلقائيًا.</div>
       </div>`;
-    $('nativeGoogleSignInBtn')?.addEventListener('click', startNativeGoogleButtonFlow);
-    await tryNativeGoogleAutoSignIn();
+    $('nativeGoogleSignInBtn')?.addEventListener('click', openGoogleAuthInBrowser);
   }
 
   function setAuthGateStatus(message, tone = 'info'){
@@ -2624,6 +3027,25 @@ function refreshDeepSearchBtn(){
         </div>`);
     }
 
+    const authGoogleSlot = $('googleSignInSlot');
+    if (authGoogleSlot && !$('authRememberToggle')){
+      authGoogleSlot.insertAdjacentHTML('beforebegin', `
+        <label class="auth-inline-check">
+          <input id="authRememberToggle" type="checkbox" />
+          <span>حفظ بيانات الدخول على هذا الجهاز</span>
+        </label>`);
+    }
+    if (authGoogleSlot && !$('authGoogleBrowserBtn')){
+      authGoogleSlot.insertAdjacentHTML('afterend', `
+        <div class="auth-browser-actions" id="authBrowserActions">
+          <button class="btn ghost sm with-label" type="button" id="authGoogleBrowserBtn">
+            <span class="icon">🌐</span>
+            <span class="label">متابعة Google في المتصفح</span>
+          </button>
+          <span class="hint" id="authBrowserHint">يفتح تسجيل Google في متصفح الجهاز ثم يعيد الجلسة إلى التطبيق أو الويب.</span>
+        </div>`);
+    }
+
     const settingsBody = document.querySelector('#page-settings .panel .body');
     if (settingsBody && !$('settingsAccountCard')){
       settingsBody.insertAdjacentHTML('afterbegin', `
@@ -2760,6 +3182,15 @@ function refreshDeepSearchBtn(){
     }
 
     renderUsageIndicators(settings);
+    const remembered = getRememberedAuthEntry();
+    if ($('authRememberToggle')) $('authRememberToggle').checked = remembered.remember;
+    if ($('authBrowserActions')) $('authBrowserActions').style.display = isNativePlatform() ? 'none' : 'flex';
+    if ($('authBrowserHint')) $('authBrowserHint').textContent = isNativePlatform()
+      ? 'يفتح تسجيل Google في متصفح الجهاز ثم يعيد الجلسة إلى التطبيق مباشرة.'
+      : 'يفتح تسجيل Google في المتصفح ثم يعيدك إلى نسخة الويب مباشرة.';
+    if ($('authEntryName') && !String($('authEntryName').value || '').trim()) $('authEntryName').value = remembered.name || '';
+    if ($('authEntryEmail') && !String($('authEntryEmail').value || '').trim()) $('authEntryEmail').value = remembered.email || '';
+    if ($('authEntryPassword') && remembered.remember && !String($('authEntryPassword').value || '').trim()) $('authEntryPassword').value = remembered.password || '';
     syncUnifiedAuthEntry();
     syncAccountPlanControls();
   }
@@ -2851,6 +3282,105 @@ function refreshDeepSearchBtn(){
     }
   }
 
+  function getCapacitorBrowserPlugin(){
+    return window.Capacitor?.Plugins?.Browser || null;
+  }
+
+  function getCapacitorAppPlugin(){
+    return window.Capacitor?.Plugins?.App || null;
+  }
+
+  function getBrowserAuthReturnUrl(){
+    if (isNativePlatform()) return BROWSER_AUTH_BRIDGE.appReturnUrl;
+    return window.location.href.split('#')[0];
+  }
+
+  function buildBrowserGoogleAuthUrl(){
+    const workerRoot = getAuthServiceRoot(getSettings());
+    if (!workerRoot) throw new Error('رابط البوابة غير مضبوط لتسجيل Google.');
+    const url = new URL(BROWSER_AUTH_BRIDGE.webPath, window.location.href);
+    url.searchParams.set('worker', workerRoot);
+    url.searchParams.set('return_to', getBrowserAuthReturnUrl());
+    url.searchParams.set('gateway', getSettings().gatewayUrl || '');
+    url.searchParams.set('app', 'AI Workspace Studio');
+    return url.toString();
+  }
+
+  async function openGoogleAuthInBrowser(){
+    try{
+      const url = buildBrowserGoogleAuthUrl();
+      const browser = getCapacitorBrowserPlugin();
+      if (isNativePlatform() && browser?.open){
+        setAuthGateStatus('جاري فتح تسجيل Google في متصفح الجهاز…', 'busy');
+        await browser.open({ url });
+      } else {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }
+    }catch(error){
+      setAuthGateStatus(`تعذّر فتح تسجيل Google في المتصفح: ${error?.message || error}`, 'error');
+    }
+  }
+
+  async function consumeAuthRedirectParams(params){
+    const sessionToken = String(params.get('sessionToken') || params.get('session_token') || '').trim();
+    if (!sessionToken) return false;
+    applyAuthResponse({
+      email: String(params.get('email') || '').trim().toLowerCase(),
+      name: String(params.get('name') || '').trim(),
+      picture: String(params.get('picture') || '').trim(),
+      plan: String(params.get('plan') || 'free').trim(),
+      role: String(params.get('role') || 'user').trim(),
+      sessionToken,
+      sessionExp: Number(params.get('sessionExp') || params.get('session_exp') || 0)
+    }, { upgradeCode: getAuthState().upgradeCode || '' });
+    syncAccountUi();
+    refreshModeButtons();
+    renderSettings();
+    await hydrateCloudState(true).catch(() => null);
+    closeAuthGate(true);
+    try{ await getCapacitorBrowserPlugin()?.close?.(); }catch(_){}
+    toast('✅ تم تسجيل الدخول عبر Google');
+    return true;
+  }
+
+  async function consumeAuthRedirectFromUrl(rawUrl){
+    try{
+      const url = new URL(String(rawUrl || '').trim());
+      const searchParams = new URLSearchParams(url.search || '');
+      if (await consumeAuthRedirectParams(searchParams)) return true;
+      const hash = String(url.hash || '').replace(/^#/, '');
+      if (hash && await consumeAuthRedirectParams(new URLSearchParams(hash))) return true;
+    }catch(_){}
+    return false;
+  }
+
+  async function consumeAuthRedirectFromLocation(){
+    const hash = String(window.location.hash || '').replace(/^#/, '');
+    if (!hash) return false;
+    const consumed = await consumeAuthRedirectParams(new URLSearchParams(hash));
+    if (consumed){
+      history.replaceState({}, document.title, window.location.href.split('#')[0]);
+    }
+    return consumed;
+  }
+
+  function installBrowserAuthBridgeListeners(){
+    if (window.__AI_STUDIO_AUTH_BRIDGE__) return;
+    window.__AI_STUDIO_AUTH_BRIDGE__ = true;
+    window.addEventListener('hashchange', () => { consumeAuthRedirectFromLocation().catch(() => {}); });
+    consumeAuthRedirectFromLocation().catch(() => {});
+    const appPlugin = getCapacitorAppPlugin();
+    if (appPlugin?.addListener){
+      appPlugin.addListener('appUrlOpen', ({ url }) => {
+        consumeAuthRedirectFromUrl(url).catch(() => {});
+      });
+    }
+    window.addEventListener('beforeunload', () => {
+      syncCloudNow('beforeunload').catch(() => {});
+      stopVoicePlayback();
+    });
+  }
+
   function openAuthGate(message = ''){
     ensureAccountChrome();
     $('authGate')?.classList.add('show');
@@ -2889,9 +3419,21 @@ function refreshDeepSearchBtn(){
         })
       });
       applyAuthResponse(payload, { upgradeCode: code });
+      const remember = !!$('authRememberToggle')?.checked;
+      if (remember){
+        saveRememberedAuthEntry({
+          remember: true,
+          name: String(payload?.name || $('authEntryName')?.value || '').trim(),
+          email: String(payload?.email || $('authEntryEmail')?.value || '').trim(),
+          password: ''
+        });
+      } else {
+        clearRememberedAuthEntry();
+      }
       syncAccountUi();
       refreshModeButtons();
       renderSettings();
+      await hydrateCloudState(true).catch(() => null);
       refreshStrategicWorkspace().catch(()=>{});
       closeAuthGate(true);
       toast('✅ تم تسجيل الدخول بنجاح');
@@ -2937,9 +3479,21 @@ function refreshDeepSearchBtn(){
         });
       }
       applyAuthResponse(payload, { upgradeCode: payload?.plan === 'premium' ? (($('upgradeCodeInput')?.value || getAuthState().upgradeCode || '').trim()) : getAuthState().upgradeCode || '' });
+      const remember = !!$('authRememberToggle')?.checked;
+      if (remember){
+        saveRememberedAuthEntry({
+          remember: true,
+          name,
+          email,
+          password: isAdminEntry ? password : ''
+        });
+      } else {
+        clearRememberedAuthEntry();
+      }
       syncAccountUi();
       refreshModeButtons();
       renderSettings();
+      await hydrateCloudState(true).catch(() => null);
       refreshStrategicWorkspace().catch(()=>{});
       closeAuthGate(true);
       if ($('authEntryPassword')) $('authEntryPassword').value = '';
@@ -3058,8 +3612,12 @@ function refreshDeepSearchBtn(){
   }
 
   function logoutCurrentAccount(){
+    stopVoicePlayback();
     clearAuthState();
     clearUsageState();
+    CLOUD_RUNTIME.hydratedFor = '';
+    CLOUD_RUNTIME.lastHash = '';
+    clearTimeout(CLOUD_RUNTIME.syncTimer);
     try{ window.google?.accounts?.id?.disableAutoSelect(); }catch(_){}
     try{
       const plugin = getNativeGoogleAuthPlugin();
@@ -3099,6 +3657,7 @@ function refreshDeepSearchBtn(){
 
   async function initializeAuthExperience(){
     ensureAccountChrome();
+    installBrowserAuthBridgeListeners();
     if (AUTH_RUNTIME.booting) return;
     AUTH_RUNTIME.booting = true;
     try{
@@ -3109,6 +3668,7 @@ function refreshDeepSearchBtn(){
       if (account.authRequired && !hasValidAuthSession()){
         openAuthGate();
       } else {
+        await hydrateCloudState(false).catch(() => null);
         closeAuthGate(true);
       }
     }finally{
@@ -3183,6 +3743,38 @@ function refreshDeepSearchBtn(){
       focus.id = 'focusModeBtn';
       focus.className = 'btn ghost sm with-label';
       topActions.insertBefore(focus, $('headerCollapseBtn'));
+    }
+    if (topActions && !$('voiceModeBtn')){
+      const voice = document.createElement('button');
+      voice.type = 'button';
+      voice.id = 'voiceModeBtn';
+      voice.className = 'btn ghost sm with-label';
+      voice.innerHTML = '<span class="icon">🎙️</span><span class="label">صوت</span>';
+      topActions.insertBefore(voice, $('modeOffBtn') || $('newThreadBtn') || null);
+    }
+
+    const topbar = document.querySelector('.topbar');
+    const statusBox = $('statusBox');
+    if (topbar && statusBox && !$('chatQuickActionBar')){
+      const quickBar = document.createElement('div');
+      quickBar.className = 'subtopbar';
+      quickBar.id = 'chatQuickActionBar';
+      quickBar.innerHTML = `
+        <span class="subtopbar-label">إجراءات الدردشة</span>
+        <div class="subtopbar-actions" id="chatQuickActionBarActions"></div>`;
+      topbar.insertAdjacentElement('afterend', quickBar);
+    }
+    const quickBarActions = $('chatQuickActionBarActions');
+    ['scrollTopBtn', 'scrollBottomBtn', 'clearChatBtn', 'chatToolbarPinBtn', 'chatToolbarCollapseBtn'].forEach((id) => {
+      const el = $(id);
+      if (el && quickBarActions && el.parentElement !== quickBarActions){
+        quickBarActions.appendChild(el);
+      }
+    });
+    $('agentTaskApplyBtn')?.remove();
+    const legacyQuickGroup = $('agentTaskTemplate')?.closest('.tool-group')?.nextElementSibling;
+    if (legacyQuickGroup?.querySelector?.('#scrollTopBtn') == null){
+      legacyQuickGroup.style.display = 'none';
     }
 
     const nav = $('nav');
@@ -6474,23 +7066,8 @@ async function maybeUpdateThreadSummary(pid, tid){
 
   
   function buildAutoFilesContext(settings){
-    // If filesText area is empty, build a clipped context from project files automatically.
     const explicit = String($('filesText')?.value || '');
-    if (explicit.trim()) return explicit;
-
-    const pid = getCurProjectId();
-    const files = loadFiles(pid).filter(f => (f.text||'').trim());
-    if (!files.length) return '';
-
-    const totalLimit = Number(settings.fileClip || 12000);
-    const perLimit = Math.max(1200, Math.floor(totalLimit / Math.min(files.length, 4)));
-    let out = '';
-    for (const f of files){
-      const block = `--- ${f.name} ---\n` + clipText(f.text, perLimit);
-      if ((out + "\n\n" + block).length > totalLimit) break;
-      out += (out ? "\n\n" : "") + block;
-    }
-    return out;
+    return explicit.trim() ? explicit : '';
   }
 
   function buildAttachmentsBlock(settings){
@@ -7037,6 +7614,15 @@ ${clip}` });
         canvasBtn.addEventListener('click', () => sendMessageToCanvas(m));
         actions.appendChild(canvasBtn);
 
+        const speakBtn = document.createElement('button');
+        speakBtn.className = 'btn ghost sm';
+        speakBtn.textContent = 'استماع';
+        speakBtn.addEventListener('click', () => {
+          const played = speakAssistantReply(m.content || '', { force: true });
+          if (!played) toast('⚠️ التشغيل الصوتي غير متاح لهذا الرد.');
+        });
+        actions.appendChild(speakBtn);
+
         if (downloadState.entries.length){
           const dlBtn = document.createElement('button');
           dlBtn.className = 'btn ghost sm';
@@ -7200,32 +7786,14 @@ ${clip}` });
 function updateChips(){
     const box = $('chatChips');
     if (!box) return;
-    const pid = getCurProjectId();
-    const files = loadFiles(pid);
     box.innerHTML = '';
-    files.forEach((f) => {
-      const chip = document.createElement('span');
-      chip.className = 'chip';
-      chip.innerHTML = `<span>${escapeHtml(f.name)}</span>`;
-      const x = document.createElement('button');
-      x.className = 'x';
-      x.textContent = '✕';
-      x.addEventListener('click', () => {
-        const arr = loadFiles(pid).filter(x => x.id !== f.id);
-        saveFiles(pid, arr);
-        renderFiles();
-        updateChips();
-        refreshNavMeta();
-      });
-      chip.appendChild(x);
-      box.appendChild(chip);
-    });
     syncComposerMeta();
   }
 
   // ---------------- Send message ----------------
   async function sendMessage(){
     if (composerListening) stopComposerDictation();
+    stopVoicePlayback();
     const input = $('chatInput');
     const text = (input.value || '').trim();
     if (!text) return;
@@ -7419,11 +7987,13 @@ function updateChips(){
       thread2.updatedAt = nowTs();
       threads2[idx2] = thread2;
       saveThreads(pid, threads2);
+      scheduleCloudSync('chat-response');
 
       // v6: tool loop (agent tools)
       if (settings.toolsEnabled) await maybeRunToolsLoop(pid, tid, ans, settings);
 
       await refreshUsageState({ settings }).catch(() => {});
+      if (getVoiceModeEnabled()) speakAssistantReply(ans || aMsg.content || '');
       showStatus('', false);
       $('stopBtn').style.display = 'none';
       renderChat();
@@ -8045,8 +8615,24 @@ async function runResearchAgent(topicOverride){
 let pinOnly = false;
   function renderDownloads(){
     const box = $('downloadsList');
+    const overview = $('downloadsOverview');
     const dl = loadDownloads();
     $('navDlMeta').textContent = String(dl.length);
+    if (overview){
+      const webUrl = 'https://saddamalkadi.github.io/book-summarizer-pwa/';
+      const apkUrl = 'https://raw.githubusercontent.com/saddamalkadi/book-summarizer-pwa/main/downloads/ai-workspace-studio-latest.apk';
+      const aabUrl = 'https://raw.githubusercontent.com/saddamalkadi/book-summarizer-pwa/main/downloads/ai-workspace-studio-latest.aab';
+      overview.innerHTML = `
+        <div class="bubble" style="margin:0">
+          <div style="font-weight:1000">تحديث التطبيق والتنزيل المباشر</div>
+          <div class="hint" style="margin-top:6px">الويب يعمل مباشرة من الموقع، وAndroid متاح بروابط تنزيل مباشرة محدثة دائمًا.</div>
+          <div class="actions">
+            <a class="btn sm" href="${apkUrl}" target="_blank" rel="noopener noreferrer">تنزيل APK</a>
+            <a class="btn ghost sm" href="${aabUrl}" target="_blank" rel="noopener noreferrer">تنزيل AAB</a>
+            <a class="btn ghost sm" href="${webUrl}" target="_blank" rel="noopener noreferrer">فتح نسخة الويب</a>
+          </div>
+        </div>`;
+    }
     const q = String($('dlSearch')?.value || '').trim().toLowerCase();
     const filtered = dl.filter(d => {
       if (pinOnly && !d.pinned) return false;
@@ -8379,7 +8965,7 @@ let pinOnly = false;
     if (page !== 'chat' && composerListening) stopComposerDictation();
     document.querySelectorAll('.navbtn').forEach(b => b.classList.toggle('active', b.dataset.page === page));
     document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === `page-${page}`));
-    const titles = { chat:'الدردشة', knowledge:'المعرفة (KB)', canvas:'اللوحة', files:'الملفات', transcription:'مختبر الوثائق', workflows:'سير العمل', downloads:'التحميلات', projects:'المشاريع', guide:'دليل الاستخدام', settings:'الإعدادات' };
+    const titles = { chat:'الدردشة', knowledge:'المعرفة (KB)', canvas:'اللوحة', files:'الملفات', transcription:'مختبر الوثائق', workflows:'سير العمل', downloads:'التحديث والتنزيل', projects:'المشاريع', guide:'دليل الاستخدام', settings:'الإعدادات' };
     $('topTitle').textContent = titles[page] || 'استوديو الذكاء';
     refreshStrategicWorkspace().catch(()=>{});
     scheduleChatScrollDockSync();
@@ -8858,6 +9444,10 @@ let pinOnly = false;
       });
     });
     $('authEntryEmail')?.addEventListener('input', syncUnifiedAuthEntry);
+    $('authGoogleBrowserBtn')?.addEventListener('click', openGoogleAuthInBrowser);
+    $('authRememberToggle')?.addEventListener('change', () => {
+      if (!$('authRememberToggle')?.checked) clearRememberedAuthEntry();
+    });
 
     // nav
     $('nav').addEventListener('click', (e) => {
@@ -9046,6 +9636,7 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
       refreshStrategicWorkspace().catch(()=>{});
       toast(getStudyMode() ? '📚 تم تفعيل وضع الدراسة' : '📚 تم إيقاف وضع الدراسة');
     });
+    $('voiceModeBtn')?.addEventListener('click', toggleVoiceMode);
     $('voiceInputBtn')?.addEventListener('click', toggleComposerDictation);
     ['briefGoal','briefAudience','briefDeliverable','briefConstraints','briefMemory','briefResponseRules','briefStyle'].forEach((id) => {
       const el = $(id);

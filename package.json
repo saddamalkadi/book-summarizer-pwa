@@ -1,6 +1,6 @@
 {
   "name": "book-summarizer-pwa",
-  "version": "8.19.0",
+  "version": "8.20.0",
   "private": true,
   "description": "AI Workspace Studio - static Arabic AI workspace with Capacitor wrappers for Android and iPhone.",
   "scripts": {
@@ -11,6 +11,8 @@
     "cap:ios": "npx cap open ios"
   },
   "dependencies": {
+    "@capacitor/app": "^7.1.0",
+    "@capacitor/browser": "^7.0.2",
     "@capacitor/core": "^7.4.3",
     "capacitor-native-google-one-tap-signin": "^7.0.3"
   },
