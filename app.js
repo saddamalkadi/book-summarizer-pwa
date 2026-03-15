@@ -1,4 +1,4 @@
-/* AI Workspace Studio v8.5 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v8.17 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -2147,7 +2147,9 @@ function refreshDeepSearchBtn(){
   function getDisplayModelName(model){
     const value = String(model || '').trim();
     if (!value) return 'Not set';
-    return value.length > 34 ? `${value.slice(0, 34)}…` : value;
+    const descriptor = getModelDescriptor(value, value.split('/')[0] || '');
+    const label = String(descriptor?.name || descriptor?.id || value).trim() || value;
+    return label.length > 34 ? `${label.slice(0, 34)}…` : label;
   }
 
   function getNumericModelPrice(value){
@@ -3186,6 +3188,7 @@ function refreshDeepSearchBtn(){
         <div class="composer-meta">
           <span id="composerHint">Enter للإرسال • Shift+Enter لسطر جديد • تُضاف المرفقات إلى السياق تلقائيًا.</span>
           <span class="composer-status" id="composerContextMeta">سياق مساحة العمل —</span>
+          <button class="btn ghost sm" id="composerEditCancelBtn" type="button" style="display:none">إلغاء التعديل</button>
         </div>`);
     }
 
@@ -3989,6 +3992,8 @@ function refreshDeepSearchBtn(){
     const rawSettings = getSettings();
     const policy = getAppRuntimePolicy(rawSettings);
     const settings = policy.runtime;
+    const modelDescriptor = getModelDescriptor(settings.model || '', settings.provider || '');
+    const modelCapabilitySummary = summarizeModelCapabilities(modelDescriptor, 4);
     const modes = getEffectiveModeState(rawSettings, policy);
     const pid = getCurProjectId();
     const project = getCurProject();
@@ -4020,12 +4025,12 @@ function refreshDeepSearchBtn(){
     if ($('workspaceSummary')){
       const briefPart = hasProjectBrief(brief) ? ` • الذاكرة: ${summarizeProjectBrief(brief)}` : '';
       const policyPart = policy.blockedReason ? ` • تنبيه: ${policy.blockedReason}` : '';
-      $('workspaceSummary').textContent = `التشغيل الفعلي ${policy.modeLabel} • المزوّد ${settings.provider} • النموذج ${getDisplayModelName(settings.model)} • ${files.length} ملفًا • ${chunks} مقطع معرفة • ${downloads} ملفًا مؤرشفًا${briefPart}${policyPart}.`;
+      $('workspaceSummary').textContent = `التشغيل الفعلي ${policy.modeLabel} • المزوّد ${settings.provider} • النموذج ${getDisplayModelName(settings.model)} • القدرات ${modelCapabilitySummary} • ${files.length} ملفًا • ${chunks} مقطع معرفة • ${downloads} ملفًا مؤرشفًا${briefPart}${policyPart}.`;
     }
     if ($('signalProvider')) $('signalProvider').textContent = settings.provider.toUpperCase();
     if ($('signalProviderNote')) $('signalProviderNote').textContent = `${readiness} • ${settings.authMode === 'gateway' ? 'اتصال محمي عبر البوابة' : 'اتصال مباشر من المتصفح'}`;
     if ($('signalModel')) $('signalModel').textContent = getDisplayModelName(settings.model);
-    if ($('signalModelNote')) $('signalModelNote').textContent = `حد الإخراج ${settings.maxOut || 2000} • قص الملفات ${settings.fileClip || 12000} • ${policy.freeMode ? 'نموذج مجاني' : getCostGuardLabel(policy.costGuard)}`;
+    if ($('signalModelNote')) $('signalModelNote').textContent = `القدرات ${modelCapabilitySummary} • حد الإخراج ${settings.maxOut || 2000} • قص الملفات ${settings.fileClip || 12000} • ${policy.freeMode ? 'نموذج مجاني' : getCostGuardLabel(policy.costGuard)}`;
     if ($('signalContext')) $('signalContext').textContent = `${files.length} ملف • ${chunks} معرفة`;
     if ($('signalContextNote')) $('signalContextNote').textContent = `${messageCount} رسالة • ${modes.rag ? 'RAG متاح' : 'RAG موقوف'} • ${policy.allowEmbeddings ? 'KB متاحة' : 'KB اقتصادية'}`;
     if ($('signalModes')) $('signalModes').textContent = modeLabels.filter(Boolean).join(' • ');
@@ -5992,10 +5997,26 @@ async function fileToText(file){
   }
 
   // ---------------- Prompts and messages ----------------
+  function buildSelectedModelCapabilityContract(settings){
+    const descriptor = getModelDescriptor(settings.model || '', settings.provider || '');
+    const profile = descriptor.capabilities || buildModelCapabilityProfile(descriptor);
+    const lines = [];
+    if (descriptor.id){
+      lines.push(`[Model profile] النموذج الحالي: ${descriptor.name || descriptor.id}. القدرات المرجحة: ${summarizeModelCapabilities(descriptor, 6)}.`);
+    }
+    if (profile.documents) lines.push('[Documents] عند طلب تقرير أو عرض أو مستند، أخرج المحتوى النهائي داخل file blocks بصيغ مثل markdown أو docx أو pptx أو xlsx عند الحاجة.');
+    if (profile.coding) lines.push('[Coding] عند طلب البرمجة، قدّم مشروعًا منظمًا، ملفات قابلة للتنزيل، وتعليمات تشغيل مختصرة بدل الرد النظري فقط.');
+    if (profile.image_generation) lines.push('[Images] إذا كان المزود الحالي يعيد أصولًا مرئية مباشرة فأخرجها كملف image داخل file/url blocks. وإذا لم يكن الأصل المباشر متاحًا، فأخرج prompt pack أو SVG/PNG قابلًا للتنزيل.');
+    if (profile.video) lines.push('[Video] إذا كان المزود الحالي يدعم مخرجات فيديو مباشرة فاستخدم file/url blocks. وإذا لم تكن الأصول المباشرة متاحة، فاخرج storyboard أو shot list أو script إنتاجي قابل للتنزيل.');
+    if (profile.audio) lines.push('[Audio] استخدم file/url blocks لملفات الصوت أو التفريغ، ولا تعرض payload ثنائيًا خامًا داخل النص.');
+    if (profile.vision) lines.push('[Vision] عند وجود صور أو ملفات مرئية، استخدم محتوى المرفقات والسياق المرئي قبل الرد.');
+    return lines.join('\n');
+  }
   function buildSystemPrompt(settings){
     const policy = getAppRuntimePolicy(settings);
     const modes = getEffectiveModeState(settings, policy);
     let sys = settings.systemPrompt || 'أنت مساعد احترافي. أجب بدقة وبأسلوب منظم.';
+    const capabilityContract = buildSelectedModelCapabilityContract(settings);
     if (modes.deep){
       sys += '\n\n[وضع التفكير العميق] التزم بالبنية: (1) ملخص سريع (2) شرح مفصل (3) خطوات/أمثلة (4) مخاطر/تحقق (5) خلاصة.';
     }
@@ -6019,6 +6040,7 @@ async function fileToText(file){
         + "\\nاستخدم encoding=\"base64\" للملفات الثنائية مثل PowerPoint وExcel وZIP والصور والفيديو، أو url عندما يكون الملف مستضافًا على رابط مباشر."
         + "\\nوسيحوّل التطبيق هذا البلوك تلقائيًا إلى رابط وزر تنزيل داخل الدردشة. لا تكرر محتوى الملف خارج هذا البلوك إلا إذا طلب المستخدم ذلك."
         + "\\nممنوع إظهار base64 الخام أو البايتات الثنائية كنص مرئي داخل الرسالة.";
+    if (capabilityContract) sys += `\n\n${capabilityContract}`;
     return sys;
   }
 
@@ -6117,8 +6139,9 @@ async function fileToText(file){
       const idx = threads.findIndex(t => t.id === tid);
       const thread = threads[idx] || threads[0];
       thread.messages = thread.messages || [];
+      const toolMeta = buildAssistantMessageModelMeta(runtimeSettings, runtimeSettings.model);
       thread.messages.push({ id: makeId('m'), role:'assistant', ts: nowTs(),
-        content: `🧰 TOOL RESULT (${tc.name})\n\n${result}` });
+        content: `🧰 TOOL RESULT (${tc.name})\n\n${result}`, ...toolMeta });
       thread.updatedAt = nowTs();
       threads[idx] = thread;
       saveThreads(pid, threads);
@@ -6158,7 +6181,7 @@ async function fileToText(file){
       const idx2 = threads2.findIndex(t => t.id === tid);
       const thread2 = threads2[idx2] || threads2[0];
       thread2.messages = thread2.messages || [];
-      thread2.messages.push({ id: makeId('m'), role:'assistant', ts: nowTs(), content: String(ans||'') });
+      thread2.messages.push({ id: makeId('m'), role:'assistant', ts: nowTs(), content: String(ans||''), ...buildAssistantMessageModelMeta(runtimeSettings, model) });
       thread2.updatedAt = nowTs();
       threads2[idx2] = thread2;
       saveThreads(pid, threads2);
@@ -6414,6 +6437,90 @@ ${clip}` });
   // ---------------- Chat rendering ----------------
   let abortCtl = null;
   let pendingChatAttachments = [];
+  let composerEditState = { active:false, sourceMessageId:'', sourceRole:'', mutateThread:false };
+
+  function getModelDescriptor(modelId = '', fallbackProvider = ''){
+    const id = String(modelId || '').replace(/:online$/,'').trim();
+    if (!id) return decorateModelRecord({ id:'', name:'', provider:fallbackProvider || '', ctx:null, pp:null, pc:null, tools:false, vision:false, modality:'' });
+    const cached = loadJSON(KEYS.modelCache, {})?.models || [];
+    const hit = cached.find((model) => String(model.id || '').trim() === id);
+    if (hit) return decorateModelRecord(hit);
+    return decorateModelRecord({
+      id,
+      name: id,
+      provider: fallbackProvider || String(id).split('/')[0] || '',
+      ctx: null,
+      pp: null,
+      pc: null,
+      tools: false,
+      vision: false,
+      modality: ''
+    });
+  }
+  function buildAssistantMessageModelMeta(settings = getSettings(), modelId = ''){
+    const descriptor = getModelDescriptor(modelId || settings.model || '', settings.provider || '');
+    return {
+      modelId: String(descriptor.id || '').trim(),
+      modelName: String(descriptor.name || descriptor.id || '').trim(),
+      modelPrimaryCategory: String(descriptor.primaryCategory || '').trim(),
+      modelCategories: Array.isArray(descriptor.categories) ? descriptor.categories.slice() : [],
+      modelCapabilityKeys: Array.isArray(descriptor.capabilityKeys) ? descriptor.capabilityKeys.slice() : []
+    };
+  }
+  function formatMessageMetaLine(message = {}){
+    const parts = [
+      message.role === 'user' ? 'المستخدم' : 'المساعد',
+      new Date(message.ts || nowTs()).toLocaleString('ar')
+    ];
+    if (message.role === 'assistant' && (message.modelId || message.modelName)){
+      const modelLabel = String(message.modelName || message.modelId || '').trim();
+      if (modelLabel) parts.push(`النموذج: ${modelLabel}`);
+    }
+    if (message.role === 'user' && message.requestModelId){
+      const requestDescriptor = getModelDescriptor(String(message.requestModelId || '').trim(), '');
+      const requestLabel = String(requestDescriptor.name || requestDescriptor.id || message.requestModelId || '').trim();
+      if (requestLabel) parts.push(`الإرسال عبر: ${requestLabel}`);
+    }
+    if (message.editedAt) parts.push('معدلة');
+    return parts.join(' • ');
+  }
+  function setComposerEditState(state = null){
+    composerEditState = state?.active
+      ? {
+          active: true,
+          sourceMessageId: String(state.sourceMessageId || '').trim(),
+          sourceRole: String(state.sourceRole || '').trim(),
+          mutateThread: !!state.mutateThread
+        }
+      : { active:false, sourceMessageId:'', sourceRole:'', mutateThread:false };
+    const cancelBtn = $('composerEditCancelBtn');
+    if (cancelBtn) cancelBtn.style.display = composerEditState.active ? 'inline-flex' : 'none';
+    syncComposerMeta();
+  }
+  function clearComposerEditState(){
+    setComposerEditState(null);
+  }
+  function loadMessageIntoComposer(message){
+    const input = $('chatInput');
+    if (!input || !message) return;
+    const sourceText = message.role === 'assistant'
+      ? (stripFileBlocks(message.content || '') || String(message.content || ''))
+      : String(message.content || '');
+    input.value = sourceText;
+    resizeComposerInput(input);
+    setComposerEditState({
+      active: true,
+      sourceMessageId: String(message.id || '').trim(),
+      sourceRole: String(message.role || '').trim(),
+      mutateThread: message.role === 'user'
+    });
+    syncComposerMeta();
+    setActiveNav('chat');
+    input.focus();
+    toast(message.role === 'user'
+      ? '✅ عدّل الرسالة ثم أرسلها لإعادة التوليد من نفس النقطة.'
+      : '✅ تم تحميل نص الرسالة في المحرر لتعديله أو إعادة استخدامه.');
+  }
 
   function titleFromMessage(content, fallback='Artifact'){
     const first = String(content || '')
@@ -6541,7 +6648,7 @@ ${clip}` });
       b.dataset.mid = m.id || '';
       const meta = document.createElement('div');
       meta.className = 'meta';
-      meta.textContent = (m.role === 'user' ? 'المستخدم' : 'المساعد') + ' • ' + new Date(m.ts || nowTs()).toLocaleString('ar');
+      meta.textContent = formatMessageMetaLine(m);
 
       const body = document.createElement('div');
       body.className = 'body';
@@ -6562,6 +6669,12 @@ ${clip}` });
         toast(ok ? '✅ تم النسخ' : '⚠️ تعذر النسخ');
       });
       actions.appendChild(copyBtn);
+
+      const editBtn = document.createElement('button');
+      editBtn.className = 'btn ghost sm';
+      editBtn.textContent = m.role === 'user' ? 'تعديل' : 'إعادة استخدام';
+      editBtn.addEventListener('click', () => loadMessageIntoComposer(m));
+      actions.appendChild(editBtn);
 
       if (m.role === 'assistant'){
         const canvasBtn = document.createElement('button');
@@ -6597,7 +6710,11 @@ ${clip}` });
     const b = log?.querySelector(`.bubble.assistant[data-mid="${CSS.escape(mid)}"]`);
     if (!b) return;
     const body = b.querySelector('.body');
-    if (body) body.innerHTML = renderMarkdown(text);
+    if (body){
+      const downloadState = ensureDownloadsFromText(text || '', mid || '');
+      body.innerHTML = renderAssistantMessageHtml(text || '', downloadState.entries);
+      bindAssistantDownloadLinks(body);
+    }
     log.scrollTop = log.scrollHeight + 1000;
   }
 
@@ -6692,7 +6809,7 @@ ${clip}` });
 
       const meta = document.createElement('div');
       meta.className = 'meta';
-      meta.textContent = (m.role === 'user' ? 'المستخدم' : 'المساعد') + ' • ' + new Date(m.ts || nowTs()).toLocaleString('ar');
+      meta.textContent = formatMessageMetaLine(m);
 
       const body = document.createElement('div');
       body.className = 'body';
@@ -6715,6 +6832,12 @@ ${clip}` });
         toast(ok ? '✅ تم النسخ' : '⚠️ تعذر النسخ');
       });
       actions.appendChild(copyBtn);
+
+      const editBtn = document.createElement('button');
+      editBtn.className = 'btn ghost sm';
+      editBtn.textContent = m.role === 'user' ? 'تعديل' : 'إعادة استخدام';
+      editBtn.addEventListener('click', () => loadMessageIntoComposer(m));
+      actions.appendChild(editBtn);
 
       if (m.role === 'assistant'){
         const canvasBtn = document.createElement('button');
@@ -6799,6 +6922,9 @@ ${clip}` });
       parts.push(`مقروء ${recognized}/${pendingChatAttachments.length}`);
       if (attachmentChars) parts.push(`نص مرفق ${formatCompactChars(attachmentChars)} حرف`);
       if (visibleImages) parts.push(`صور ${visibleImages}`);
+    }
+    if (composerEditState.active){
+      parts.push(composerEditState.sourceRole === 'user' ? 'تعديل رسالة سابقة' : 'إعادة استخدام رسالة من السجل');
     }
     if (flags.length) parts.push(...flags);
     meta.textContent = parts.join(' • ');
@@ -6927,16 +7053,36 @@ function updateChips(){
     const idx = threads.findIndex(t => t.id === tid);
     const thread = threads[idx] || threads[0];
     thread.messages = thread.messages || [];
-    const historySnapshot = thread.messages.slice();
-    const threadSummary = String(thread.summary || '');
+    let historySnapshot = thread.messages.slice();
+    let threadSummary = String(thread.summary || '');
+    let uMsg = null;
 
-    const uMsg = { id: makeId('m'), role:'user', content: text, ts: nowTs() };
-    thread.messages.push(uMsg);
-    ensureThreadTitleFromMessage(thread, text);
+    if (composerEditState.active && composerEditState.mutateThread && composerEditState.sourceRole === 'user'){
+      const editIndex = thread.messages.findIndex((message) => message.id === composerEditState.sourceMessageId);
+      if (editIndex >= 0){
+        historySnapshot = thread.messages.slice(0, editIndex);
+        uMsg = thread.messages[editIndex];
+        uMsg.content = text;
+        uMsg.ts = nowTs();
+        uMsg.editedAt = nowTs();
+        uMsg.requestModelId = settings.model;
+        thread.messages = thread.messages.slice(0, editIndex + 1);
+        thread.summary = '';
+        threadSummary = '';
+        if (editIndex === 0) ensureThreadTitleFromMessage(thread, text);
+      }
+    }
+    if (!uMsg){
+      historySnapshot = thread.messages.slice();
+      uMsg = { id: makeId('m'), role:'user', content: text, ts: nowTs(), requestModelId: settings.model };
+      thread.messages.push(uMsg);
+      ensureThreadTitleFromMessage(thread, text);
+    }
     thread.updatedAt = nowTs();
     threads[idx] = thread;
     saveThreads(pid, threads);
 
+    clearComposerEditState();
     input.value = '';
     resizeComposerInput(input);
     syncComposerMeta();
@@ -6967,11 +7113,12 @@ function updateChips(){
 
     let model = settings.model;
     if (settings.provider === 'openrouter') model = maybeOnlineModel(model, settings);
+    const assistantModelMeta = buildAssistantMessageModelMeta(settings, model);
 
     const extraHeaders = buildProviderHeaders(settings);
 
     const aId = makeId('m');
-    const aMsg = { id: aId, role:'assistant', content:'', ts: nowTs() };
+    const aMsg = { id: aId, role:'assistant', content:'', ts: nowTs(), ...assistantModelMeta };
     const threadsP = loadThreads(pid);
     const idxP = threadsP.findIndex(t => t.id === tid);
     const thP = threadsP[idxP] || threadsP[0];
@@ -7132,12 +7279,18 @@ async function runResearchAgent(topicOverride){
 
   const extraHeaders = buildProviderHeaders(settings);
 
-  const pushAssistant = (content) => {
+  const pushAssistant = (content, modelId = settings.model) => {
     const threads = loadThreads(pid);
     const idx = threads.findIndex(t => t.id === tid);
     const thread = threads[idx] || threads[0];
     thread.messages = thread.messages || [];
-    thread.messages.push({ id: makeId('m'), role:'assistant', content, ts: nowTs() });
+    thread.messages.push({
+      id: makeId('m'),
+      role:'assistant',
+      content,
+      ts: nowTs(),
+      ...buildAssistantMessageModelMeta(settings, modelId)
+    });
     thread.updatedAt = nowTs();
     threads[idx] = thread;
     saveThreads(pid, threads);
@@ -7158,7 +7311,7 @@ async function runResearchAgent(topicOverride){
     } else {
       plan = await callOpenAIChat({ apiKey: settings.apiKey, baseUrl, model: settings.model, messages: [{role:'system', content: sys},{role:'user', content: planPrompt}], max_tokens: 900, signal: abortCtl.signal, extraHeaders });
     }
-    pushAssistant(`🧪 Research Plan:\n\n${plan}`);
+    pushAssistant(`🧪 Research Plan:\n\n${plan}`, settings.model);
   }catch(e){
     showStatus(`❌ Research فشل في التخطيط:\n${e?.message||e}`, false);
     return;
@@ -7187,7 +7340,7 @@ async function runResearchAgent(topicOverride){
     } else {
       notes = await callOpenAIChat({ apiKey: settings.apiKey, baseUrl, model: webModel, messages: [{role:'system', content: sys},{role:'user', content: gatherPrompt}], max_tokens: Math.min(2200, Number(settings.maxOut||2000)), signal: abortCtl.signal, extraHeaders });
     }
-    pushAssistant(`🧪 Research Notes:\n\n${notes}`);
+    pushAssistant(`🧪 Research Notes:\n\n${notes}`, webModel);
   }catch(e){
     showStatus(`❌ Research فشل في جمع المعلومات:\n${e?.message||e}`, false);
     return;
@@ -7200,7 +7353,7 @@ async function runResearchAgent(topicOverride){
     let final = '';
     if (settings.provider === 'gemini'){
       final = await callGemini({ apiKey: settings.geminiKey, model: settings.model, prompt: `${sys}\n\n${synthPrompt}`, signal: abortCtl.signal, maxOut: Math.min(2048, Number(settings.maxOut||2000)) });
-      pushAssistant('🧪 تقرير بحث:\n\n' + final);
+      pushAssistant('🧪 تقرير بحث:\n\n' + final, settings.model);
     } else {
       if (settings.streaming){
         const aId = makeId('m');
@@ -7208,7 +7361,13 @@ async function runResearchAgent(topicOverride){
         const idx = threads.findIndex(t => t.id === tid);
         const thread = threads[idx] || threads[0];
         thread.messages = thread.messages || [];
-        thread.messages.push({ id: aId, role:'assistant', content:'🧪 تقرير بحث:\n\n', ts: nowTs() });
+        thread.messages.push({
+          id: aId,
+          role:'assistant',
+          content:'🧪 تقرير بحث:\n\n',
+          ts: nowTs(),
+          ...buildAssistantMessageModelMeta(settings, settings.model)
+        });
         threads[idx] = thread;
         saveThreads(pid, threads);
         renderChat();
@@ -7232,7 +7391,7 @@ async function runResearchAgent(topicOverride){
         renderChat();
       } else {
         final = await callOpenAIChat({ apiKey: settings.apiKey, baseUrl, model: settings.model, messages: [{role:'system', content: sys},{role:'user', content: synthPrompt}], max_tokens: Math.min(2400, Number(settings.maxOut||2000)), signal: abortCtl.signal, extraHeaders });
-        pushAssistant('🧪 تقرير بحث:\n\n' + final);
+        pushAssistant('🧪 تقرير بحث:\n\n' + final, settings.model);
       }
     }
     showStatus('', false);
@@ -8056,11 +8215,28 @@ let pinOnly = false;
     { key:'audio', label:'صوت', note:'تفريغ صوتي، تحويل كلام، ومعالجة الملفات الصوتية.' }
   ];
   const MODEL_CATEGORY_MAP = Object.fromEntries(MODEL_CATEGORY_DEFS.map((item) => [item.key, item]));
+  const MODEL_CAPABILITY_DEFS = [
+    { key:'text', label:'نصوص', note:'صياغة، تلخيص، ومحادثة عامة.' },
+    { key:'documents', label:'مستندات', note:'تقارير، عروض، وجداول قابلة للتنزيل.' },
+    { key:'coding', label:'برمجة', note:'شيفرة ومشاريع ومخرجات تقنية.' },
+    { key:'research', label:'بحث', note:'تحليل، استدلال، وتجميع مراجع.' },
+    { key:'vision', label:'رؤية', note:'فهم الصور والملفات المرئية.' },
+    { key:'image_generation', label:'صور', note:'صور، تصميمات، أو حزم prompts مرئية.' },
+    { key:'video', label:'فيديو', note:'Storyboard، shot list، أو أصول فيديو.' },
+    { key:'audio', label:'صوت', note:'تفريغ أو ملفات صوتية أو مخرجات كلام.' }
+  ];
+  const MODEL_CAPABILITY_MAP = Object.fromEntries(MODEL_CAPABILITY_DEFS.map((item) => [item.key, item]));
   function getModelCategoryLabel(key){
     return MODEL_CATEGORY_MAP[String(key || '').trim()]?.label || 'عام';
   }
   function getModelCategoryNote(key){
     return MODEL_CATEGORY_MAP[String(key || '').trim()]?.note || '';
+  }
+  function getModelCapabilityLabel(key){
+    return MODEL_CAPABILITY_MAP[String(key || '').trim()]?.label || 'عام';
+  }
+  function getModelCapabilityNote(key){
+    return MODEL_CAPABILITY_MAP[String(key || '').trim()]?.note || '';
   }
   function inferModelCategories(model){
     const hay = [
@@ -8100,12 +8276,53 @@ let pinOnly = false;
     const priority = ['image_generation', 'video', 'audio', 'coding', 'research', 'vision', 'documents', 'general_text'];
     return priority.find((key) => list.includes(key)) || 'general_text';
   }
+  function buildModelCapabilityProfile(model = {}){
+    const categories = Array.isArray(model.categories) && model.categories.length
+      ? model.categories
+      : inferModelCategories(model);
+    return {
+      text: categories.some((key) => ['general_text', 'documents', 'coding', 'research'].includes(key)),
+      documents: categories.includes('documents'),
+      coding: categories.includes('coding'),
+      research: categories.includes('research'),
+      vision: categories.includes('vision'),
+      image_generation: categories.includes('image_generation'),
+      video: categories.includes('video'),
+      audio: categories.includes('audio')
+    };
+  }
+  function getEnabledCapabilityKeys(profile = {}){
+    return MODEL_CAPABILITY_DEFS
+      .filter((item) => !!profile[item.key])
+      .map((item) => item.key);
+  }
+  function summarizeModelCapabilities(model = {}, limit = 5){
+    const profile = model.capabilities || buildModelCapabilityProfile(model);
+    const keys = getEnabledCapabilityKeys(profile);
+    if (!keys.length) return 'عام';
+    return keys.slice(0, Math.max(1, limit)).map(getModelCapabilityLabel).join(' • ');
+  }
+  function getModelRoutingNote(model = {}){
+    const profile = model.capabilities || buildModelCapabilityProfile(model);
+    if (profile.image_generation) return 'جاهز لمخرجات الصور والملفات المرئية أو روابط الأصول المباشرة.';
+    if (profile.video) return 'جاهز لمهام الفيديو، storyboards، والملفات أو الروابط القابلة للتنزيل.';
+    if (profile.audio) return 'جاهز للصوت، التفريغ، أو الملفات السمعية.';
+    if (profile.coding) return 'جاهز لإنتاج كود ومشاريع وملفات تقنية قابلة للتنزيل.';
+    if (profile.documents) return 'جاهز للمستندات والعروض والجداول القابلة للتنزيل.';
+    if (profile.vision) return 'جاهز لقراءة الصور والمرفقات وتحليل المحتوى المرئي.';
+    if (profile.research) return 'جاهز للمخرجات البحثية والتحليلية المتعددة الخطوات.';
+    return 'جاهز لمهام النصوص والمحادثة العامة.';
+  }
   function decorateModelRecord(model = {}){
     const categories = inferModelCategories(model);
+    const capabilities = buildModelCapabilityProfile({ ...model, categories });
     return {
       ...model,
       categories,
-      primaryCategory: pickPrimaryModelCategory(categories)
+      primaryCategory: pickPrimaryModelCategory(categories),
+      capabilities,
+      capabilityKeys: getEnabledCapabilityKeys(capabilities),
+      routingNote: getModelRoutingNote({ ...model, categories, capabilities })
     };
   }
 
@@ -8288,6 +8505,8 @@ let pinOnly = false;
       if (m.pp!=null) prices.push(`prompt: ${m.pp}`);
       if (m.pc!=null) prices.push(`completion: ${m.pc}`);
       const usageLabels = Array.from(new Set((m.categories || []).map(getModelCategoryLabel))).slice(0, 4);
+      const capabilityLabels = Array.from(new Set((m.capabilityKeys || []).map(getModelCapabilityLabel))).slice(0, 5);
+      const routeNote = m.routingNote || getModelRoutingNote(m);
 
       row.innerHTML = `
         <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
@@ -8296,6 +8515,8 @@ let pinOnly = false;
             <div class="hint">${escapeHtml(m.name || '')}</div>
             <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">${badges.join('')}</div>
             <div class="hint model-usage-line">الاستخدامات: ${escapeHtml(usageLabels.join(' • '))}</div>
+            <div class="hint model-usage-line">القدرات: ${escapeHtml(capabilityLabels.join(' • ') || 'عام')}</div>
+            <div class="hint model-route-line">${escapeHtml(routeNote)}</div>
             <div class="hint" style="margin-top:6px">${escapeHtml(prices.join(' • '))}</div>
           </div>
           <div style="display:flex; flex-direction:column; gap:8px; align-items:flex-end;">
@@ -8639,6 +8860,11 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
 $('sendBtn').addEventListener('click', sendMessage);
     $('stopBtn').addEventListener('click', stopGeneration);
     $('regenBtn').addEventListener('click', regenLast);
+    $('composerEditCancelBtn')?.addEventListener('click', () => {
+      clearComposerEditState();
+      $('chatInput')?.focus();
+      toast('ℹ️ تم إلغاء وضع التعديل');
+    });
     $('chatInput').addEventListener('input', () => {
       syncComposerMeta();
     });
