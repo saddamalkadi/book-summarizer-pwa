@@ -1,4 +1,4 @@
-/* AI Workspace Studio v8.22 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v8.23 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -189,6 +189,8 @@
     autoAttempted: false,
     lastDialogMessage: ''
   };
+
+  const CAPACITOR_PLUGIN_CACHE = Object.create(null);
 
   const CLOUD_RUNTIME = {
     bootPromise: null,
@@ -1196,7 +1198,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       body: JSON.stringify({
         reason,
         state: snapshot,
-        appVersion: '8.22.0'
+        appVersion: '8.23.0'
       })
     }).then((payload) => {
       CLOUD_RUNTIME.lastHash = hash;
@@ -2383,11 +2385,11 @@ function applyShellLayout(){
   }
 
   function getNativeSpeechRecognitionPlugin(){
-    return isNativePlatform() ? (window.Capacitor?.Plugins?.SpeechRecognition || null) : null;
+    return getCapacitorPluginProxy('SpeechRecognition', { nativeOnly:true });
   }
 
   function getNativeTextToSpeechPlugin(){
-    return isNativePlatform() ? (window.Capacitor?.Plugins?.TextToSpeech || null) : null;
+    return getCapacitorPluginProxy('TextToSpeech', { nativeOnly:true });
   }
 
   async function ensureNativeSpeechRecognitionPermission(plugin){
@@ -2417,6 +2419,10 @@ function applyShellLayout(){
       if (exact) return exact;
       const family = voices.find((voice) => String(voice.lang || '').toLowerCase().startsWith(lang.split('-')[0].toLowerCase()));
       if (family) return family;
+      if (String(lang || '').toLowerCase().startsWith('ar')){
+        const namedArabic = voices.find((voice) => /arabic|العربية|ar-/i.test(`${voice?.name || ''} ${voice?.lang || ''}`));
+        if (namedArabic) return namedArabic;
+      }
       return voices.find((voice) => voice.default) || voices[0] || null;
     }catch(_){
       return null;
@@ -2634,6 +2640,39 @@ function applyShellLayout(){
     return true;
   }
 
+  function toggleVoiceMode(){
+    const next = !getVoiceModeEnabled();
+    setVoiceModeEnabled(next);
+    VOICE_RUNTIME.continuousConversation = next;
+    refreshVoiceModeButton();
+    if (!next){
+      VOICE_RUNTIME.autoSendArmed = false;
+      void stopComposerDictation(false);
+      void stopVoicePlayback();
+    } else {
+      toast('تم تفعيل الدردشة الصوتية المستمرة');
+      if (isNativeAndroidPlatform()){
+        const plugin = getNativeSpeechRecognitionPlugin();
+        window.setTimeout(async () => {
+          if (!plugin){
+            toast('تعذر تحميل محرك الدردشة الصوتية داخل نسخة Android الحالية.');
+            return;
+          }
+          const permitted = await ensureNativeSpeechRecognitionPermission(plugin);
+          if (!permitted){
+            toast('يلزم منح إذن الميكروفون لتفعيل الدردشة الصوتية العربية.');
+            return;
+          }
+          scheduleVoiceConversationRestart(180);
+        }, 20);
+        return;
+      }
+      scheduleVoiceConversationRestart(180);
+      return;
+    }
+    toast('تم إيقاف الدردشة الصوتية');
+  }
+
   async function stopComposerDictation(showToast = false){
     const nativeSpeech = getNativeSpeechRecognitionPlugin();
     if (VOICE_RUNTIME.nativeListening && nativeSpeech?.stop){
@@ -2678,7 +2717,7 @@ function applyShellLayout(){
         maxResults: 1,
         prompt: 'تحدث الآن',
         partialResults: false,
-        popup: true
+        popup: !getVoiceModeEnabled()
       });
       const transcript = Array.isArray(result?.matches)
         ? result.matches.map((item) => String(item || '').trim()).filter(Boolean).join(' ')
@@ -3029,9 +3068,17 @@ function applyShellLayout(){
       'ar-AE',
       'ar-JO',
       'ar-KW',
+      'ar-QA',
+      'ar-BH',
+      'ar-OM',
+      'ar-IQ',
+      'ar-LB',
+      'ar-LY',
+      'ar-DZ',
       'ar-MA',
-      'ar',
-      'en-US'
+      'ar-001',
+      'ar-XA',
+      'ar'
     ];
     if (!plugin?.getSupportedLanguages) return candidates[0];
     try{
@@ -3041,6 +3088,8 @@ function applyShellLayout(){
         const code = String(candidate || '').trim().toLowerCase();
         if (langs.includes(code)) return candidate;
       }
+      const genericArabic = langs.find((code) => /^ar(?:-|$)/i.test(String(code || '')));
+      if (genericArabic) return genericArabic;
       return preferred;
     }catch(_){
       return preferred;
@@ -3049,8 +3098,19 @@ function applyShellLayout(){
 
   async function resolveSpeechSynthesisLanguage(plugin = null){
     const preferred = getPreferredSpeechLanguage();
+    const candidates = [preferred, 'ar-SA', 'ar-EG', 'ar-AE', 'ar-JO', 'ar-KW', 'ar-QA', 'ar-BH', 'ar-OM', 'ar-IQ', 'ar-LB', 'ar-LY', 'ar-DZ', 'ar-MA', 'ar-001', 'ar-XA', 'ar'];
+    if (plugin?.getSupportedLanguages){
+      try{
+        const result = await plugin.getSupportedLanguages();
+        const langs = Array.isArray(result?.languages) ? result.languages.map((item) => String(item || '').trim()) : [];
+        for (const candidate of candidates){
+          if (langs.some((lang) => String(lang).toLowerCase() === String(candidate).toLowerCase())) return candidate;
+        }
+        const genericArabic = langs.find((lang) => /^ar(?:-|$)/i.test(String(lang || '')));
+        if (genericArabic) return genericArabic;
+      }catch(_){}
+    }
     if (plugin?.isLanguageSupported){
-      const candidates = [preferred, 'ar-SA', 'ar-EG', 'ar-AE', 'ar', 'en-US'];
       for (const candidate of candidates){
         const state = await plugin.isLanguageSupported({ lang: candidate }).catch(() => null);
         if (state?.supported) return candidate;
@@ -3552,8 +3612,26 @@ function refreshDeepSearchBtn(){
     return isNativePlatform() && getCapacitorPlatform() === 'android';
   }
 
+  function getCapacitorPluginProxy(name, { nativeOnly = false } = {}){
+    const key = String(name || '').trim();
+    if (!key) return null;
+    if (nativeOnly && !isNativePlatform()) return null;
+    try{
+      const direct = window.Capacitor?.Plugins?.[key];
+      if (direct) return direct;
+    }catch(_){}
+    try{
+      if (!CAPACITOR_PLUGIN_CACHE[key] && typeof window.Capacitor?.registerPlugin === 'function'){
+        CAPACITOR_PLUGIN_CACHE[key] = window.Capacitor.registerPlugin(key);
+      }
+      return CAPACITOR_PLUGIN_CACHE[key] || null;
+    }catch(_){
+      return null;
+    }
+  }
+
   function getNativeGoogleAuthPlugin(){
-    return window.Capacitor?.Plugins?.GoogleOneTapAuth || null;
+    return isNativeAndroidPlatform() ? getCapacitorPluginProxy('GoogleOneTapAuth', { nativeOnly:true }) : null;
   }
 
   async function ensureNativeGoogleAuthReady(){
@@ -4080,11 +4158,11 @@ function refreshDeepSearchBtn(){
   }
 
   function getCapacitorBrowserPlugin(){
-    return window.Capacitor?.Plugins?.Browser || null;
+    return getCapacitorPluginProxy('Browser');
   }
 
   function getCapacitorAppPlugin(){
-    return window.Capacitor?.Plugins?.App || null;
+    return getCapacitorPluginProxy('App');
   }
 
   function getBrowserAuthReturnUrl(){
@@ -9945,6 +10023,8 @@ let pinOnly = false;
     { key:'image_generation', label:'توليد صور', note:'إنشاء الصور والتصميمات من الوصف النصي.' },
     { key:'video', label:'فيديو', note:'إنشاء الفيديو أو التعامل مع مهام الفيديو المتخصصة.' },
     { key:'audio', label:'صوت', note:'تفريغ صوتي، تحويل كلام، ومعالجة الملفات الصوتية.' }
+    , { key:'arabic_support', label:'عربي', note:'ملائم للكتابة والمحادثة بالعربية بصورة جيدة داخل المنصة.' },
+    { key:'arabic_voice_chat', label:'صوت عربي', note:'موصى به للدردشة الصوتية العربية داخل التطبيق مع طبقة الإملاء والنطق العربية.' }
   ];
   const MODEL_CATEGORY_MAP = Object.fromEntries(MODEL_CATEGORY_DEFS.map((item) => [item.key, item]));
   const MODEL_CAPABILITY_DEFS = [
@@ -9956,6 +10036,8 @@ let pinOnly = false;
     { key:'image_generation', label:'صور', note:'صور، تصميمات، أو حزم prompts مرئية.' },
     { key:'video', label:'فيديو', note:'Storyboard، shot list، أو أصول فيديو.' },
     { key:'audio', label:'صوت', note:'تفريغ أو ملفات صوتية أو مخرجات كلام.' }
+    , { key:'arabic_support', label:'عربي', note:'استيعاب جيد للعربية في المحادثة والصياغة.' },
+    { key:'arabic_voice_chat', label:'صوت عربي', note:'ملائم للدردشة الصوتية العربية عبر طبقة الصوت داخل التطبيق.' }
   ];
   const MODEL_CAPABILITY_MAP = Object.fromEntries(MODEL_CAPABILITY_DEFS.map((item) => [item.key, item]));
   function getModelCategoryLabel(key){
@@ -9990,6 +10072,8 @@ let pinOnly = false;
     const isResearch = /(reason|reasoning|thinking|deep[-\s]?research|research|analysis|sonar|r1|o1|o3|o4|grok[-\s]?thinking)/i.test(hay);
     const isVision = !!model?.vision || /(vision|multimodal|vl|llava|pixtral|image[-\s]?understanding|ocr|gpt-4o|gemini|claude-3|claude 3)/i.test(hay);
     const isTextCapable = outputModalities.includes('text') || (!outputModalities.length && !isImageGeneration && !isVideo && !isAudio);
+    const isArabicReady = (isTextCapable || isAudio) && /(gpt|gemini|claude|qwen|deepseek|llama|mistral|mixtral|ministral|command[-\s]?r|aya|jamba|grok|phi|granite|nemotron|pixtral|sonar|whisper|voice|speech|audio)/i.test(hay);
+    const isArabicVoiceReady = isArabicReady && (isAudio || isTextCapable);
     const isDocumentReady = isTextCapable && (
       ctx >= 32000
       || !!model?.tools
@@ -10004,12 +10088,14 @@ let pinOnly = false;
     if (isImageGeneration) categories.add('image_generation');
     if (isVideo) categories.add('video');
     if (isAudio) categories.add('audio');
+    if (isArabicReady) categories.add('arabic_support');
+    if (isArabicVoiceReady) categories.add('arabic_voice_chat');
     if (!categories.size) categories.add('general_text');
     return Array.from(categories);
   }
   function pickPrimaryModelCategory(categories = []){
     const list = Array.isArray(categories) ? categories : [];
-    const priority = ['image_generation', 'video', 'audio', 'coding', 'research', 'vision', 'documents', 'general_text'];
+    const priority = ['image_generation', 'video', 'audio', 'arabic_voice_chat', 'coding', 'research', 'vision', 'documents', 'arabic_support', 'general_text'];
     return priority.find((key) => list.includes(key)) || 'general_text';
   }
   function buildModelCapabilityProfile(model = {}){
@@ -10024,7 +10110,9 @@ let pinOnly = false;
       vision: categories.includes('vision'),
       image_generation: categories.includes('image_generation'),
       video: categories.includes('video'),
-      audio: categories.includes('audio')
+      audio: categories.includes('audio'),
+      arabic_support: categories.includes('arabic_support'),
+      arabic_voice_chat: categories.includes('arabic_voice_chat')
     };
   }
   function getEnabledCapabilityKeys(profile = {}){
@@ -10034,6 +10122,8 @@ let pinOnly = false;
   }
   function summarizeModelCapabilities(model = {}, limit = 5){
     const profile = model.capabilities || buildModelCapabilityProfile(model);
+    if (profile.arabic_voice_chat) return 'موصى به للدردشة الصوتية العربية داخل التطبيق، مع طبقة إملاء ونطق عربية محلية.';
+    if (profile.arabic_support) return 'موصى به للمحادثة والكتابة بالعربية داخل المنصة.';
     const keys = getEnabledCapabilityKeys(profile);
     if (!keys.length) return 'عام';
     return keys.slice(0, Math.max(1, limit)).map(getModelCapabilityLabel).join(' • ');
@@ -10048,6 +10138,25 @@ let pinOnly = false;
     if (profile.vision) return 'جاهز لقراءة الصور والمرفقات وتحليل المحتوى المرئي.';
     if (profile.research) return 'جاهز للمخرجات البحثية والتحليلية المتعددة الخطوات.';
     return 'جاهز لمهام النصوص والمحادثة العامة.';
+  }
+  function summarizeModelCapabilities(model = {}, limit = 5){
+    const profile = model.capabilities || buildModelCapabilityProfile(model);
+    const keys = getEnabledCapabilityKeys(profile);
+    if (!keys.length) return 'ط¹ط§ظ…';
+    return keys.slice(0, Math.max(1, limit)).map(getModelCapabilityLabel).join(' â€¢ ');
+  }
+  function getModelRoutingNote(model = {}){
+    const profile = model.capabilities || buildModelCapabilityProfile(model);
+    if (profile.arabic_voice_chat) return 'موصى به للدردشة الصوتية العربية داخل التطبيق، مع طبقة إملاء ونطق عربية محلية.';
+    if (profile.arabic_support) return 'موصى به للمحادثة والكتابة بالعربية داخل المنصة.';
+    if (profile.image_generation) return 'ط¬ط§ظ‡ط² ظ„ظ…ط®ط±ط¬ط§طھ ط§ظ„طµظˆط± ظˆط§ظ„ظ…ظ„ظپط§طھ ط§ظ„ظ…ط±ط¦ظٹط© ط£ظˆ ط±ظˆط§ط¨ط· ط§ظ„ط£طµظˆظ„ ط§ظ„ظ…ط¨ط§ط´ط±ط©.';
+    if (profile.video) return 'ط¬ط§ظ‡ط² ظ„ظ…ظ‡ط§ظ… ط§ظ„ظپظٹط¯ظٹظˆطŒ storyboardsطŒ ظˆط§ظ„ظ…ظ„ظپط§طھ ط£ظˆ ط§ظ„ط±ظˆط§ط¨ط· ط§ظ„ظ‚ط§ط¨ظ„ط© ظ„ظ„طھظ†ط²ظٹظ„.';
+    if (profile.audio) return 'ط¬ط§ظ‡ط² ظ„ظ„طµظˆطھطŒ ط§ظ„طھظپط±ظٹط؛طŒ ط£ظˆ ط§ظ„ظ…ظ„ظپط§طھ ط§ظ„ط³ظ…ط¹ظٹط©.';
+    if (profile.coding) return 'ط¬ط§ظ‡ط² ظ„ط¥ظ†طھط§ط¬ ظƒظˆط¯ ظˆظ…ط´ط§ط±ظٹط¹ ظˆظ…ظ„ظپط§طھ طھظ‚ظ†ظٹط© ظ‚ط§ط¨ظ„ط© ظ„ظ„طھظ†ط²ظٹظ„.';
+    if (profile.documents) return 'ط¬ط§ظ‡ط² ظ„ظ„ظ…ط³طھظ†ط¯ط§طھ ظˆط§ظ„ط¹ط±ظˆط¶ ظˆط§ظ„ط¬ط¯ط§ظˆظ„ ط§ظ„ظ‚ط§ط¨ظ„ط© ظ„ظ„طھظ†ط²ظٹظ„.';
+    if (profile.vision) return 'ط¬ط§ظ‡ط² ظ„ظ‚ط±ط§ط،ط© ط§ظ„طµظˆط± ظˆط§ظ„ظ…ط±ظپظ‚ط§طھ ظˆطھط­ظ„ظٹظ„ ط§ظ„ظ…ط­طھظˆظ‰ ط§ظ„ظ…ط±ط¦ظٹ.';
+    if (profile.research) return 'ط¬ط§ظ‡ط² ظ„ظ„ظ…ط®ط±ط¬ط§طھ ط§ظ„ط¨ط­ط«ظٹط© ظˆط§ظ„طھط­ظ„ظٹظ„ظٹط© ط§ظ„ظ…طھط¹ط¯ط¯ط© ط§ظ„ط®ط·ظˆط§طھ.';
+    return 'ط¬ط§ظ‡ط² ظ„ظ…ظ‡ط§ظ… ط§ظ„ظ†طµظˆطµ ظˆط§ظ„ظ…ط­ط§ط¯ط«ط© ط§ظ„ط¹ط§ظ…ط©.';
   }
   function decorateModelRecord(model = {}){
     const categories = inferModelCategories(model);

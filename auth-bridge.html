@@ -140,6 +140,7 @@
   <script>
     (() => {
       const STORAGE_KEY = 'aistudio_auth_bridge_result_v1';
+      const APP_PACKAGE = 'com.saddamalkadi.aiworkspace';
       const params = new URLSearchParams(window.location.search);
       const worker = String(params.get('worker') || '').trim().replace(/\/+$/,'');
       const returnTo = String(
@@ -154,6 +155,15 @@
       const setStatus = (text, tone = '') => {
         statusBox.textContent = text;
         statusBox.className = `status${tone ? ` ${tone}` : ''}`;
+      };
+
+      const isNativeAppUrl = (url) => /^aiworkspace:/i.test(String(url?.protocol || ''));
+
+      const buildAndroidIntentUrl = (target) => {
+        if (!isNativeAppUrl(target)) return target.toString();
+        const host = String(target.host || 'auth').trim() || 'auth';
+        const query = String(target.search || '');
+        return `intent://${host}${query}#Intent;scheme=aiworkspace;package=${APP_PACKAGE};end`;
       };
 
       const buildTarget = (payload) => {
@@ -197,9 +207,17 @@
             return;
           }
 
+          const androidIntentUrl = buildAndroidIntentUrl(target);
           returnLink.hidden = false;
-          returnLink.href = target.toString();
-          window.location.href = target.toString();
+          returnLink.href = androidIntentUrl;
+          returnLink.dataset.fallbackHref = target.toString();
+          window.location.replace(androidIntentUrl);
+          setStatus('تم تسجيل الدخول. جارٍ إعادتك إلى التطبيق...', 'success');
+          window.setTimeout(() => {
+            try{
+              window.location.replace(target.toString());
+            }catch(_){}
+          }, 900);
           window.setTimeout(() => {
             setStatus('تم تسجيل الدخول. إذا لم يعد التطبيق تلقائيًا، اضغط زر العودة إلى التطبيق.', 'success');
           }, 1200);
