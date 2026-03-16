@@ -1,4 +1,4 @@
-/* AI Workspace Studio v8.21 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v8.22 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -204,13 +204,16 @@
     speaking: false,
     utterance: null,
     autoSendArmed: false,
-    nativeListening: false
+    nativeListening: false,
+    continuousConversation: false,
+    restartTimer: 0
   };
 
   const BROWSER_AUTH_BRIDGE = {
     webPath: 'auth-bridge.html',
     appReturnUrl: 'aiworkspace://auth',
-    storageKey: 'aistudio_auth_bridge_result_v1'
+    storageKey: 'aistudio_auth_bridge_result_v1',
+    publicBaseUrl: 'https://saddamalkadi.github.io/book-summarizer-pwa/'
   };
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -1193,7 +1196,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       body: JSON.stringify({
         reason,
         state: snapshot,
-        appVersion: '8.21.0'
+        appVersion: '8.22.0'
       })
     }).then((payload) => {
       CLOUD_RUNTIME.lastHash = hash;
@@ -3002,6 +3005,326 @@ function applyShellLayout(){
     else void startComposerDictation();
   }
 
+  function clearVoiceRestartTimer(){
+    if (VOICE_RUNTIME.restartTimer){
+      window.clearTimeout(VOICE_RUNTIME.restartTimer);
+      VOICE_RUNTIME.restartTimer = 0;
+    }
+  }
+
+  function getPreferredSpeechLanguage(){
+    const htmlLang = String(document.documentElement.lang || '').trim().toLowerCase();
+    const navLang = String(navigator.language || '').trim();
+    if (htmlLang.startsWith('ar')) return 'ar-SA';
+    if (/^ar\b/i.test(navLang)) return navLang;
+    return 'ar-SA';
+  }
+
+  async function resolveSpeechRecognitionLanguage(plugin = null){
+    const preferred = getPreferredSpeechLanguage();
+    const candidates = [
+      preferred,
+      'ar-SA',
+      'ar-EG',
+      'ar-AE',
+      'ar-JO',
+      'ar-KW',
+      'ar-MA',
+      'ar',
+      'en-US'
+    ];
+    if (!plugin?.getSupportedLanguages) return candidates[0];
+    try{
+      const result = await plugin.getSupportedLanguages();
+      const langs = Array.isArray(result?.languages) ? result.languages.map((item) => String(item || '').trim().toLowerCase()) : [];
+      for (const candidate of candidates){
+        const code = String(candidate || '').trim().toLowerCase();
+        if (langs.includes(code)) return candidate;
+      }
+      return preferred;
+    }catch(_){
+      return preferred;
+    }
+  }
+
+  async function resolveSpeechSynthesisLanguage(plugin = null){
+    const preferred = getPreferredSpeechLanguage();
+    if (plugin?.isLanguageSupported){
+      const candidates = [preferred, 'ar-SA', 'ar-EG', 'ar-AE', 'ar', 'en-US'];
+      for (const candidate of candidates){
+        const state = await plugin.isLanguageSupported({ lang: candidate }).catch(() => null);
+        if (state?.supported) return candidate;
+      }
+      return preferred;
+    }
+    return preferred;
+  }
+
+  function shouldKeepContinuousVoiceLoop(){
+    return getVoiceModeEnabled() && VOICE_RUNTIME.continuousConversation;
+  }
+
+  function scheduleVoiceConversationRestart(delay = 600){
+    clearVoiceRestartTimer();
+    if (!shouldKeepContinuousVoiceLoop()) return;
+    VOICE_RUNTIME.restartTimer = window.setTimeout(() => {
+      VOICE_RUNTIME.restartTimer = 0;
+      if (composerListening || VOICE_RUNTIME.speaking) return;
+      if (document.hidden) return;
+      if (String($('chatInput')?.value || '').trim()) return;
+      void startComposerDictation();
+    }, delay);
+  }
+
+  async function stopVoicePlayback(){
+    clearVoiceRestartTimer();
+    const nativeTts = getNativeTextToSpeechPlugin();
+    if (nativeTts?.stop){
+      try{ await nativeTts.stop(); }catch(_){}
+    }
+    try{ window.speechSynthesis?.cancel?.(); }catch(_){}
+    VOICE_RUNTIME.speaking = false;
+    VOICE_RUNTIME.utterance = null;
+  }
+
+  async function speakAssistantReply(content = '', { force = false } = {}){
+    if (!force && !getVoiceModeEnabled()) return false;
+    const text = stripTextForSpeech(content);
+    if (!text) return false;
+
+    await stopVoicePlayback();
+    const nativeTts = getNativeTextToSpeechPlugin();
+    const lang = await resolveSpeechSynthesisLanguage(nativeTts);
+
+    if (nativeTts?.speak){
+      try{
+        VOICE_RUNTIME.speaking = true;
+        await nativeTts.speak({
+          text,
+          lang,
+          rate: 0.92,
+          pitch: 1,
+          volume: 1
+        });
+        VOICE_RUNTIME.speaking = false;
+        VOICE_RUNTIME.utterance = null;
+        scheduleVoiceConversationRestart(700);
+        return true;
+      }catch(error){
+        VOICE_RUNTIME.speaking = false;
+        VOICE_RUNTIME.utterance = null;
+        if (force) toast(`تعذّر تشغيل الرد صوتيًا: ${error?.message || error}`);
+      }
+    }
+
+    if (!('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance === 'undefined'){
+      if (force) toast('التشغيل الصوتي غير مدعوم في هذا المتصفح.');
+      return false;
+    }
+
+    return await new Promise((resolve) => {
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = lang;
+      utter.voice = chooseSpeechSynthesisVoice(lang) || chooseSpeechSynthesisVoice('ar-SA');
+      utter.rate = 0.92;
+      utter.pitch = 1;
+      utter.onstart = () => { VOICE_RUNTIME.speaking = true; };
+      utter.onend = () => {
+        VOICE_RUNTIME.speaking = false;
+        VOICE_RUNTIME.utterance = null;
+        scheduleVoiceConversationRestart(700);
+        resolve(true);
+      };
+      utter.onerror = () => {
+        VOICE_RUNTIME.speaking = false;
+        VOICE_RUNTIME.utterance = null;
+        resolve(false);
+      };
+      VOICE_RUNTIME.utterance = utter;
+      try{ window.speechSynthesis.resume?.(); }catch(_){}
+      try{
+        window.speechSynthesis.speak(utter);
+      }catch(_){
+        VOICE_RUNTIME.speaking = false;
+        VOICE_RUNTIME.utterance = null;
+        resolve(false);
+      }
+    });
+  }
+
+  function toggleVoiceMode(){
+    const next = !getVoiceModeEnabled();
+    setVoiceModeEnabled(next);
+    VOICE_RUNTIME.continuousConversation = next;
+    refreshVoiceModeButton();
+    if (!next){
+      VOICE_RUNTIME.autoSendArmed = false;
+      void stopComposerDictation(false);
+      void stopVoicePlayback();
+    } else {
+      toast('تم تفعيل الدردشة الصوتية المستمرة');
+      scheduleVoiceConversationRestart(250);
+      return;
+    }
+    toast('تم إيقاف الدردشة الصوتية');
+  }
+
+  async function stopComposerDictation(showToast = false){
+    clearVoiceRestartTimer();
+    const nativeSpeech = getNativeSpeechRecognitionPlugin();
+    VOICE_RUNTIME.autoSendArmed = false;
+    VOICE_RUNTIME.continuousConversation = getVoiceModeEnabled();
+    if (VOICE_RUNTIME.nativeListening && nativeSpeech?.stop){
+      try{ await nativeSpeech.stop(); }catch(_){}
+      try{ await nativeSpeech.removeAllListeners?.(); }catch(_){}
+      VOICE_RUNTIME.nativeListening = false;
+    }
+    try{ composerRecognition?.stop?.(); }catch(_){}
+    composerRecognition = null;
+    composerListening = false;
+    syncVoiceInputButton();
+    showStatus('', false);
+    if (showToast) toast('تم إيقاف الإملاء الصوتي');
+  }
+
+  async function startNativeComposerDictation(){
+    const plugin = getNativeSpeechRecognitionPlugin();
+    const input = $('chatInput');
+    if (!plugin || !input) return false;
+
+    const availability = await plugin.available?.().catch(() => ({ available:false }));
+    if (!availability?.available){
+      toast('التعرّف الصوتي غير متاح على هذا الجهاز.');
+      return false;
+    }
+
+    const permitted = await ensureNativeSpeechRecognitionPermission(plugin);
+    if (!permitted){
+      toast('لم يتم منح إذن الميكروفون للتعرّف الصوتي.');
+      return false;
+    }
+
+    const language = await resolveSpeechRecognitionLanguage(plugin);
+    composerDictationBase = String(input.value || '').trimEnd();
+    VOICE_RUNTIME.autoSendArmed = true;
+    composerListening = true;
+    VOICE_RUNTIME.nativeListening = true;
+    VOICE_RUNTIME.continuousConversation = getVoiceModeEnabled();
+    syncVoiceInputButton();
+    showStatus(`الإملاء الصوتي يعمل الآن باللغة ${language}...`, false);
+
+    try{
+      const result = await plugin.start({
+        language,
+        maxResults: 1,
+        prompt: 'تحدث الآن',
+        partialResults: false,
+        popup: true
+      });
+      const transcript = Array.isArray(result?.matches)
+        ? result.matches.map((item) => String(item || '').trim()).filter(Boolean).join(' ')
+        : '';
+      if (transcript){
+        input.value = [composerDictationBase, transcript].filter(Boolean).join(composerDictationBase ? '\n' : '');
+        resizeComposerInput(input);
+        syncComposerMeta();
+      }
+    }catch(error){
+      const message = String(error?.message || error || '').trim();
+      if (!/cancel/i.test(message)) toast(`تعذّر الإملاء الصوتي: ${message || 'unknown'}`);
+    }finally{
+      VOICE_RUNTIME.nativeListening = false;
+      composerListening = false;
+      try{ await plugin.removeAllListeners?.(); }catch(_){}
+      syncVoiceInputButton();
+      showStatus('', false);
+      const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && String(input.value || '').trim();
+      VOICE_RUNTIME.autoSendArmed = false;
+      if (shouldAutoSend){
+        window.setTimeout(() => {
+          if (String($('chatInput')?.value || '').trim()) void sendMessage();
+        }, 90);
+      } else if (shouldKeepContinuousVoiceLoop()){
+        scheduleVoiceConversationRestart(500);
+      }
+    }
+    return true;
+  }
+
+  async function startComposerDictation(){
+    if (isNativePlatform() && await startNativeComposerDictation()) return;
+
+    const Ctor = getSpeechRecognitionCtor();
+    if (!Ctor) return toast('الإملاء الصوتي غير مدعوم في هذا المتصفح.');
+
+    const input = $('chatInput');
+    if (!input) return;
+
+    composerDictationBase = String(input.value || '').trimEnd();
+    VOICE_RUNTIME.autoSendArmed = true;
+    VOICE_RUNTIME.continuousConversation = getVoiceModeEnabled();
+    composerRecognition = new Ctor();
+    composerRecognition.lang = getPreferredSpeechLanguage();
+    composerRecognition.continuous = true;
+    composerRecognition.interimResults = true;
+
+    composerRecognition.onstart = () => {
+      composerListening = true;
+      syncVoiceInputButton();
+      showStatus(`الإملاء الصوتي يعمل الآن باللغة ${composerRecognition.lang}...`, false);
+    };
+
+    composerRecognition.onresult = (event) => {
+      const parts = [];
+      for (let i = event.resultIndex; i < event.results.length; i += 1){
+        const transcript = String(event.results[i]?.[0]?.transcript || '').trim();
+        if (transcript) parts.push(transcript);
+      }
+      const dictation = parts.join(' ').trim();
+      input.value = [composerDictationBase, dictation].filter(Boolean).join(composerDictationBase ? '\n' : '');
+      resizeComposerInput(input);
+      syncComposerMeta();
+    };
+
+    composerRecognition.onerror = (event) => {
+      composerListening = false;
+      VOICE_RUNTIME.autoSendArmed = false;
+      syncVoiceInputButton();
+      if (event?.error !== 'no-speech') toast(`تعذّر الإملاء الصوتي: ${event?.error || 'unknown'}`);
+    };
+
+    composerRecognition.onend = () => {
+      const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && String(input.value || '').trim();
+      VOICE_RUNTIME.autoSendArmed = false;
+      composerListening = false;
+      composerRecognition = null;
+      syncVoiceInputButton();
+      showStatus('', false);
+      if (shouldAutoSend){
+        window.setTimeout(() => {
+          if (String($('chatInput')?.value || '').trim()) void sendMessage();
+        }, 90);
+      } else if (shouldKeepContinuousVoiceLoop()){
+        scheduleVoiceConversationRestart(500);
+      }
+    };
+
+    try{
+      composerRecognition.start();
+    }catch(error){
+      composerListening = false;
+      composerRecognition = null;
+      syncVoiceInputButton();
+      toast(`تعذّر بدء الإملاء الصوتي: ${error?.message || error}`);
+    }
+  }
+
+  function toggleComposerDictation(){
+    VOICE_RUNTIME.continuousConversation = getVoiceModeEnabled();
+    if (composerListening) void stopComposerDictation(true);
+    else void startComposerDictation();
+  }
+
 function refreshDeepSearchBtn(){
     const b = $('deepSearchToggleBtn');
     if (!b) return;
@@ -3960,6 +4283,49 @@ function refreshDeepSearchBtn(){
       syncCloudNow('beforeunload').catch(() => {});
       stopVoicePlayback();
     });
+  }
+
+  function getPublicWebAppBaseUrl(){
+    try{
+      const current = new URL(window.location.href);
+      if (/^https?:$/i.test(current.protocol) && !/^localhost$/i.test(current.hostname) && !/^127\./.test(current.hostname)){
+        return `${current.origin}${current.pathname.replace(/[^/]*$/, '')}`;
+      }
+    }catch(_){}
+    return BROWSER_AUTH_BRIDGE.publicBaseUrl;
+  }
+
+  function getBrowserAuthReturnUrl(){
+    if (isNativePlatform()) return BROWSER_AUTH_BRIDGE.appReturnUrl;
+    return window.location.href.split('#')[0];
+  }
+
+  function buildBrowserGoogleAuthUrl(){
+    const workerRoot = getAuthServiceRoot(getSettings());
+    if (!workerRoot) throw new Error('رابط البوابة غير مضبوط لتسجيل Google.');
+    const base = getPublicWebAppBaseUrl();
+    const url = new URL(BROWSER_AUTH_BRIDGE.webPath, base);
+    url.searchParams.set('worker', workerRoot);
+    url.searchParams.set('return_to', getBrowserAuthReturnUrl());
+    url.searchParams.set('gateway', getSettings().gatewayUrl || '');
+    url.searchParams.set('app', 'AI Workspace Studio');
+    return url.toString();
+  }
+
+  async function openGoogleAuthInBrowser(){
+    try{
+      const url = buildBrowserGoogleAuthUrl();
+      const browser = getCapacitorBrowserPlugin();
+      if (isNativePlatform() && browser?.open){
+        setAuthGateStatus('جارٍ فتح تسجيل Google في متصفح الجهاز...', 'busy');
+        await browser.open({ url });
+      } else {
+        setAuthGateStatus('جارٍ فتح تسجيل Google في نفس الصفحة...', 'busy');
+        window.location.assign(url);
+      }
+    }catch(error){
+      setAuthGateStatus(`تعذّر فتح تسجيل Google في المتصفح: ${error?.message || error}`, 'error');
+    }
   }
 
   function openAuthGate(message = ''){
@@ -8373,7 +8739,7 @@ function updateChips(){
 
   // ---------------- Send message ----------------
   async function sendMessage(){
-    if (composerListening) stopComposerDictation();
+    if (composerListening) await stopComposerDictation();
     stopVoicePlayback();
     const input = $('chatInput');
     const text = (input.value || '').trim();
