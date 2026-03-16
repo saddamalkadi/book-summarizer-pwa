@@ -1,4 +1,4 @@
-/* AI Workspace Studio v8.27 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v8.28 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -1287,7 +1287,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       body: JSON.stringify({
         reason,
         state: snapshot,
-        appVersion: '8.27.0'
+        appVersion: '8.28.0'
       })
     }).then((payload) => {
       CLOUD_RUNTIME.lastHash = hash;
@@ -11042,24 +11042,21 @@ let pinOnly = false;
       if (btn.dataset.page === 'projects') renderProjects();
       if (btn.dataset.page === 'guide') renderGuidePage();
       if (btn.dataset.page === 'settings') renderSettings();
-    setupCollapsibleToolbars();
-    applyUiCollapse();
-    applyToolbarCollapses();
-    applyShellLayout();
-    // Default collapse on mobile (first run)
-    try{
-      if (window.innerWidth < 980){
-        if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
-        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
-        applyUiCollapse();
-    applyToolbarCollapses();
-      }
-    }catch(_){ }
-
       if (btn.dataset.page === 'files') renderFiles();
       if (btn.dataset.page === 'canvas') { renderCanvasList(); refreshCanvasPreview(); }
       if (btn.dataset.page === 'chat') { renderChat(); updateChips(); }
     });
+
+    setupCollapsibleToolbars();
+    try{
+      if (window.innerWidth < 980){
+        if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
+        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
+      }
+    }catch(_){}
+    applyUiCollapse();
+    applyToolbarCollapses();
+    applyShellLayout();
 
     // modes
     $('modeDeepBtn').addEventListener('click', () => {
@@ -11082,15 +11079,8 @@ let pinOnly = false;
 $('headerCollapseBtn')?.addEventListener('click', () => {
   setHeaderCollapsed(!getHeaderCollapsed());
   applyUiCollapse();
-    // Default collapse on mobile (first run)
-    try{
-      if (window.innerWidth < 980){
-        if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
-        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
-        applyUiCollapse();
-    applyToolbarCollapses();
-      }
-    }catch(_){ }
+  applyToolbarCollapses();
+  applyShellLayout();
 
   toast(getHeaderCollapsed() ? '✅ تم طي الشريط العلوي' : '✅ تم إظهار الشريط العلوي');
 });
@@ -11098,15 +11088,8 @@ $('headerCollapseBtn')?.addEventListener('click', () => {
 $('chatToolbarCollapseBtn')?.addEventListener('click', () => {
   setChatToolbarCollapsed(true);
   applyUiCollapse();
-    // Default collapse on mobile (first run)
-    try{
-      if (window.innerWidth < 980){
-        if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
-        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
-        applyUiCollapse();
-    applyToolbarCollapses();
-      }
-    }catch(_){ }
+  applyToolbarCollapses();
+  applyShellLayout();
 
   toast('✅ تم طي أدوات الدردشة');
 });
@@ -11114,15 +11097,8 @@ $('chatToolbarCollapseBtn')?.addEventListener('click', () => {
 $('chatToolbarExpandBtn')?.addEventListener('click', () => {
   setChatToolbarCollapsed(false);
   applyUiCollapse();
-    // Default collapse on mobile (first run)
-    try{
-      if (window.innerWidth < 980){
-        if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
-        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
-        applyUiCollapse();
-    applyToolbarCollapses();
-      }
-    }catch(_){ }
+  applyToolbarCollapses();
+  applyShellLayout();
 
   toast('✅ تم إظهار أدوات الدردشة');
 });
@@ -11764,57 +11740,40 @@ ${e?.message||e}`, false);
     $('settingsHealthBtn')?.addEventListener('click', runStrategicHealthCheckPro);
     $('settingsDefaultsBtn')?.addEventListener('click', applyStrategicDefaults);
     $('settingsRecommendModelBtn')?.addEventListener('click', recommendStrategicModel);
-    $('resetSettingsBtn').addEventListener('click', () => { saveJSON(KEYS.settings, DEFAULT_SETTINGS); renderSettings();
-    applyUiCollapse();
-    applyToolbarCollapses();
-    // Default collapse on mobile (first run)
-    try{
-      if (window.innerWidth < 980){
-        if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
-        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
-        applyUiCollapse();
-    applyToolbarCollapses();
-      }
-    }catch(_){ }
- toast('✅ تم'); });
+    $('resetSettingsBtn').addEventListener('click', () => {
+      saveJSON(KEYS.settings, DEFAULT_SETTINGS);
+      renderSettings();
+      applyUiCollapse();
+      applyToolbarCollapses();
+      applyShellLayout();
+      toast('\u062A\u0645 \u0625\u0639\u0627\u062F\u0629 \u0627\u0644\u0636\u0628\u0637');
+    });
     $('refreshModelsBtn').addEventListener('click', () => refreshModelHub(true));
     $('clearModelsCacheBtn').addEventListener('click', clearModelsCache);
 
     // quick sync
-    $('provider').addEventListener('change', () => { saveSettingsFromUI(); applyUiCollapse();
-    // Default collapse on mobile (first run)
-    try{
-      if (window.innerWidth < 980){
-        if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
-        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
-        applyUiCollapse();
-    applyToolbarCollapses();
-      }
-    }catch(_){ }
- });
-    $('baseUrl').addEventListener('change', () => { saveSettingsFromUI(); applyUiCollapse();
-    // Default collapse on mobile (first run)
-    try{
-      if (window.innerWidth < 980){
-        if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
-        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
-        applyUiCollapse();
-    applyToolbarCollapses();
-      }
-    }catch(_){ }
- });
-    $('webMode').addEventListener('change', () => { saveSettingsFromUI(); refreshModeButtons(); });
-    $('model').addEventListener('change', () => { saveSettingsFromUI(); applyUiCollapse();
-    // Default collapse on mobile (first run)
-    try{
-      if (window.innerWidth < 980){
-        if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
-        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
-        applyUiCollapse();
-    applyToolbarCollapses();
-      }
-    }catch(_){ }
- });
+    $('provider').addEventListener('change', () => {
+      saveSettingsFromUI();
+      applyUiCollapse();
+      applyToolbarCollapses();
+      applyShellLayout();
+    });
+    $('baseUrl').addEventListener('change', () => {
+      saveSettingsFromUI();
+      applyUiCollapse();
+      applyToolbarCollapses();
+      applyShellLayout();
+    });
+    $('webMode').addEventListener('change', () => {
+      saveSettingsFromUI();
+      refreshModeButtons();
+    });
+    $('model').addEventListener('change', () => {
+      saveSettingsFromUI();
+      applyUiCollapse();
+      applyToolbarCollapses();
+      applyShellLayout();
+    });
   }
 
   // ---------------- Init ----------------
@@ -11830,26 +11789,20 @@ ${e?.message||e}`, false);
       renderSettings();
     }
 
-    // Enable web search by default for first-time users
     try{
       if (localStorage.getItem(KEYS.webToggle) === null) setWebToggle(true);
       const cur = getSettings();
       if (!cur.webMode || cur.webMode === 'off') setSettings({ webMode: 'openrouter_online' });
+      if (window.innerWidth < 980){
+        if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
+        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
+      }
     }catch(_){ }
 
     setupCollapsibleToolbars();
     applyUiCollapse();
     applyToolbarCollapses();
-    // Default collapse on mobile (first run)
-    try{
-      if (window.innerWidth < 980){
-        if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
-        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
-        setupCollapsibleToolbars();
-    applyUiCollapse();
-    applyToolbarCollapses();
-      }
-    }catch(_){ }
+    applyShellLayout();
 
     renderChat();
     renderFiles();
