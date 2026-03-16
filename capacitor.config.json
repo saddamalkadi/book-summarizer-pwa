@@ -4,7 +4,7 @@
   "webDir": "www",
   "bundledWebRuntime": false,
   "server": {
-    "url": "https://saddamalkadi.github.io/book-summarizer-pwa/",
+    "url": "https://sadam-key.tntntt830.workers.dev/",
     "androidScheme": "https",
     "allowNavigation": [
       "saddamalkadi.github.io",

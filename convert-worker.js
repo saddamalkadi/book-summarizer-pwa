@@ -400,7 +400,7 @@ async function handleOcr(request, env) {
     headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${openRouterKey}`,
-      "HTTP-Referer": String(env.OPENROUTER_REFERER || "https://saddamalkadi.github.io/book-summarizer-pwa/"),
+      "HTTP-Referer": String(env.OPENROUTER_REFERER || "https://sadam-key.tntntt830.workers.dev/"),
       "X-Title": String(env.OPENROUTER_TITLE || "AI Workspace Studio Convert")
     },
     body: JSON.stringify({

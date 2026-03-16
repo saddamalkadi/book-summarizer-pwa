@@ -1,4 +1,4 @@
-/* AI Workspace Studio v8.29 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v8.30 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -227,7 +227,7 @@
     webPath: 'auth-bridge.html',
     appReturnUrl: 'aiworkspace://auth',
     storageKey: 'aistudio_auth_bridge_result_v1',
-    publicBaseUrl: 'https://saddamalkadi.github.io/book-summarizer-pwa/'
+    publicBaseUrl: 'https://sadam-key.tntntt830.workers.dev/'
   };
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -1287,7 +1287,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       body: JSON.stringify({
         reason,
         state: snapshot,
-        appVersion: '8.29.0'
+        appVersion: '8.30.0'
       })
     }).then((payload) => {
       CLOUD_RUNTIME.lastHash = hash;
@@ -10208,7 +10208,7 @@ let pinOnly = false;
     const dl = loadDownloads();
     $('navDlMeta').textContent = String(dl.length);
     if (overview){
-      const webUrl = 'https://saddamalkadi.github.io/book-summarizer-pwa/';
+      const webUrl = 'https://sadam-key.tntntt830.workers.dev/';
       const apkUrl = 'https://raw.githubusercontent.com/saddamalkadi/book-summarizer-pwa/main/downloads/ai-workspace-studio-latest.apk';
       const aabUrl = 'https://raw.githubusercontent.com/saddamalkadi/book-summarizer-pwa/main/downloads/ai-workspace-studio-latest.aab';
       overview.innerHTML = `

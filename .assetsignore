@@ -2,6 +2,10 @@
 **/.git/**
 **/.wrangler
 **/.wrangler/**
+**/.gradle-user
+**/.gradle-user/**
+**/.android-user
+**/.android-user/**
 node_modules
 node_modules/**
 android
@@ -24,3 +28,6 @@ convert-worker.js
 wrangler.jsonc
 wrangler.convert.jsonc
 .assetsignore
+downloads/*.apk
+downloads/*.aab
+downloads/*.zip
