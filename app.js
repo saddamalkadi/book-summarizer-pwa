@@ -1,4 +1,4 @@
-/* AI Workspace Studio v8.23 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v8.24 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -1198,7 +1198,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       body: JSON.stringify({
         reason,
         state: snapshot,
-        appVersion: '8.23.0'
+        appVersion: '8.24.0'
       })
     }).then((payload) => {
       CLOUD_RUNTIME.lastHash = hash;
@@ -3383,6 +3383,39 @@ function applyShellLayout(){
     VOICE_RUNTIME.continuousConversation = getVoiceModeEnabled();
     if (composerListening) void stopComposerDictation(true);
     else void startComposerDictation();
+  }
+
+  function toggleVoiceMode(){
+    const next = !getVoiceModeEnabled();
+    setVoiceModeEnabled(next);
+    VOICE_RUNTIME.continuousConversation = next;
+    refreshVoiceModeButton();
+    if (!next){
+      VOICE_RUNTIME.autoSendArmed = false;
+      void stopComposerDictation(false);
+      void stopVoicePlayback();
+      toast('تم إيقاف الدردشة الصوتية');
+      return;
+    }
+
+    toast('تم تفعيل الدردشة الصوتية المستمرة');
+    if (isNativeAndroidPlatform()){
+      const plugin = getNativeSpeechRecognitionPlugin();
+      window.setTimeout(async () => {
+        if (!plugin){
+          toast('تعذر تحميل محرك الدردشة الصوتية داخل نسخة Android الحالية.');
+          return;
+        }
+        const permitted = await ensureNativeSpeechRecognitionPermission(plugin);
+        if (!permitted){
+          toast('يلزم منح إذن الميكروفون لتفعيل الدردشة الصوتية العربية.');
+          return;
+        }
+        scheduleVoiceConversationRestart(180);
+      }, 20);
+      return;
+    }
+    scheduleVoiceConversationRestart(180);
   }
 
 function refreshDeepSearchBtn(){

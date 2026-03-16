@@ -8,7 +8,7 @@ workflows:
         XCODE_WORKSPACE: "ios/App/App.xcworkspace"
         XCODE_SCHEME: "App"
         BUNDLE_ID: "com.saddamalkadi.aiworkspace"
-        IOS_MARKETING_VERSION: "8.23.0"
+        IOS_MARKETING_VERSION: "8.24.0"
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.saddamalkadi.aiworkspace
