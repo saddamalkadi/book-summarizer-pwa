@@ -46,6 +46,14 @@ export default {
         return withCors(await handleStorageStatePut(request, env), request);
       }
 
+      if (url.pathname === '/voice/transcribe' && request.method === 'POST') {
+        return withCors(await handleVoiceTranscription(request, env), request);
+      }
+
+      if (url.pathname === '/voice/speak' && request.method === 'POST') {
+        return withCors(await handleVoiceSynthesis(request, env), request);
+      }
+
       if (url.pathname === '/auth/upgrade/request' && request.method === 'POST') {
         return withCors(await handleUpgradeRequest(request, env), request);
       }
@@ -103,6 +111,39 @@ function getServerKey(env) {
   ).trim();
 }
 
+function getVoiceApiConfig(env) {
+  const apiKey = String(
+    env.VOICE_API_KEY ||
+    env.OPENAI_API_KEY ||
+    env.OPENAI_VOICE_API_KEY ||
+    ''
+  ).trim();
+  const baseUrl = String(
+    env.VOICE_API_BASE_URL ||
+    env.OPENAI_API_BASE_URL ||
+    'https://api.openai.com/v1'
+  ).trim().replace(/\/+$/, '');
+  const provider = String(env.VOICE_PROVIDER || (apiKey ? 'openai_compatible' : '')).trim();
+  const recognitionModel = String(env.VOICE_STT_MODEL || 'gpt-4o-mini-transcribe').trim();
+  const synthesisModel = String(env.VOICE_TTS_MODEL || 'gpt-4o-mini-tts').trim();
+  const synthesisVoice = String(env.VOICE_TTS_VOICE || 'alloy').trim();
+  const preferredLanguage = String(env.VOICE_LANG || 'ar').trim();
+  const sttReady = !!apiKey && String(env.VOICE_DISABLE_STT || '').trim().toLowerCase() !== 'true';
+  const ttsReady = !!apiKey && String(env.VOICE_DISABLE_TTS || '').trim().toLowerCase() !== 'true';
+  return {
+    apiKey,
+    baseUrl,
+    provider,
+    recognitionModel,
+    synthesisModel,
+    synthesisVoice,
+    preferredLanguage,
+    sttReady,
+    ttsReady,
+    ready: sttReady || ttsReady
+  };
+}
+
 function getSessionSecret(env) {
   return (
     env.APP_SESSION_SECRET ||
@@ -144,6 +185,7 @@ function getPublicAuthConfig(env) {
   const authRequired = String(env.AUTH_REQUIRE_LOGIN || 'true').trim().toLowerCase() !== 'false';
   const adminEmail = getAdminEmail(env);
   const adminEnabled = !!getAdminPassword(env);
+  const voice = getVoiceApiConfig(env);
   return {
     ok: true,
     authRequired,
@@ -154,7 +196,16 @@ function getPublicAuthConfig(env) {
     adminEmail,
     adminEnabled,
     googleClientId,
-    clientIdConfigured: !!googleClientId
+    clientIdConfigured: !!googleClientId,
+    voiceCloudReady: voice.ready,
+    voiceSttReady: voice.sttReady,
+    voiceTtsReady: voice.ttsReady,
+    voiceProvider: voice.provider,
+    voiceRecognitionModel: voice.recognitionModel,
+    voiceSynthesisModel: voice.synthesisModel,
+    voiceSynthesisVoice: voice.synthesisVoice,
+    voicePreferredLanguage: voice.preferredLanguage,
+    voicePremiumOnly: true
   };
 }
 
@@ -166,6 +217,7 @@ function getWorkerHealth(env) {
   const hasUpgradeSecret = !!getUpgradeSecret(env);
   const adminLoginReady = !!getAdminPassword(env);
   const cloudStorageReady = !!getUserDataStore(env);
+  const voice = getVoiceApiConfig(env);
   return {
     status: configured ? 200 : 503,
     body: {
@@ -180,7 +232,12 @@ function getWorkerHealth(env) {
       admin_login_ready: adminLoginReady,
       session_ready: hasSessionSecret,
       upgrade_flow_ready: hasUpgradeSecret,
-      cloud_storage_ready: cloudStorageReady
+      cloud_storage_ready: cloudStorageReady,
+      voice_cloud_ready: voice.ready,
+      voice_stt_ready: voice.sttReady,
+      voice_tts_ready: voice.ttsReady,
+      voice_provider: voice.provider,
+      voice_premium_only: true
     }
   };
 }
@@ -416,6 +473,138 @@ async function handleStorageStatePut(request, env) {
       error: message,
       code: 'STORAGE_PUT_FAILED'
     }, /Authentication required|Missing signed session|Invalid or expired session/i.test(message) ? 401 : 500);
+  }
+}
+
+function canUsePremiumVoice(session) {
+  return !!session && (session.role === 'admin' || session.plan === 'premium');
+}
+
+async function handleVoiceTranscription(request, env) {
+  try {
+    const session = await requireSession(request, env);
+    if (!canUsePremiumVoice(session)) {
+      return jsonResponse({
+        error: 'Cloud voice is available for premium accounts only. Free accounts continue to use local device voice.',
+        code: 'VOICE_PREMIUM_REQUIRED'
+      }, 403);
+    }
+    const voice = getVoiceApiConfig(env);
+    if (!voice.sttReady) {
+      return jsonResponse({
+        error: 'Cloud speech-to-text is not configured on this worker.',
+        code: 'VOICE_STT_NOT_CONFIGURED'
+      }, 503);
+    }
+
+    const incoming = await request.formData();
+    const file = incoming.get('file');
+    if (!(file instanceof File) && !(file instanceof Blob)) {
+      return jsonResponse({
+        error: 'An audio file is required.',
+        code: 'VOICE_STT_FILE_REQUIRED'
+      }, 400);
+    }
+
+    const form = new FormData();
+    form.append('file', file, file.name || `voice-${Date.now()}.webm`);
+    form.append('model', String(incoming.get('model') || voice.recognitionModel).trim() || voice.recognitionModel);
+    form.append('language', String(incoming.get('language') || voice.preferredLanguage).trim() || voice.preferredLanguage);
+    form.append('response_format', 'json');
+
+    const upstream = await fetch(`${voice.baseUrl}/audio/transcriptions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${voice.apiKey}`
+      },
+      body: form
+    });
+    const raw = await upstream.text();
+    let payload = null;
+    try { payload = raw ? JSON.parse(raw) : null; } catch (_) { payload = null; }
+    if (!upstream.ok) {
+      return jsonResponse({
+        error: payload?.error?.message || payload?.message || raw || 'Cloud transcription failed.',
+        code: `VOICE_STT_UPSTREAM_${upstream.status}`
+      }, upstream.status);
+    }
+    return jsonResponse({
+      ok: true,
+      text: String(payload?.text || payload?.transcript || '').trim(),
+      model: String(payload?.model || incoming.get('model') || voice.recognitionModel).trim()
+    }, 200);
+  } catch (error) {
+    const message = String(error?.message || error || 'Cloud transcription failed.');
+    return jsonResponse({
+      error: message,
+      code: /Missing signed session|Invalid or expired session/i.test(message) ? 'AUTH_SESSION_REQUIRED' : 'VOICE_STT_FAILED'
+    }, /Missing signed session|Invalid or expired session/i.test(message) ? 401 : 500);
+  }
+}
+
+async function handleVoiceSynthesis(request, env) {
+  try {
+    const session = await requireSession(request, env);
+    if (!canUsePremiumVoice(session)) {
+      return jsonResponse({
+        error: 'Cloud voice is available for premium accounts only. Free accounts continue to use local device voice.',
+        code: 'VOICE_PREMIUM_REQUIRED'
+      }, 403);
+    }
+    const voice = getVoiceApiConfig(env);
+    if (!voice.ttsReady) {
+      return jsonResponse({
+        error: 'Cloud text-to-speech is not configured on this worker.',
+        code: 'VOICE_TTS_NOT_CONFIGURED'
+      }, 503);
+    }
+
+    const body = await parseJson(request);
+    const text = String(body?.text || '').trim();
+    if (!text) {
+      return jsonResponse({
+        error: 'Text is required for speech synthesis.',
+        code: 'VOICE_TTS_TEXT_REQUIRED'
+      }, 400);
+    }
+
+    const upstream = await fetch(`${voice.baseUrl}/audio/speech`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${voice.apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: String(body?.model || voice.synthesisModel).trim() || voice.synthesisModel,
+        voice: String(body?.voice || voice.synthesisVoice).trim() || voice.synthesisVoice,
+        input: text,
+        format: String(body?.format || 'mp3').trim() || 'mp3'
+      })
+    });
+
+    if (!upstream.ok) {
+      const raw = await upstream.text().catch(() => '');
+      let payload = null;
+      try { payload = raw ? JSON.parse(raw) : null; } catch (_) { payload = null; }
+      return jsonResponse({
+        error: payload?.error?.message || payload?.message || raw || 'Cloud speech synthesis failed.',
+        code: `VOICE_TTS_UPSTREAM_${upstream.status}`
+      }, upstream.status);
+    }
+
+    const headers = new Headers();
+    headers.set('Content-Type', upstream.headers.get('Content-Type') || 'audio/mpeg');
+    headers.set('Cache-Control', 'no-store');
+    return new Response(upstream.body, {
+      status: upstream.status,
+      headers
+    });
+  } catch (error) {
+    const message = String(error?.message || error || 'Cloud speech synthesis failed.');
+    return jsonResponse({
+      error: message,
+      code: /Missing signed session|Invalid or expired session/i.test(message) ? 'AUTH_SESSION_REQUIRED' : 'VOICE_TTS_FAILED'
+    }, /Missing signed session|Invalid or expired session/i.test(message) ? 401 : 500);
   }
 }
 
