@@ -1,4 +1,4 @@
-/* AI Workspace Studio v8.24 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v8.25 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -144,7 +144,16 @@
     adminEnabled: true,
     googleClientId: '',
     clientIdConfigured: false,
-    premiumEnabled: true
+    premiumEnabled: true,
+    voiceCloudReady: false,
+    voiceSttReady: false,
+    voiceTtsReady: false,
+    voiceProvider: '',
+    voiceRecognitionModel: 'gpt-4o-mini-transcribe',
+    voiceSynthesisModel: 'gpt-4o-mini-tts',
+    voiceSynthesisVoice: 'alloy',
+    voicePreferredLanguage: 'ar',
+    voicePremiumOnly: true
   };
 
   const DEFAULT_USAGE_STATE = {
@@ -208,7 +217,10 @@
     autoSendArmed: false,
     nativeListening: false,
     continuousConversation: false,
-    restartTimer: 0
+    restartTimer: 0,
+    cloudRecorder: null,
+    cloudStream: null,
+    audioPlayer: null
   };
 
   const BROWSER_AUTH_BRIDGE = {
@@ -690,7 +702,16 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       upgradeEmail: String(settings.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail).trim() || DEFAULT_AUTH_CONFIG.upgradeEmail,
       adminEmail: DEFAULT_AUTH_CONFIG.adminEmail,
       adminEnabled: true,
-      clientIdConfigured: false
+      clientIdConfigured: false,
+      voiceCloudReady: false,
+      voiceSttReady: false,
+      voiceTtsReady: false,
+      voiceProvider: '',
+      voiceRecognitionModel: DEFAULT_AUTH_CONFIG.voiceRecognitionModel,
+      voiceSynthesisModel: DEFAULT_AUTH_CONFIG.voiceSynthesisModel,
+      voiceSynthesisVoice: DEFAULT_AUTH_CONFIG.voiceSynthesisVoice,
+      voicePreferredLanguage: DEFAULT_AUTH_CONFIG.voicePreferredLanguage,
+      voicePremiumOnly: DEFAULT_AUTH_CONFIG.voicePremiumOnly
     };
   }
 
@@ -715,6 +736,27 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
 
   function getEffectiveAuthConfig(settings = getSettings()){
     return { ...getLocalAuthConfig(settings), ...getAuthConfigCached() };
+  }
+
+  function getVoiceCloudConfig(settings = getSettings()){
+    const config = getEffectiveAuthConfig(settings);
+    const account = getAccountRuntimeState(settings);
+    const root = getAuthServiceRoot(settings);
+    const premiumOnly = config.voicePremiumOnly !== false;
+    const eligible = !premiumOnly || account.premium || account.admin;
+    return {
+      root,
+      ready: !!root && !!config.voiceCloudReady && eligible,
+      sttReady: !!root && !!config.voiceSttReady && eligible,
+      ttsReady: !!root && !!config.voiceTtsReady && eligible,
+      provider: String(config.voiceProvider || '').trim(),
+      recognitionModel: String(config.voiceRecognitionModel || DEFAULT_AUTH_CONFIG.voiceRecognitionModel).trim(),
+      synthesisModel: String(config.voiceSynthesisModel || DEFAULT_AUTH_CONFIG.voiceSynthesisModel).trim(),
+      synthesisVoice: String(config.voiceSynthesisVoice || DEFAULT_AUTH_CONFIG.voiceSynthesisVoice).trim(),
+      preferredLanguage: String(config.voicePreferredLanguage || DEFAULT_AUTH_CONFIG.voicePreferredLanguage).trim() || 'ar',
+      premiumOnly,
+      eligible
+    };
   }
 
   function normalizeUrl(u){
@@ -888,7 +930,16 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
         upgradeEmail: String(remote.upgradeEmail || local.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail).trim(),
         adminEmail: String(remote.adminEmail || local.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim(),
         adminEnabled: remote.adminEnabled !== false,
-        clientIdConfigured: !!String(remote.googleClientId || '').trim()
+        clientIdConfigured: !!String(remote.googleClientId || '').trim(),
+        voiceCloudReady: !!remote.voiceCloudReady,
+        voiceSttReady: !!remote.voiceSttReady,
+        voiceTtsReady: !!remote.voiceTtsReady,
+        voiceProvider: String(remote.voiceProvider || '').trim(),
+        voiceRecognitionModel: String(remote.voiceRecognitionModel || local.voiceRecognitionModel || DEFAULT_AUTH_CONFIG.voiceRecognitionModel).trim(),
+        voiceSynthesisModel: String(remote.voiceSynthesisModel || local.voiceSynthesisModel || DEFAULT_AUTH_CONFIG.voiceSynthesisModel).trim(),
+        voiceSynthesisVoice: String(remote.voiceSynthesisVoice || local.voiceSynthesisVoice || DEFAULT_AUTH_CONFIG.voiceSynthesisVoice).trim(),
+        voicePreferredLanguage: String(remote.voicePreferredLanguage || local.voicePreferredLanguage || DEFAULT_AUTH_CONFIG.voicePreferredLanguage).trim(),
+        voicePremiumOnly: remote.voicePremiumOnly !== false
       });
     }).catch(() => {
       return setAuthConfigCached(getLocalAuthConfig(settings));
@@ -896,6 +947,35 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       AUTH_RUNTIME.configPromise = null;
     });
     return AUTH_RUNTIME.configPromise;
+  }
+
+  async function fetchAuthResponse(path, init = {}, settings = getSettings()){
+    const run = async (activeSettings) => {
+      const root = getAuthServiceRoot(activeSettings);
+      if (!root) throw new Error('رابط البوابة غير مضبوط لطبقة الخدمات السحابية.');
+      const auth = getAuthState();
+      const headers = new Headers(init.headers || {});
+      if (activeSettings.gatewayToken) headers.set('X-Client-Token', activeSettings.gatewayToken);
+      if (auth.sessionToken) headers.set('X-App-Session', auth.sessionToken);
+      const response = await fetch(`${root}${path}`, { ...init, headers });
+      if (!response.ok){
+        const raw = await response.text().catch(() => '');
+        let payload = null;
+        try{ payload = raw ? JSON.parse(raw) : null; }catch(_){ payload = null; }
+        throw new Error(payload?.error || payload?.message || raw || `HTTP ${response.status}`);
+      }
+      return response;
+    };
+
+    try{
+      return await run(settings);
+    }catch(err){
+      const repaired = repairGatewayAfterAccessIssue(err, settings);
+      if (repaired){
+        return run(repaired);
+      }
+      throw err;
+    }
   }
 
   async function fetchAuthJson(path, init = {}, settings = getSettings()){
@@ -956,7 +1036,16 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
         upgradeEmail: String(remote.upgradeEmail || local.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail).trim(),
         adminEmail: String(remote.adminEmail || local.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim(),
         adminEnabled: remote.adminEnabled !== false,
-        clientIdConfigured: !!String(remote.googleClientId || '').trim()
+        clientIdConfigured: !!String(remote.googleClientId || '').trim(),
+        voiceCloudReady: !!remote.voiceCloudReady,
+        voiceSttReady: !!remote.voiceSttReady,
+        voiceTtsReady: !!remote.voiceTtsReady,
+        voiceProvider: String(remote.voiceProvider || '').trim(),
+        voiceRecognitionModel: String(remote.voiceRecognitionModel || local.voiceRecognitionModel || DEFAULT_AUTH_CONFIG.voiceRecognitionModel).trim(),
+        voiceSynthesisModel: String(remote.voiceSynthesisModel || local.voiceSynthesisModel || DEFAULT_AUTH_CONFIG.voiceSynthesisModel).trim(),
+        voiceSynthesisVoice: String(remote.voiceSynthesisVoice || local.voiceSynthesisVoice || DEFAULT_AUTH_CONFIG.voiceSynthesisVoice).trim(),
+        voicePreferredLanguage: String(remote.voicePreferredLanguage || local.voicePreferredLanguage || DEFAULT_AUTH_CONFIG.voicePreferredLanguage).trim(),
+        voicePremiumOnly: remote.voicePremiumOnly !== false
       });
     };
 
@@ -1198,7 +1287,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       body: JSON.stringify({
         reason,
         state: snapshot,
-        appVersion: '8.24.0'
+        appVersion: '8.25.0'
       })
     }).then((payload) => {
       CLOUD_RUNTIME.lastHash = hash;
@@ -2402,7 +2491,30 @@ function applyShellLayout(){
 
   async function chooseSpeechLanguageForNativeTts(plugin, preferred){
     if (!plugin?.isLanguageSupported) return preferred;
-    const candidates = [preferred, preferred.split('-')[0], 'ar-SA', 'ar', 'en-US'];
+    const rawPreferred = String(preferred || '').trim() || 'ar-SA';
+    const wantsArabic = /^ar(?:-|$)/i.test(rawPreferred);
+    const candidates = wantsArabic
+      ? [
+          rawPreferred,
+          rawPreferred.split('-')[0],
+          'ar-SA',
+          'ar-EG',
+          'ar-AE',
+          'ar-JO',
+          'ar-KW',
+          'ar-QA',
+          'ar-BH',
+          'ar-OM',
+          'ar-IQ',
+          'ar-LB',
+          'ar-LY',
+          'ar-DZ',
+          'ar-MA',
+          'ar-001',
+          'ar-XA',
+          'ar'
+        ]
+      : [rawPreferred, rawPreferred.split('-')[0], 'ar-SA', 'ar'];
     for (const lang of candidates){
       const code = String(lang || '').trim();
       if (!code) continue;
@@ -2480,7 +2592,10 @@ function applyShellLayout(){
       return false;
     }
     const text = stripTextForSpeech(content);
-    if (!text) return false;
+    if (!text){
+      scheduleVoiceConversationRecovery(250);
+      return false;
+    }
 
     stopVoicePlayback();
     const utter = new SpeechSynthesisUtterance(text);
@@ -2596,7 +2711,10 @@ function applyShellLayout(){
   async function speakAssistantReply(content = '', { force = false } = {}){
     if (!force && !getVoiceModeEnabled()) return false;
     const text = stripTextForSpeech(content);
-    if (!text) return false;
+    if (!text){
+      scheduleVoiceConversationRecovery(250);
+      return false;
+    }
 
     await stopVoicePlayback();
     const lang = document.documentElement.lang === 'ar' ? 'ar-SA' : 'en-US';
@@ -2840,7 +2958,10 @@ function applyShellLayout(){
   async function speakAssistantReply(content = '', { force = false } = {}){
     if (!force && !getVoiceModeEnabled()) return false;
     const text = stripTextForSpeech(content);
-    if (!text) return false;
+    if (!text){
+      scheduleVoiceConversationRecovery(250);
+      return false;
+    }
 
     await stopVoicePlayback();
     const lang = document.documentElement.lang === 'ar' ? 'ar-SA' : 'en-US';
@@ -2976,6 +3097,7 @@ function applyShellLayout(){
 
   async function startComposerDictation(){
     if (isNativePlatform() && await startNativeComposerDictation()) return;
+    if (await startCloudComposerDictation()) return;
 
     const Ctor = getSpeechRecognitionCtor();
     if (!Ctor) return toast('الإملاء الصوتي غير مدعوم في هذا المتصفح.');
@@ -3052,6 +3174,8 @@ function applyShellLayout(){
   }
 
   function getPreferredSpeechLanguage(){
+    const cloudLanguage = String(getVoiceCloudConfig().preferredLanguage || '').trim();
+    if (/^ar(?:-|$)/i.test(cloudLanguage)) return cloudLanguage;
     const htmlLang = String(document.documentElement.lang || '').trim().toLowerCase();
     const navLang = String(navigator.language || '').trim();
     if (htmlLang.startsWith('ar')) return 'ar-SA';
@@ -3120,8 +3244,237 @@ function applyShellLayout(){
     return preferred;
   }
 
+  function normalizeCloudVoiceLanguage(lang = getPreferredSpeechLanguage()){
+    const raw = String(lang || '').trim();
+    if (!raw) return 'ar';
+    if (/^ar(?:-|$)/i.test(raw)) return 'ar';
+    return raw.split('-')[0] || raw;
+  }
+
+  function canUseCloudVoiceCapture(settings = getSettings()){
+    const voice = getVoiceCloudConfig(settings);
+    return !!voice.sttReady && !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined';
+  }
+
+  function pickCloudVoiceCaptureMimeType(){
+    if (typeof MediaRecorder === 'undefined') return '';
+    const candidates = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/ogg;codecs=opus'
+    ];
+    if (typeof MediaRecorder.isTypeSupported !== 'function') return candidates[0];
+    return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || '';
+  }
+
+  function cleanupCloudVoiceCapture(){
+    try{
+      VOICE_RUNTIME.cloudStream?.getTracks?.().forEach((track) => track.stop());
+    }catch(_){}
+    VOICE_RUNTIME.cloudStream = null;
+    VOICE_RUNTIME.cloudRecorder = null;
+  }
+
+  async function captureVoiceSnippetByCloud({ maxMs = 8500 } = {}){
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    });
+    const mimeType = pickCloudVoiceCaptureMimeType();
+    const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+    const chunks = [];
+    VOICE_RUNTIME.cloudStream = stream;
+    VOICE_RUNTIME.cloudRecorder = recorder;
+
+    return await new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (fn, value) => {
+        if (settled) return;
+        settled = true;
+        cleanupCloudVoiceCapture();
+        fn(value);
+      };
+      const stopTimer = window.setTimeout(() => {
+        try{
+          if (recorder.state !== 'inactive') recorder.stop();
+        }catch(_){}
+      }, Math.max(2500, Number(maxMs || 8500)));
+
+      recorder.ondataavailable = (event) => {
+        if (event?.data?.size) chunks.push(event.data);
+      };
+      recorder.onerror = (event) => {
+        window.clearTimeout(stopTimer);
+        finish(reject, new Error(event?.error?.message || event?.message || 'VOICE_CAPTURE_FAILED'));
+      };
+      recorder.onstop = () => {
+        window.clearTimeout(stopTimer);
+        const type = mimeType || recorder.mimeType || 'audio/webm';
+        const blob = new Blob(chunks, { type });
+        if (!blob.size){
+          finish(reject, new Error('VOICE_CAPTURE_EMPTY'));
+          return;
+        }
+        finish(resolve, blob);
+      };
+
+      try{
+        recorder.start();
+      }catch(error){
+        window.clearTimeout(stopTimer);
+        finish(reject, error);
+      }
+    });
+  }
+
+  async function transcribeAudioBlobByCloud(blob, settings = getSettings()){
+    const voice = getVoiceCloudConfig(settings);
+    if (!voice.sttReady) throw new Error('CLOUD_STT_NOT_READY');
+    const language = normalizeCloudVoiceLanguage(voice.preferredLanguage || getPreferredSpeechLanguage());
+    const mimeType = String(blob?.type || '').trim() || 'audio/webm';
+    const ext = mimeType.includes('mp4') ? 'm4a' : (mimeType.includes('ogg') ? 'ogg' : 'webm');
+    const form = new FormData();
+    form.append('file', blob, `voice-${Date.now()}.${ext}`);
+    form.append('language', language);
+    form.append('model', voice.recognitionModel);
+
+    const response = await fetchAuthResponse('/voice/transcribe', {
+      method: 'POST',
+      body: form
+    }, settings);
+    const payload = await response.json().catch(() => ({}));
+    const transcript = String(
+      payload?.text
+      || payload?.transcript
+      || payload?.data?.text
+      || payload?.data?.transcript
+      || ''
+    ).trim();
+    if (!transcript){
+      throw new Error(String(payload?.error || payload?.message || 'CLOUD_STT_EMPTY'));
+    }
+    return transcript;
+  }
+
+  async function playCloudSpeechBlob(blob){
+    if (!(blob instanceof Blob) || !blob.size) return false;
+    return await new Promise((resolve) => {
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.preload = 'auto';
+      audio.__objectUrl = url;
+      VOICE_RUNTIME.audioPlayer = audio;
+      audio.onended = () => {
+        try{ URL.revokeObjectURL(url); }catch(_){}
+        if (VOICE_RUNTIME.audioPlayer === audio) VOICE_RUNTIME.audioPlayer = null;
+        VOICE_RUNTIME.speaking = false;
+        scheduleVoiceConversationRestart(700);
+        resolve(true);
+      };
+      audio.onerror = () => {
+        try{ URL.revokeObjectURL(url); }catch(_){}
+        if (VOICE_RUNTIME.audioPlayer === audio) VOICE_RUNTIME.audioPlayer = null;
+        VOICE_RUNTIME.speaking = false;
+        resolve(false);
+      };
+      try{
+        VOICE_RUNTIME.speaking = true;
+        const playback = audio.play();
+        if (playback && typeof playback.catch === 'function'){
+          playback.catch(() => {
+            try{ URL.revokeObjectURL(url); }catch(_){}
+            if (VOICE_RUNTIME.audioPlayer === audio) VOICE_RUNTIME.audioPlayer = null;
+            VOICE_RUNTIME.speaking = false;
+            resolve(false);
+          });
+        }
+      }catch(_){
+        try{ URL.revokeObjectURL(url); }catch(_){}
+        if (VOICE_RUNTIME.audioPlayer === audio) VOICE_RUNTIME.audioPlayer = null;
+        VOICE_RUNTIME.speaking = false;
+        resolve(false);
+      }
+    });
+  }
+
+  async function speakAssistantReplyByCloud(text, settings = getSettings()){
+    const voice = getVoiceCloudConfig(settings);
+    if (!voice.ttsReady) return false;
+    const language = normalizeCloudVoiceLanguage(voice.preferredLanguage || getPreferredSpeechLanguage());
+    const response = await fetchAuthResponse('/voice/speak', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'audio/mpeg'
+      },
+      body: JSON.stringify({
+        text,
+        model: voice.synthesisModel,
+        voice: voice.synthesisVoice,
+        language,
+        format: 'mp3'
+      })
+    }, settings);
+    const blob = await response.blob();
+    return playCloudSpeechBlob(blob);
+  }
+
+  async function startCloudComposerDictation(){
+    const input = $('chatInput');
+    if (!input || !canUseCloudVoiceCapture()) return false;
+
+    composerDictationBase = String(input.value || '').trimEnd();
+    VOICE_RUNTIME.autoSendArmed = true;
+    composerListening = true;
+    VOICE_RUNTIME.continuousConversation = getVoiceModeEnabled();
+    syncVoiceInputButton();
+    showStatus('جاري التسجيل الصوتي السحابي بالعربية...', false);
+
+    try{
+      const blob = await captureVoiceSnippetByCloud({
+        maxMs: getVoiceModeEnabled() ? 6500 : 9500
+      });
+      const transcript = await transcribeAudioBlobByCloud(blob, getSettings());
+      if (transcript){
+        input.value = [composerDictationBase, transcript].filter(Boolean).join(composerDictationBase ? '\n' : '');
+        resizeComposerInput(input);
+        syncComposerMeta();
+      }
+    }catch(error){
+      const message = String(error?.message || error || '').trim();
+      if (!/empty|cancel/i.test(message)){
+        toast(`تعذّر التسجيل الصوتي السحابي: ${message || 'unknown'}`);
+      }
+    }finally{
+      cleanupCloudVoiceCapture();
+      composerListening = false;
+      syncVoiceInputButton();
+      showStatus('', false);
+      const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && String(input.value || '').trim();
+      VOICE_RUNTIME.autoSendArmed = false;
+      if (shouldAutoSend){
+        window.setTimeout(() => {
+          if (String($('chatInput')?.value || '').trim()) void sendMessage();
+        }, 90);
+      } else if (shouldKeepContinuousVoiceLoop()){
+        scheduleVoiceConversationRestart(500);
+      }
+    }
+    return true;
+  }
+
   function shouldKeepContinuousVoiceLoop(){
     return getVoiceModeEnabled() && VOICE_RUNTIME.continuousConversation;
+  }
+
+  function scheduleVoiceConversationRecovery(delay = 500){
+    if (!shouldKeepContinuousVoiceLoop()) return;
+    scheduleVoiceConversationRestart(delay);
   }
 
   function scheduleVoiceConversationRestart(delay = 600){
@@ -3142,6 +3495,15 @@ function applyShellLayout(){
     if (nativeTts?.stop){
       try{ await nativeTts.stop(); }catch(_){}
     }
+    if (VOICE_RUNTIME.audioPlayer){
+      try{ VOICE_RUNTIME.audioPlayer.pause?.(); }catch(_){}
+      try{
+        if (VOICE_RUNTIME.audioPlayer.__objectUrl){
+          URL.revokeObjectURL(VOICE_RUNTIME.audioPlayer.__objectUrl);
+        }
+      }catch(_){}
+      VOICE_RUNTIME.audioPlayer = null;
+    }
     try{ window.speechSynthesis?.cancel?.(); }catch(_){}
     VOICE_RUNTIME.speaking = false;
     VOICE_RUNTIME.utterance = null;
@@ -3150,18 +3512,28 @@ function applyShellLayout(){
   async function speakAssistantReply(content = '', { force = false } = {}){
     if (!force && !getVoiceModeEnabled()) return false;
     const text = stripTextForSpeech(content);
-    if (!text) return false;
+    if (!text){
+      scheduleVoiceConversationRecovery(250);
+      return false;
+    }
 
     await stopVoicePlayback();
+    try{
+      const cloudPlayed = await speakAssistantReplyByCloud(text, getSettings());
+      if (cloudPlayed) return true;
+    }catch(error){
+      if (force) toast(`تعذّر تشغيل الرد صوتيًا عبر السحابة: ${error?.message || error}`);
+    }
     const nativeTts = getNativeTextToSpeechPlugin();
     const lang = await resolveSpeechSynthesisLanguage(nativeTts);
+    const nativeLang = await chooseSpeechLanguageForNativeTts(nativeTts, lang);
 
     if (nativeTts?.speak){
       try{
         VOICE_RUNTIME.speaking = true;
         await nativeTts.speak({
           text,
-          lang,
+          lang: nativeLang,
           rate: 0.92,
           pitch: 1,
           volume: 1
@@ -3234,6 +3606,11 @@ function applyShellLayout(){
     const nativeSpeech = getNativeSpeechRecognitionPlugin();
     VOICE_RUNTIME.autoSendArmed = false;
     VOICE_RUNTIME.continuousConversation = getVoiceModeEnabled();
+    if (VOICE_RUNTIME.cloudRecorder && VOICE_RUNTIME.cloudRecorder.state !== 'inactive'){
+      try{ VOICE_RUNTIME.cloudRecorder.stop(); }catch(_){}
+    } else if (VOICE_RUNTIME.cloudStream){
+      cleanupCloudVoiceCapture();
+    }
     if (VOICE_RUNTIME.nativeListening && nativeSpeech?.stop){
       try{ await nativeSpeech.stop(); }catch(_){}
       try{ await nativeSpeech.removeAllListeners?.(); }catch(_){}
@@ -4344,6 +4721,19 @@ function refreshDeepSearchBtn(){
     }
   }
 
+  async function consumeAuthBridgeLaunchUrl(){
+    if (!isNativePlatform()) return false;
+    const appPlugin = getCapacitorAppPlugin();
+    if (!appPlugin?.getLaunchUrl) return false;
+    try{
+      const launch = await appPlugin.getLaunchUrl();
+      if (!launch?.url) return false;
+      return await consumeAuthRedirectFromUrl(launch.url);
+    }catch(_){
+      return false;
+    }
+  }
+
   async function consumeAuthRedirectParams(params){
     return consumeAuthPayload(extractAuthPayloadFromParams(params), { upgradeCode: getAuthState().upgradeCode || '' });
   }
@@ -4367,9 +4757,14 @@ function refreshDeepSearchBtn(){
     if (window.__AI_STUDIO_AUTH_BRIDGE__) return;
     window.__AI_STUDIO_AUTH_BRIDGE__ = true;
     window.addEventListener('hashchange', () => { consumeAuthRedirectFromLocation().catch(() => {}); });
-    window.addEventListener('focus', () => { consumeAuthBridgeStorage().catch(() => {}); });
+    const syncBridgeFromForeground = () => {
+      consumeAuthRedirectFromLocation().catch(() => {});
+      consumeAuthBridgeStorage().catch(() => {});
+      consumeAuthBridgeLaunchUrl().catch(() => {});
+    };
+    window.addEventListener('focus', syncBridgeFromForeground);
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') consumeAuthBridgeStorage().catch(() => {});
+      if (document.visibilityState === 'visible') syncBridgeFromForeground();
     });
     window.addEventListener('storage', (event) => {
       if (event.key === BROWSER_AUTH_BRIDGE.storageKey && event.newValue){
@@ -4382,12 +4777,17 @@ function refreshDeepSearchBtn(){
       if (data?.type !== 'aistudio-auth' || !data?.payload) return;
       consumeAuthPayload(data.payload, { upgradeCode: getAuthState().upgradeCode || '' }).catch(() => {});
     });
-    consumeAuthRedirectFromLocation().catch(() => {});
-    consumeAuthBridgeStorage().catch(() => {});
+    syncBridgeFromForeground();
     const appPlugin = getCapacitorAppPlugin();
     if (appPlugin?.addListener){
       appPlugin.addListener('appUrlOpen', ({ url }) => {
         consumeAuthRedirectFromUrl(url).catch(() => {});
+      });
+      appPlugin.addListener('resume', () => {
+        syncBridgeFromForeground();
+      });
+      appPlugin.addListener('appStateChange', (state) => {
+        if (state?.isActive) syncBridgeFromForeground();
       });
     }
     window.addEventListener('beforeunload', () => {
@@ -7856,6 +8256,7 @@ async function fileToText(file){
     const modes = getEffectiveModeState(settings, policy);
     let sys = settings.systemPrompt || 'أنت مساعد احترافي. أجب بدقة وبأسلوب منظم.';
     const capabilityContract = buildSelectedModelCapabilityContract(settings);
+    const voiceContract = buildVoiceInteractionContract(settings);
     if (modes.deep){
       sys += '\n\n[وضع التفكير العميق] التزم بالبنية: (1) ملخص سريع (2) شرح مفصل (3) خطوات/أمثلة (4) مخاطر/تحقق (5) خلاصة.';
     }
@@ -7879,8 +8280,38 @@ async function fileToText(file){
         + "\\nاستخدم encoding=\"base64\" للملفات الثنائية مثل PowerPoint وExcel وZIP والصور والفيديو، أو url عندما يكون الملف مستضافًا على رابط مباشر."
         + "\\nوسيحوّل التطبيق هذا البلوك تلقائيًا إلى رابط وزر تنزيل داخل الدردشة. لا تكرر محتوى الملف خارج هذا البلوك إلا إذا طلب المستخدم ذلك."
         + "\\nممنوع إظهار base64 الخام أو البايتات الثنائية كنص مرئي داخل الرسالة.";
+    if (voiceContract) sys += `\n\n${voiceContract}`;
     if (capabilityContract) sys += `\n\n${capabilityContract}`;
     return sys;
+  }
+
+  function buildVoiceInteractionContract(settings){
+    const descriptor = getModelDescriptor(settings.model || '', settings.provider || '');
+    const profile = descriptor.capabilities || buildModelCapabilityProfile(descriptor);
+    const lines = [
+      '[Voice chat]',
+      '- This app handles speech recognition and speech playback outside the model.',
+      '- Never say that you cannot voice chat, speak, or listen just because the selected model is text-first.',
+      '- Treat spoken or transcribed Arabic input exactly like normal chat input, then answer naturally.',
+      '- Mention limitations only when the user asks for downloadable audio files, native realtime audio streaming, cloned voices, or studio-grade generated speech from the model itself.'
+    ];
+    if (profile.arabic_support || profile.arabic_voice_chat){
+      lines.push('- Prefer clear Modern Standard Arabic unless the user explicitly asks for another dialect.');
+    }
+    if (profile.audio){
+      lines.push('- If audio assets are requested, return them as file/url blocks instead of binary text.');
+    }
+    return lines.join('\n');
+  }
+  function buildActiveVoiceSessionContract(){
+    if (!getVoiceModeEnabled()) return '';
+    return [
+      '[Active voice session]',
+      '- Voice mode is enabled in the app right now.',
+      '- Keep replies concise, natural, and easy to speak aloud.',
+      '- Avoid long lists unless the user explicitly asks for structure.',
+      '- Do not repeat meta-disclaimers about voice support unless the user asks.'
+    ].join('\n');
   }
 
   // ---------------- Tools (v6) ----------------
@@ -8227,6 +8658,10 @@ async function maybeUpdateThreadSummary(pid, tid){
 function buildMessagesForChat({ userText, settings, filesText, ragCtx, attachments, historyMessages=[], threadSummary='' }){
     const sys = buildSystemPrompt(settings);
     const msgs = [{ role:'system', content: sys }];
+    const activeVoiceSessionContract = buildActiveVoiceSessionContract();
+    if (activeVoiceSessionContract){
+      msgs.push({ role:'system', content: activeVoiceSessionContract });
+    }
     const briefCtx = buildProjectBriefContext();
     if (briefCtx){
       msgs.push({ role:'system', content: briefCtx });
@@ -9051,7 +9486,10 @@ function updateChips(){
       if (settings.toolsEnabled) await maybeRunToolsLoop(pid, tid, ans, settings);
 
       await refreshUsageState({ settings }).catch(() => {});
-      if (getVoiceModeEnabled()) speakAssistantReply(ans || aMsg.content || '');
+      if (getVoiceModeEnabled()){
+        const played = await speakAssistantReply(ans || aMsg.content || '');
+        if (!played) scheduleVoiceConversationRecovery(500);
+      }
       showStatus('', false);
       $('stopBtn').style.display = 'none';
       renderChat();

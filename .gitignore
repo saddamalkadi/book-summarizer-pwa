@@ -7,5 +7,6 @@ android/*.jks
 android/RELEASE_SIGNING_INFO.local.txt
 android/.gradle-user-home/
 android/.gradle-user/
+.gradle-user/
 android/.android-user/
 *.idsig

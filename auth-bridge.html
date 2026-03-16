@@ -166,6 +166,22 @@
         return `intent://${host}${query}#Intent;scheme=aiworkspace;package=${APP_PACKAGE};end`;
       };
 
+      const triggerNativeReturn = (primaryHref, fallbackHref = '') => {
+        const mainTarget = String(primaryHref || '').trim();
+        const altTarget = String(fallbackHref || '').trim();
+        if (!mainTarget) return;
+        try{
+          window.location.assign(mainTarget);
+        }catch(_){}
+        if (altTarget && altTarget !== mainTarget){
+          window.setTimeout(() => {
+            try{
+              window.location.assign(altTarget);
+            }catch(_){}
+          }, 700);
+        }
+      };
+
       const buildTarget = (payload) => {
         const q = new URLSearchParams();
         q.set('sessionToken', String(payload.sessionToken || payload.session_token || ''));
@@ -207,17 +223,17 @@
             return;
           }
 
+          const appUrl = target.toString();
           const androidIntentUrl = buildAndroidIntentUrl(target);
           returnLink.hidden = false;
-          returnLink.href = androidIntentUrl;
-          returnLink.dataset.fallbackHref = target.toString();
-          window.location.replace(androidIntentUrl);
+          returnLink.href = appUrl;
+          returnLink.dataset.fallbackHref = androidIntentUrl;
+          returnLink.onclick = (event) => {
+            event.preventDefault();
+            triggerNativeReturn(returnLink.getAttribute('href') || '', returnLink.dataset.fallbackHref || '');
+          };
           setStatus('تم تسجيل الدخول. جارٍ إعادتك إلى التطبيق...', 'success');
-          window.setTimeout(() => {
-            try{
-              window.location.replace(target.toString());
-            }catch(_){}
-          }, 900);
+          triggerNativeReturn(appUrl, androidIntentUrl);
           window.setTimeout(() => {
             setStatus('تم تسجيل الدخول. إذا لم يعد التطبيق تلقائيًا، اضغط زر العودة إلى التطبيق.', 'success');
           }, 1200);
