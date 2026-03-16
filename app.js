@@ -1,4 +1,4 @@
-/* AI Workspace Studio v8.20 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v8.21 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -203,12 +203,14 @@
   const VOICE_RUNTIME = {
     speaking: false,
     utterance: null,
-    autoSendArmed: false
+    autoSendArmed: false,
+    nativeListening: false
   };
 
   const BROWSER_AUTH_BRIDGE = {
     webPath: 'auth-bridge.html',
-    appReturnUrl: 'aiworkspace://auth'
+    appReturnUrl: 'aiworkspace://auth',
+    storageKey: 'aistudio_auth_bridge_result_v1'
   };
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -1191,7 +1193,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       body: JSON.stringify({
         reason,
         state: snapshot,
-        appVersion: '8.20.0'
+        appVersion: '8.21.0'
       })
     }).then((payload) => {
       CLOUD_RUNTIME.lastHash = hash;
@@ -2377,6 +2379,47 @@ function applyShellLayout(){
     return window.SpeechRecognition || window.webkitSpeechRecognition || null;
   }
 
+  function getNativeSpeechRecognitionPlugin(){
+    return isNativePlatform() ? (window.Capacitor?.Plugins?.SpeechRecognition || null) : null;
+  }
+
+  function getNativeTextToSpeechPlugin(){
+    return isNativePlatform() ? (window.Capacitor?.Plugins?.TextToSpeech || null) : null;
+  }
+
+  async function ensureNativeSpeechRecognitionPermission(plugin){
+    if (!plugin?.checkPermissions || !plugin?.requestPermissions) return true;
+    let state = await plugin.checkPermissions().catch(() => null);
+    if (state?.speechRecognition === 'granted') return true;
+    state = await plugin.requestPermissions().catch(() => null);
+    return state?.speechRecognition === 'granted';
+  }
+
+  async function chooseSpeechLanguageForNativeTts(plugin, preferred){
+    if (!plugin?.isLanguageSupported) return preferred;
+    const candidates = [preferred, preferred.split('-')[0], 'ar-SA', 'ar', 'en-US'];
+    for (const lang of candidates){
+      const code = String(lang || '').trim();
+      if (!code) continue;
+      const result = await plugin.isLanguageSupported({ lang: code }).catch(() => null);
+      if (result?.supported) return code;
+    }
+    return preferred;
+  }
+
+  function chooseSpeechSynthesisVoice(lang = 'ar-SA'){
+    try{
+      const voices = window.speechSynthesis?.getVoices?.() || [];
+      const exact = voices.find((voice) => String(voice.lang || '').toLowerCase() === lang.toLowerCase());
+      if (exact) return exact;
+      const family = voices.find((voice) => String(voice.lang || '').toLowerCase().startsWith(lang.split('-')[0].toLowerCase()));
+      if (family) return family;
+      return voices.find((voice) => voice.default) || voices[0] || null;
+    }catch(_){
+      return null;
+    }
+  }
+
   function syncVoiceInputButton(){
     const btn = $('voiceInputBtn');
     if (!btn) return;
@@ -2411,13 +2454,17 @@ function applyShellLayout(){
       .trim();
   }
 
-  function stopVoicePlayback(){
+  async function stopVoicePlayback(){
+    const nativeTts = getNativeTextToSpeechPlugin();
+    if (nativeTts?.stop){
+      try{ await nativeTts.stop(); }catch(_){}
+    }
     try{ window.speechSynthesis?.cancel?.(); }catch(_){}
     VOICE_RUNTIME.speaking = false;
     VOICE_RUNTIME.utterance = null;
   }
 
-  function speakAssistantReply(content = '', { force = false } = {}){
+  async function speakAssistantReply(content = '', { force = false } = {}){
     if (!force && !getVoiceModeEnabled()) return false;
     if (!('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance === 'undefined'){
       if (force) toast('⚠️ التشغيل الصوتي غير مدعوم في هذا المتصفح.');
@@ -2527,6 +2574,433 @@ function applyShellLayout(){
     else startComposerDictation();
   }
 
+  async function stopVoicePlayback(){
+    const nativeTts = getNativeTextToSpeechPlugin();
+    if (nativeTts?.stop){
+      try{ await nativeTts.stop(); }catch(_){}
+    }
+    try{ window.speechSynthesis?.cancel?.(); }catch(_){}
+    VOICE_RUNTIME.speaking = false;
+    VOICE_RUNTIME.utterance = null;
+  }
+
+  async function speakAssistantReply(content = '', { force = false } = {}){
+    if (!force && !getVoiceModeEnabled()) return false;
+    const text = stripTextForSpeech(content);
+    if (!text) return false;
+
+    await stopVoicePlayback();
+    const lang = document.documentElement.lang === 'ar' ? 'ar-SA' : 'en-US';
+    const nativeTts = getNativeTextToSpeechPlugin();
+    if (nativeTts?.speak){
+      try{
+        const resolvedLang = await chooseSpeechLanguageForNativeTts(nativeTts, lang);
+        VOICE_RUNTIME.speaking = true;
+        await nativeTts.speak({
+          text,
+          lang: resolvedLang,
+          rate: 1,
+          pitch: 1,
+          volume: 1
+        });
+        VOICE_RUNTIME.speaking = false;
+        return true;
+      }catch(error){
+        VOICE_RUNTIME.speaking = false;
+        if (force) toast(`âڑ ï¸ڈ تعذر تشغيل الرد صوتيًا: ${error?.message || error}`);
+      }
+    }
+
+    if (!('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance === 'undefined'){
+      if (force) toast('âڑ ï¸ڈ ط§ظ„طھط´ط؛ظٹظ„ ط§ظ„طµظˆطھظٹ ط؛ظٹط± ظ…ط¯ط¹ظˆظ… ظپظٹ ظ‡ط°ط§ ط§ظ„ظ…طھطµظپط­.');
+      return false;
+    }
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = lang;
+    utter.voice = chooseSpeechSynthesisVoice(lang);
+    utter.rate = 1;
+    utter.pitch = 1;
+    utter.onstart = () => { VOICE_RUNTIME.speaking = true; };
+    utter.onend = utter.onerror = () => {
+      VOICE_RUNTIME.speaking = false;
+      VOICE_RUNTIME.utterance = null;
+    };
+    VOICE_RUNTIME.utterance = utter;
+    try{ window.speechSynthesis.resume?.(); }catch(_){}
+    window.speechSynthesis.speak(utter);
+    return true;
+  }
+
+  async function stopComposerDictation(showToast = false){
+    const nativeSpeech = getNativeSpeechRecognitionPlugin();
+    if (VOICE_RUNTIME.nativeListening && nativeSpeech?.stop){
+      try{ await nativeSpeech.stop(); }catch(_){}
+      try{ await nativeSpeech.removeAllListeners?.(); }catch(_){}
+      VOICE_RUNTIME.nativeListening = false;
+    }
+    try{ composerRecognition?.stop?.(); }catch(_){}
+    composerRecognition = null;
+    composerListening = false;
+    syncVoiceInputButton();
+    if (showToast) toast('âڈ¹ï¸ڈ طھظ… ط¥ظٹظ‚ط§ظپ ط§ظ„ط¥ظ…ظ„ط§ط، ط§ظ„طµظˆطھظٹ');
+  }
+
+  async function startNativeComposerDictation(){
+    const plugin = getNativeSpeechRecognitionPlugin();
+    const input = $('chatInput');
+    if (!plugin || !input) return false;
+
+    const availability = await plugin.available?.().catch(() => ({ available:false }));
+    if (!availability?.available){
+      toast('âڑ ï¸ڈ التعرف الصوتي غير متاح على هذا الجهاز.');
+      return false;
+    }
+
+    const permitted = await ensureNativeSpeechRecognitionPermission(plugin);
+    if (!permitted){
+      toast('âڑ ï¸ڈ لم يتم منح إذن الميكروفون للتعرف الصوتي.');
+      return false;
+    }
+
+    composerDictationBase = String(input.value || '').trimEnd();
+    VOICE_RUNTIME.autoSendArmed = getVoiceModeEnabled();
+    composerListening = true;
+    VOICE_RUNTIME.nativeListening = true;
+    syncVoiceInputButton();
+    showStatus('ًںژ™ï¸ڈ افتح الميكروفون وتحدث الآن…', false);
+
+    try{
+      const result = await plugin.start({
+        language: document.documentElement.lang === 'ar' ? 'ar-SA' : 'en-US',
+        maxResults: 1,
+        prompt: 'تحدث الآن',
+        partialResults: false,
+        popup: true
+      });
+      const transcript = Array.isArray(result?.matches)
+        ? result.matches.map((item) => String(item || '').trim()).filter(Boolean).join(' ')
+        : '';
+      if (transcript){
+        input.value = [composerDictationBase, transcript].filter(Boolean).join(composerDictationBase ? '\n' : '');
+        resizeComposerInput(input);
+        syncComposerMeta();
+      }
+    }catch(error){
+      const message = String(error?.message || error || '').trim();
+      if (!/cancel/i.test(message)) toast(`âڑ ï¸ڈ تعذر الإملاء الصوتي: ${message || 'unknown'}`);
+    }finally{
+      VOICE_RUNTIME.nativeListening = false;
+      composerListening = false;
+      try{ await plugin.removeAllListeners?.(); }catch(_){}
+      syncVoiceInputButton();
+      showStatus('', false);
+      const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && String(input.value || '').trim();
+      VOICE_RUNTIME.autoSendArmed = false;
+      if (shouldAutoSend){
+        window.setTimeout(() => {
+          if (String($('chatInput')?.value || '').trim()) sendMessage();
+        }, 90);
+      }
+    }
+    return true;
+  }
+
+  async function startComposerDictation(){
+    if (isNativePlatform() && await startNativeComposerDictation()) return;
+    const Ctor = getSpeechRecognitionCtor();
+    if (!Ctor) return toast('âڑ ï¸ڈ ط§ظ„ط¥ظ…ظ„ط§ط، ط§ظ„طµظˆطھظٹ ط؛ظٹط± ظ…ط¯ط¹ظˆظ… ظپظٹ ظ‡ط°ط§ ط§ظ„ظ…طھطµظپط­');
+    const input = $('chatInput');
+    if (!input) return;
+
+    composerDictationBase = String(input.value || '').trimEnd();
+    VOICE_RUNTIME.autoSendArmed = getVoiceModeEnabled();
+    composerRecognition = new Ctor();
+    composerRecognition.lang = document.documentElement.lang === 'ar' ? 'ar-SA' : 'en-US';
+    composerRecognition.continuous = true;
+    composerRecognition.interimResults = true;
+
+    composerRecognition.onstart = () => {
+      composerListening = true;
+      syncVoiceInputButton();
+      showStatus('ًںژ™ï¸ڈ ط§ظ„ط¥ظ…ظ„ط§ط، ط§ظ„طµظˆطھظٹ ظٹط¹ظ…ظ„ ط§ظ„ط¢ظ†â€¦', false);
+    };
+
+    composerRecognition.onresult = (event) => {
+      const parts = [];
+      for (let i = event.resultIndex; i < event.results.length; i += 1){
+        const transcript = String(event.results[i]?.[0]?.transcript || '').trim();
+        if (transcript) parts.push(transcript);
+      }
+      const dictation = parts.join(' ').trim();
+      input.value = [composerDictationBase, dictation].filter(Boolean).join(composerDictationBase ? '\n' : '');
+      resizeComposerInput(input);
+      syncComposerMeta();
+    };
+
+    composerRecognition.onerror = (event) => {
+      composerListening = false;
+      VOICE_RUNTIME.autoSendArmed = false;
+      syncVoiceInputButton();
+      if (event?.error !== 'no-speech') toast(`âڑ ï¸ڈ طھط¹ط°ظ‘ط± ط§ظ„ط¥ظ…ظ„ط§ط، ط§ظ„طµظˆطھظٹ: ${event?.error || 'unknown'}`);
+    };
+
+    composerRecognition.onend = () => {
+      const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && String(input.value || '').trim();
+      VOICE_RUNTIME.autoSendArmed = false;
+      composerListening = false;
+      composerRecognition = null;
+      syncVoiceInputButton();
+      showStatus('', false);
+      if (shouldAutoSend){
+        window.setTimeout(() => {
+          if (String($('chatInput')?.value || '').trim()) sendMessage();
+        }, 90);
+      }
+    };
+
+    try{
+      composerRecognition.start();
+    }catch(e){
+      composerListening = false;
+      composerRecognition = null;
+      syncVoiceInputButton();
+      toast(`âڑ ï¸ڈ طھط¹ط°ظ‘ط± ط¨ط¯ط، ط§ظ„ط¥ظ…ظ„ط§ط، ط§ظ„طµظˆطھظٹ: ${e?.message || e}`);
+    }
+  }
+
+  async function ensureNativeSpeechRecognitionPermission(plugin){
+    if (!plugin) return false;
+    if (plugin.checkPermissions && plugin.requestPermissions){
+      let state = await plugin.checkPermissions().catch(() => null);
+      if (state?.speechRecognition === 'granted') return true;
+      state = await plugin.requestPermissions().catch(() => null);
+      return state?.speechRecognition === 'granted';
+    }
+    if (plugin.hasPermission && plugin.requestPermission){
+      const current = await plugin.hasPermission().catch(() => ({ permission:false }));
+      if (current?.permission) return true;
+      const requested = await plugin.requestPermission().catch(() => ({ permission:false }));
+      return !!requested?.permission;
+    }
+    return true;
+  }
+
+  async function stopVoicePlayback(){
+    const nativeTts = getNativeTextToSpeechPlugin();
+    if (nativeTts?.stop){
+      try{ await nativeTts.stop(); }catch(_){}
+    }
+    try{ window.speechSynthesis?.cancel?.(); }catch(_){}
+    VOICE_RUNTIME.speaking = false;
+    VOICE_RUNTIME.utterance = null;
+  }
+
+  async function speakAssistantReply(content = '', { force = false } = {}){
+    if (!force && !getVoiceModeEnabled()) return false;
+    const text = stripTextForSpeech(content);
+    if (!text) return false;
+
+    await stopVoicePlayback();
+    const lang = document.documentElement.lang === 'ar' ? 'ar-SA' : 'en-US';
+    const nativeTts = getNativeTextToSpeechPlugin();
+    if (nativeTts?.speak){
+      try{
+        const resolvedLang = await chooseSpeechLanguageForNativeTts(nativeTts, lang);
+        VOICE_RUNTIME.speaking = true;
+        await nativeTts.speak({
+          text,
+          lang: resolvedLang,
+          rate: 1,
+          pitch: 1,
+          volume: 1
+        });
+        VOICE_RUNTIME.speaking = false;
+        VOICE_RUNTIME.utterance = null;
+        return true;
+      }catch(error){
+        VOICE_RUNTIME.speaking = false;
+        VOICE_RUNTIME.utterance = null;
+        if (force) toast(`تعذّر تشغيل الرد صوتيًا: ${error?.message || error}`);
+      }
+    }
+
+    if (!('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance === 'undefined'){
+      if (force) toast('التشغيل الصوتي غير مدعوم في هذا المتصفح.');
+      return false;
+    }
+
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = lang;
+    utter.voice = chooseSpeechSynthesisVoice(lang);
+    utter.rate = 1;
+    utter.pitch = 1;
+    utter.onstart = () => { VOICE_RUNTIME.speaking = true; };
+    utter.onend = utter.onerror = () => {
+      VOICE_RUNTIME.speaking = false;
+      VOICE_RUNTIME.utterance = null;
+    };
+    VOICE_RUNTIME.utterance = utter;
+    try{ window.speechSynthesis.resume?.(); }catch(_){}
+    window.speechSynthesis.speak(utter);
+    return true;
+  }
+
+  function toggleVoiceMode(){
+    const next = !getVoiceModeEnabled();
+    setVoiceModeEnabled(next);
+    refreshVoiceModeButton();
+    if (!next){
+      VOICE_RUNTIME.autoSendArmed = false;
+      void stopVoicePlayback();
+    }
+    toast(next ? 'تم تفعيل المحادثة الصوتية' : 'تم إيقاف المحادثة الصوتية');
+  }
+
+  async function stopComposerDictation(showToast = false){
+    const nativeSpeech = getNativeSpeechRecognitionPlugin();
+    VOICE_RUNTIME.autoSendArmed = false;
+    if (VOICE_RUNTIME.nativeListening && nativeSpeech?.stop){
+      try{ await nativeSpeech.stop(); }catch(_){}
+      try{ await nativeSpeech.removeAllListeners?.(); }catch(_){}
+      VOICE_RUNTIME.nativeListening = false;
+    }
+    try{ composerRecognition?.stop?.(); }catch(_){}
+    composerRecognition = null;
+    composerListening = false;
+    syncVoiceInputButton();
+    showStatus('', false);
+    if (showToast) toast('تم إيقاف الإملاء الصوتي');
+  }
+
+  async function startNativeComposerDictation(){
+    const plugin = getNativeSpeechRecognitionPlugin();
+    const input = $('chatInput');
+    if (!plugin || !input) return false;
+
+    const availability = await plugin.available?.().catch(() => ({ available:false }));
+    if (!availability?.available){
+      toast('التعرّف الصوتي غير متاح على هذا الجهاز.');
+      return false;
+    }
+
+    const permitted = await ensureNativeSpeechRecognitionPermission(plugin);
+    if (!permitted){
+      toast('لم يتم منح إذن الميكروفون للتعرّف الصوتي.');
+      return false;
+    }
+
+    composerDictationBase = String(input.value || '').trimEnd();
+    VOICE_RUNTIME.autoSendArmed = getVoiceModeEnabled();
+    composerListening = true;
+    VOICE_RUNTIME.nativeListening = true;
+    syncVoiceInputButton();
+    showStatus('الإملاء الصوتي يعمل الآن...', false);
+
+    try{
+      const result = await plugin.start({
+        language: document.documentElement.lang === 'ar' ? 'ar-SA' : 'en-US',
+        maxResults: 1,
+        prompt: 'تحدث الآن',
+        partialResults: false,
+        popup: true
+      });
+      const transcript = Array.isArray(result?.matches)
+        ? result.matches.map((item) => String(item || '').trim()).filter(Boolean).join(' ')
+        : '';
+      if (transcript){
+        input.value = [composerDictationBase, transcript].filter(Boolean).join(composerDictationBase ? '\n' : '');
+        resizeComposerInput(input);
+        syncComposerMeta();
+      }
+    }catch(error){
+      const message = String(error?.message || error || '').trim();
+      if (!/cancel/i.test(message)) toast(`تعذّر الإملاء الصوتي: ${message || 'unknown'}`);
+    }finally{
+      VOICE_RUNTIME.nativeListening = false;
+      composerListening = false;
+      try{ await plugin.removeAllListeners?.(); }catch(_){}
+      syncVoiceInputButton();
+      showStatus('', false);
+      const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && String(input.value || '').trim();
+      VOICE_RUNTIME.autoSendArmed = false;
+      if (shouldAutoSend){
+        window.setTimeout(() => {
+          if (String($('chatInput')?.value || '').trim()) sendMessage();
+        }, 90);
+      }
+    }
+    return true;
+  }
+
+  async function startComposerDictation(){
+    if (isNativePlatform() && await startNativeComposerDictation()) return;
+
+    const Ctor = getSpeechRecognitionCtor();
+    if (!Ctor) return toast('الإملاء الصوتي غير مدعوم في هذا المتصفح.');
+
+    const input = $('chatInput');
+    if (!input) return;
+
+    composerDictationBase = String(input.value || '').trimEnd();
+    VOICE_RUNTIME.autoSendArmed = getVoiceModeEnabled();
+    composerRecognition = new Ctor();
+    composerRecognition.lang = document.documentElement.lang === 'ar' ? 'ar-SA' : 'en-US';
+    composerRecognition.continuous = true;
+    composerRecognition.interimResults = true;
+
+    composerRecognition.onstart = () => {
+      composerListening = true;
+      syncVoiceInputButton();
+      showStatus('الإملاء الصوتي يعمل الآن...', false);
+    };
+
+    composerRecognition.onresult = (event) => {
+      const parts = [];
+      for (let i = event.resultIndex; i < event.results.length; i += 1){
+        const transcript = String(event.results[i]?.[0]?.transcript || '').trim();
+        if (transcript) parts.push(transcript);
+      }
+      const dictation = parts.join(' ').trim();
+      input.value = [composerDictationBase, dictation].filter(Boolean).join(composerDictationBase ? '\n' : '');
+      resizeComposerInput(input);
+      syncComposerMeta();
+    };
+
+    composerRecognition.onerror = (event) => {
+      composerListening = false;
+      VOICE_RUNTIME.autoSendArmed = false;
+      syncVoiceInputButton();
+      if (event?.error !== 'no-speech') toast(`تعذّر الإملاء الصوتي: ${event?.error || 'unknown'}`);
+    };
+
+    composerRecognition.onend = () => {
+      const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && String(input.value || '').trim();
+      VOICE_RUNTIME.autoSendArmed = false;
+      composerListening = false;
+      composerRecognition = null;
+      syncVoiceInputButton();
+      showStatus('', false);
+      if (shouldAutoSend){
+        window.setTimeout(() => {
+          if (String($('chatInput')?.value || '').trim()) sendMessage();
+        }, 90);
+      }
+    };
+
+    try{
+      composerRecognition.start();
+    }catch(error){
+      composerListening = false;
+      composerRecognition = null;
+      syncVoiceInputButton();
+      toast(`تعذّر بدء الإملاء الصوتي: ${error?.message || error}`);
+    }
+  }
+
+  function toggleComposerDictation(){
+    if (composerListening) void stopComposerDictation(true);
+    else void startComposerDictation();
+  }
 
 function refreshDeepSearchBtn(){
     const b = $('deepSearchToggleBtn');
@@ -3314,11 +3788,54 @@ function refreshDeepSearchBtn(){
         setAuthGateStatus('جاري فتح تسجيل Google في متصفح الجهاز…', 'busy');
         await browser.open({ url });
       } else {
-        window.open(url, '_blank', 'noopener,noreferrer');
+        setAuthGateStatus('جارٍ فتح تسجيل Google في نفس الصفحة...', 'busy');
+        window.location.assign(url);
       }
     }catch(error){
       setAuthGateStatus(`تعذّر فتح تسجيل Google في المتصفح: ${error?.message || error}`, 'error');
     }
+  }
+
+  function normalizeAuthPayload(payload){
+    const sessionToken = String(payload?.sessionToken || payload?.session_token || '').trim();
+    if (!sessionToken) return null;
+    return {
+      email: String(payload?.email || '').trim().toLowerCase(),
+      name: String(payload?.name || '').trim(),
+      picture: String(payload?.picture || '').trim(),
+      plan: String(payload?.plan || 'free').trim(),
+      role: String(payload?.role || 'user').trim(),
+      sessionToken,
+      sessionExp: Number(payload?.sessionExp || payload?.session_exp || 0)
+    };
+  }
+
+  function extractAuthPayloadFromParams(params){
+    return normalizeAuthPayload({
+      email: params.get('email') || '',
+      name: params.get('name') || '',
+      picture: params.get('picture') || '',
+      plan: params.get('plan') || 'free',
+      role: params.get('role') || 'user',
+      sessionToken: params.get('sessionToken') || params.get('session_token') || '',
+      sessionExp: params.get('sessionExp') || params.get('session_exp') || 0
+    });
+  }
+
+  async function consumeAuthPayload(payload, extra = {}){
+    const normalized = normalizeAuthPayload(payload);
+    if (!normalized) return false;
+    applyAuthResponse(normalized, { upgradeCode: extra.upgradeCode || getAuthState().upgradeCode || '' });
+    syncAccountUi();
+    refreshModeButtons();
+    renderSettings();
+    await hydrateCloudState(true).catch(() => null);
+    refreshStrategicWorkspace().catch(() => {});
+    closeAuthGate(true);
+    setAuthGateStatus('', 'info');
+    try{ await getCapacitorBrowserPlugin()?.close?.(); }catch(_){}
+    toast('✅ تم تسجيل الدخول عبر Google');
+    return true;
   }
 
   async function consumeAuthRedirectParams(params){
@@ -3369,6 +3886,70 @@ function refreshDeepSearchBtn(){
     window.__AI_STUDIO_AUTH_BRIDGE__ = true;
     window.addEventListener('hashchange', () => { consumeAuthRedirectFromLocation().catch(() => {}); });
     consumeAuthRedirectFromLocation().catch(() => {});
+    const appPlugin = getCapacitorAppPlugin();
+    if (appPlugin?.addListener){
+      appPlugin.addListener('appUrlOpen', ({ url }) => {
+        consumeAuthRedirectFromUrl(url).catch(() => {});
+      });
+    }
+    window.addEventListener('beforeunload', () => {
+      syncCloudNow('beforeunload').catch(() => {});
+      stopVoicePlayback();
+    });
+  }
+
+  function consumeAuthBridgeStorage(){
+    try{
+      const raw = localStorage.getItem(BROWSER_AUTH_BRIDGE.storageKey);
+      if (!raw) return Promise.resolve(false);
+      localStorage.removeItem(BROWSER_AUTH_BRIDGE.storageKey);
+      return consumeAuthPayload(JSON.parse(raw), { upgradeCode: getAuthState().upgradeCode || '' });
+    }catch(_){
+      try{ localStorage.removeItem(BROWSER_AUTH_BRIDGE.storageKey); }catch(__){}
+      return Promise.resolve(false);
+    }
+  }
+
+  async function consumeAuthRedirectParams(params){
+    return consumeAuthPayload(extractAuthPayloadFromParams(params), { upgradeCode: getAuthState().upgradeCode || '' });
+  }
+
+  async function consumeAuthRedirectFromLocation(){
+    const searchConsumed = await consumeAuthRedirectParams(new URLSearchParams(window.location.search || ''));
+    if (searchConsumed){
+      history.replaceState({}, document.title, window.location.pathname);
+      return true;
+    }
+    const hash = String(window.location.hash || '').replace(/^#/, '');
+    if (!hash) return false;
+    const consumed = await consumeAuthRedirectParams(new URLSearchParams(hash));
+    if (consumed){
+      history.replaceState({}, document.title, window.location.href.split('#')[0]);
+    }
+    return consumed;
+  }
+
+  function installBrowserAuthBridgeListeners(){
+    if (window.__AI_STUDIO_AUTH_BRIDGE__) return;
+    window.__AI_STUDIO_AUTH_BRIDGE__ = true;
+    window.addEventListener('hashchange', () => { consumeAuthRedirectFromLocation().catch(() => {}); });
+    window.addEventListener('focus', () => { consumeAuthBridgeStorage().catch(() => {}); });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') consumeAuthBridgeStorage().catch(() => {});
+    });
+    window.addEventListener('storage', (event) => {
+      if (event.key === BROWSER_AUTH_BRIDGE.storageKey && event.newValue){
+        consumeAuthBridgeStorage().catch(() => {});
+      }
+    });
+    window.addEventListener('message', (event) => {
+      if (event.origin !== window.location.origin) return;
+      const data = event.data || {};
+      if (data?.type !== 'aistudio-auth' || !data?.payload) return;
+      consumeAuthPayload(data.payload, { upgradeCode: getAuthState().upgradeCode || '' }).catch(() => {});
+    });
+    consumeAuthRedirectFromLocation().catch(() => {});
+    consumeAuthBridgeStorage().catch(() => {});
     const appPlugin = getCapacitorAppPlugin();
     if (appPlugin?.addListener){
       appPlugin.addListener('appUrlOpen', ({ url }) => {

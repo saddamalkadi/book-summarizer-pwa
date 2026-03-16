@@ -2,17 +2,19 @@
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>تسجيل Google - AI Workspace Studio</title>
   <style>
     :root{
       color-scheme: light;
-      --bg:#f5f8ff;
+      --bg:#f3f7ff;
       --card:#ffffff;
       --ink:#0f172a;
       --muted:#5b6884;
       --line:rgba(15,23,42,.08);
       --brand:#1b66ff;
+      --success:#0f9d58;
+      --danger:#d93025;
     }
     *{box-sizing:border-box}
     body{
@@ -21,15 +23,15 @@
       font-family:"Segoe UI",Tahoma,sans-serif;
       color:var(--ink);
       background:
-        radial-gradient(circle at top right, rgba(27,102,255,.15), transparent 28%),
-        radial-gradient(circle at bottom left, rgba(20,184,166,.10), transparent 24%),
+        radial-gradient(circle at top right, rgba(27,102,255,.16), transparent 28%),
+        radial-gradient(circle at bottom left, rgba(15,157,88,.10), transparent 26%),
         linear-gradient(180deg,#f8fbff 0%,#eef3fb 100%);
       display:grid;
       place-items:center;
       padding:24px;
     }
     .shell{
-      width:min(560px,100%);
+      width:min(580px,100%);
       background:var(--card);
       border:1px solid var(--line);
       border-radius:28px;
@@ -48,7 +50,7 @@
     h1{
       margin:0;
       font-size:30px;
-      line-height:1.15;
+      line-height:1.2;
     }
     p{
       margin:0;
@@ -56,7 +58,7 @@
       line-height:1.9;
     }
     .slot{
-      min-height:52px;
+      min-height:56px;
       display:grid;
       place-items:center;
     }
@@ -71,13 +73,13 @@
       font-size:14px;
     }
     .status.error{
-      border-color:#fecdd3;
+      border-color:rgba(217,48,37,.18);
       background:#fff1f2;
-      color:#be123c;
+      color:#b42318;
     }
     .status.success{
-      border-color:#9ee6c1;
-      background:#ecfdf5;
+      border-color:rgba(15,157,88,.18);
+      background:#ecfdf3;
       color:#166534;
     }
     .actions{
@@ -110,6 +112,7 @@
     .hint{
       font-size:12px;
       color:var(--muted);
+      line-height:1.9;
     }
     code{
       background:#eef3ff;
@@ -123,30 +126,37 @@
   <main class="shell">
     <div class="eyebrow">Google Sign-In</div>
     <h1>تسجيل الدخول عبر Google</h1>
-    <p>افتح هذه الصفحة من التطبيق أو من نسخة الويب، ثم اختر حساب Gmail. بعد النجاح ستعود الجلسة إلى التطبيق أو الموقع تلقائيًا.</p>
-    <div class="status" id="statusBox">جارٍ تهيئة تسجيل Google…</div>
+    <p>اختر حساب Gmail ثم انتظر ثوانٍ قليلة. إذا كنت داخل تطبيق Android فسيتم الرجوع تلقائيًا إلى التطبيق، وإذا كنت على الويب فستعود إلى المنصة مباشرة.</p>
+    <div class="status" id="statusBox">جارٍ تهيئة تسجيل Google...</div>
     <div class="slot" id="googleSlot"></div>
     <div class="actions">
       <a class="btn ghost" href="https://saddamalkadi.github.io/book-summarizer-pwa/">العودة إلى المنصة</a>
+      <a class="btn primary" id="returnLink" href="#" hidden>العودة إلى التطبيق</a>
     </div>
-    <div class="hint">إذا كنت تستخدم التطبيق Android فسيتم الرجوع إليه عبر الرابط <code>aiworkspace://auth</code>.</div>
+    <div class="hint">في Android يتم الرجوع عبر الرابط <code>aiworkspace://auth</code>. إذا لم يرجع التطبيق تلقائيًا اضغط زر العودة إلى التطبيق.</div>
   </main>
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script>
     (() => {
+      const STORAGE_KEY = 'aistudio_auth_bridge_result_v1';
       const params = new URLSearchParams(window.location.search);
       const worker = String(params.get('worker') || '').trim().replace(/\/+$/,'');
-      const returnTo = String(params.get('return_to') || window.location.origin + window.location.pathname.replace(/auth-bridge\.html$/,'')).trim();
+      const returnTo = String(
+        params.get('return_to') ||
+        window.location.origin + window.location.pathname.replace(/auth-bridge\.html$/,'')
+      ).trim();
+
       const googleSlot = document.getElementById('googleSlot');
       const statusBox = document.getElementById('statusBox');
+      const returnLink = document.getElementById('returnLink');
 
       const setStatus = (text, tone = '') => {
         statusBox.textContent = text;
         statusBox.className = `status${tone ? ` ${tone}` : ''}`;
       };
 
-      const redirectBack = (payload) => {
+      const buildTarget = (payload) => {
         const q = new URLSearchParams();
         q.set('sessionToken', String(payload.sessionToken || payload.session_token || ''));
         q.set('sessionExp', String(payload.sessionExp || payload.session_exp || '0'));
@@ -155,14 +165,44 @@
         q.set('picture', String(payload.picture || ''));
         q.set('plan', String(payload.plan || 'free'));
         q.set('role', String(payload.role || 'user'));
+        const target = new URL(returnTo);
+        if (/^https?:$/i.test(target.protocol)){
+          target.hash = q.toString();
+        } else {
+          target.search = q.toString();
+        }
+        return target;
+      };
+
+      const storePayloadForWeb = (payload) => {
         try{
-          const target = new URL(returnTo);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+        }catch(_){}
+      };
+
+      const redirectBack = (payload) => {
+        try{
+          const target = buildTarget(payload);
+          storePayloadForWeb(payload);
+
           if (/^https?:$/i.test(target.protocol)){
-            target.hash = q.toString();
-          } else {
-            target.search = q.toString();
+            try{
+              if (window.opener && !window.opener.closed && target.origin === window.location.origin){
+                window.opener.postMessage({ type:'aistudio-auth', payload }, target.origin);
+                window.close();
+                return;
+              }
+            }catch(_){}
+            window.location.replace(target.toString());
+            return;
           }
-          window.location.replace(target.toString());
+
+          returnLink.hidden = false;
+          returnLink.href = target.toString();
+          window.location.href = target.toString();
+          window.setTimeout(() => {
+            setStatus('تم تسجيل الدخول. إذا لم يعد التطبيق تلقائيًا، اضغط زر العودة إلى التطبيق.', 'success');
+          }, 1200);
         }catch(_){
           setStatus('تم تسجيل الدخول، لكن رابط العودة غير صالح. عد إلى التطبيق يدويًا.', 'success');
         }
@@ -170,9 +210,10 @@
 
       const handleGoogleCredential = async (response) => {
         try{
-          setStatus('جارٍ التحقق من حساب Google وإنشاء الجلسة…');
+          setStatus('جارٍ التحقق من حساب Google وإنشاء الجلسة...');
           const credential = String(response?.credential || '').trim();
           if (!credential) throw new Error('لم يصل رمز Google الكامل.');
+
           const configResp = await fetch(`${worker}/auth/config`);
           const config = await configResp.json();
           const resp = await fetch(`${worker}/auth/google`, {
@@ -185,7 +226,7 @@
           });
           const payload = await resp.json().catch(() => ({}));
           if (!resp.ok) throw new Error(payload?.error || payload?.message || `HTTP ${resp.status}`);
-          setStatus('تم تسجيل الدخول. جارٍ إعادتك…', 'success');
+          setStatus('تم تسجيل الدخول. جارٍ إعادتك...', 'success');
           redirectBack(payload);
         }catch(error){
           setStatus(`فشل تسجيل Google: ${error?.message || error}`, 'error');
@@ -205,15 +246,18 @@
             setStatus('Google Client ID غير مفعّل على الخادم بعد.', 'error');
             return;
           }
+
           let attempts = 0;
           while (!(window.google && window.google.accounts && window.google.accounts.id) && attempts < 60){
             attempts += 1;
             await new Promise((resolve) => setTimeout(resolve, 200));
           }
+
           if (!(window.google && window.google.accounts && window.google.accounts.id)){
-            setStatus('تعذّر تحميل خدمة Google Sign-In. حدّث الصفحة وحاول مرة أخرى.', 'error');
+            setStatus('تعذّر تحميل خدمة Google Sign-In. حدّث الصفحة ثم حاول مرة أخرى.', 'error');
             return;
           }
+
           window.google.accounts.id.initialize({
             client_id: clientId,
             callback: handleGoogleCredential,
@@ -222,6 +266,7 @@
             context: 'signin',
             use_fedcm_for_prompt: true
           });
+
           googleSlot.innerHTML = '';
           window.google.accounts.id.renderButton(googleSlot, {
             theme: 'filled_blue',
