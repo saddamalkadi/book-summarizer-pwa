@@ -1,4 +1,4 @@
-/* AI Workspace Studio v8.25 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v8.27 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -1287,7 +1287,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       body: JSON.stringify({
         reason,
         state: snapshot,
-        appVersion: '8.25.0'
+        appVersion: '8.27.0'
       })
     }).then((payload) => {
       CLOUD_RUNTIME.lastHash = hash;
@@ -2794,8 +2794,7 @@ function applyShellLayout(){
   async function stopComposerDictation(showToast = false){
     const nativeSpeech = getNativeSpeechRecognitionPlugin();
     if (VOICE_RUNTIME.nativeListening && nativeSpeech?.stop){
-      try{ await nativeSpeech.stop(); }catch(_){}
-      try{ await nativeSpeech.removeAllListeners?.(); }catch(_){}
+      await resetNativeSpeechSession(nativeSpeech);
       VOICE_RUNTIME.nativeListening = false;
     }
     try{ composerRecognition?.stop?.(); }catch(_){}
@@ -2809,6 +2808,7 @@ function applyShellLayout(){
     const plugin = getNativeSpeechRecognitionPlugin();
     const input = $('chatInput');
     if (!plugin || !input) return false;
+    await resetNativeSpeechSession(plugin);
 
     const availability = await plugin.available?.().catch(() => ({ available:false }));
     if (!availability?.available){
@@ -2847,11 +2847,17 @@ function applyShellLayout(){
       }
     }catch(error){
       const message = String(error?.message || error || '').trim();
+      if (/already|busy|listening|start already invoked/i.test(message)){
+        try{ await plugin.stop?.(); }catch(_){}
+      }
+      if (/already|busy|listening|start already invoked/i.test(message)){
+        try{ await plugin.stop?.(); }catch(_){}
+      }
       if (!/cancel/i.test(message)) toast(`âڑ ï¸ڈ تعذر الإملاء الصوتي: ${message || 'unknown'}`);
     }finally{
       VOICE_RUNTIME.nativeListening = false;
       composerListening = false;
-      try{ await plugin.removeAllListeners?.(); }catch(_){}
+      await resetNativeSpeechSession(plugin);
       syncVoiceInputButton();
       showStatus('', false);
       const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && String(input.value || '').trim();
@@ -3081,6 +3087,7 @@ function applyShellLayout(){
     }finally{
       VOICE_RUNTIME.nativeListening = false;
       composerListening = false;
+      try{ await plugin.stop?.(); }catch(_){}
       try{ await plugin.removeAllListeners?.(); }catch(_){}
       syncVoiceInputButton();
       showStatus('', false);
@@ -3489,6 +3496,12 @@ function applyShellLayout(){
     }, delay);
   }
 
+  async function resetNativeSpeechSession(plugin = getNativeSpeechRecognitionPlugin()){
+    if (!plugin) return;
+    try{ await plugin.stop?.(); }catch(_){}
+    try{ await plugin.removeAllListeners?.(); }catch(_){}
+  }
+
   async function stopVoicePlayback(){
     clearVoiceRestartTimer();
     const nativeTts = getNativeTextToSpeechPlugin();
@@ -3595,7 +3608,11 @@ function applyShellLayout(){
       void stopVoicePlayback();
     } else {
       toast('تم تفعيل الدردشة الصوتية المستمرة');
-      scheduleVoiceConversationRestart(250);
+      if (isNativePlatform()){
+        window.setTimeout(() => { void startComposerDictation(); }, 60);
+      } else {
+        scheduleVoiceConversationRestart(250);
+      }
       return;
     }
     toast('تم إيقاف الدردشة الصوتية');
@@ -3672,6 +3689,7 @@ function applyShellLayout(){
     }finally{
       VOICE_RUNTIME.nativeListening = false;
       composerListening = false;
+      try{ await plugin.stop?.(); }catch(_){}
       try{ await plugin.removeAllListeners?.(); }catch(_){}
       syncVoiceInputButton();
       showStatus('', false);
@@ -4016,6 +4034,21 @@ function refreshDeepSearchBtn(){
     }catch(_){
       return getCapacitorPlatform() !== 'web';
     }
+  }
+
+  function isLikelyNativeAppContext(){
+    if (isNativePlatform()) return true;
+    try{
+      const current = new URL(window.location.href);
+      const host = String(current.hostname || '').toLowerCase();
+      const protocol = String(current.protocol || '').toLowerCase();
+      const agent = String(navigator.userAgent || '').toLowerCase();
+      const localhostLike = host === 'localhost' || /^127\./.test(host);
+      if ((protocol === 'capacitor:' || localhostLike) && /android|wv|version\/\d+\.\d+.*chrome/i.test(agent)){
+        return true;
+      }
+    }catch(_){}
+    return false;
   }
 
   function isNativeAndroidPlatform(){
@@ -4595,7 +4628,7 @@ function refreshDeepSearchBtn(){
     try{
       const url = buildBrowserGoogleAuthUrl();
       const browser = getCapacitorBrowserPlugin();
-      if (isNativePlatform() && browser?.open){
+      if (isLikelyNativeAppContext() && browser?.open){
         setAuthGateStatus('جاري فتح تسجيل Google في متصفح الجهاز…', 'busy');
         await browser.open({ url });
       } else {
@@ -4797,6 +4830,7 @@ function refreshDeepSearchBtn(){
   }
 
   function getPublicWebAppBaseUrl(){
+    if (isLikelyNativeAppContext()) return BROWSER_AUTH_BRIDGE.publicBaseUrl;
     try{
       const current = new URL(window.location.href);
       if (/^https?:$/i.test(current.protocol) && !/^localhost$/i.test(current.hostname) && !/^127\./.test(current.hostname)){
@@ -4807,7 +4841,7 @@ function refreshDeepSearchBtn(){
   }
 
   function getBrowserAuthReturnUrl(){
-    if (isNativePlatform()) return BROWSER_AUTH_BRIDGE.appReturnUrl;
+    if (isLikelyNativeAppContext()) return BROWSER_AUTH_BRIDGE.appReturnUrl;
     return window.location.href.split('#')[0];
   }
 
@@ -4816,10 +4850,12 @@ function refreshDeepSearchBtn(){
     if (!workerRoot) throw new Error('رابط البوابة غير مضبوط لتسجيل Google.');
     const base = getPublicWebAppBaseUrl();
     const url = new URL(BROWSER_AUTH_BRIDGE.webPath, base);
+    const nativeReturn = isLikelyNativeAppContext();
     url.searchParams.set('worker', workerRoot);
     url.searchParams.set('return_to', getBrowserAuthReturnUrl());
     url.searchParams.set('gateway', getSettings().gatewayUrl || '');
     url.searchParams.set('app', 'AI Workspace Studio');
+    if (nativeReturn) url.searchParams.set('native_return', '1');
     return url.toString();
   }
 
@@ -4827,7 +4863,7 @@ function refreshDeepSearchBtn(){
     try{
       const url = buildBrowserGoogleAuthUrl();
       const browser = getCapacitorBrowserPlugin();
-      if (isNativePlatform() && browser?.open){
+      if (isLikelyNativeAppContext() && browser?.open){
         setAuthGateStatus('جارٍ فتح تسجيل Google في متصفح الجهاز...', 'busy');
         await browser.open({ url });
       } else {
@@ -8595,6 +8631,11 @@ async function maybeUpdateThreadSummary(pid, tid){
     if (kind === 'image') return 'صورة';
     if (kind === 'pdf') return 'PDF';
     if (kind === 'docx') return 'Word';
+    if (kind === 'presentation') return 'عرض';
+    if (kind === 'spreadsheet') return 'جدول';
+    if (kind === 'audio') return 'صوت';
+    if (kind === 'video') return 'فيديو';
+    if (kind === 'archive') return 'أرشيف';
     if (kind === 'text') return 'نص';
     return 'ملف';
   }
@@ -9207,8 +9248,13 @@ ${clip}` });
     const type = String(file?.type || '').toLowerCase();
     if (type.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif|tiff?)$/i.test(name)) return 'image';
     if (name.endsWith('.pdf')) return 'pdf';
-    if (name.endsWith('.docx')) return 'docx';
-    if (/\.(txt|md|csv|json|xml|html|htm)$/i.test(name)) return 'text';
+    if (/\.(doc|docx)$/i.test(name)) return 'docx';
+    if (/\.(ppt|pptx)$/i.test(name)) return 'presentation';
+    if (/\.(xls|xlsx|ods)$/i.test(name)) return 'spreadsheet';
+    if (type.startsWith('audio/') || /\.(mp3|wav|m4a|ogg|aac|flac)$/i.test(name)) return 'audio';
+    if (type.startsWith('video/') || /\.(mp4|mov|webm|mkv|avi|mpeg|mpg)$/i.test(name)) return 'video';
+    if (/\.(zip|rar|7z|tar|gz)$/i.test(name)) return 'archive';
+    if (/\.(txt|md|csv|json|xml|html|htm|js|jsx|ts|tsx|py|java|kt|kts|c|cc|cpp|h|hpp|cs|go|php|rb|rs|swift|sql|css|scss|less|yml|yaml|toml|ini|env|sh|bat|ps1|log)$/i.test(name)) return 'text';
     return 'file';
   }
 
@@ -9274,6 +9320,15 @@ ${clip}` });
     showStatus('', false);
     updateChatAttachChips();
     toast('✅ تم إرفاق الملفات وإدراجها في سياق الدردشة');
+  }
+
+  function openChatAttachmentPicker(){
+    const input = $('chatAttachFiles');
+    if (!input) return;
+    input.value = '';
+    if (isNativeAndroidPlatform()) input.removeAttribute('accept');
+    else input.setAttribute('accept', '*/*');
+    input.click();
   }
 
 function updateChips(){
@@ -11119,8 +11174,12 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
     // chat
     
     // Chat attachments (inline)
-    $('chatAttachBtn') && $('chatAttachBtn').addEventListener('click', () => $('chatAttachFiles')?.click());
-    $('chatAttachFiles') && $('chatAttachFiles').addEventListener('change', (e) => addChatAttachments(e.target.files));
+    $('chatAttachBtn') && $('chatAttachBtn').addEventListener('click', openChatAttachmentPicker);
+    $('chatAttachFiles') && $('chatAttachFiles').addEventListener('change', (e) => {
+      const files = e.target.files;
+      void addChatAttachments(files);
+      e.target.value = '';
+    });
 
     // New/Clear chat shortcuts in toolbar
     $('newChatBtn') && $('newChatBtn').addEventListener('click', () => { newThread(); setActiveNav('chat'); });
