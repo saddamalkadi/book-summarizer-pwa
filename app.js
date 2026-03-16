@@ -1,4 +1,4 @@
-/* AI Workspace Studio v8.28 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v8.29 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -1287,7 +1287,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       body: JSON.stringify({
         reason,
         state: snapshot,
-        appVersion: '8.28.0'
+        appVersion: '8.29.0'
       })
     }).then((payload) => {
       CLOUD_RUNTIME.lastHash = hash;
@@ -2482,11 +2482,35 @@ function applyShellLayout(){
   }
 
   async function ensureNativeSpeechRecognitionPermission(plugin){
-    if (!plugin?.checkPermissions || !plugin?.requestPermissions) return true;
-    let state = await plugin.checkPermissions().catch(() => null);
-    if (state?.speechRecognition === 'granted') return true;
-    state = await plugin.requestPermissions().catch(() => null);
-    return state?.speechRecognition === 'granted';
+    if (!plugin) return false;
+    const isGranted = (state) => {
+      const value = String(
+        state?.speechRecognition
+        || state?.permission
+        || state?.microphone
+        || ''
+      ).trim().toLowerCase();
+      return value === 'granted' || value === 'prompt-with-rationale';
+    };
+
+    let state = null;
+    if (plugin.checkPermissions){
+      state = await plugin.checkPermissions().catch(() => null);
+      if (isGranted(state)) return true;
+    }
+    if (plugin.hasPermission){
+      state = await plugin.hasPermission().catch(() => null);
+      if (state?.permission === true || isGranted(state)) return true;
+    }
+    if (plugin.requestPermissions){
+      state = await plugin.requestPermissions().catch(() => null);
+      if (isGranted(state)) return true;
+    }
+    if (plugin.requestPermission){
+      state = await plugin.requestPermission().catch(() => null);
+      if (state?.permission === true || isGranted(state)) return true;
+    }
+    return false;
   }
 
   async function chooseSpeechLanguageForNativeTts(plugin, preferred){
@@ -3071,7 +3095,7 @@ function applyShellLayout(){
         maxResults: 1,
         prompt: 'تحدث الآن',
         partialResults: false,
-        popup: true
+        popup: !continuousMode
       });
       const transcript = Array.isArray(result?.matches)
         ? result.matches.map((item) => String(item || '').trim()).filter(Boolean).join(' ')
@@ -3438,7 +3462,7 @@ function applyShellLayout(){
     composerDictationBase = String(input.value || '').trimEnd();
     VOICE_RUNTIME.autoSendArmed = true;
     composerListening = true;
-    VOICE_RUNTIME.continuousConversation = getVoiceModeEnabled();
+    VOICE_RUNTIME.continuousConversation = continuousMode;
     syncVoiceInputButton();
     showStatus('جاري التسجيل الصوتي السحابي بالعربية...', false);
 
@@ -3659,6 +3683,7 @@ function applyShellLayout(){
     }
 
     const language = await resolveSpeechRecognitionLanguage(plugin);
+    const continuousMode = getVoiceModeEnabled();
     composerDictationBase = String(input.value || '').trimEnd();
     VOICE_RUNTIME.autoSendArmed = true;
     composerListening = true;
@@ -4630,7 +4655,10 @@ function refreshDeepSearchBtn(){
       const browser = getCapacitorBrowserPlugin();
       if (isLikelyNativeAppContext() && browser?.open){
         setAuthGateStatus('جاري فتح تسجيل Google في متصفح الجهاز…', 'busy');
-        await browser.open({ url });
+        await browser.open({
+          url,
+          toolbarColor: '#1f6bff'
+        });
       } else {
         setAuthGateStatus('جارٍ فتح تسجيل Google في نفس الصفحة...', 'busy');
         window.location.assign(url);
@@ -4812,6 +4840,7 @@ function refreshDeepSearchBtn(){
     });
     syncBridgeFromForeground();
     const appPlugin = getCapacitorAppPlugin();
+    const browserPlugin = getCapacitorBrowserPlugin();
     if (appPlugin?.addListener){
       appPlugin.addListener('appUrlOpen', ({ url }) => {
         consumeAuthRedirectFromUrl(url).catch(() => {});
@@ -4821,6 +4850,11 @@ function refreshDeepSearchBtn(){
       });
       appPlugin.addListener('appStateChange', (state) => {
         if (state?.isActive) syncBridgeFromForeground();
+      });
+    }
+    if (browserPlugin?.addListener){
+      browserPlugin.addListener('browserFinished', () => {
+        syncBridgeFromForeground();
       });
     }
     window.addEventListener('beforeunload', () => {
@@ -4856,6 +4890,7 @@ function refreshDeepSearchBtn(){
     url.searchParams.set('gateway', getSettings().gatewayUrl || '');
     url.searchParams.set('app', 'AI Workspace Studio');
     if (nativeReturn) url.searchParams.set('native_return', '1');
+    url.searchParams.set('ts', String(Date.now()));
     return url.toString();
   }
 
@@ -4865,7 +4900,10 @@ function refreshDeepSearchBtn(){
       const browser = getCapacitorBrowserPlugin();
       if (isLikelyNativeAppContext() && browser?.open){
         setAuthGateStatus('جارٍ فتح تسجيل Google في متصفح الجهاز...', 'busy');
-        await browser.open({ url });
+        await browser.open({
+          url,
+          toolbarColor: '#1f6bff'
+        });
       } else {
         setAuthGateStatus('جارٍ فتح تسجيل Google في نفس الصفحة...', 'busy');
         window.location.assign(url);
@@ -9326,8 +9364,8 @@ ${clip}` });
     const input = $('chatAttachFiles');
     if (!input) return;
     input.value = '';
-    if (isNativeAndroidPlatform()) input.removeAttribute('accept');
-    else input.setAttribute('accept', '*/*');
+    input.removeAttribute('accept');
+    input.setAttribute('multiple', 'multiple');
     input.click();
   }
 

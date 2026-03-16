@@ -9,4 +9,5 @@ android/.gradle-user-home/
 android/.gradle-user/
 .gradle-user/
 android/.android-user/
+.android-user/
 *.idsig

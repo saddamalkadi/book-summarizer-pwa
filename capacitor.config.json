@@ -4,7 +4,17 @@
   "webDir": "www",
   "bundledWebRuntime": false,
   "server": {
-    "androidScheme": "https"
+    "url": "https://saddamalkadi.github.io/book-summarizer-pwa/",
+    "androidScheme": "https",
+    "allowNavigation": [
+      "saddamalkadi.github.io",
+      "raw.githubusercontent.com",
+      "sadam-key.tntntt830.workers.dev",
+      "sadam-convert.tntntt830.workers.dev",
+      "openrouter.ai",
+      "accounts.google.com",
+      "lh3.googleusercontent.com"
+    ]
   },
   "plugins": {
     "SplashScreen": {
