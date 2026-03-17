@@ -239,6 +239,8 @@ function getPublicAuthConfig(env) {
     upgradeEmail: String(env.APP_UPGRADE_EMAIL || 'tntntt830@gmail.com').trim(),
     adminEmail,
     adminEnabled,
+    adminPasswordEnabled: adminEnabled,
+    adminLoginMethod: adminEnabled ? 'password_or_google' : 'google_only',
     googleClientId,
     clientIdConfigured: !!googleClientId,
     voiceCloudReady: voice.ready,
@@ -365,7 +367,7 @@ async function handlePasswordLogin(request, env) {
 
     if (!adminPassword) {
       return jsonResponse({
-        error: 'Admin password login is not configured on the worker.',
+        error: 'Admin password login is not configured on the worker. Use Google sign-in with the admin Gmail account or configure APP_ADMIN_PASSWORD.',
         code: 'AUTH_ADMIN_PASSWORD_NOT_CONFIGURED'
       }, 503);
     }

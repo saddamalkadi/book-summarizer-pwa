@@ -141,7 +141,9 @@
     developerName: 'صدام القاضي',
     upgradeEmail: 'tntntt830@gmail.com',
     adminEmail: 'tntntt830@gmail.com',
-    adminEnabled: true,
+    adminEnabled: false,
+    adminPasswordEnabled: false,
+    adminLoginMethod: 'google_only',
     googleClientId: '',
     clientIdConfigured: false,
     premiumEnabled: true,
@@ -708,7 +710,9 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       googleClientId: '',
       upgradeEmail: String(settings.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail).trim() || DEFAULT_AUTH_CONFIG.upgradeEmail,
       adminEmail: DEFAULT_AUTH_CONFIG.adminEmail,
-      adminEnabled: true,
+      adminEnabled: DEFAULT_AUTH_CONFIG.adminEnabled,
+      adminPasswordEnabled: DEFAULT_AUTH_CONFIG.adminPasswordEnabled,
+      adminLoginMethod: DEFAULT_AUTH_CONFIG.adminLoginMethod,
       clientIdConfigured: false,
       voiceCloudReady: false,
       voiceSttReady: false,
@@ -936,7 +940,9 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
         googleClientId: String(remote.googleClientId || '').trim(),
         upgradeEmail: String(remote.upgradeEmail || local.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail).trim(),
         adminEmail: String(remote.adminEmail || local.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim(),
-        adminEnabled: remote.adminEnabled !== false,
+        adminEnabled: !!remote.adminEnabled,
+        adminPasswordEnabled: !!(remote.adminPasswordEnabled ?? remote.adminEnabled),
+        adminLoginMethod: String(remote.adminLoginMethod || (remote.adminEnabled ? 'password_or_google' : 'google_only')).trim(),
         clientIdConfigured: !!String(remote.googleClientId || '').trim(),
         voiceCloudReady: !!remote.voiceCloudReady,
         voiceSttReady: !!remote.voiceSttReady,
@@ -1042,7 +1048,9 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
         googleClientId: String(remote.googleClientId || '').trim(),
         upgradeEmail: String(remote.upgradeEmail || local.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail).trim(),
         adminEmail: String(remote.adminEmail || local.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim(),
-        adminEnabled: remote.adminEnabled !== false,
+        adminEnabled: !!remote.adminEnabled,
+        adminPasswordEnabled: !!(remote.adminPasswordEnabled ?? remote.adminEnabled),
+        adminLoginMethod: String(remote.adminLoginMethod || (remote.adminEnabled ? 'password_or_google' : 'google_only')).trim(),
         clientIdConfigured: !!String(remote.googleClientId || '').trim(),
         voiceCloudReady: !!remote.voiceCloudReady,
         voiceSttReady: !!remote.voiceSttReady,
@@ -4294,6 +4302,9 @@ function refreshDeepSearchBtn(){
     if (/This email is configured as the admin account/i.test(raw)){
       return 'هذا البريد هو بريد الإدارة. استخدم كلمة مرور الإدارة من نفس شاشة الدخول.';
     }
+    if (/AUTH_ADMIN_PASSWORD_NOT_CONFIGURED|Admin password login is not configured/i.test(raw)){
+      return 'دخول الإدارة بكلمة المرور غير مفعل حاليًا على الخادم. استخدم تسجيل Google ببريد الإدارة نفسه، أو أعد ضبط APP_ADMIN_PASSWORD على Cloudflare.';
+    }
     return raw;
   }
 
@@ -4822,27 +4833,37 @@ function refreshDeepSearchBtn(){
     syncAccountPlanControls();
   }
 
-  function syncUnifiedAuthEntry(){
+function syncUnifiedAuthEntry(){
     const config = getEffectiveAuthConfig();
     const email = String($('authEntryEmail')?.value || '').trim().toLowerCase();
     const isAdminEntry = !!email && email === String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
+    const adminPasswordEnabled = !!(config.adminPasswordEnabled ?? config.adminEnabled);
+    const adminGoogleOnly = isAdminEntry && !adminPasswordEnabled;
     const label = $('authEntrySubmitLabel');
     const hint = $('authEntryModeHint');
     const passwordLabel = $('authEntryPasswordLabel');
     const passwordInput = $('authEntryPassword');
-    if (label) label.textContent = isAdminEntry ? 'دخول الإدارة' : 'متابعة بالخطة المجانية';
+    if (label) label.textContent = isAdminEntry
+      ? (adminGoogleOnly ? 'متابعة الإدارة عبر Google' : 'دخول الإدارة')
+      : 'متابعة بالخطة المجانية';
     if (hint) hint.textContent = isAdminEntry
-      ? 'تم التعرف على بريد الإدارة. أدخل كلمة المرور لفتح الحساب الإداري من نفس الشاشة.'
+      ? (adminGoogleOnly
+        ? 'تم التعرف على بريد الإدارة. كلمة مرور الإدارة غير مفعلة حاليًا على الخادم، لذا استخدم Google بهذا البريد نفسه لفتح الحساب الإداري.'
+        : 'تم التعرف على بريد الإدارة. أدخل كلمة المرور لفتح الحساب الإداري من نفس الشاشة.')
       : 'أي بريد شخصي صالح يفتح لك الخطة المجانية فورًا، ويمكنك طلب الترقية لاحقًا من داخل التطبيق.';
     if ($('authCurrentPlanPill')){
       $('authCurrentPlanPill').textContent = isAdminEntry ? 'الإدارة' : 'الخطة المجانية';
       $('authCurrentPlanPill').classList.toggle('premium', isAdminEntry);
     }
-    if (passwordLabel) passwordLabel.textContent = isAdminEntry ? 'كلمة مرور الإدارة' : 'كلمة المرور للإدارة فقط';
+    if (passwordLabel) passwordLabel.textContent = isAdminEntry
+      ? (adminGoogleOnly ? 'تسجيل الإدارة عبر Google' : 'كلمة مرور الإدارة')
+      : 'كلمة المرور للإدارة فقط';
     if (passwordInput){
       passwordInput.placeholder = isAdminEntry
-        ? 'أدخل كلمة مرور الإدارة'
+        ? (adminGoogleOnly ? 'غير مطلوب عند استخدام Google للإدارة' : 'أدخل كلمة مرور الإدارة')
         : 'اختيارية للمستخدم العادي، ومطلوبة فقط إذا كان هذا بريد الإدارة';
+      passwordInput.disabled = adminGoogleOnly;
+      if (adminGoogleOnly) passwordInput.value = '';
     }
   }
 
@@ -5260,13 +5281,14 @@ function refreshDeepSearchBtn(){
     }
   }
 
-  async function submitUnifiedAuthEntry(){
+async function submitUnifiedAuthEntry(){
     const name = String($('authEntryName')?.value || '').trim();
     const email = String($('authEntryEmail')?.value || '').trim().toLowerCase();
     const password = String($('authEntryPassword')?.value || '').trim();
     const config = getEffectiveAuthConfig();
     const adminEmail = String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
     const isAdminEntry = !!email && email === adminEmail;
+    const adminPasswordEnabled = !!(config.adminPasswordEnabled ?? config.adminEnabled);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
       setAuthGateStatus('أدخل بريدًا إلكترونيًا صالحًا أولًا.', 'error');
       return;
@@ -5274,6 +5296,15 @@ function refreshDeepSearchBtn(){
     try{
       let payload = null;
       if (isAdminEntry){
+        if (!adminPasswordEnabled){
+          if (!getAuthGoogleClientId()){
+            setAuthGateStatus('بريد الإدارة معروف، لكن كلمة مرور الإدارة غير مفعلة ولا يوجد Google مهيأ على الخادم بعد.', 'error');
+            return;
+          }
+          setAuthGateStatus('دخول الإدارة بكلمة المرور غير متاح حاليًا. جارٍ فتح Google ببريد الإدارة...', 'busy');
+          await openGoogleAuthInBrowser();
+          return;
+        }
         if (!password){
           setAuthGateStatus('هذا هو بريد الإدارة. أدخل كلمة المرور للمتابعة.', 'error');
           return;
@@ -5315,7 +5346,8 @@ function refreshDeepSearchBtn(){
       if ($('authEntryPassword')) $('authEntryPassword').value = '';
       toast(isAdminEntry ? '✅ تم تسجيل الدخول الإداري' : '✅ تم فتح الخطة المجانية بنجاح');
     }catch(error){
-      setAuthGateStatus(`${isAdminEntry ? 'فشل دخول الإدارة' : 'فشل تسجيل الدخول'}: ${error?.message || error}`, 'error');
+      const message = explainAuthError(error, { nativeGoogle: false });
+      setAuthGateStatus(`${isAdminEntry ? 'فشل دخول الإدارة' : 'فشل تسجيل الدخول'}: ${message}`, 'error');
     }
   }
 
