@@ -499,7 +499,10 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       const host = String(parsed.hostname || '').toLowerCase();
       const path = String(parsed.pathname || '').replace(/\/+$/,'');
       const defaultOrigin = endpointOrigin(DEFAULT_SETTINGS.cloudConvertEndpoint || '');
-      const targetOrigin = (/dash\.cloudflare\.com$/.test(host) || path.includes('/workers/services/view/sadam-convert/'))
+      const targetOrigin = (/dash\.cloudflare\.com$/.test(host)
+        || /(^|\.)convert\.saddamalkadi\.com$/i.test(host)
+        || /^sadam-convert\./i.test(host)
+        || path.includes('/workers/services/view/sadam-convert/'))
         ? defaultOrigin
         : parsed.origin;
       if (!targetOrigin) return normalized.replace(/\/+$/,'');
@@ -522,7 +525,10 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       const host = String(parsed.hostname || '').toLowerCase();
       const path = String(parsed.pathname || '').replace(/\/+$/,'');
       const defaultOrigin = endpointOrigin(DEFAULT_SETTINGS.ocrCloudEndpoint || '');
-      const targetOrigin = (/dash\.cloudflare\.com$/.test(host) || path.includes('/workers/services/view/sadam-convert/'))
+      const targetOrigin = (/dash\.cloudflare\.com$/.test(host)
+        || /(^|\.)convert\.saddamalkadi\.com$/i.test(host)
+        || /^sadam-convert\./i.test(host)
+        || path.includes('/workers/services/view/sadam-convert/'))
         ? defaultOrigin
         : parsed.origin;
       if (!targetOrigin) return normalized.replace(/\/+$/,'');
