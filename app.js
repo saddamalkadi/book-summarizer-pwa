@@ -104,10 +104,10 @@
     authMode: 'gateway',          // browser | gateway
     gatewayUrl: 'https://api.saddamalkadi.com',
     gatewayToken: '',             // optional extra protection
-    cloudConvertEndpoint: 'https://convert.saddamalkadi.com/convert/pdf-to-docx',
+    cloudConvertEndpoint: 'https://api.saddamalkadi.com/convert/pdf-to-docx',
     cloudConvertFallbackEndpoint: '',
     cloudRetryMax: 2,
-    ocrCloudEndpoint: 'https://convert.saddamalkadi.com/ocr',
+    ocrCloudEndpoint: 'https://api.saddamalkadi.com/ocr',
     ocrLang: 'ara+eng',
     freeMode: false,
     costGuard: 'balanced',
@@ -153,7 +153,7 @@
     voiceSynthesisModel: 'gpt-4o-mini-tts',
     voiceSynthesisVoice: 'alloy',
     voicePreferredLanguage: 'ar',
-    voicePremiumOnly: true
+    voicePremiumOnly: false
   };
 
   const DEFAULT_USAGE_STATE = {
@@ -1351,6 +1351,15 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       endpointOrigin(settings?.ocrCloudEndpoint || '')
     ].filter(Boolean);
     return origins[0] || '';
+  }
+
+  function getConvertHealthUrl(settings = getSettings()){
+    const endpoint = normalizeDocxCloudEndpoint(settings?.cloudConvertEndpoint || settings?.cloudConvertFallbackEndpoint || '');
+    const root = getConvertWorkerRoot(settings);
+    if (!root) return '';
+    const gatewayRoot = normalizeUrl(resolveGatewayApiRoot(settings));
+    if (endpoint && gatewayRoot && endpoint.startsWith(gatewayRoot)) return `${gatewayRoot}/convert/health`;
+    return `${root}/health`;
   }
 
   function supportsCreditVisibility(settings = getSettings()){
@@ -6626,9 +6635,10 @@ function refreshDeepSearchBtn(){
       }
 
       const convertRoot = getConvertWorkerRoot(settings);
-      if (convertRoot){
+      const convertHealthUrl = getConvertHealthUrl(settings);
+      if (convertRoot && convertHealthUrl){
         try{
-          const convertResp = await fetch(`${convertRoot}/health`, {
+          const convertResp = await fetch(convertHealthUrl, {
             headers: { Accept:'application/json', ...buildAuthHeaders(settings) }
           });
           const convertText = await convertResp.text();

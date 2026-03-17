@@ -22,6 +22,12 @@
       "id": "49d87e2d4989452fb3c680ad024ae5b7"
     }
   ],
+  "services": [
+    {
+      "binding": "CONVERT",
+      "service": "sadam-convert"
+    }
+  ],
   "ai": {
     "binding": "AI"
   },

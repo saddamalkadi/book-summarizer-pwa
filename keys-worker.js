@@ -1,5 +1,11 @@
 const GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
+const FALLBACK_MODEL_LIST = [
+  { id: 'openrouter/free', object: 'model', created: 0, owned_by: 'openrouter', modalities: ['text'], context_length: 131072 },
+  { id: 'openai/gpt-4o-mini', object: 'model', created: 0, owned_by: 'openrouter', modalities: ['text', 'image'], context_length: 131072 },
+  { id: 'google/gemini-2.5-flash', object: 'model', created: 0, owned_by: 'openrouter', modalities: ['text', 'image'], context_length: 1048576 },
+  { id: 'qwen/qwen2.5-vl-72b-instruct:free', object: 'model', created: 0, owned_by: 'openrouter', modalities: ['text', 'image'], context_length: 32768 }
+];
 
 let googleKeysCache = {
   keys: null,
@@ -38,6 +44,10 @@ export default {
         return withCors(await handleSessionLookup(request, env), request);
       }
 
+      if (url.pathname === '/convert/health' && request.method === 'GET') {
+        return withCors(await proxyConvertService(request, env, '/health'), request);
+      }
+
       if (url.pathname === '/storage/state' && request.method === 'GET') {
         return withCors(await handleStorageStateGet(request, env), request);
       }
@@ -52,6 +62,14 @@ export default {
 
       if (url.pathname === '/voice/speak' && request.method === 'POST') {
         return withCors(await handleVoiceSynthesis(request, env), request);
+      }
+
+      if (url.pathname === '/ocr' && request.method === 'POST') {
+        return withCors(await proxyConvertService(request, env, '/ocr'), request);
+      }
+
+      if (url.pathname === '/convert/pdf-to-docx' && request.method === 'POST') {
+        return withCors(await proxyConvertService(request, env, '/convert/pdf-to-docx'), request);
       }
 
       if (url.pathname === '/auth/upgrade/request' && request.method === 'POST') {
@@ -231,12 +249,12 @@ function getPublicAuthConfig(env) {
     voiceSynthesisModel: voice.synthesisModel,
     voiceSynthesisVoice: voice.synthesisVoice,
     voicePreferredLanguage: voice.preferredLanguage,
-    voicePremiumOnly: true
+    voicePremiumOnly: false
   };
 }
 
 function getWorkerHealth(env) {
-  const configured = !!getServerKey(env);
+  const upstreamConfigured = !!getServerKey(env);
   const clientTokenRequired = !!String(env.GATEWAY_CLIENT_TOKEN || '').trim();
   const authConfig = getPublicAuthConfig(env);
   const hasSessionSecret = !!getSessionSecret(env);
@@ -244,6 +262,8 @@ function getWorkerHealth(env) {
   const adminLoginReady = !!getAdminPassword(env);
   const cloudStorageReady = !!getUserDataStore(env);
   const voice = getVoiceApiConfig(env);
+  const convertReady = !!env.CONVERT && typeof env.CONVERT.fetch === 'function';
+  const configured = upstreamConfigured || authConfig.clientIdConfigured || adminLoginReady || cloudStorageReady || voice.ready || convertReady;
   return {
     status: configured ? 200 : 503,
     body: {
@@ -252,6 +272,7 @@ function getWorkerHealth(env) {
       configured,
       worker: 'keys',
       upstream: 'openrouter',
+      upstream_configured: upstreamConfigured,
       client_token_required: clientTokenRequired,
       auth_required: authConfig.authRequired,
       google_client_configured: authConfig.clientIdConfigured,
@@ -259,11 +280,12 @@ function getWorkerHealth(env) {
       session_ready: hasSessionSecret,
       upgrade_flow_ready: hasUpgradeSecret,
       cloud_storage_ready: cloudStorageReady,
+      convert_proxy_ready: convertReady,
       voice_cloud_ready: voice.ready,
       voice_stt_ready: voice.sttReady,
       voice_tts_ready: voice.ttsReady,
       voice_provider: voice.provider,
-      voice_premium_only: true
+      voice_premium_only: false
     }
   };
 }
@@ -301,7 +323,9 @@ async function handleGoogleAuth(request, env) {
     }
 
     const googleProfile = await verifyGoogleCredential(credential, env, clientId);
-    let plan = 'free';
+    const adminEmail = getAdminEmail(env);
+    const isAdmin = googleProfile.email === adminEmail;
+    let plan = isAdmin ? 'premium' : 'free';
     if (upgradeCode) {
       await verifyUpgradeCodeForEmail(upgradeCode, googleProfile.email, env);
       plan = 'premium';
@@ -311,7 +335,8 @@ async function handleGoogleAuth(request, env) {
       email: googleProfile.email,
       name: googleProfile.name,
       picture: googleProfile.picture,
-      plan
+      plan,
+      role: isAdmin ? 'admin' : 'user'
     }, env);
 
     return jsonResponse(session, 200);
@@ -505,18 +530,12 @@ async function handleStorageStatePut(request, env) {
 }
 
 function canUsePremiumVoice(session) {
-  return !!session && (session.role === 'admin' || session.plan === 'premium');
+  return !!session;
 }
 
 async function handleVoiceTranscription(request, env) {
   try {
     const session = await requireSession(request, env);
-    if (!canUsePremiumVoice(session)) {
-      return jsonResponse({
-        error: 'Cloud voice is available for premium accounts only. Free accounts continue to use local device voice.',
-        code: 'VOICE_PREMIUM_REQUIRED'
-      }, 403);
-    }
     const voice = getVoiceApiConfig(env);
     if (!voice.sttReady) {
       return jsonResponse({
@@ -598,12 +617,6 @@ async function handleVoiceTranscription(request, env) {
 async function handleVoiceSynthesis(request, env) {
   try {
     const session = await requireSession(request, env);
-    if (!canUsePremiumVoice(session)) {
-      return jsonResponse({
-        error: 'Cloud voice is available for premium accounts only. Free accounts continue to use local device voice.',
-        code: 'VOICE_PREMIUM_REQUIRED'
-      }, 403);
-    }
     const voice = getVoiceApiConfig(env);
     if (!voice.ttsReady) {
       return jsonResponse({
@@ -789,6 +802,13 @@ async function handleGateway(request, env, url) {
   const incomingAuth = (request.headers.get('Authorization') || '').trim();
   const authHeader = serverKey ? `Bearer ${serverKey}` : incomingAuth;
 
+  if (!authHeader && url.pathname === '/v1/models') {
+    return withCors(jsonResponse({
+      object: 'list',
+      data: FALLBACK_MODEL_LIST
+    }, 200), request);
+  }
+
   if (!authHeader) {
     return withCors(jsonResponse({
       error: 'Missing API key. Set OPENROUTER_API_KEY in Cloudflare Worker Secrets, or send Authorization header for temporary browser-side auth.',
@@ -851,6 +871,26 @@ async function handleGateway(request, env, url) {
     statusText: upstreamResp.statusText,
     headers: upstreamResp.headers
   }), request);
+}
+
+async function proxyConvertService(request, env, targetPath) {
+  if (!env.CONVERT || typeof env.CONVERT.fetch !== 'function') {
+    return jsonResponse({
+      error: 'Cloud convert service is not bound on this worker.',
+      code: 'CONVERT_SERVICE_NOT_BOUND'
+    }, 503);
+  }
+  const sourceUrl = new URL(request.url);
+  const proxyUrl = new URL(sourceUrl.toString());
+  proxyUrl.pathname = targetPath;
+  const headers = new Headers(request.headers);
+  const init = {
+    method: request.method,
+    headers,
+    body: canHaveBody(request.method) ? request.body : undefined,
+    redirect: 'follow'
+  };
+  return env.CONVERT.fetch(new Request(proxyUrl.toString(), init));
 }
 
 async function requireSession(request, env) {
