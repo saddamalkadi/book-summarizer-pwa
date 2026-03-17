@@ -4,11 +4,14 @@
   "webDir": "www",
   "bundledWebRuntime": false,
   "server": {
-    "url": "https://ai-workspace-studio.pages.dev/",
+    "url": "https://app.saddamalkadi.com/",
     "androidScheme": "https",
     "allowNavigation": [
       "saddamalkadi.github.io",
       "raw.githubusercontent.com",
+      "app.saddamalkadi.com",
+      "api.saddamalkadi.com",
+      "convert.saddamalkadi.com",
       "sadam-key.tntntt830.workers.dev",
       "sadam-convert.tntntt830.workers.dev",
       "openrouter.ai",

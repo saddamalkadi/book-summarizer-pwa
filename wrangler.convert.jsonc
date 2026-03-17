@@ -3,11 +3,18 @@
   "name": "sadam-convert",
   "main": "convert-worker.js",
   "compatibility_date": "2025-09-27",
+  "routes": [
+    {
+      "pattern": "convert.saddamalkadi.com",
+      "custom_domain": true,
+      "zone_name": "saddamalkadi.com"
+    }
+  ],
   "observability": {
     "enabled": true
   },
   "vars": {
-    "OPENROUTER_REFERER": "https://ai-workspace-studio.pages.dev/",
+    "OPENROUTER_REFERER": "https://app.saddamalkadi.com/",
     "OPENROUTER_TITLE": "AI Workspace Studio Convert",
     "MAX_PDF_PAGES": "40",
     "MAX_FILE_MB": "15",

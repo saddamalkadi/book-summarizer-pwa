@@ -1,4 +1,4 @@
-/* AI Workspace Studio v8.31 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v8.34 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -102,12 +102,12 @@
     toolsEnabled: false,
 
     authMode: 'gateway',          // browser | gateway
-    gatewayUrl: 'https://sadam-key.tntntt830.workers.dev',
+    gatewayUrl: 'https://api.saddamalkadi.com',
     gatewayToken: '',             // optional extra protection
-    cloudConvertEndpoint: 'https://sadam-convert.tntntt830.workers.dev/convert/pdf-to-docx',
+    cloudConvertEndpoint: 'https://convert.saddamalkadi.com/convert/pdf-to-docx',
     cloudConvertFallbackEndpoint: '',
     cloudRetryMax: 2,
-    ocrCloudEndpoint: 'https://sadam-convert.tntntt830.workers.dev/ocr',
+    ocrCloudEndpoint: 'https://convert.saddamalkadi.com/ocr',
     ocrLang: 'ara+eng',
     freeMode: false,
     costGuard: 'balanced',
@@ -227,7 +227,7 @@
     webPath: 'auth-bridge.html',
     appReturnUrl: 'aiworkspace://auth',
     storageKey: 'aistudio_auth_bridge_result_v1',
-    publicBaseUrl: 'https://ai-workspace-studio.pages.dev/'
+    publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -1287,7 +1287,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       body: JSON.stringify({
         reason,
         state: snapshot,
-        appVersion: '8.31.0'
+        appVersion: '8.33.0'
       })
     }).then((payload) => {
       CLOUD_RUNTIME.lastHash = hash;
@@ -10208,7 +10208,7 @@ let pinOnly = false;
     const dl = loadDownloads();
     $('navDlMeta').textContent = String(dl.length);
     if (overview){
-      const webUrl = 'https://ai-workspace-studio.pages.dev/';
+      const webUrl = 'https://app.saddamalkadi.com/';
       const apkUrl = 'https://raw.githubusercontent.com/saddamalkadi/book-summarizer-pwa/main/downloads/ai-workspace-studio-latest.apk';
       const aabUrl = 'https://raw.githubusercontent.com/saddamalkadi/book-summarizer-pwa/main/downloads/ai-workspace-studio-latest.aab';
       overview.innerHTML = `

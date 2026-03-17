@@ -3,6 +3,23 @@
   "name": "sadam-key",
   "main": "keys-worker.js",
   "compatibility_date": "2025-09-27",
+  "routes": [
+    {
+      "pattern": "saddamalkadi.com",
+      "custom_domain": true,
+      "zone_name": "saddamalkadi.com"
+    },
+    {
+      "pattern": "app.saddamalkadi.com",
+      "custom_domain": true,
+      "zone_name": "saddamalkadi.com"
+    },
+    {
+      "pattern": "api.saddamalkadi.com",
+      "custom_domain": true,
+      "zone_name": "saddamalkadi.com"
+    }
+  ],
   "observability": {
     "enabled": true
   },
@@ -20,7 +37,7 @@
   ],
   "vars": {
     "OPENROUTER_TITLE": "AI Workspace Studio",
-    "OPENROUTER_REFERER": "https://ai-workspace-studio.pages.dev/",
+    "OPENROUTER_REFERER": "https://app.saddamalkadi.com/",
     "APP_BRAND_NAME": "AI Workspace Studio",
     "APP_DEVELOPER_NAME": "صدام القاضي",
     "APP_UPGRADE_EMAIL": "tntntt830@gmail.com",
