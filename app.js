@@ -227,7 +227,7 @@
     webPath: 'auth-bridge.html',
     appReturnUrl: 'aiworkspace://auth',
     storageKey: 'aistudio_auth_bridge_result_v1',
-    publicBaseUrl: 'https://app.saddamalkadi.com/'
+    publicBaseUrl: 'https://api.saddamalkadi.com/'
   };
 
   const UNSYNCED_STORAGE_KEYS = new Set([

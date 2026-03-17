@@ -5,16 +5,6 @@
   "compatibility_date": "2025-09-27",
   "routes": [
     {
-      "pattern": "saddamalkadi.com",
-      "custom_domain": true,
-      "zone_name": "saddamalkadi.com"
-    },
-    {
-      "pattern": "app.saddamalkadi.com",
-      "custom_domain": true,
-      "zone_name": "saddamalkadi.com"
-    },
-    {
       "pattern": "api.saddamalkadi.com",
       "custom_domain": true,
       "zone_name": "saddamalkadi.com"
