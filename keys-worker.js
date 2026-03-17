@@ -258,6 +258,8 @@ function withCors(response, request) {
     'X-Title'
   ].join(','));
   h.set('Access-Control-Expose-Headers', 'Content-Type,Content-Length');
+  h.delete('alt-svc');
+  h.set('Alt-Svc', 'clear');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers: h });
 }
 

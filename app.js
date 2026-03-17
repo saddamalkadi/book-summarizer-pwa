@@ -4213,7 +4213,23 @@ function refreshDeepSearchBtn(){
         </button>
         <div class="hint">سيتم فتح متصفح الجهاز لتسجيل الدخول ثم العودة إلى التطبيق تلقائيًا.</div>
       </div>`;
-    $('nativeGoogleSignInBtn')?.addEventListener('click', openGoogleAuthInBrowser);
+    $('nativeGoogleSignInBtn')?.addEventListener('click', startNativeGoogleButtonFlow);
+    const nativeGoogleBtn = $('nativeGoogleSignInBtn');
+    if (nativeGoogleBtn){
+      const label = nativeGoogleBtn.querySelector('span:last-child');
+      if (label) label.textContent = 'المتابعة باستخدام Google على هذا الجهاز';
+      const fallbackBtn = document.createElement('button');
+      fallbackBtn.className = 'soft-btn';
+      fallbackBtn.type = 'button';
+      fallbackBtn.id = 'nativeGoogleBrowserFallbackBtn';
+      fallbackBtn.textContent = 'استخدام المتصفح كخيار بديل';
+      fallbackBtn.addEventListener('click', openGoogleAuthInBrowser);
+      nativeGoogleBtn.insertAdjacentElement('afterend', fallbackBtn);
+    }
+    const nativeHint = slot.querySelector('.hint');
+    if (nativeHint){
+      nativeHint.textContent = 'سيستخدم التطبيق تسجيل Google الأصلي داخل Android أولًا. إذا فشل، يمكنك فتح المتصفح كخيار بديل.';
+    }
   }
 
   function setAuthGateStatus(message, tone = 'info'){
