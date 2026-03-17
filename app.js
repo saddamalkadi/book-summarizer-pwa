@@ -220,7 +220,8 @@
     restartTimer: 0,
     cloudRecorder: null,
     cloudStream: null,
-    audioPlayer: null
+    audioPlayer: null,
+    ttsInstallPrompted: false
   };
 
   const BROWSER_AUTH_BRIDGE = {
@@ -2636,7 +2637,7 @@ function applyShellLayout(){
     return true;
   }
 
-  function toggleVoiceMode(){
+  async function toggleVoiceMode(){
     const next = !getVoiceModeEnabled();
     setVoiceModeEnabled(next);
     refreshVoiceModeButton();
@@ -3275,6 +3276,18 @@ function applyShellLayout(){
     return preferred;
   }
 
+  async function ensureNativeArabicTtsLanguage(plugin, preferred = getPreferredSpeechLanguage()){
+    const resolved = await chooseSpeechLanguageForNativeTts(plugin, preferred);
+    if (!/^ar(?:-|$)/i.test(String(preferred || ''))) return resolved || preferred;
+    if (/^ar(?:-|$)/i.test(String(resolved || ''))) return resolved || preferred;
+    if (plugin?.openInstall && !VOICE_RUNTIME.ttsInstallPrompted){
+      VOICE_RUNTIME.ttsInstallPrompted = true;
+      try{ await plugin.openInstall(); }catch(_){}
+      toast('قد يحتاج الهاتف إلى تثبيت حزمة النطق العربية من إعدادات النظام حتى يعمل الرد الصوتي العربي داخل التطبيق.');
+    }
+    return resolved || preferred;
+  }
+
   function normalizeCloudVoiceLanguage(lang = getPreferredSpeechLanguage()){
     const raw = String(lang || '').trim();
     if (!raw) return 'ar';
@@ -3563,7 +3576,7 @@ function applyShellLayout(){
     }
     const nativeTts = getNativeTextToSpeechPlugin();
     const lang = await resolveSpeechSynthesisLanguage(nativeTts);
-    const nativeLang = await chooseSpeechLanguageForNativeTts(nativeTts, lang);
+    const nativeLang = await ensureNativeArabicTtsLanguage(nativeTts, lang);
 
     if (nativeTts?.speak){
       try{
@@ -3836,6 +3849,246 @@ function applyShellLayout(){
       return;
     }
     scheduleVoiceConversationRestart(180);
+  }
+
+  async function startNativeComposerDictation(){
+    const plugin = getNativeSpeechRecognitionPlugin();
+    const input = $('chatInput');
+    if (!plugin || !input) return false;
+
+    await resetNativeSpeechSession(plugin);
+    const availability = await plugin.available?.().catch(() => ({ available:false }));
+    if (!availability?.available){
+      toast('التعرف الصوتي غير متاح على هذا الجهاز.');
+      return false;
+    }
+
+    const permitted = await ensureNativeSpeechRecognitionPermission(plugin);
+    if (!permitted){
+      toast('يلزم منح إذن الميكروفون لتفعيل الدردشة الصوتية.');
+      return false;
+    }
+
+    const language = await resolveSpeechRecognitionLanguage(plugin);
+    composerDictationBase = String(input.value || '').trimEnd();
+    VOICE_RUNTIME.autoSendArmed = true;
+    composerListening = true;
+    VOICE_RUNTIME.nativeListening = true;
+    VOICE_RUNTIME.continuousConversation = getVoiceModeEnabled();
+    syncVoiceInputButton();
+    showStatus(`الإملاء الصوتي يعمل الآن باللغة ${language}...`, false);
+
+    try{
+      const result = await plugin.start({
+        language,
+        maxResults: 1,
+        prompt: getVoiceModeEnabled() ? 'ابدأ الحديث الآن' : 'تحدث الآن',
+        partialResults: false,
+        popup: true
+      });
+      const transcript = Array.isArray(result?.matches)
+        ? result.matches.map((item) => String(item || '').trim()).filter(Boolean).join(' ')
+        : '';
+      if (transcript){
+        input.value = [composerDictationBase, transcript].filter(Boolean).join(composerDictationBase ? '\n' : '');
+        resizeComposerInput(input);
+        syncComposerMeta();
+      }
+    }catch(error){
+      const message = String(error?.message || error || '').trim();
+      if (!/cancel/i.test(message)) toast(`تعذّر الإملاء الصوتي: ${message || 'unknown'}`);
+    }finally{
+      VOICE_RUNTIME.nativeListening = false;
+      composerListening = false;
+      await resetNativeSpeechSession(plugin);
+      syncVoiceInputButton();
+      showStatus('', false);
+      const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && String(input.value || '').trim();
+      VOICE_RUNTIME.autoSendArmed = false;
+      if (shouldAutoSend){
+        window.setTimeout(() => {
+          if (String($('chatInput')?.value || '').trim()) void sendMessage();
+        }, 90);
+      } else if (shouldKeepContinuousVoiceLoop()){
+        scheduleVoiceConversationRestart(550);
+      }
+    }
+    return true;
+  }
+
+  async function startComposerDictation(){
+    if (isNativePlatform() && await startNativeComposerDictation()) return true;
+    if (await startCloudComposerDictation()) return true;
+
+    const Ctor = getSpeechRecognitionCtor();
+    if (!Ctor){
+      const voice = getVoiceCloudConfig();
+      if (!voice.sttReady && /^android/i.test(String(navigator.userAgent || ''))){
+        toast('الصوت غير متاح في هذا المتصفح المحمول لأن التعرف المحلي غير مدعوم والصوت السحابي غير مفعّل لهذا الحساب أو على الخادم.');
+      } else {
+        toast('الإملاء الصوتي غير مدعوم في هذا المتصفح.');
+      }
+      return false;
+    }
+
+    const input = $('chatInput');
+    if (!input) return false;
+
+    composerDictationBase = String(input.value || '').trimEnd();
+    VOICE_RUNTIME.autoSendArmed = true;
+    VOICE_RUNTIME.continuousConversation = getVoiceModeEnabled();
+    composerRecognition = new Ctor();
+    composerRecognition.lang = getPreferredSpeechLanguage();
+    composerRecognition.continuous = true;
+    composerRecognition.interimResults = true;
+
+    composerRecognition.onstart = () => {
+      composerListening = true;
+      syncVoiceInputButton();
+      showStatus(`الإملاء الصوتي يعمل الآن باللغة ${composerRecognition.lang}...`, false);
+    };
+
+    composerRecognition.onresult = (event) => {
+      const parts = [];
+      for (let i = event.resultIndex; i < event.results.length; i += 1){
+        const transcript = String(event.results[i]?.[0]?.transcript || '').trim();
+        if (transcript) parts.push(transcript);
+      }
+      const dictation = parts.join(' ').trim();
+      input.value = [composerDictationBase, dictation].filter(Boolean).join(composerDictationBase ? '\n' : '');
+      resizeComposerInput(input);
+      syncComposerMeta();
+    };
+
+    composerRecognition.onerror = (event) => {
+      composerListening = false;
+      VOICE_RUNTIME.autoSendArmed = false;
+      syncVoiceInputButton();
+      if (event?.error !== 'no-speech') toast(`تعذّر الإملاء الصوتي: ${event?.error || 'unknown'}`);
+    };
+
+    composerRecognition.onend = () => {
+      const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && String(input.value || '').trim();
+      VOICE_RUNTIME.autoSendArmed = false;
+      composerListening = false;
+      composerRecognition = null;
+      syncVoiceInputButton();
+      showStatus('', false);
+      if (shouldAutoSend){
+        window.setTimeout(() => {
+          if (String($('chatInput')?.value || '').trim()) void sendMessage();
+        }, 90);
+      } else if (shouldKeepContinuousVoiceLoop()){
+        scheduleVoiceConversationRestart(550);
+      }
+    };
+
+    try{
+      composerRecognition.start();
+      return true;
+    }catch(error){
+      composerListening = false;
+      composerRecognition = null;
+      syncVoiceInputButton();
+      toast(`تعذّر بدء الإملاء الصوتي: ${error?.message || error}`);
+      return false;
+    }
+  }
+
+  async function speakAssistantReply(content = '', { force = false } = {}){
+    if (!force && !getVoiceModeEnabled()) return false;
+    const text = stripTextForSpeech(content);
+    if (!text){
+      scheduleVoiceConversationRecovery(250);
+      return false;
+    }
+
+    await stopVoicePlayback();
+    try{
+      const cloudPlayed = await speakAssistantReplyByCloud(text, getSettings());
+      if (cloudPlayed) return true;
+    }catch(error){
+      if (force) toast(`تعذّر تشغيل الرد صوتيًا عبر السحابة: ${error?.message || error}`);
+    }
+
+    const nativeTts = getNativeTextToSpeechPlugin();
+    const lang = await resolveSpeechSynthesisLanguage(nativeTts);
+    const nativeLang = await ensureNativeArabicTtsLanguage(nativeTts, lang);
+
+    if (nativeTts?.speak){
+      try{
+        VOICE_RUNTIME.speaking = true;
+        await nativeTts.speak({
+          text,
+          lang: nativeLang,
+          rate: 0.92,
+          pitch: 1,
+          volume: 1
+        });
+        VOICE_RUNTIME.speaking = false;
+        VOICE_RUNTIME.utterance = null;
+        scheduleVoiceConversationRestart(700);
+        return true;
+      }catch(error){
+        VOICE_RUNTIME.speaking = false;
+        VOICE_RUNTIME.utterance = null;
+        if (force) toast(`تعذّر تشغيل الرد صوتيًا: ${error?.message || error}`);
+      }
+    }
+
+    if (!('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance === 'undefined'){
+      if (force) toast('التشغيل الصوتي غير مدعوم في هذا المتصفح.');
+      return false;
+    }
+
+    return await new Promise((resolve) => {
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = lang;
+      utter.voice = chooseSpeechSynthesisVoice(lang) || chooseSpeechSynthesisVoice('ar-SA');
+      utter.rate = 0.92;
+      utter.pitch = 1;
+      utter.onstart = () => { VOICE_RUNTIME.speaking = true; };
+      utter.onend = () => {
+        VOICE_RUNTIME.speaking = false;
+        VOICE_RUNTIME.utterance = null;
+        scheduleVoiceConversationRestart(700);
+        resolve(true);
+      };
+      utter.onerror = () => {
+        VOICE_RUNTIME.speaking = false;
+        VOICE_RUNTIME.utterance = null;
+        resolve(false);
+      };
+      VOICE_RUNTIME.utterance = utter;
+      try{ window.speechSynthesis.resume?.(); }catch(_){}
+      try{
+        window.speechSynthesis.speak(utter);
+      }catch(_){
+        VOICE_RUNTIME.speaking = false;
+        VOICE_RUNTIME.utterance = null;
+        resolve(false);
+      }
+    });
+  }
+
+  async function toggleVoiceMode(){
+    const next = !getVoiceModeEnabled();
+    setVoiceModeEnabled(next);
+    VOICE_RUNTIME.continuousConversation = next;
+    refreshVoiceModeButton();
+    if (!next){
+      VOICE_RUNTIME.autoSendArmed = false;
+      void stopComposerDictation(false);
+      void stopVoicePlayback();
+      toast('تم إيقاف الدردشة الصوتية');
+      return;
+    }
+
+    toast('تم تفعيل الدردشة الصوتية المستمرة');
+    const started = await startComposerDictation();
+    if (!started && shouldKeepContinuousVoiceLoop()){
+      scheduleVoiceConversationRestart(600);
+    }
   }
 
 function refreshDeepSearchBtn(){

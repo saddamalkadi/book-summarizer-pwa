@@ -112,6 +112,7 @@ function getServerKey(env) {
 }
 
 function getVoiceApiConfig(env) {
+  const hasWorkersAi = !!env.AI && typeof env.AI.run === 'function';
   const apiKey = String(
     env.VOICE_API_KEY ||
     env.OPENAI_API_KEY ||
@@ -123,17 +124,18 @@ function getVoiceApiConfig(env) {
     env.OPENAI_API_BASE_URL ||
     'https://api.openai.com/v1'
   ).trim().replace(/\/+$/, '');
-  const provider = String(env.VOICE_PROVIDER || (apiKey ? 'openai_compatible' : '')).trim();
-  const recognitionModel = String(env.VOICE_STT_MODEL || 'gpt-4o-mini-transcribe').trim();
-  const synthesisModel = String(env.VOICE_TTS_MODEL || 'gpt-4o-mini-tts').trim();
-  const synthesisVoice = String(env.VOICE_TTS_VOICE || 'alloy').trim();
+  const provider = String(env.VOICE_PROVIDER || (apiKey ? 'openai_compatible' : (hasWorkersAi ? 'workers_ai' : ''))).trim();
+  const recognitionModel = String(env.VOICE_STT_MODEL || (hasWorkersAi ? '@cf/openai/whisper-large-v3-turbo' : 'gpt-4o-mini-transcribe')).trim();
+  const synthesisModel = String(env.VOICE_TTS_MODEL || (hasWorkersAi ? '@cf/myshell-ai/melotts' : 'gpt-4o-mini-tts')).trim();
+  const synthesisVoice = String(env.VOICE_TTS_VOICE || (hasWorkersAi ? 'ar' : 'alloy')).trim();
   const preferredLanguage = String(env.VOICE_LANG || 'ar').trim();
-  const sttReady = !!apiKey && String(env.VOICE_DISABLE_STT || '').trim().toLowerCase() !== 'true';
-  const ttsReady = !!apiKey && String(env.VOICE_DISABLE_TTS || '').trim().toLowerCase() !== 'true';
+  const sttReady = (!!apiKey || hasWorkersAi) && String(env.VOICE_DISABLE_STT || '').trim().toLowerCase() !== 'true';
+  const ttsReady = (!!apiKey || hasWorkersAi) && String(env.VOICE_DISABLE_TTS || '').trim().toLowerCase() !== 'true';
   return {
     apiKey,
     baseUrl,
     provider,
+    hasWorkersAi,
     recognitionModel,
     synthesisModel,
     synthesisVoice,
@@ -142,6 +144,30 @@ function getVoiceApiConfig(env) {
     ttsReady,
     ready: sttReady || ttsReady
   };
+}
+
+function normalizeVoiceLanguageTag(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return 'ar';
+  if (/^ar(?:-|$)/i.test(raw)) return 'ar';
+  return raw.split('-')[0] || raw;
+}
+
+function encodeArrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer || new ArrayBuffer(0));
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+function decodeBase64ToBytes(value) {
+  const normalized = String(value || '').trim().replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized + '='.repeat((4 - (normalized.length % 4 || 4)) % 4);
+  const binary = atob(padded);
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
 
 function getSessionSecret(env) {
@@ -514,6 +540,31 @@ async function handleVoiceTranscription(request, env) {
     form.append('language', String(incoming.get('language') || voice.preferredLanguage).trim() || voice.preferredLanguage);
     form.append('response_format', 'json');
 
+    if (!voice.apiKey && voice.hasWorkersAi && env.AI?.run) {
+      const aiResult = await env.AI.run(voice.recognitionModel, {
+        audio: encodeArrayBufferToBase64(await file.arrayBuffer()),
+        task: 'transcribe',
+        language: normalizeVoiceLanguageTag(incoming.get('language') || voice.preferredLanguage)
+      });
+      const transcript = String(
+        aiResult?.text ||
+        aiResult?.transcript ||
+        aiResult?.result?.text ||
+        ''
+      ).trim();
+      if (!transcript) {
+        return jsonResponse({
+          error: 'Workers AI returned an empty transcription.',
+          code: 'VOICE_STT_EMPTY'
+        }, 502);
+      }
+      return jsonResponse({
+        ok: true,
+        text: transcript,
+        model: voice.recognitionModel
+      }, 200);
+    }
+
     const upstream = await fetch(`${voice.baseUrl}/audio/transcriptions`, {
       method: 'POST',
       headers: {
@@ -568,6 +619,33 @@ async function handleVoiceSynthesis(request, env) {
         error: 'Text is required for speech synthesis.',
         code: 'VOICE_TTS_TEXT_REQUIRED'
       }, 400);
+    }
+
+    if (!voice.apiKey && voice.hasWorkersAi && env.AI?.run) {
+      const aiResult = await env.AI.run(voice.synthesisModel, {
+        prompt: text,
+        lang: normalizeVoiceLanguageTag(body?.language || voice.preferredLanguage),
+        speaker: String(body?.voice || voice.synthesisVoice || 'ar').trim() || 'ar'
+      });
+      const audioBase64 = String(
+        aiResult?.audio ||
+        aiResult?.result?.audio ||
+        aiResult?.audio_base64 ||
+        ''
+      ).trim();
+      if (!audioBase64) {
+        return jsonResponse({
+          error: 'Workers AI returned no audio payload.',
+          code: 'VOICE_TTS_EMPTY'
+        }, 502);
+      }
+      return new Response(decodeBase64ToBytes(audioBase64), {
+        status: 200,
+        headers: {
+          'Content-Type': 'audio/mpeg',
+          'Cache-Control': 'no-store'
+        }
+      });
     }
 
     const upstream = await fetch(`${voice.baseUrl}/audio/speech`, {
