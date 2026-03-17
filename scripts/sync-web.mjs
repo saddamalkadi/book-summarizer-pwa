@@ -4,6 +4,7 @@ import { join } from 'node:path';
 const root = process.cwd();
 const webDir = join(root, 'www');
 const files = [
+  'CNAME',
   'index.html',
   'auth-bridge.html',
   'app.js',
