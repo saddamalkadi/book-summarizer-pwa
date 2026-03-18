@@ -223,6 +223,7 @@
     cloudRecorder: null,
     cloudStream: null,
     audioPlayer: null,
+    cloudCancelRequested: false,
     ttsInstallPrompted: false
   };
 
@@ -560,6 +561,9 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
 
   function normalizeStoredSettings(raw = {}){
     const next = { ...(raw || {}) };
+    if ('gatewayUrl' in next || DEFAULT_SETTINGS.gatewayUrl){
+      next.gatewayUrl = normalizeManagedGatewayUrl(next.gatewayUrl || DEFAULT_SETTINGS.gatewayUrl);
+    }
     if ('cloudConvertEndpoint' in next || DEFAULT_SETTINGS.cloudConvertEndpoint){
       next.cloudConvertEndpoint = normalizeDocxCloudEndpoint(next.cloudConvertEndpoint || DEFAULT_SETTINGS.cloudConvertEndpoint);
     }
@@ -568,6 +572,12 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     }
     if ('ocrCloudEndpoint' in next || DEFAULT_SETTINGS.ocrCloudEndpoint){
       next.ocrCloudEndpoint = normalizeOcrCloudEndpoint(next.ocrCloudEndpoint || DEFAULT_SETTINGS.ocrCloudEndpoint);
+    }
+    if ((next.authMode || DEFAULT_SETTINGS.authMode) === 'gateway'){
+      const resolvedGatewayBase = normalizeUrl(resolveGatewayApiRoot({ ...DEFAULT_SETTINGS, ...next })) || getPlatformServiceRoot();
+      if (resolvedGatewayBase){
+        next.baseUrl = `${resolvedGatewayBase}/v1`;
+      }
     }
     return next;
   }
@@ -704,6 +714,10 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     return normalizeEndpointUrl(settings.gatewayUrl || '').replace(/\/v1\/?$/i, '');
   }
 
+  function getPlatformServiceRoot(){
+    return normalizeEndpointUrl(DEFAULT_SETTINGS.gatewayUrl || '').replace(/\/v1\/?$/i, '');
+  }
+
   function getLocalAuthConfig(settings = getSettings()){
     return {
       ...DEFAULT_AUTH_CONFIG,
@@ -780,6 +794,35 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     if (!s) return '';
     // بعض المستخدمين قد يلصقون الرابط مسبوقًا بشرطة مائلة "/https://..."
     return normalizeUrl(s.replace(/^\/+((?:https?:)?\/\/)/i, '$1'));
+  }
+
+  function normalizeManagedGatewayUrl(raw){
+    const normalized = normalizeEndpointUrl(raw || '');
+    const fallback = getPlatformServiceRoot();
+    if (!normalized) return fallback;
+    try{
+      const parsed = new URL(normalized);
+      const host = String(parsed.hostname || '').toLowerCase();
+      const path = String(parsed.pathname || '').toLowerCase();
+      const looksManaged = (
+        host === 'api.saddamalkadi.com'
+        || host === 'app.saddamalkadi.com'
+        || host === 'saddamalkadi.com'
+        || host === 'convert.saddamalkadi.com'
+        || /(^|\.)saddamalkadi\.github\.io$/i.test(host)
+        || /(^|\.)ai-workspace-studio\.pages\.dev$/i.test(host)
+        || /(^|\.)workers\.dev$/i.test(host)
+        || /dash\.cloudflare\.com$/i.test(host)
+        || /^sadam-key\./i.test(host)
+        || /^sadam-convert\./i.test(host)
+      );
+      if (looksManaged || path.includes('/workers/services/view/') || path.includes('/production/settings')){
+        return fallback;
+      }
+      return normalized.replace(/\/v1\/?$/i, '').replace(/\/health\/?$/i, '');
+    }catch(_){
+      return fallback;
+    }
   }
 
   function endpointOrigin(u){
@@ -876,7 +919,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   }
 
   function getAuthServiceRoot(settings = getSettings()){
-    return getGatewayWorkerRoot(settings);
+    return getPlatformServiceRoot() || getGatewayWorkerRoot(settings);
   }
 
   function getAccountRuntimeState(settings = getSettings()){
@@ -2523,6 +2566,318 @@ function applyShellLayout(){
     }
   }
 
+  function buildSpeechLanguageCandidates(preferred = 'ar-SA'){
+    const raw = String(preferred || '').trim() || 'ar-SA';
+    const browserCandidates = Array.isArray(navigator.languages) ? navigator.languages : [];
+    const fallback = /^ar(?:-|$)/i.test(raw)
+      ? ['ar-SA', 'ar-EG', 'ar-AE', 'ar-JO', 'ar-KW', 'ar-QA', 'ar-BH', 'ar-OM', 'ar-IQ', 'ar-LB', 'ar-LY', 'ar-DZ', 'ar-MA', 'ar-001', 'ar']
+      : [raw, raw.split('-')[0], 'ar-SA', 'ar'];
+    return [...new Set([
+      raw,
+      raw.split('-')[0],
+      ...browserCandidates,
+      navigator.language || '',
+      ...fallback
+    ].map((item) => String(item || '').trim()).filter(Boolean))];
+  }
+
+  function getPreferredSpeechLanguage(){
+    const authConfig = getEffectiveAuthConfig();
+    const voiceConfig = getVoiceCloudConfig();
+    const candidates = buildSpeechLanguageCandidates(
+      voiceConfig.preferredLanguage
+      || authConfig.voicePreferredLanguage
+      || 'ar-SA'
+    );
+    return candidates[0] || 'ar-SA';
+  }
+
+  async function resolveSpeechRecognitionLanguage(plugin){
+    const candidates = buildSpeechLanguageCandidates(getPreferredSpeechLanguage());
+    if (!plugin?.getSupportedLanguages) return candidates[0] || 'ar-SA';
+    try{
+      const result = await plugin.getSupportedLanguages();
+      const supported = Array.isArray(result?.languages)
+        ? result.languages
+        : (Array.isArray(result) ? result : []);
+      const normalized = supported.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean);
+      for (const candidate of candidates){
+        const exact = String(candidate || '').trim().toLowerCase();
+        if (!exact) continue;
+        if (normalized.includes(exact)) return candidate;
+        const family = exact.split('-')[0];
+        if (normalized.some((value) => value === family || value.startsWith(`${family}-`))){
+          return candidate;
+        }
+      }
+    }catch(_){}
+    return candidates[0] || 'ar-SA';
+  }
+
+  async function resolveSpeechSynthesisLanguage(plugin){
+    const preferred = getPreferredSpeechLanguage();
+    if (plugin?.isLanguageSupported){
+      return chooseSpeechLanguageForNativeTts(plugin, preferred);
+    }
+    const voice = chooseSpeechSynthesisVoice(preferred) || chooseSpeechSynthesisVoice('ar-SA');
+    return String(voice?.lang || preferred || 'ar-SA').trim() || 'ar-SA';
+  }
+
+  async function ensureNativeArabicTtsLanguage(plugin, preferred){
+    return chooseSpeechLanguageForNativeTts(plugin, preferred || getPreferredSpeechLanguage());
+  }
+
+  async function resetNativeSpeechSession(plugin){
+    if (!plugin) return;
+    try{ await plugin.stop?.(); }catch(_){ }
+    try{ await plugin.removeAllListeners?.(); }catch(_){ }
+  }
+
+  function clearVoiceRestartTimer(){
+    if (VOICE_RUNTIME.restartTimer){
+      clearTimeout(VOICE_RUNTIME.restartTimer);
+      VOICE_RUNTIME.restartTimer = 0;
+    }
+  }
+
+  function shouldKeepContinuousVoiceLoop(){
+    return !!getVoiceModeEnabled()
+      && !composerListening
+      && !VOICE_RUNTIME.speaking
+      && !document.hidden
+      && !!$('chatInput');
+  }
+
+  function scheduleVoiceConversationRestart(delay = 600){
+    clearVoiceRestartTimer();
+    if (!shouldKeepContinuousVoiceLoop()) return;
+    VOICE_RUNTIME.restartTimer = window.setTimeout(() => {
+      VOICE_RUNTIME.restartTimer = 0;
+      if (shouldKeepContinuousVoiceLoop()) void startComposerDictation();
+    }, Math.max(120, Number(delay || 0)));
+  }
+
+  function scheduleVoiceConversationRecovery(delay = 420){
+    if (!getVoiceModeEnabled()) return;
+    scheduleVoiceConversationRestart(delay);
+  }
+
+  function cleanupCloudVoiceCapture(){
+    VOICE_RUNTIME.cloudCancelRequested = false;
+    if (VOICE_RUNTIME.cloudRecorder){
+      try{
+        if (VOICE_RUNTIME.cloudRecorder.state !== 'inactive'){
+          VOICE_RUNTIME.cloudRecorder.stop();
+        }
+      }catch(_){ }
+    }
+    VOICE_RUNTIME.cloudRecorder = null;
+    if (VOICE_RUNTIME.cloudStream){
+      try{
+        VOICE_RUNTIME.cloudStream.getTracks?.().forEach((track) => {
+          try{ track.stop(); }catch(_){ }
+        });
+      }catch(_){ }
+    }
+    VOICE_RUNTIME.cloudStream = null;
+  }
+
+  function pickVoiceRecordingMimeType(){
+    if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return '';
+    return [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/ogg;codecs=opus'
+    ].find((mime) => {
+      try{ return MediaRecorder.isTypeSupported(mime); }catch(_){ return false; }
+    }) || '';
+  }
+
+  async function transcribeAudioBlobByCloud(blob, settings = getSettings()){
+    const voice = getVoiceCloudConfig(settings);
+    if (!voice.sttReady || !blob) return '';
+    const form = new FormData();
+    const fileName = `voice-${Date.now()}.${inferExtensionFromMime(blob.type || 'audio/webm')}`;
+    form.append('file', blob, fileName);
+    form.append('model', voice.recognitionModel);
+    form.append('language', voice.preferredLanguage || getPreferredSpeechLanguage());
+    const response = await fetchAuthResponse('/voice/transcribe', {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+      body: form
+    }, settings);
+    const raw = await response.text();
+    let payload = null;
+    try{ payload = raw ? JSON.parse(raw) : null; }catch(_){ payload = null; }
+    const transcript = String(payload?.text || payload?.transcript || '').trim();
+    if (!transcript) throw new Error('الخادم أعاد تفريغًا صوتيًا فارغًا.');
+    return transcript;
+  }
+
+  async function speakAssistantReplyByCloud(text, settings = getSettings()){
+    const voice = getVoiceCloudConfig(settings);
+    if (!voice.ttsReady || !String(text || '').trim()) return false;
+    const response = await fetchAuthResponse('/voice/speak', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text,
+        model: voice.synthesisModel,
+        voice: voice.synthesisVoice,
+        language: voice.preferredLanguage || getPreferredSpeechLanguage()
+      })
+    }, settings);
+    const audioBlob = await response.blob();
+    if (!audioBlob || !audioBlob.size) return false;
+
+    const audio = new Audio();
+    const objectUrl = URL.createObjectURL(audioBlob);
+    audio.src = objectUrl;
+    audio.__objectUrl = objectUrl;
+    audio.preload = 'auto';
+    VOICE_RUNTIME.audioPlayer = audio;
+
+    return await new Promise((resolve) => {
+      const cleanup = (played) => {
+        VOICE_RUNTIME.speaking = false;
+        if (VOICE_RUNTIME.audioPlayer === audio) VOICE_RUNTIME.audioPlayer = null;
+        try{
+          if (audio.__objectUrl) URL.revokeObjectURL(audio.__objectUrl);
+        }catch(_){ }
+        if (played) scheduleVoiceConversationRestart(700);
+        resolve(played);
+      };
+      audio.onended = () => cleanup(true);
+      audio.onerror = () => cleanup(false);
+      try{
+        VOICE_RUNTIME.speaking = true;
+        const playPromise = audio.play();
+        if (playPromise && typeof playPromise.then === 'function'){
+          playPromise.catch(() => cleanup(false));
+        }
+      }catch(_){
+        cleanup(false);
+      }
+    });
+  }
+
+  async function startCloudComposerDictation(){
+    const voice = getVoiceCloudConfig();
+    const input = $('chatInput');
+    if (!voice.sttReady || !input) return false;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined'){
+      return false;
+    }
+
+    let stream = null;
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+    }catch(error){
+      toast(`تعذّر الوصول إلى الميكروفون: ${error?.message || error}`);
+      return false;
+    }
+
+    cleanupCloudVoiceCapture();
+    VOICE_RUNTIME.cloudStream = stream;
+    VOICE_RUNTIME.cloudCancelRequested = false;
+    composerDictationBase = String(input.value || '').trimEnd();
+    VOICE_RUNTIME.autoSendArmed = true;
+    VOICE_RUNTIME.continuousConversation = getVoiceModeEnabled();
+    composerListening = true;
+    syncVoiceInputButton();
+    showStatus(`الإملاء الصوتي السحابي يعمل الآن باللغة ${voice.preferredLanguage || getPreferredSpeechLanguage()}...`, false);
+
+    const mimeType = pickVoiceRecordingMimeType();
+    const recorder = mimeType
+      ? new MediaRecorder(stream, { mimeType })
+      : new MediaRecorder(stream);
+    const chunks = [];
+    VOICE_RUNTIME.cloudRecorder = recorder;
+
+    return await new Promise((resolve) => {
+      let settled = false;
+      let stopTimer = 0;
+      const finish = async ({ transcribe = true } = {}) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(stopTimer);
+        const wasCancelled = VOICE_RUNTIME.cloudCancelRequested;
+        composerListening = false;
+        syncVoiceInputButton();
+        showStatus('', false);
+        VOICE_RUNTIME.cloudRecorder = null;
+        cleanupCloudVoiceCapture();
+        if (wasCancelled || !transcribe){
+          VOICE_RUNTIME.autoSendArmed = false;
+          resolve(!wasCancelled);
+          return;
+        }
+        try{
+          const blob = new Blob(chunks, { type: recorder.mimeType || mimeType || 'audio/webm' });
+          if (!blob.size){
+            VOICE_RUNTIME.autoSendArmed = false;
+            if (shouldKeepContinuousVoiceLoop()) scheduleVoiceConversationRestart(650);
+            resolve(false);
+            return;
+          }
+          const transcript = await transcribeAudioBlobByCloud(blob);
+          if (transcript){
+            input.value = [composerDictationBase, transcript].filter(Boolean).join(composerDictationBase ? '\n' : '');
+            resizeComposerInput(input);
+            syncComposerMeta();
+          }
+          const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && !!String(input.value || '').trim();
+          VOICE_RUNTIME.autoSendArmed = false;
+          if (shouldAutoSend){
+            window.setTimeout(() => {
+              if (String($('chatInput')?.value || '').trim()) void sendMessage();
+            }, 90);
+          } else if (shouldKeepContinuousVoiceLoop()){
+            scheduleVoiceConversationRestart(650);
+          }
+          resolve(!!transcript);
+        }catch(error){
+          VOICE_RUNTIME.autoSendArmed = false;
+          toast(`تعذّر الإملاء الصوتي السحابي: ${error?.message || error}`);
+          if (shouldKeepContinuousVoiceLoop()) scheduleVoiceConversationRecovery(850);
+          resolve(false);
+        }
+      };
+
+      recorder.ondataavailable = (event) => {
+        if (event?.data?.size) chunks.push(event.data);
+      };
+      recorder.onerror = () => { finish({ transcribe:false }).catch(() => {}); };
+      recorder.onstop = () => { finish({ transcribe:true }).catch(() => {}); };
+
+      try{
+        recorder.start();
+        stopTimer = window.setTimeout(() => {
+          try{
+            if (recorder.state !== 'inactive') recorder.stop();
+          }catch(_){
+            finish({ transcribe:false }).catch(() => {});
+          }
+        }, getVoiceModeEnabled() ? 6500 : 5200);
+      }catch(error){
+        cleanupCloudVoiceCapture();
+        composerListening = false;
+        VOICE_RUNTIME.autoSendArmed = false;
+        syncVoiceInputButton();
+        showStatus('', false);
+        toast(`تعذّر بدء الإملاء الصوتي السحابي: ${error?.message || error}`);
+        resolve(false);
+      }
+    });
+  }
+
   function syncVoiceInputButton(){
     const btn = $('voiceInputBtn');
     if (!btn) return;
@@ -2743,81 +3098,81 @@ function applyShellLayout(){
 
   async function startComposerDictation(){
     if (isNativePlatform() && await startNativeComposerDictation()) return true;
-    if (await startCloudComposerDictation()) return true;
 
     const Ctor = getSpeechRecognitionCtor();
-    if (!Ctor){
-      const voice = getVoiceCloudConfig();
-      if (!voice.sttReady && /^android/i.test(String(navigator.userAgent || ''))){
-        toast('الصوت غير متاح في هذا المتصفح المحمول لأن التعرف المحلي غير مدعوم والصوت السحابي غير مفعّل لهذا الحساب أو على الخادم.');
-      } else {
-        toast('الإملاء الصوتي غير مدعوم في هذا المتصفح.');
+    if (Ctor){
+      const input = $('chatInput');
+      if (!input) return false;
+
+      composerDictationBase = String(input.value || '').trimEnd();
+      VOICE_RUNTIME.autoSendArmed = true;
+      VOICE_RUNTIME.continuousConversation = getVoiceModeEnabled();
+      composerRecognition = new Ctor();
+      composerRecognition.lang = getPreferredSpeechLanguage();
+      composerRecognition.continuous = true;
+      composerRecognition.interimResults = true;
+
+      composerRecognition.onstart = () => {
+        composerListening = true;
+        syncVoiceInputButton();
+        showStatus(`الإملاء الصوتي يعمل الآن باللغة ${composerRecognition.lang}...`, false);
+      };
+
+      composerRecognition.onresult = (event) => {
+        const parts = [];
+        for (let i = event.resultIndex; i < event.results.length; i += 1){
+          const transcript = String(event.results[i]?.[0]?.transcript || '').trim();
+          if (transcript) parts.push(transcript);
+        }
+        const dictation = parts.join(' ').trim();
+        input.value = [composerDictationBase, dictation].filter(Boolean).join(composerDictationBase ? '\n' : '');
+        resizeComposerInput(input);
+        syncComposerMeta();
+      };
+
+      composerRecognition.onerror = (event) => {
+        composerListening = false;
+        VOICE_RUNTIME.autoSendArmed = false;
+        syncVoiceInputButton();
+        if (event?.error !== 'no-speech') toast(`تعذّر الإملاء الصوتي: ${event?.error || 'unknown'}`);
+      };
+
+      composerRecognition.onend = () => {
+        const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && String(input.value || '').trim();
+        VOICE_RUNTIME.autoSendArmed = false;
+        composerListening = false;
+        composerRecognition = null;
+        syncVoiceInputButton();
+        showStatus('', false);
+        if (shouldAutoSend){
+          window.setTimeout(() => {
+            if (String($('chatInput')?.value || '').trim()) void sendMessage();
+          }, 90);
+        } else if (shouldKeepContinuousVoiceLoop()){
+          scheduleVoiceConversationRestart(550);
+        }
+      };
+
+      try{
+        composerRecognition.start();
+        return true;
+      }catch(error){
+        composerListening = false;
+        composerRecognition = null;
+        syncVoiceInputButton();
+        toast(`تعذّر بدء الإملاء الصوتي: ${error?.message || error}`);
       }
-      return false;
     }
 
-    const input = $('chatInput');
-    if (!input) return false;
+    if (await startCloudComposerDictation()) return true;
 
-    composerDictationBase = String(input.value || '').trimEnd();
-    VOICE_RUNTIME.autoSendArmed = true;
-    VOICE_RUNTIME.continuousConversation = getVoiceModeEnabled();
-    composerRecognition = new Ctor();
-    composerRecognition.lang = getPreferredSpeechLanguage();
-    composerRecognition.continuous = true;
-    composerRecognition.interimResults = true;
-
-    composerRecognition.onstart = () => {
-      composerListening = true;
-      syncVoiceInputButton();
-      showStatus(`الإملاء الصوتي يعمل الآن باللغة ${composerRecognition.lang}...`, false);
-    };
-
-    composerRecognition.onresult = (event) => {
-      const parts = [];
-      for (let i = event.resultIndex; i < event.results.length; i += 1){
-        const transcript = String(event.results[i]?.[0]?.transcript || '').trim();
-        if (transcript) parts.push(transcript);
-      }
-      const dictation = parts.join(' ').trim();
-      input.value = [composerDictationBase, dictation].filter(Boolean).join(composerDictationBase ? '\n' : '');
-      resizeComposerInput(input);
-      syncComposerMeta();
-    };
-
-    composerRecognition.onerror = (event) => {
-      composerListening = false;
-      VOICE_RUNTIME.autoSendArmed = false;
-      syncVoiceInputButton();
-      if (event?.error !== 'no-speech') toast(`تعذّر الإملاء الصوتي: ${event?.error || 'unknown'}`);
-    };
-
-    composerRecognition.onend = () => {
-      const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && String(input.value || '').trim();
-      VOICE_RUNTIME.autoSendArmed = false;
-      composerListening = false;
-      composerRecognition = null;
-      syncVoiceInputButton();
-      showStatus('', false);
-      if (shouldAutoSend){
-        window.setTimeout(() => {
-          if (String($('chatInput')?.value || '').trim()) void sendMessage();
-        }, 90);
-      } else if (shouldKeepContinuousVoiceLoop()){
-        scheduleVoiceConversationRestart(550);
-      }
-    };
-
-    try{
-      composerRecognition.start();
-      return true;
-    }catch(error){
-      composerListening = false;
-      composerRecognition = null;
-      syncVoiceInputButton();
-      toast(`تعذّر بدء الإملاء الصوتي: ${error?.message || error}`);
-      return false;
+    const voice = getVoiceCloudConfig();
+    if (!voice.sttReady && /^android/i.test(String(navigator.userAgent || ''))){
+      toast('الصوت غير متاح في هذا المتصفح المحمول لأن التعرف المحلي غير مدعوم والصوت السحابي غير مفعّل لهذا الحساب أو على الخادم.');
+    } else {
+      toast('الإملاء الصوتي غير مدعوم في هذا المتصفح.');
     }
+    return false;
   }
 
   function toggleComposerDictation(){
@@ -3568,8 +3923,9 @@ function syncUnifiedAuthEntry(){
     const config = getEffectiveAuthConfig();
     const email = String($('authEntryEmail')?.value || '').trim().toLowerCase();
     const isAdminEntry = !!email && email === String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
-    const adminPasswordEnabled = !!(config.adminPasswordEnabled ?? config.adminEnabled);
-    const adminGoogleOnly = isAdminEntry && !adminPasswordEnabled;
+    const adminPasswordEnabled = config.adminPasswordEnabled === true;
+    const adminGoogleReady = !!getAuthGoogleClientId();
+    const adminGoogleOnly = isAdminEntry && !adminPasswordEnabled && adminGoogleReady;
     const label = $('authEntrySubmitLabel');
     const hint = $('authEntryModeHint');
     const passwordLabel = $('authEntryPasswordLabel');
@@ -3579,22 +3935,21 @@ function syncUnifiedAuthEntry(){
       : 'متابعة بالخطة المجانية';
     if (hint) hint.textContent = isAdminEntry
       ? (adminGoogleOnly
-        ? 'تم التعرف على بريد الإدارة. كلمة مرور الإدارة غير مفعلة حاليًا على الخادم، لذا استخدم Google بهذا البريد نفسه لفتح الحساب الإداري.'
-        : 'تم التعرف على بريد الإدارة. أدخل كلمة المرور لفتح الحساب الإداري من نفس الشاشة.')
+        ? 'تم التعرف على بريد الإدارة. يمكنك المتابعة عبر Google، أو تجربة كلمة المرور إذا تم تفعيلها على الخادم.'
+        : 'تم التعرف على بريد الإدارة. أدخل كلمة المرور لفتح الحساب الإداري، ويمكنك أيضًا استخدام Google بنفس البريد.')
       : 'أي بريد شخصي صالح يفتح لك الخطة المجانية فورًا، ويمكنك طلب الترقية لاحقًا من داخل التطبيق.';
     if ($('authCurrentPlanPill')){
       $('authCurrentPlanPill').textContent = isAdminEntry ? 'الإدارة' : 'الخطة المجانية';
       $('authCurrentPlanPill').classList.toggle('premium', isAdminEntry);
     }
     if (passwordLabel) passwordLabel.textContent = isAdminEntry
-      ? (adminGoogleOnly ? 'تسجيل الإدارة عبر Google' : 'كلمة مرور الإدارة')
+      ? (adminGoogleOnly ? 'كلمة مرور الإدارة أو Google' : 'كلمة مرور الإدارة')
       : 'كلمة المرور للإدارة فقط';
     if (passwordInput){
       passwordInput.placeholder = isAdminEntry
-        ? (adminGoogleOnly ? 'غير مطلوب عند استخدام Google للإدارة' : 'أدخل كلمة مرور الإدارة')
+        ? (adminGoogleOnly ? 'اتركها فارغة لاستخدام Google أو أدخل كلمة المرور' : 'أدخل كلمة مرور الإدارة')
         : 'اختيارية للمستخدم العادي، ومطلوبة فقط إذا كان هذا بريد الإدارة';
-      passwordInput.disabled = adminGoogleOnly;
-      if (adminGoogleOnly) passwordInput.value = '';
+      passwordInput.disabled = false;
     }
   }
 
@@ -3669,41 +4024,6 @@ function syncUnifiedAuthEntry(){
     return getCapacitorPluginProxy('App');
   }
 
-  function getBrowserAuthReturnUrl(){
-    if (isNativePlatform()) return BROWSER_AUTH_BRIDGE.appReturnUrl;
-    return window.location.href.split('#')[0];
-  }
-
-  function buildBrowserGoogleAuthUrl(){
-    const workerRoot = getAuthServiceRoot(getSettings());
-    if (!workerRoot) throw new Error('رابط البوابة غير مضبوط لتسجيل Google.');
-    const url = new URL(BROWSER_AUTH_BRIDGE.webPath, window.location.href);
-    url.searchParams.set('worker', workerRoot);
-    url.searchParams.set('return_to', getBrowserAuthReturnUrl());
-    url.searchParams.set('gateway', getSettings().gatewayUrl || '');
-    url.searchParams.set('app', 'AI Workspace Studio');
-    return url.toString();
-  }
-
-  async function openGoogleAuthInBrowser(){
-    try{
-      const url = buildBrowserGoogleAuthUrl();
-      const browser = getCapacitorBrowserPlugin();
-      if (isLikelyNativeAppContext() && browser?.open){
-        setAuthGateStatus('جاري فتح تسجيل Google في متصفح الجهاز…', 'busy');
-        await browser.open({
-          url,
-          toolbarColor: '#1f6bff'
-        });
-      } else {
-        setAuthGateStatus('جارٍ فتح تسجيل Google في نفس الصفحة...', 'busy');
-        window.location.assign(url);
-      }
-    }catch(error){
-      setAuthGateStatus(`تعذّر فتح تسجيل Google في المتصفح: ${error?.message || error}`, 'error');
-    }
-  }
-
   function normalizeAuthPayload(payload){
     const sessionToken = String(payload?.sessionToken || payload?.session_token || '').trim();
     if (!sessionToken) return null;
@@ -3746,28 +4066,6 @@ function syncUnifiedAuthEntry(){
     return true;
   }
 
-  async function consumeAuthRedirectParams(params){
-    const sessionToken = String(params.get('sessionToken') || params.get('session_token') || '').trim();
-    if (!sessionToken) return false;
-    applyAuthResponse({
-      email: String(params.get('email') || '').trim().toLowerCase(),
-      name: String(params.get('name') || '').trim(),
-      picture: String(params.get('picture') || '').trim(),
-      plan: String(params.get('plan') || 'free').trim(),
-      role: String(params.get('role') || 'user').trim(),
-      sessionToken,
-      sessionExp: Number(params.get('sessionExp') || params.get('session_exp') || 0)
-    }, { upgradeCode: getAuthState().upgradeCode || '' });
-    syncAccountUi();
-    refreshModeButtons();
-    renderSettings();
-    await hydrateCloudState(true).catch(() => null);
-    closeAuthGate(true);
-    try{ await getCapacitorBrowserPlugin()?.close?.(); }catch(_){}
-    toast('✅ تم تسجيل الدخول عبر Google');
-    return true;
-  }
-
   async function consumeAuthRedirectFromUrl(rawUrl){
     try{
       const url = new URL(String(rawUrl || '').trim());
@@ -3777,33 +4075,6 @@ function syncUnifiedAuthEntry(){
       if (hash && await consumeAuthRedirectParams(new URLSearchParams(hash))) return true;
     }catch(_){}
     return false;
-  }
-
-  async function consumeAuthRedirectFromLocation(){
-    const hash = String(window.location.hash || '').replace(/^#/, '');
-    if (!hash) return false;
-    const consumed = await consumeAuthRedirectParams(new URLSearchParams(hash));
-    if (consumed){
-      history.replaceState({}, document.title, window.location.href.split('#')[0]);
-    }
-    return consumed;
-  }
-
-  function installBrowserAuthBridgeListeners(){
-    if (window.__AI_STUDIO_AUTH_BRIDGE__) return;
-    window.__AI_STUDIO_AUTH_BRIDGE__ = true;
-    window.addEventListener('hashchange', () => { consumeAuthRedirectFromLocation().catch(() => {}); });
-    consumeAuthRedirectFromLocation().catch(() => {});
-    const appPlugin = getCapacitorAppPlugin();
-    if (appPlugin?.addListener){
-      appPlugin.addListener('appUrlOpen', ({ url }) => {
-        consumeAuthRedirectFromUrl(url).catch(() => {});
-      });
-    }
-    window.addEventListener('beforeunload', () => {
-      syncCloudNow('beforeunload').catch(() => {});
-      stopVoicePlayback();
-    });
   }
 
   function consumeAuthBridgeStorage(){
@@ -4021,40 +4292,42 @@ async function submitUnifiedAuthEntry(){
     const name = String($('authEntryName')?.value || '').trim();
     const email = String($('authEntryEmail')?.value || '').trim().toLowerCase();
     const password = String($('authEntryPassword')?.value || '').trim();
+    let isAdminEntry = false;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
       setAuthGateStatus('أدخل بريدًا إلكترونيًا صالحًا أولًا.', 'error');
       return;
     }
     try{
-      let config = getEffectiveAuthConfig();
-      let adminEmail = String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
-      let isAdminEntry = !!email && email === adminEmail;
-      if (isAdminEntry){
-        config = await loadRemoteAuthConfig(true).catch(() => config);
-        adminEmail = String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
-        isAdminEntry = !!email && email === adminEmail;
-      }
-      const adminPasswordEnabled = !!(config.adminPasswordEnabled ?? config.adminEnabled);
+      const config = await loadRemoteAuthConfig(true).catch(() => getEffectiveAuthConfig());
+      const adminEmail = String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
+      isAdminEntry = !!email && email === adminEmail;
+      const adminPasswordEnabled = config.adminPasswordEnabled === true;
+      const adminGoogleReady = !!String(config.googleClientId || '').trim();
       let payload = null;
       if (isAdminEntry){
-        if (!adminPasswordEnabled){
-          if (!getAuthGoogleClientId()){
-            setAuthGateStatus('بريد الإدارة معروف، لكن كلمة مرور الإدارة غير مفعلة ولا يوجد Google مهيأ على الخادم بعد.', 'error');
-            return;
-          }
-          setAuthGateStatus('دخول الإدارة بكلمة المرور غير متاح حاليًا. جارٍ فتح Google ببريد الإدارة...', 'busy');
-          await openGoogleAuthInBrowser();
-          return;
-        }
         if (!password){
-          setAuthGateStatus('هذا هو بريد الإدارة. أدخل كلمة المرور للمتابعة.', 'error');
+          if (adminGoogleReady){
+            setAuthGateStatus('هذا هو بريد الإدارة. أدخل كلمة المرور أو استخدم Google من نفس الشاشة.', 'error');
+          } else {
+            setAuthGateStatus('هذا هو بريد الإدارة. أدخل كلمة المرور للمتابعة.', 'error');
+          }
           return;
         }
         setAuthGateStatus('جارٍ التحقق من حساب الإدارة...', 'busy');
-        payload = await fetchAuthJson('/auth/login', {
-          method: 'POST',
-          body: JSON.stringify({ email, password })
-        });
+        try{
+          payload = await fetchAuthJson('/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({ email, password })
+          });
+        }catch(error){
+          const message = String(error?.message || error || '').trim();
+          if (/AUTH_ADMIN_PASSWORD_NOT_CONFIGURED|Admin password login is not configured/i.test(message) && adminGoogleReady){
+            setAuthGateStatus('الخادم يطلب استخدام Google لهذا الحساب الإداري حاليًا. جارٍ فتح الشاشة الوسيطة...', 'busy');
+            await openGoogleAuthInBrowser();
+            return;
+          }
+          throw error;
+        }
       } else {
         setAuthGateStatus('جارٍ إنشاء جلسة الخطة المجانية...', 'busy');
         payload = await fetchAuthJson('/auth/register', {
@@ -4089,6 +4362,7 @@ async function submitUnifiedAuthEntry(){
     }catch(error){
       const message = explainAuthError(error, { nativeGoogle: false });
       setAuthGateStatus(`${isAdminEntry ? 'فشل دخول الإدارة' : 'فشل تسجيل الدخول'}: ${message}`, 'error');
+      toast(`⚠️ ${message}`);
     }
   }
 

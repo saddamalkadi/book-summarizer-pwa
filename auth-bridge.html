@@ -33,7 +33,7 @@
       padding:20px;
     }
     .shell{
-      width:min(680px,100%);
+      width:min(700px,100%);
       background:var(--card);
       border:1px solid var(--line);
       border-radius:28px;
@@ -168,7 +168,7 @@
   <main class="shell">
     <div class="eyebrow">Google Sign-In</div>
     <h1>تسجيل الدخول عبر Google</h1>
-    <p>هذه شاشة وسيطة آمنة بين Google والتطبيق. بعد اختيار حسابك سيتم إنشاء الجلسة ثم يمكنك الرجوع إلى التطبيق مباشرة من الزر المخصص.</p>
+    <p>هذه شاشة وسيطة آمنة بين Google والتطبيق. بعد اختيار حسابك سيُنشئ النظام الجلسة ثم يعيدك إلى التطبيق أو الويب، مع زر واضح للعودة إذا لم تحدث العودة التلقائية.</p>
 
     <div class="status" id="statusBox">جارٍ تهيئة تسجيل Google...</div>
     <div class="slot" id="googleSlot"></div>
@@ -191,11 +191,11 @@
     <div class="actions">
       <a class="btn primary" id="returnLink" href="#" hidden>العودة إلى التطبيق</a>
       <a class="btn ghost" id="schemeLink" href="#" hidden>رابط بديل للتطبيق</a>
-      <a class="btn ghost" id="webLink" href="/">متابعة في الويب</a>
+      <a class="btn ghost" id="webLink" href="/">المتابعة في الويب</a>
     </div>
 
     <div class="footnote" id="footnote">
-      على Android سيتم فتح التطبيق عبر الرابط <code>aiworkspace://auth</code>. إذا لم يرجع التطبيق تلقائيًا، استخدم زر <b>العودة إلى التطبيق</b>.
+      على Android سيحاول النظام إعادتك عبر الرابط <code>aiworkspace://auth</code>. إذا لم يرجع التطبيق تلقائيًا، استخدم زر <b>العودة إلى التطبيق</b>.
     </div>
   </main>
 
@@ -214,13 +214,12 @@
         }catch(_){}
         return DEFAULT_PUBLIC_WEB_HOME;
       })();
+
       const params = new URLSearchParams(window.location.search);
       const worker = String(params.get('worker') || '').trim().replace(/\/+$/,'');
       const nativeReturn = String(params.get('native_return') || '').trim() === '1';
       const explicitReturn = String(params.get('return_to') || '').trim();
-      const webReturn = explicitReturn && !nativeReturn
-        ? explicitReturn
-        : PUBLIC_WEB_HOME;
+      const webReturn = explicitReturn && !nativeReturn ? explicitReturn : PUBLIC_WEB_HOME;
 
       const statusBox = document.getElementById('statusBox');
       const googleSlot = document.getElementById('googleSlot');
@@ -317,12 +316,12 @@
         webLink.href = webFallbackUrl;
 
         if (nativeReturn){
-          footnote.innerHTML = 'تم إنشاء الجلسة. إذا لم يعد التطبيق تلقائيًا، اضغط <b>العودة إلى التطبيق</b>. إذا لم يعمل الزر الأول فجرّب <b>رابط بديل للتطبيق</b>.';
-          setStatus('تم تسجيل الدخول بنجاح. سنحاول إعادتك إلى التطبيق مرة واحدة، ويمكنك الضغط يدويًا إذا لزم.', 'success');
+          footnote.innerHTML = 'تم إنشاء الجلسة. إذا لم يعد التطبيق تلقائيًا، اضغط <b>العودة إلى التطبيق</b>. وإذا لم يعمل الزر الأول، جرّب <b>الرابط البديل للتطبيق</b>.';
+          setStatus('تم تسجيل الدخول بنجاح. سنحاول إعادتك إلى التطبيق تلقائيًا، ويمكنك الرجوع يدويًا إذا لزم.', 'success');
           window.setTimeout(() => openHref(intentUrl), 700);
         } else {
-          footnote.innerHTML = 'تم إنشاء الجلسة. يمكنك المتابعة في الويب مباشرة.';
-          setStatus('تم تسجيل الدخول بنجاح. يمكنك المتابعة في المنصة.', 'success');
+          footnote.textContent = 'تم إنشاء الجلسة. يمكنك المتابعة في الويب مباشرة.';
+          setStatus('تم تسجيل الدخول بنجاح. يمكنك متابعة استخدام المنصة الآن.', 'success');
           window.setTimeout(() => {
             try{
               if (window.opener && !window.opener.closed){
@@ -380,7 +379,7 @@
           }
 
           if (!(window.google && window.google.accounts && window.google.accounts.id)){
-            setStatus('تعذّر تحميل خدمة Google Sign-In. حدّث الصفحة ثم حاول مرة أخرى.', 'error');
+            setStatus('تعذر تحميل خدمة Google Sign-In. حدّث الصفحة ثم حاول مرة أخرى.', 'error');
             return;
           }
 
@@ -404,12 +403,14 @@
             use_fedcm_for_button: true
           });
 
-          setStatus(nativeReturn
-            ? 'اختر حساب Gmail. بعد نجاح التسجيل ستظهر لك شاشة العودة إلى التطبيق.'
-            : 'اختر حساب Gmail للمتابعة في الويب.'
+          setStatus(
+            nativeReturn
+              ? 'اختر حساب Gmail. بعد نجاح تسجيل الدخول ستظهر لك شاشة العودة إلى التطبيق مع محاولة رجوع تلقائي.'
+              : 'اختر حساب Gmail للمتابعة في الويب.',
+            ''
           );
         }catch(error){
-          setStatus(`تعذّر تهيئة الصفحة: ${error?.message || error}`, 'error');
+          setStatus(`تعذر تهيئة الصفحة: ${error?.message || error}`, 'error');
         }
       };
 
