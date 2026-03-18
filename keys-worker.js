@@ -228,7 +228,9 @@ function getPublicAuthConfig(env) {
   const googleClientId = String(env.GOOGLE_CLIENT_ID_WEB || env.GOOGLE_CLIENT_ID || '').trim();
   const authRequired = String(env.AUTH_REQUIRE_LOGIN || 'true').trim().toLowerCase() !== 'false';
   const adminEmail = getAdminEmail(env);
-  const adminEnabled = !!getAdminPassword(env);
+  const adminPasswordEnabled = !!getAdminPassword(env);
+  const adminGoogleEnabled = !!adminEmail && !!googleClientId;
+  const adminEnabled = adminPasswordEnabled || adminGoogleEnabled;
   const voice = getVoiceApiConfig(env);
   return {
     ok: true,
@@ -239,8 +241,10 @@ function getPublicAuthConfig(env) {
     upgradeEmail: String(env.APP_UPGRADE_EMAIL || 'tntntt830@gmail.com').trim(),
     adminEmail,
     adminEnabled,
-    adminPasswordEnabled: adminEnabled,
-    adminLoginMethod: adminEnabled ? 'password_or_google' : 'google_only',
+    adminPasswordEnabled,
+    adminLoginMethod: adminPasswordEnabled
+      ? (adminGoogleEnabled ? 'password_or_google' : 'password_only')
+      : (adminGoogleEnabled ? 'google_only' : 'disabled'),
     googleClientId,
     clientIdConfigured: !!googleClientId,
     voiceCloudReady: voice.ready,
@@ -261,7 +265,9 @@ function getWorkerHealth(env) {
   const authConfig = getPublicAuthConfig(env);
   const hasSessionSecret = !!getSessionSecret(env);
   const hasUpgradeSecret = !!getUpgradeSecret(env);
-  const adminLoginReady = !!getAdminPassword(env);
+  const adminPasswordReady = !!getAdminPassword(env);
+  const adminGoogleReady = !!getAdminEmail(env) && authConfig.clientIdConfigured;
+  const adminLoginReady = adminPasswordReady || adminGoogleReady;
   const cloudStorageReady = !!getUserDataStore(env);
   const voice = getVoiceApiConfig(env);
   const convertReady = !!env.CONVERT && typeof env.CONVERT.fetch === 'function';
@@ -278,6 +284,8 @@ function getWorkerHealth(env) {
       client_token_required: clientTokenRequired,
       auth_required: authConfig.authRequired,
       google_client_configured: authConfig.clientIdConfigured,
+      admin_password_ready: adminPasswordReady,
+      admin_google_ready: adminGoogleReady,
       admin_login_ready: adminLoginReady,
       session_ready: hasSessionSecret,
       upgrade_flow_ready: hasUpgradeSecret,

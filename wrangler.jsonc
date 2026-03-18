@@ -13,9 +13,6 @@
   "observability": {
     "enabled": true
   },
-  "assets": {
-    "directory": "."
-  },
   "kv_namespaces": [
     {
       "binding": "USER_DATA",

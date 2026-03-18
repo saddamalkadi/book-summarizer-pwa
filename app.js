@@ -1,4 +1,4 @@
-/* AI Workspace Studio v8.34 - strategic platform skeleton (no build step) */
+﻿/* AI Workspace Studio v8.34 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -230,7 +230,7 @@
     webPath: 'auth-bridge.html',
     appReturnUrl: 'aiworkspace://auth',
     storageKey: 'aistudio_auth_bridge_result_v1',
-    publicBaseUrl: 'https://api.saddamalkadi.com/'
+    publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -894,72 +894,6 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       admin: signedIn && auth.role === 'admin',
       plan: premium ? 'premium' : 'free'
     };
-  }
-
-  async function fetchAuthJson(path, init = {}, settings = getSettings()){
-    const root = getAuthServiceRoot(settings);
-    if (!root) throw new Error('رابط البوابة غير مضبوط لطبقة الحسابات.');
-    const auth = getAuthState();
-    const headers = new Headers(init.headers || {});
-    headers.set('Content-Type', headers.get('Content-Type') || 'application/json');
-    if (settings.gatewayToken) headers.set('X-Client-Token', settings.gatewayToken);
-    if (auth.sessionToken) headers.set('X-App-Session', auth.sessionToken);
-    const response = await fetch(`${root}${path}`, { ...init, headers });
-    const raw = await response.text();
-    let payload = null;
-    try{ payload = raw ? JSON.parse(raw) : null; }catch(_){ payload = null; }
-    if (!response.ok){
-      throw new Error(payload?.error || payload?.message || raw || `HTTP ${response.status}`);
-    }
-    return payload || {};
-  }
-
-  async function loadRemoteAuthConfig(force = false){
-    if (!force && AUTH_RUNTIME.config && (Date.now() - AUTH_RUNTIME.configLoadedAt) < 5 * 60 * 1000){
-      return AUTH_RUNTIME.config;
-    }
-    if (!force && AUTH_RUNTIME.configPromise) return AUTH_RUNTIME.configPromise;
-    const settings = getSettings();
-    const root = getAuthServiceRoot(settings);
-    if (!root){
-      return setAuthConfigCached(getLocalAuthConfig(settings));
-    }
-    AUTH_RUNTIME.configPromise = fetch(`${root}/auth/config`, {
-      headers: settings.gatewayToken ? { 'X-Client-Token': settings.gatewayToken } : {}
-    }).then(async (response) => {
-      const raw = await response.text();
-      let payload = null;
-      try{ payload = raw ? JSON.parse(raw) : null; }catch(_){ payload = null; }
-      if (!response.ok){
-        throw new Error(payload?.error || raw || `HTTP ${response.status}`);
-      }
-      const local = getLocalAuthConfig(settings);
-      const remote = payload || {};
-      return setAuthConfigCached({
-        ...remote,
-        googleClientId: String(remote.googleClientId || '').trim(),
-        upgradeEmail: String(remote.upgradeEmail || local.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail).trim(),
-        adminEmail: String(remote.adminEmail || local.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim(),
-        adminEnabled: !!remote.adminEnabled,
-        adminPasswordEnabled: !!(remote.adminPasswordEnabled ?? remote.adminEnabled),
-        adminLoginMethod: String(remote.adminLoginMethod || (remote.adminEnabled ? 'password_or_google' : 'google_only')).trim(),
-        clientIdConfigured: !!String(remote.googleClientId || '').trim(),
-        voiceCloudReady: !!remote.voiceCloudReady,
-        voiceSttReady: !!remote.voiceSttReady,
-        voiceTtsReady: !!remote.voiceTtsReady,
-        voiceProvider: String(remote.voiceProvider || '').trim(),
-        voiceRecognitionModel: String(remote.voiceRecognitionModel || local.voiceRecognitionModel || DEFAULT_AUTH_CONFIG.voiceRecognitionModel).trim(),
-        voiceSynthesisModel: String(remote.voiceSynthesisModel || local.voiceSynthesisModel || DEFAULT_AUTH_CONFIG.voiceSynthesisModel).trim(),
-        voiceSynthesisVoice: String(remote.voiceSynthesisVoice || local.voiceSynthesisVoice || DEFAULT_AUTH_CONFIG.voiceSynthesisVoice).trim(),
-        voicePreferredLanguage: String(remote.voicePreferredLanguage || local.voicePreferredLanguage || DEFAULT_AUTH_CONFIG.voicePreferredLanguage).trim(),
-        voicePremiumOnly: remote.voicePremiumOnly !== false
-      });
-    }).catch(() => {
-      return setAuthConfigCached(getLocalAuthConfig(settings));
-    }).finally(() => {
-      AUTH_RUNTIME.configPromise = null;
-    });
-    return AUTH_RUNTIME.configPromise;
   }
 
   async function fetchAuthResponse(path, init = {}, settings = getSettings()){
@@ -2606,10 +2540,10 @@ function applyShellLayout(){
     if (!btn) return;
     const active = getVoiceModeEnabled();
     btn.classList.toggle('dark', active);
-    btn.title = active ? 'إيقاف المحادثة الصوتية' : 'تفعيل المحادثة الصوتية';
+    btn.title = active ? 'إيقاف الدردشة الصوتية' : 'تفعيل الدردشة الصوتية';
     btn.setAttribute('aria-label', btn.title);
     btn.innerHTML = active
-      ? '<span class="icon">🔊</span><span class="label">صوت نشط</span>'
+      ? '<span class="icon">🎙</span><span class="label">صوت نشط</span>'
       : '<span class="icon">🎙️</span><span class="label">صوت</span>';
   }
 
@@ -2624,960 +2558,21 @@ function applyShellLayout(){
   }
 
   async function stopVoicePlayback(){
-    const nativeTts = getNativeTextToSpeechPlugin();
-    if (nativeTts?.stop){
-      try{ await nativeTts.stop(); }catch(_){}
-    }
-    try{ window.speechSynthesis?.cancel?.(); }catch(_){}
-    VOICE_RUNTIME.speaking = false;
-    VOICE_RUNTIME.utterance = null;
-  }
-
-  async function speakAssistantReply(content = '', { force = false } = {}){
-    if (!force && !getVoiceModeEnabled()) return false;
-    if (!('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance === 'undefined'){
-      if (force) toast('⚠️ التشغيل الصوتي غير مدعوم في هذا المتصفح.');
-      return false;
-    }
-    const text = stripTextForSpeech(content);
-    if (!text){
-      scheduleVoiceConversationRecovery(250);
-      return false;
-    }
-
-    stopVoicePlayback();
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = document.documentElement.lang === 'ar' ? 'ar-SA' : 'en-US';
-    utter.rate = 1;
-    utter.pitch = 1;
-    utter.onstart = () => { VOICE_RUNTIME.speaking = true; };
-    utter.onend = utter.onerror = () => {
-      VOICE_RUNTIME.speaking = false;
-      VOICE_RUNTIME.utterance = null;
-    };
-    VOICE_RUNTIME.utterance = utter;
-    window.speechSynthesis.speak(utter);
-    return true;
-  }
-
-  async function toggleVoiceMode(){
-    const next = !getVoiceModeEnabled();
-    setVoiceModeEnabled(next);
-    refreshVoiceModeButton();
-    if (!next){
-      VOICE_RUNTIME.autoSendArmed = false;
-      stopVoicePlayback();
-    }
-    toast(next ? '🎙️ تم تفعيل المحادثة الصوتية' : '🔇 تم إيقاف المحادثة الصوتية');
-  }
-
-  function stopComposerDictation(showToast = false){
-    try{ composerRecognition?.stop?.(); }catch(_){}
-    composerRecognition = null;
-    composerListening = false;
-    syncVoiceInputButton();
-    if (showToast) toast('⏹️ تم إيقاف الإملاء الصوتي');
-  }
-
-  function startComposerDictation(){
-    const Ctor = getSpeechRecognitionCtor();
-    if (!Ctor) return toast('⚠️ الإملاء الصوتي غير مدعوم في هذا المتصفح');
-    const input = $('chatInput');
-    if (!input) return;
-
-    composerDictationBase = String(input.value || '').trimEnd();
-    VOICE_RUNTIME.autoSendArmed = getVoiceModeEnabled();
-    composerRecognition = new Ctor();
-    composerRecognition.lang = document.documentElement.lang === 'ar' ? 'ar-SA' : 'en-US';
-    composerRecognition.continuous = true;
-    composerRecognition.interimResults = true;
-
-    composerRecognition.onstart = () => {
-      composerListening = true;
-      syncVoiceInputButton();
-      showStatus('🎙️ الإملاء الصوتي يعمل الآن…', false);
-    };
-
-    composerRecognition.onresult = (event) => {
-      const parts = [];
-      for (let i = event.resultIndex; i < event.results.length; i += 1){
-        const transcript = String(event.results[i]?.[0]?.transcript || '').trim();
-        if (transcript) parts.push(transcript);
-      }
-      const dictation = parts.join(' ').trim();
-      input.value = [composerDictationBase, dictation].filter(Boolean).join(composerDictationBase ? '\n' : '');
-      resizeComposerInput(input);
-      syncComposerMeta();
-    };
-
-    composerRecognition.onerror = (event) => {
-      composerListening = false;
-      VOICE_RUNTIME.autoSendArmed = false;
-      syncVoiceInputButton();
-      if (event?.error !== 'no-speech') toast(`⚠️ تعذّر الإملاء الصوتي: ${event?.error || 'unknown'}`);
-    };
-
-    composerRecognition.onend = () => {
-      const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && String(input.value || '').trim();
-      VOICE_RUNTIME.autoSendArmed = false;
-      composerListening = false;
-      composerRecognition = null;
-      syncVoiceInputButton();
-      showStatus('', false);
-      if (shouldAutoSend){
-        window.setTimeout(() => {
-          if (String($('chatInput')?.value || '').trim()) sendMessage();
-        }, 90);
-      }
-    };
-
-    try{
-      composerRecognition.start();
-    }catch(e){
-      composerListening = false;
-      composerRecognition = null;
-      syncVoiceInputButton();
-      toast(`⚠️ تعذّر بدء الإملاء الصوتي: ${e?.message || e}`);
-    }
-  }
-
-  function toggleComposerDictation(){
-    if (composerListening) stopComposerDictation(true);
-    else startComposerDictation();
-  }
-
-  async function stopVoicePlayback(){
-    const nativeTts = getNativeTextToSpeechPlugin();
-    if (nativeTts?.stop){
-      try{ await nativeTts.stop(); }catch(_){}
-    }
-    try{ window.speechSynthesis?.cancel?.(); }catch(_){}
-    VOICE_RUNTIME.speaking = false;
-    VOICE_RUNTIME.utterance = null;
-  }
-
-  async function speakAssistantReply(content = '', { force = false } = {}){
-    if (!force && !getVoiceModeEnabled()) return false;
-    const text = stripTextForSpeech(content);
-    if (!text){
-      scheduleVoiceConversationRecovery(250);
-      return false;
-    }
-
-    await stopVoicePlayback();
-    const lang = document.documentElement.lang === 'ar' ? 'ar-SA' : 'en-US';
-    const nativeTts = getNativeTextToSpeechPlugin();
-    if (nativeTts?.speak){
-      try{
-        const resolvedLang = await chooseSpeechLanguageForNativeTts(nativeTts, lang);
-        VOICE_RUNTIME.speaking = true;
-        await nativeTts.speak({
-          text,
-          lang: resolvedLang,
-          rate: 1,
-          pitch: 1,
-          volume: 1
-        });
-        VOICE_RUNTIME.speaking = false;
-        return true;
-      }catch(error){
-        VOICE_RUNTIME.speaking = false;
-        if (force) toast(`âڑ ï¸ڈ تعذر تشغيل الرد صوتيًا: ${error?.message || error}`);
-      }
-    }
-
-    if (!('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance === 'undefined'){
-      if (force) toast('âڑ ï¸ڈ ط§ظ„طھط´ط؛ظٹظ„ ط§ظ„طµظˆطھظٹ ط؛ظٹط± ظ…ط¯ط¹ظˆظ… ظپظٹ ظ‡ط°ط§ ط§ظ„ظ…طھطµظپط­.');
-      return false;
-    }
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = lang;
-    utter.voice = chooseSpeechSynthesisVoice(lang);
-    utter.rate = 1;
-    utter.pitch = 1;
-    utter.onstart = () => { VOICE_RUNTIME.speaking = true; };
-    utter.onend = utter.onerror = () => {
-      VOICE_RUNTIME.speaking = false;
-      VOICE_RUNTIME.utterance = null;
-    };
-    VOICE_RUNTIME.utterance = utter;
-    try{ window.speechSynthesis.resume?.(); }catch(_){}
-    window.speechSynthesis.speak(utter);
-    return true;
-  }
-
-  function toggleVoiceMode(){
-    const next = !getVoiceModeEnabled();
-    setVoiceModeEnabled(next);
-    VOICE_RUNTIME.continuousConversation = next;
-    refreshVoiceModeButton();
-    if (!next){
-      VOICE_RUNTIME.autoSendArmed = false;
-      void stopComposerDictation(false);
-      void stopVoicePlayback();
-    } else {
-      toast('تم تفعيل الدردشة الصوتية المستمرة');
-      if (isNativeAndroidPlatform()){
-        const plugin = getNativeSpeechRecognitionPlugin();
-        window.setTimeout(async () => {
-          if (!plugin){
-            toast('تعذر تحميل محرك الدردشة الصوتية داخل نسخة Android الحالية.');
-            return;
-          }
-          const permitted = await ensureNativeSpeechRecognitionPermission(plugin);
-          if (!permitted){
-            toast('يلزم منح إذن الميكروفون لتفعيل الدردشة الصوتية العربية.');
-            return;
-          }
-          scheduleVoiceConversationRestart(180);
-        }, 20);
-        return;
-      }
-      scheduleVoiceConversationRestart(180);
-      return;
-    }
-    toast('تم إيقاف الدردشة الصوتية');
-  }
-
-  async function stopComposerDictation(showToast = false){
-    const nativeSpeech = getNativeSpeechRecognitionPlugin();
-    if (VOICE_RUNTIME.nativeListening && nativeSpeech?.stop){
-      await resetNativeSpeechSession(nativeSpeech);
-      VOICE_RUNTIME.nativeListening = false;
-    }
-    try{ composerRecognition?.stop?.(); }catch(_){}
-    composerRecognition = null;
-    composerListening = false;
-    syncVoiceInputButton();
-    if (showToast) toast('âڈ¹ï¸ڈ طھظ… ط¥ظٹظ‚ط§ظپ ط§ظ„ط¥ظ…ظ„ط§ط، ط§ظ„طµظˆطھظٹ');
-  }
-
-  async function startNativeComposerDictation(){
-    const plugin = getNativeSpeechRecognitionPlugin();
-    const input = $('chatInput');
-    if (!plugin || !input) return false;
-    await resetNativeSpeechSession(plugin);
-
-    const availability = await plugin.available?.().catch(() => ({ available:false }));
-    if (!availability?.available){
-      toast('âڑ ï¸ڈ التعرف الصوتي غير متاح على هذا الجهاز.');
-      return false;
-    }
-
-    const permitted = await ensureNativeSpeechRecognitionPermission(plugin);
-    if (!permitted){
-      toast('âڑ ï¸ڈ لم يتم منح إذن الميكروفون للتعرف الصوتي.');
-      return false;
-    }
-
-    composerDictationBase = String(input.value || '').trimEnd();
-    VOICE_RUNTIME.autoSendArmed = getVoiceModeEnabled();
-    composerListening = true;
-    VOICE_RUNTIME.nativeListening = true;
-    syncVoiceInputButton();
-    showStatus('ًںژ™ï¸ڈ افتح الميكروفون وتحدث الآن…', false);
-
-    try{
-      const result = await plugin.start({
-        language: document.documentElement.lang === 'ar' ? 'ar-SA' : 'en-US',
-        maxResults: 1,
-        prompt: 'تحدث الآن',
-        partialResults: false,
-        popup: !getVoiceModeEnabled()
-      });
-      const transcript = Array.isArray(result?.matches)
-        ? result.matches.map((item) => String(item || '').trim()).filter(Boolean).join(' ')
-        : '';
-      if (transcript){
-        input.value = [composerDictationBase, transcript].filter(Boolean).join(composerDictationBase ? '\n' : '');
-        resizeComposerInput(input);
-        syncComposerMeta();
-      }
-    }catch(error){
-      const message = String(error?.message || error || '').trim();
-      if (/already|busy|listening|start already invoked/i.test(message)){
-        try{ await plugin.stop?.(); }catch(_){}
-      }
-      if (/already|busy|listening|start already invoked/i.test(message)){
-        try{ await plugin.stop?.(); }catch(_){}
-      }
-      if (!/cancel/i.test(message)) toast(`âڑ ï¸ڈ تعذر الإملاء الصوتي: ${message || 'unknown'}`);
-    }finally{
-      VOICE_RUNTIME.nativeListening = false;
-      composerListening = false;
-      await resetNativeSpeechSession(plugin);
-      syncVoiceInputButton();
-      showStatus('', false);
-      const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && String(input.value || '').trim();
-      VOICE_RUNTIME.autoSendArmed = false;
-      if (shouldAutoSend){
-        window.setTimeout(() => {
-          if (String($('chatInput')?.value || '').trim()) sendMessage();
-        }, 90);
-      }
-    }
-    return true;
-  }
-
-  async function startComposerDictation(){
-    if (isNativePlatform() && await startNativeComposerDictation()) return;
-    const Ctor = getSpeechRecognitionCtor();
-    if (!Ctor) return toast('âڑ ï¸ڈ ط§ظ„ط¥ظ…ظ„ط§ط، ط§ظ„طµظˆطھظٹ ط؛ظٹط± ظ…ط¯ط¹ظˆظ… ظپظٹ ظ‡ط°ط§ ط§ظ„ظ…طھطµظپط­');
-    const input = $('chatInput');
-    if (!input) return;
-
-    composerDictationBase = String(input.value || '').trimEnd();
-    VOICE_RUNTIME.autoSendArmed = getVoiceModeEnabled();
-    composerRecognition = new Ctor();
-    composerRecognition.lang = document.documentElement.lang === 'ar' ? 'ar-SA' : 'en-US';
-    composerRecognition.continuous = true;
-    composerRecognition.interimResults = true;
-
-    composerRecognition.onstart = () => {
-      composerListening = true;
-      syncVoiceInputButton();
-      showStatus('ًںژ™ï¸ڈ ط§ظ„ط¥ظ…ظ„ط§ط، ط§ظ„طµظˆطھظٹ ظٹط¹ظ…ظ„ ط§ظ„ط¢ظ†â€¦', false);
-    };
-
-    composerRecognition.onresult = (event) => {
-      const parts = [];
-      for (let i = event.resultIndex; i < event.results.length; i += 1){
-        const transcript = String(event.results[i]?.[0]?.transcript || '').trim();
-        if (transcript) parts.push(transcript);
-      }
-      const dictation = parts.join(' ').trim();
-      input.value = [composerDictationBase, dictation].filter(Boolean).join(composerDictationBase ? '\n' : '');
-      resizeComposerInput(input);
-      syncComposerMeta();
-    };
-
-    composerRecognition.onerror = (event) => {
-      composerListening = false;
-      VOICE_RUNTIME.autoSendArmed = false;
-      syncVoiceInputButton();
-      if (event?.error !== 'no-speech') toast(`âڑ ï¸ڈ طھط¹ط°ظ‘ط± ط§ظ„ط¥ظ…ظ„ط§ط، ط§ظ„طµظˆطھظٹ: ${event?.error || 'unknown'}`);
-    };
-
-    composerRecognition.onend = () => {
-      const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && String(input.value || '').trim();
-      VOICE_RUNTIME.autoSendArmed = false;
-      composerListening = false;
-      composerRecognition = null;
-      syncVoiceInputButton();
-      showStatus('', false);
-      if (shouldAutoSend){
-        window.setTimeout(() => {
-          if (String($('chatInput')?.value || '').trim()) sendMessage();
-        }, 90);
-      }
-    };
-
-    try{
-      composerRecognition.start();
-    }catch(e){
-      composerListening = false;
-      composerRecognition = null;
-      syncVoiceInputButton();
-      toast(`âڑ ï¸ڈ طھط¹ط°ظ‘ط± ط¨ط¯ط، ط§ظ„ط¥ظ…ظ„ط§ط، ط§ظ„طµظˆطھظٹ: ${e?.message || e}`);
-    }
-  }
-
-  async function ensureNativeSpeechRecognitionPermission(plugin){
-    if (!plugin) return false;
-    if (plugin.checkPermissions && plugin.requestPermissions){
-      let state = await plugin.checkPermissions().catch(() => null);
-      if (state?.speechRecognition === 'granted') return true;
-      state = await plugin.requestPermissions().catch(() => null);
-      return state?.speechRecognition === 'granted';
-    }
-    if (plugin.hasPermission && plugin.requestPermission){
-      const current = await plugin.hasPermission().catch(() => ({ permission:false }));
-      if (current?.permission) return true;
-      const requested = await plugin.requestPermission().catch(() => ({ permission:false }));
-      return !!requested?.permission;
-    }
-    return true;
-  }
-
-  async function stopVoicePlayback(){
-    const nativeTts = getNativeTextToSpeechPlugin();
-    if (nativeTts?.stop){
-      try{ await nativeTts.stop(); }catch(_){}
-    }
-    try{ window.speechSynthesis?.cancel?.(); }catch(_){}
-    VOICE_RUNTIME.speaking = false;
-    VOICE_RUNTIME.utterance = null;
-  }
-
-  async function speakAssistantReply(content = '', { force = false } = {}){
-    if (!force && !getVoiceModeEnabled()) return false;
-    const text = stripTextForSpeech(content);
-    if (!text){
-      scheduleVoiceConversationRecovery(250);
-      return false;
-    }
-
-    await stopVoicePlayback();
-    const lang = document.documentElement.lang === 'ar' ? 'ar-SA' : 'en-US';
-    const nativeTts = getNativeTextToSpeechPlugin();
-    if (nativeTts?.speak){
-      try{
-        const resolvedLang = await chooseSpeechLanguageForNativeTts(nativeTts, lang);
-        VOICE_RUNTIME.speaking = true;
-        await nativeTts.speak({
-          text,
-          lang: resolvedLang,
-          rate: 1,
-          pitch: 1,
-          volume: 1
-        });
-        VOICE_RUNTIME.speaking = false;
-        VOICE_RUNTIME.utterance = null;
-        return true;
-      }catch(error){
-        VOICE_RUNTIME.speaking = false;
-        VOICE_RUNTIME.utterance = null;
-        if (force) toast(`تعذّر تشغيل الرد صوتيًا: ${error?.message || error}`);
-      }
-    }
-
-    if (!('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance === 'undefined'){
-      if (force) toast('التشغيل الصوتي غير مدعوم في هذا المتصفح.');
-      return false;
-    }
-
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = lang;
-    utter.voice = chooseSpeechSynthesisVoice(lang);
-    utter.rate = 1;
-    utter.pitch = 1;
-    utter.onstart = () => { VOICE_RUNTIME.speaking = true; };
-    utter.onend = utter.onerror = () => {
-      VOICE_RUNTIME.speaking = false;
-      VOICE_RUNTIME.utterance = null;
-    };
-    VOICE_RUNTIME.utterance = utter;
-    try{ window.speechSynthesis.resume?.(); }catch(_){}
-    window.speechSynthesis.speak(utter);
-    return true;
-  }
-
-  function toggleVoiceMode(){
-    const next = !getVoiceModeEnabled();
-    setVoiceModeEnabled(next);
-    refreshVoiceModeButton();
-    if (!next){
-      VOICE_RUNTIME.autoSendArmed = false;
-      void stopVoicePlayback();
-    }
-    toast(next ? 'تم تفعيل المحادثة الصوتية' : 'تم إيقاف المحادثة الصوتية');
-  }
-
-  async function stopComposerDictation(showToast = false){
-    const nativeSpeech = getNativeSpeechRecognitionPlugin();
-    VOICE_RUNTIME.autoSendArmed = false;
-    if (VOICE_RUNTIME.nativeListening && nativeSpeech?.stop){
-      try{ await nativeSpeech.stop(); }catch(_){}
-      try{ await nativeSpeech.removeAllListeners?.(); }catch(_){}
-      VOICE_RUNTIME.nativeListening = false;
-    }
-    try{ composerRecognition?.stop?.(); }catch(_){}
-    composerRecognition = null;
-    composerListening = false;
-    syncVoiceInputButton();
-    showStatus('', false);
-    if (showToast) toast('تم إيقاف الإملاء الصوتي');
-  }
-
-  async function startNativeComposerDictation(){
-    const plugin = getNativeSpeechRecognitionPlugin();
-    const input = $('chatInput');
-    if (!plugin || !input) return false;
-
-    const availability = await plugin.available?.().catch(() => ({ available:false }));
-    if (!availability?.available){
-      toast('التعرّف الصوتي غير متاح على هذا الجهاز.');
-      return false;
-    }
-
-    const permitted = await ensureNativeSpeechRecognitionPermission(plugin);
-    if (!permitted){
-      toast('لم يتم منح إذن الميكروفون للتعرّف الصوتي.');
-      return false;
-    }
-
-    composerDictationBase = String(input.value || '').trimEnd();
-    VOICE_RUNTIME.autoSendArmed = getVoiceModeEnabled();
-    composerListening = true;
-    VOICE_RUNTIME.nativeListening = true;
-    syncVoiceInputButton();
-    showStatus('الإملاء الصوتي يعمل الآن...', false);
-
-    try{
-      const result = await plugin.start({
-        language: document.documentElement.lang === 'ar' ? 'ar-SA' : 'en-US',
-        maxResults: 1,
-        prompt: 'تحدث الآن',
-        partialResults: false,
-        popup: !continuousMode
-      });
-      const transcript = Array.isArray(result?.matches)
-        ? result.matches.map((item) => String(item || '').trim()).filter(Boolean).join(' ')
-        : '';
-      if (transcript){
-        input.value = [composerDictationBase, transcript].filter(Boolean).join(composerDictationBase ? '\n' : '');
-        resizeComposerInput(input);
-        syncComposerMeta();
-      }
-    }catch(error){
-      const message = String(error?.message || error || '').trim();
-      if (!/cancel/i.test(message)) toast(`تعذّر الإملاء الصوتي: ${message || 'unknown'}`);
-    }finally{
-      VOICE_RUNTIME.nativeListening = false;
-      composerListening = false;
-      try{ await plugin.stop?.(); }catch(_){}
-      try{ await plugin.removeAllListeners?.(); }catch(_){}
-      syncVoiceInputButton();
-      showStatus('', false);
-      const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && String(input.value || '').trim();
-      VOICE_RUNTIME.autoSendArmed = false;
-      if (shouldAutoSend){
-        window.setTimeout(() => {
-          if (String($('chatInput')?.value || '').trim()) sendMessage();
-        }, 90);
-      }
-    }
-    return true;
-  }
-
-  async function startComposerDictation(){
-    if (isNativePlatform() && await startNativeComposerDictation()) return;
-    if (await startCloudComposerDictation()) return;
-
-    const Ctor = getSpeechRecognitionCtor();
-    if (!Ctor) return toast('الإملاء الصوتي غير مدعوم في هذا المتصفح.');
-
-    const input = $('chatInput');
-    if (!input) return;
-
-    composerDictationBase = String(input.value || '').trimEnd();
-    VOICE_RUNTIME.autoSendArmed = getVoiceModeEnabled();
-    composerRecognition = new Ctor();
-    composerRecognition.lang = document.documentElement.lang === 'ar' ? 'ar-SA' : 'en-US';
-    composerRecognition.continuous = true;
-    composerRecognition.interimResults = true;
-
-    composerRecognition.onstart = () => {
-      composerListening = true;
-      syncVoiceInputButton();
-      showStatus('الإملاء الصوتي يعمل الآن...', false);
-    };
-
-    composerRecognition.onresult = (event) => {
-      const parts = [];
-      for (let i = event.resultIndex; i < event.results.length; i += 1){
-        const transcript = String(event.results[i]?.[0]?.transcript || '').trim();
-        if (transcript) parts.push(transcript);
-      }
-      const dictation = parts.join(' ').trim();
-      input.value = [composerDictationBase, dictation].filter(Boolean).join(composerDictationBase ? '\n' : '');
-      resizeComposerInput(input);
-      syncComposerMeta();
-    };
-
-    composerRecognition.onerror = (event) => {
-      composerListening = false;
-      VOICE_RUNTIME.autoSendArmed = false;
-      syncVoiceInputButton();
-      if (event?.error !== 'no-speech') toast(`تعذّر الإملاء الصوتي: ${event?.error || 'unknown'}`);
-    };
-
-    composerRecognition.onend = () => {
-      const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && String(input.value || '').trim();
-      VOICE_RUNTIME.autoSendArmed = false;
-      composerListening = false;
-      composerRecognition = null;
-      syncVoiceInputButton();
-      showStatus('', false);
-      if (shouldAutoSend){
-        window.setTimeout(() => {
-          if (String($('chatInput')?.value || '').trim()) sendMessage();
-        }, 90);
-      }
-    };
-
-    try{
-      composerRecognition.start();
-    }catch(error){
-      composerListening = false;
-      composerRecognition = null;
-      syncVoiceInputButton();
-      toast(`تعذّر بدء الإملاء الصوتي: ${error?.message || error}`);
-    }
-  }
-
-  function toggleComposerDictation(){
-    if (composerListening) void stopComposerDictation(true);
-    else void startComposerDictation();
-  }
-
-  function clearVoiceRestartTimer(){
-    if (VOICE_RUNTIME.restartTimer){
-      window.clearTimeout(VOICE_RUNTIME.restartTimer);
-      VOICE_RUNTIME.restartTimer = 0;
-    }
-  }
-
-  function getPreferredSpeechLanguage(){
-    const cloudLanguage = String(getVoiceCloudConfig().preferredLanguage || '').trim();
-    if (/^ar(?:-|$)/i.test(cloudLanguage)) return cloudLanguage;
-    const htmlLang = String(document.documentElement.lang || '').trim().toLowerCase();
-    const navLang = String(navigator.language || '').trim();
-    if (htmlLang.startsWith('ar')) return 'ar-SA';
-    if (/^ar\b/i.test(navLang)) return navLang;
-    return 'ar-SA';
-  }
-
-  async function resolveSpeechRecognitionLanguage(plugin = null){
-    const preferred = getPreferredSpeechLanguage();
-    const candidates = [
-      preferred,
-      'ar-SA',
-      'ar-EG',
-      'ar-AE',
-      'ar-JO',
-      'ar-KW',
-      'ar-QA',
-      'ar-BH',
-      'ar-OM',
-      'ar-IQ',
-      'ar-LB',
-      'ar-LY',
-      'ar-DZ',
-      'ar-MA',
-      'ar-001',
-      'ar-XA',
-      'ar'
-    ];
-    if (!plugin?.getSupportedLanguages) return candidates[0];
-    try{
-      const result = await plugin.getSupportedLanguages();
-      const langs = Array.isArray(result?.languages) ? result.languages.map((item) => String(item || '').trim().toLowerCase()) : [];
-      for (const candidate of candidates){
-        const code = String(candidate || '').trim().toLowerCase();
-        if (langs.includes(code)) return candidate;
-      }
-      const genericArabic = langs.find((code) => /^ar(?:-|$)/i.test(String(code || '')));
-      if (genericArabic) return genericArabic;
-      return preferred;
-    }catch(_){
-      return preferred;
-    }
-  }
-
-  async function resolveSpeechSynthesisLanguage(plugin = null){
-    const preferred = getPreferredSpeechLanguage();
-    const candidates = [preferred, 'ar-SA', 'ar-EG', 'ar-AE', 'ar-JO', 'ar-KW', 'ar-QA', 'ar-BH', 'ar-OM', 'ar-IQ', 'ar-LB', 'ar-LY', 'ar-DZ', 'ar-MA', 'ar-001', 'ar-XA', 'ar'];
-    if (plugin?.getSupportedLanguages){
-      try{
-        const result = await plugin.getSupportedLanguages();
-        const langs = Array.isArray(result?.languages) ? result.languages.map((item) => String(item || '').trim()) : [];
-        for (const candidate of candidates){
-          if (langs.some((lang) => String(lang).toLowerCase() === String(candidate).toLowerCase())) return candidate;
-        }
-        const genericArabic = langs.find((lang) => /^ar(?:-|$)/i.test(String(lang || '')));
-        if (genericArabic) return genericArabic;
-      }catch(_){}
-    }
-    if (plugin?.isLanguageSupported){
-      for (const candidate of candidates){
-        const state = await plugin.isLanguageSupported({ lang: candidate }).catch(() => null);
-        if (state?.supported) return candidate;
-      }
-      return preferred;
-    }
-    return preferred;
-  }
-
-  async function ensureNativeArabicTtsLanguage(plugin, preferred = getPreferredSpeechLanguage()){
-    const resolved = await chooseSpeechLanguageForNativeTts(plugin, preferred);
-    if (!/^ar(?:-|$)/i.test(String(preferred || ''))) return resolved || preferred;
-    if (/^ar(?:-|$)/i.test(String(resolved || ''))) return resolved || preferred;
-    if (plugin?.openInstall && !VOICE_RUNTIME.ttsInstallPrompted){
-      VOICE_RUNTIME.ttsInstallPrompted = true;
-      try{ await plugin.openInstall(); }catch(_){}
-      toast('قد يحتاج الهاتف إلى تثبيت حزمة النطق العربية من إعدادات النظام حتى يعمل الرد الصوتي العربي داخل التطبيق.');
-    }
-    return resolved || preferred;
-  }
-
-  function normalizeCloudVoiceLanguage(lang = getPreferredSpeechLanguage()){
-    const raw = String(lang || '').trim();
-    if (!raw) return 'ar';
-    if (/^ar(?:-|$)/i.test(raw)) return 'ar';
-    return raw.split('-')[0] || raw;
-  }
-
-  function canUseCloudVoiceCapture(settings = getSettings()){
-    const voice = getVoiceCloudConfig(settings);
-    return !!voice.sttReady && !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined';
-  }
-
-  function pickCloudVoiceCaptureMimeType(){
-    if (typeof MediaRecorder === 'undefined') return '';
-    const candidates = [
-      'audio/webm;codecs=opus',
-      'audio/webm',
-      'audio/mp4',
-      'audio/ogg;codecs=opus'
-    ];
-    if (typeof MediaRecorder.isTypeSupported !== 'function') return candidates[0];
-    return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || '';
-  }
-
-  function cleanupCloudVoiceCapture(){
-    try{
-      VOICE_RUNTIME.cloudStream?.getTracks?.().forEach((track) => track.stop());
-    }catch(_){}
-    VOICE_RUNTIME.cloudStream = null;
-    VOICE_RUNTIME.cloudRecorder = null;
-  }
-
-  async function captureVoiceSnippetByCloud({ maxMs = 8500 } = {}){
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
-      }
-    });
-    const mimeType = pickCloudVoiceCaptureMimeType();
-    const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-    const chunks = [];
-    VOICE_RUNTIME.cloudStream = stream;
-    VOICE_RUNTIME.cloudRecorder = recorder;
-
-    return await new Promise((resolve, reject) => {
-      let settled = false;
-      const finish = (fn, value) => {
-        if (settled) return;
-        settled = true;
-        cleanupCloudVoiceCapture();
-        fn(value);
-      };
-      const stopTimer = window.setTimeout(() => {
-        try{
-          if (recorder.state !== 'inactive') recorder.stop();
-        }catch(_){}
-      }, Math.max(2500, Number(maxMs || 8500)));
-
-      recorder.ondataavailable = (event) => {
-        if (event?.data?.size) chunks.push(event.data);
-      };
-      recorder.onerror = (event) => {
-        window.clearTimeout(stopTimer);
-        finish(reject, new Error(event?.error?.message || event?.message || 'VOICE_CAPTURE_FAILED'));
-      };
-      recorder.onstop = () => {
-        window.clearTimeout(stopTimer);
-        const type = mimeType || recorder.mimeType || 'audio/webm';
-        const blob = new Blob(chunks, { type });
-        if (!blob.size){
-          finish(reject, new Error('VOICE_CAPTURE_EMPTY'));
-          return;
-        }
-        finish(resolve, blob);
-      };
-
-      try{
-        recorder.start();
-      }catch(error){
-        window.clearTimeout(stopTimer);
-        finish(reject, error);
-      }
-    });
-  }
-
-  async function transcribeAudioBlobByCloud(blob, settings = getSettings()){
-    const voice = getVoiceCloudConfig(settings);
-    if (!voice.sttReady) throw new Error('CLOUD_STT_NOT_READY');
-    const language = normalizeCloudVoiceLanguage(voice.preferredLanguage || getPreferredSpeechLanguage());
-    const mimeType = String(blob?.type || '').trim() || 'audio/webm';
-    const ext = mimeType.includes('mp4') ? 'm4a' : (mimeType.includes('ogg') ? 'ogg' : 'webm');
-    const form = new FormData();
-    form.append('file', blob, `voice-${Date.now()}.${ext}`);
-    form.append('language', language);
-    form.append('model', voice.recognitionModel);
-
-    const response = await fetchAuthResponse('/voice/transcribe', {
-      method: 'POST',
-      body: form
-    }, settings);
-    const payload = await response.json().catch(() => ({}));
-    const transcript = String(
-      payload?.text
-      || payload?.transcript
-      || payload?.data?.text
-      || payload?.data?.transcript
-      || ''
-    ).trim();
-    if (!transcript){
-      throw new Error(String(payload?.error || payload?.message || 'CLOUD_STT_EMPTY'));
-    }
-    return transcript;
-  }
-
-  async function playCloudSpeechBlob(blob){
-    if (!(blob instanceof Blob) || !blob.size) return false;
-    return await new Promise((resolve) => {
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      audio.preload = 'auto';
-      audio.__objectUrl = url;
-      VOICE_RUNTIME.audioPlayer = audio;
-      audio.onended = () => {
-        try{ URL.revokeObjectURL(url); }catch(_){}
-        if (VOICE_RUNTIME.audioPlayer === audio) VOICE_RUNTIME.audioPlayer = null;
-        VOICE_RUNTIME.speaking = false;
-        scheduleVoiceConversationRestart(700);
-        resolve(true);
-      };
-      audio.onerror = () => {
-        try{ URL.revokeObjectURL(url); }catch(_){}
-        if (VOICE_RUNTIME.audioPlayer === audio) VOICE_RUNTIME.audioPlayer = null;
-        VOICE_RUNTIME.speaking = false;
-        resolve(false);
-      };
-      try{
-        VOICE_RUNTIME.speaking = true;
-        const playback = audio.play();
-        if (playback && typeof playback.catch === 'function'){
-          playback.catch(() => {
-            try{ URL.revokeObjectURL(url); }catch(_){}
-            if (VOICE_RUNTIME.audioPlayer === audio) VOICE_RUNTIME.audioPlayer = null;
-            VOICE_RUNTIME.speaking = false;
-            resolve(false);
-          });
-        }
-      }catch(_){
-        try{ URL.revokeObjectURL(url); }catch(_){}
-        if (VOICE_RUNTIME.audioPlayer === audio) VOICE_RUNTIME.audioPlayer = null;
-        VOICE_RUNTIME.speaking = false;
-        resolve(false);
-      }
-    });
-  }
-
-  async function speakAssistantReplyByCloud(text, settings = getSettings()){
-    const voice = getVoiceCloudConfig(settings);
-    if (!voice.ttsReady) return false;
-    const language = normalizeCloudVoiceLanguage(voice.preferredLanguage || getPreferredSpeechLanguage());
-    const response = await fetchAuthResponse('/voice/speak', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'audio/mpeg'
-      },
-      body: JSON.stringify({
-        text,
-        model: voice.synthesisModel,
-        voice: voice.synthesisVoice,
-        language,
-        format: 'mp3'
-      })
-    }, settings);
-    const blob = await response.blob();
-    return playCloudSpeechBlob(blob);
-  }
-
-  async function startCloudComposerDictation(){
-    const input = $('chatInput');
-    if (!input || !canUseCloudVoiceCapture()) return false;
-
-    composerDictationBase = String(input.value || '').trimEnd();
-    VOICE_RUNTIME.autoSendArmed = true;
-    composerListening = true;
-    VOICE_RUNTIME.continuousConversation = continuousMode;
-    syncVoiceInputButton();
-    showStatus('جاري التسجيل الصوتي السحابي بالعربية...', false);
-
-    try{
-      const blob = await captureVoiceSnippetByCloud({
-        maxMs: getVoiceModeEnabled() ? 6500 : 9500
-      });
-      const transcript = await transcribeAudioBlobByCloud(blob, getSettings());
-      if (transcript){
-        input.value = [composerDictationBase, transcript].filter(Boolean).join(composerDictationBase ? '\n' : '');
-        resizeComposerInput(input);
-        syncComposerMeta();
-      }
-    }catch(error){
-      const message = String(error?.message || error || '').trim();
-      if (!/empty|cancel/i.test(message)){
-        toast(`تعذّر التسجيل الصوتي السحابي: ${message || 'unknown'}`);
-      }
-    }finally{
-      cleanupCloudVoiceCapture();
-      composerListening = false;
-      syncVoiceInputButton();
-      showStatus('', false);
-      const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && String(input.value || '').trim();
-      VOICE_RUNTIME.autoSendArmed = false;
-      if (shouldAutoSend){
-        window.setTimeout(() => {
-          if (String($('chatInput')?.value || '').trim()) void sendMessage();
-        }, 90);
-      } else if (shouldKeepContinuousVoiceLoop()){
-        scheduleVoiceConversationRestart(500);
-      }
-    }
-    return true;
-  }
-
-  function shouldKeepContinuousVoiceLoop(){
-    return getVoiceModeEnabled() && VOICE_RUNTIME.continuousConversation;
-  }
-
-  function scheduleVoiceConversationRecovery(delay = 500){
-    if (!shouldKeepContinuousVoiceLoop()) return;
-    scheduleVoiceConversationRestart(delay);
-  }
-
-  function scheduleVoiceConversationRestart(delay = 600){
-    clearVoiceRestartTimer();
-    if (!shouldKeepContinuousVoiceLoop()) return;
-    VOICE_RUNTIME.restartTimer = window.setTimeout(() => {
-      VOICE_RUNTIME.restartTimer = 0;
-      if (composerListening || VOICE_RUNTIME.speaking) return;
-      if (document.hidden) return;
-      if (String($('chatInput')?.value || '').trim()) return;
-      void startComposerDictation();
-    }, delay);
-  }
-
-  async function resetNativeSpeechSession(plugin = getNativeSpeechRecognitionPlugin()){
-    if (!plugin) return;
-    try{ await plugin.stop?.(); }catch(_){}
-    try{ await plugin.removeAllListeners?.(); }catch(_){}
-  }
-
-  async function stopVoicePlayback(){
     clearVoiceRestartTimer();
     const nativeTts = getNativeTextToSpeechPlugin();
     if (nativeTts?.stop){
-      try{ await nativeTts.stop(); }catch(_){}
+      try{ await nativeTts.stop(); }catch(_){ }
     }
     if (VOICE_RUNTIME.audioPlayer){
-      try{ VOICE_RUNTIME.audioPlayer.pause?.(); }catch(_){}
+      try{ VOICE_RUNTIME.audioPlayer.pause?.(); }catch(_){ }
       try{
         if (VOICE_RUNTIME.audioPlayer.__objectUrl){
           URL.revokeObjectURL(VOICE_RUNTIME.audioPlayer.__objectUrl);
         }
-      }catch(_){}
+      }catch(_){ }
       VOICE_RUNTIME.audioPlayer = null;
     }
-    try{ window.speechSynthesis?.cancel?.(); }catch(_){}
+    try{ window.speechSynthesis?.cancel?.(); }catch(_){ }
     VOICE_RUNTIME.speaking = false;
     VOICE_RUNTIME.utterance = null;
   }
@@ -3597,6 +2592,7 @@ function applyShellLayout(){
     }catch(error){
       if (force) toast(`تعذّر تشغيل الرد صوتيًا عبر السحابة: ${error?.message || error}`);
     }
+
     const nativeTts = getNativeTextToSpeechPlugin();
     const lang = await resolveSpeechSynthesisLanguage(nativeTts);
     const nativeLang = await ensureNativeArabicTtsLanguage(nativeTts, lang);
@@ -3646,7 +2642,7 @@ function applyShellLayout(){
         resolve(false);
       };
       VOICE_RUNTIME.utterance = utter;
-      try{ window.speechSynthesis.resume?.(); }catch(_){}
+      try{ window.speechSynthesis.resume?.(); }catch(_){ }
       try{
         window.speechSynthesis.speak(utter);
       }catch(_){
@@ -3657,43 +2653,22 @@ function applyShellLayout(){
     });
   }
 
-  function toggleVoiceMode(){
-    const next = !getVoiceModeEnabled();
-    setVoiceModeEnabled(next);
-    VOICE_RUNTIME.continuousConversation = next;
-    refreshVoiceModeButton();
-    if (!next){
-      VOICE_RUNTIME.autoSendArmed = false;
-      void stopComposerDictation(false);
-      void stopVoicePlayback();
-    } else {
-      toast('تم تفعيل الدردشة الصوتية المستمرة');
-      if (isNativePlatform()){
-        window.setTimeout(() => { void startComposerDictation(); }, 60);
-      } else {
-        scheduleVoiceConversationRestart(250);
-      }
-      return;
-    }
-    toast('تم إيقاف الدردشة الصوتية');
-  }
-
   async function stopComposerDictation(showToast = false){
     clearVoiceRestartTimer();
     const nativeSpeech = getNativeSpeechRecognitionPlugin();
     VOICE_RUNTIME.autoSendArmed = false;
     VOICE_RUNTIME.continuousConversation = getVoiceModeEnabled();
     if (VOICE_RUNTIME.cloudRecorder && VOICE_RUNTIME.cloudRecorder.state !== 'inactive'){
-      try{ VOICE_RUNTIME.cloudRecorder.stop(); }catch(_){}
+      try{ VOICE_RUNTIME.cloudRecorder.stop(); }catch(_){ }
     } else if (VOICE_RUNTIME.cloudStream){
       cleanupCloudVoiceCapture();
     }
     if (VOICE_RUNTIME.nativeListening && nativeSpeech?.stop){
-      try{ await nativeSpeech.stop(); }catch(_){}
-      try{ await nativeSpeech.removeAllListeners?.(); }catch(_){}
+      try{ await nativeSpeech.stop(); }catch(_){ }
+      try{ await nativeSpeech.removeAllListeners?.(); }catch(_){ }
       VOICE_RUNTIME.nativeListening = false;
     }
-    try{ composerRecognition?.stop?.(); }catch(_){}
+    try{ composerRecognition?.stop?.(); }catch(_){ }
     composerRecognition = null;
     composerListening = false;
     syncVoiceInputButton();
@@ -3706,183 +2681,10 @@ function applyShellLayout(){
     const input = $('chatInput');
     if (!plugin || !input) return false;
 
-    const availability = await plugin.available?.().catch(() => ({ available:false }));
-    if (!availability?.available){
-      toast('التعرّف الصوتي غير متاح على هذا الجهاز.');
-      return false;
-    }
-
-    const permitted = await ensureNativeSpeechRecognitionPermission(plugin);
-    if (!permitted){
-      toast('لم يتم منح إذن الميكروفون للتعرّف الصوتي.');
-      return false;
-    }
-
-    const language = await resolveSpeechRecognitionLanguage(plugin);
-    const continuousMode = getVoiceModeEnabled();
-    composerDictationBase = String(input.value || '').trimEnd();
-    VOICE_RUNTIME.autoSendArmed = true;
-    composerListening = true;
-    VOICE_RUNTIME.nativeListening = true;
-    VOICE_RUNTIME.continuousConversation = getVoiceModeEnabled();
-    syncVoiceInputButton();
-    showStatus(`الإملاء الصوتي يعمل الآن باللغة ${language}...`, false);
-
-    try{
-      const result = await plugin.start({
-        language,
-        maxResults: 1,
-        prompt: 'تحدث الآن',
-        partialResults: false,
-        popup: true
-      });
-      const transcript = Array.isArray(result?.matches)
-        ? result.matches.map((item) => String(item || '').trim()).filter(Boolean).join(' ')
-        : '';
-      if (transcript){
-        input.value = [composerDictationBase, transcript].filter(Boolean).join(composerDictationBase ? '\n' : '');
-        resizeComposerInput(input);
-        syncComposerMeta();
-      }
-    }catch(error){
-      const message = String(error?.message || error || '').trim();
-      if (!/cancel/i.test(message)) toast(`تعذّر الإملاء الصوتي: ${message || 'unknown'}`);
-    }finally{
-      VOICE_RUNTIME.nativeListening = false;
-      composerListening = false;
-      try{ await plugin.stop?.(); }catch(_){}
-      try{ await plugin.removeAllListeners?.(); }catch(_){}
-      syncVoiceInputButton();
-      showStatus('', false);
-      const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && String(input.value || '').trim();
-      VOICE_RUNTIME.autoSendArmed = false;
-      if (shouldAutoSend){
-        window.setTimeout(() => {
-          if (String($('chatInput')?.value || '').trim()) void sendMessage();
-        }, 90);
-      } else if (shouldKeepContinuousVoiceLoop()){
-        scheduleVoiceConversationRestart(500);
-      }
-    }
-    return true;
-  }
-
-  async function startComposerDictation(){
-    if (isNativePlatform() && await startNativeComposerDictation()) return;
-
-    const Ctor = getSpeechRecognitionCtor();
-    if (!Ctor) return toast('الإملاء الصوتي غير مدعوم في هذا المتصفح.');
-
-    const input = $('chatInput');
-    if (!input) return;
-
-    composerDictationBase = String(input.value || '').trimEnd();
-    VOICE_RUNTIME.autoSendArmed = true;
-    VOICE_RUNTIME.continuousConversation = getVoiceModeEnabled();
-    composerRecognition = new Ctor();
-    composerRecognition.lang = getPreferredSpeechLanguage();
-    composerRecognition.continuous = true;
-    composerRecognition.interimResults = true;
-
-    composerRecognition.onstart = () => {
-      composerListening = true;
-      syncVoiceInputButton();
-      showStatus(`الإملاء الصوتي يعمل الآن باللغة ${composerRecognition.lang}...`, false);
-    };
-
-    composerRecognition.onresult = (event) => {
-      const parts = [];
-      for (let i = event.resultIndex; i < event.results.length; i += 1){
-        const transcript = String(event.results[i]?.[0]?.transcript || '').trim();
-        if (transcript) parts.push(transcript);
-      }
-      const dictation = parts.join(' ').trim();
-      input.value = [composerDictationBase, dictation].filter(Boolean).join(composerDictationBase ? '\n' : '');
-      resizeComposerInput(input);
-      syncComposerMeta();
-    };
-
-    composerRecognition.onerror = (event) => {
-      composerListening = false;
-      VOICE_RUNTIME.autoSendArmed = false;
-      syncVoiceInputButton();
-      if (event?.error !== 'no-speech') toast(`تعذّر الإملاء الصوتي: ${event?.error || 'unknown'}`);
-    };
-
-    composerRecognition.onend = () => {
-      const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && String(input.value || '').trim();
-      VOICE_RUNTIME.autoSendArmed = false;
-      composerListening = false;
-      composerRecognition = null;
-      syncVoiceInputButton();
-      showStatus('', false);
-      if (shouldAutoSend){
-        window.setTimeout(() => {
-          if (String($('chatInput')?.value || '').trim()) void sendMessage();
-        }, 90);
-      } else if (shouldKeepContinuousVoiceLoop()){
-        scheduleVoiceConversationRestart(500);
-      }
-    };
-
-    try{
-      composerRecognition.start();
-    }catch(error){
-      composerListening = false;
-      composerRecognition = null;
-      syncVoiceInputButton();
-      toast(`تعذّر بدء الإملاء الصوتي: ${error?.message || error}`);
-    }
-  }
-
-  function toggleComposerDictation(){
-    VOICE_RUNTIME.continuousConversation = getVoiceModeEnabled();
-    if (composerListening) void stopComposerDictation(true);
-    else void startComposerDictation();
-  }
-
-  function toggleVoiceMode(){
-    const next = !getVoiceModeEnabled();
-    setVoiceModeEnabled(next);
-    VOICE_RUNTIME.continuousConversation = next;
-    refreshVoiceModeButton();
-    if (!next){
-      VOICE_RUNTIME.autoSendArmed = false;
-      void stopComposerDictation(false);
-      void stopVoicePlayback();
-      toast('تم إيقاف الدردشة الصوتية');
-      return;
-    }
-
-    toast('تم تفعيل الدردشة الصوتية المستمرة');
-    if (isNativeAndroidPlatform()){
-      const plugin = getNativeSpeechRecognitionPlugin();
-      window.setTimeout(async () => {
-        if (!plugin){
-          toast('تعذر تحميل محرك الدردشة الصوتية داخل نسخة Android الحالية.');
-          return;
-        }
-        const permitted = await ensureNativeSpeechRecognitionPermission(plugin);
-        if (!permitted){
-          toast('يلزم منح إذن الميكروفون لتفعيل الدردشة الصوتية العربية.');
-          return;
-        }
-        scheduleVoiceConversationRestart(180);
-      }, 20);
-      return;
-    }
-    scheduleVoiceConversationRestart(180);
-  }
-
-  async function startNativeComposerDictation(){
-    const plugin = getNativeSpeechRecognitionPlugin();
-    const input = $('chatInput');
-    if (!plugin || !input) return false;
-
     await resetNativeSpeechSession(plugin);
     const availability = await plugin.available?.().catch(() => ({ available:false }));
     if (!availability?.available){
-      toast('التعرف الصوتي غير متاح على هذا الجهاز.');
+      toast('التعرّف الصوتي غير متاح على هذا الجهاز.');
       return false;
     }
 
@@ -4018,80 +2820,10 @@ function applyShellLayout(){
     }
   }
 
-  async function speakAssistantReply(content = '', { force = false } = {}){
-    if (!force && !getVoiceModeEnabled()) return false;
-    const text = stripTextForSpeech(content);
-    if (!text){
-      scheduleVoiceConversationRecovery(250);
-      return false;
-    }
-
-    await stopVoicePlayback();
-    try{
-      const cloudPlayed = await speakAssistantReplyByCloud(text, getSettings());
-      if (cloudPlayed) return true;
-    }catch(error){
-      if (force) toast(`تعذّر تشغيل الرد صوتيًا عبر السحابة: ${error?.message || error}`);
-    }
-
-    const nativeTts = getNativeTextToSpeechPlugin();
-    const lang = await resolveSpeechSynthesisLanguage(nativeTts);
-    const nativeLang = await ensureNativeArabicTtsLanguage(nativeTts, lang);
-
-    if (nativeTts?.speak){
-      try{
-        VOICE_RUNTIME.speaking = true;
-        await nativeTts.speak({
-          text,
-          lang: nativeLang,
-          rate: 0.92,
-          pitch: 1,
-          volume: 1
-        });
-        VOICE_RUNTIME.speaking = false;
-        VOICE_RUNTIME.utterance = null;
-        scheduleVoiceConversationRestart(700);
-        return true;
-      }catch(error){
-        VOICE_RUNTIME.speaking = false;
-        VOICE_RUNTIME.utterance = null;
-        if (force) toast(`تعذّر تشغيل الرد صوتيًا: ${error?.message || error}`);
-      }
-    }
-
-    if (!('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance === 'undefined'){
-      if (force) toast('التشغيل الصوتي غير مدعوم في هذا المتصفح.');
-      return false;
-    }
-
-    return await new Promise((resolve) => {
-      const utter = new SpeechSynthesisUtterance(text);
-      utter.lang = lang;
-      utter.voice = chooseSpeechSynthesisVoice(lang) || chooseSpeechSynthesisVoice('ar-SA');
-      utter.rate = 0.92;
-      utter.pitch = 1;
-      utter.onstart = () => { VOICE_RUNTIME.speaking = true; };
-      utter.onend = () => {
-        VOICE_RUNTIME.speaking = false;
-        VOICE_RUNTIME.utterance = null;
-        scheduleVoiceConversationRestart(700);
-        resolve(true);
-      };
-      utter.onerror = () => {
-        VOICE_RUNTIME.speaking = false;
-        VOICE_RUNTIME.utterance = null;
-        resolve(false);
-      };
-      VOICE_RUNTIME.utterance = utter;
-      try{ window.speechSynthesis.resume?.(); }catch(_){}
-      try{
-        window.speechSynthesis.speak(utter);
-      }catch(_){
-        VOICE_RUNTIME.speaking = false;
-        VOICE_RUNTIME.utterance = null;
-        resolve(false);
-      }
-    });
+  function toggleComposerDictation(){
+    VOICE_RUNTIME.continuousConversation = getVoiceModeEnabled();
+    if (composerListening) void stopComposerDictation(true);
+    else void startComposerDictation();
   }
 
   async function toggleVoiceMode(){
@@ -4101,8 +2833,8 @@ function applyShellLayout(){
     refreshVoiceModeButton();
     if (!next){
       VOICE_RUNTIME.autoSendArmed = false;
-      void stopComposerDictation(false);
-      void stopVoicePlayback();
+      await stopComposerDictation(false);
+      await stopVoicePlayback();
       toast('تم إيقاف الدردشة الصوتية');
       return;
     }
@@ -4113,7 +2845,6 @@ function applyShellLayout(){
       scheduleVoiceConversationRestart(600);
     }
   }
-
 function refreshDeepSearchBtn(){
     const b = $('deepSearchToggleBtn');
     if (!b) return;
@@ -5227,6 +3958,11 @@ function syncUnifiedAuthEntry(){
     renderGoogleButton().catch((error) => {
       setAuthGateStatus(`تعذر تهيئة تسجيل Google: ${error?.message || error}`, 'error');
     });
+    loadRemoteAuthConfig(true).then(() => {
+      syncUnifiedAuthEntry();
+      syncAccountPlanControls();
+      return renderGoogleButton(true);
+    }).catch(() => null);
   }
 
   function closeAuthGate(force = false){
@@ -5285,15 +4021,20 @@ async function submitUnifiedAuthEntry(){
     const name = String($('authEntryName')?.value || '').trim();
     const email = String($('authEntryEmail')?.value || '').trim().toLowerCase();
     const password = String($('authEntryPassword')?.value || '').trim();
-    const config = getEffectiveAuthConfig();
-    const adminEmail = String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
-    const isAdminEntry = !!email && email === adminEmail;
-    const adminPasswordEnabled = !!(config.adminPasswordEnabled ?? config.adminEnabled);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
       setAuthGateStatus('أدخل بريدًا إلكترونيًا صالحًا أولًا.', 'error');
       return;
     }
     try{
+      let config = getEffectiveAuthConfig();
+      let adminEmail = String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
+      let isAdminEntry = !!email && email === adminEmail;
+      if (isAdminEntry){
+        config = await loadRemoteAuthConfig(true).catch(() => config);
+        adminEmail = String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
+        isAdminEntry = !!email && email === adminEmail;
+      }
+      const adminPasswordEnabled = !!(config.adminPasswordEnabled ?? config.adminEnabled);
       let payload = null;
       if (isAdminEntry){
         if (!adminPasswordEnabled){
@@ -12181,3 +10922,5 @@ ${e?.message||e}`, false);
 
   init();
 })();
+
+
