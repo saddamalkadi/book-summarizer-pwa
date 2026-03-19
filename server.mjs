@@ -26,6 +26,128 @@ if (process.env.GITHUB_TOKEN) {
 }
 // ──────────────────────────────────────────────────────────────────────────
 
+// ── Startup: Auto-fix Cloudflare Worker if misconfigured ──────────────────
+async function autoFixWorker() {
+  const CF_TOKEN = process.env.CF_API_TOKEN;
+  const OR_KEY   = process.env.OPENROUTER_API_KEY;
+  if (!CF_TOKEN || !OR_KEY) { console.log('[worker-fix] Skipped: missing env vars'); return; }
+
+  const CF_ACCOUNT  = 'ea4e90ec8fbd70faefdddd2153064d6f';
+  const WORKER_NAME = 'book-summarizer-pwa-convert';
+  const KV_NS       = '49d87e2d4989452fb3c680ad024ae5b7';
+  const ADMIN_PASS  = 'Saddam@Admin2026!';
+
+  try {
+    // 1) Check health
+    const health = await fetch('https://api.saddamalkadi.com/health', { signal: AbortSignal.timeout(8000) })
+      .then(r => r.json()).catch(() => ({}));
+    if (health.upstream_configured && health.admin_password_ready) {
+      console.log('[worker-fix] Worker OK — no action needed');
+      return;
+    }
+    console.log('[worker-fix] Worker misconfigured — auto-fixing...');
+
+    // 2) Store keys in KV
+    const kvHeaders = { 'Authorization': `Bearer ${CF_TOKEN}`, 'Content-Type': 'text/plain' };
+    await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/storage/kv/namespaces/${KV_NS}/values/_config%3Aopenrouter_api_key`,
+      { method: 'PUT', headers: kvHeaders, body: OR_KEY }
+    );
+    await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/storage/kv/namespaces/${KV_NS}/values/_config%3Aadmin_password`,
+      { method: 'PUT', headers: kvHeaders, body: ADMIN_PASS }
+    );
+    console.log('[worker-fix] KV values stored');
+
+    // 3) Get current Worker script
+    let code = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/workers/services/${WORKER_NAME}/environments/production/content`,
+      { headers: { 'Authorization': `Bearer ${CF_TOKEN}` }, signal: AbortSignal.timeout(20000) }
+    ).then(r => r.text());
+
+    // Extract JS from multipart response
+    const jStart = code.indexOf('var __defProp');
+    if (jStart > 0) code = code.substring(jStart);
+    const jEnd = code.lastIndexOf('\n--');
+    if (jEnd > 0) code = code.substring(0, jEnd);
+
+    // 4) Patch with KV helpers if missing
+    if (!code.includes('getServerKeyWithKv')) {
+      const KV_HELPERS = `
+async function getKvConfig(env2,key){try{if(env2&&env2.USER_DATA&&typeof env2.USER_DATA.get==='function'){const v=await env2.USER_DATA.get('_config:'+key);if(v&&String(v).trim())return String(v).trim();}}catch(_){}return '';}
+__name(getKvConfig,'getKvConfig');
+async function getServerKeyWithKv(env2){const k=getServerKey(env2);if(k)return k;return await getKvConfig(env2,'openrouter_api_key');}
+__name(getServerKeyWithKv,'getServerKeyWithKv');
+async function getAdminPasswordWithKv(env2){const p=getAdminPassword(env2);if(p)return p;return await getKvConfig(env2,'admin_password');}
+__name(getAdminPasswordWithKv,'getAdminPasswordWithKv');`;
+
+      code = code.replace('__name(getServerKey, "getServerKey");', '__name(getServerKey, "getServerKey");' + KV_HELPERS);
+      code = code
+        .replace(
+          'const serverKey = getServerKey(env2);',
+          'const serverKey = await getServerKeyWithKv(env2);'
+        )
+        .replace(
+          'const adminPassword = getAdminPassword(env2);',
+          'const adminPassword = await getAdminPasswordWithKv(env2);'
+        );
+      code = '// autofix-' + Date.now() + '\n' + code;
+      console.log('[worker-fix] Code patched with KV helpers');
+    } else {
+      console.log('[worker-fix] Code already patched — just redeploying');
+    }
+
+    // 5) Redeploy Worker
+    const boundary = 'fix-' + Date.now();
+    const metaJson = JSON.stringify({
+      main_module: 'keys-worker.js',
+      bindings: [
+        {type:'ai',name:'AI'},
+        {type:'kv_namespace',name:'USER_DATA',namespace_id:KV_NS},
+        {type:'service',name:'CONVERT',service:'sadam-convert',environment:'production'},
+        {type:'plain_text',name:'APP_ADMIN_EMAIL',text:'tntntt830@gmail.com'},
+        {type:'plain_text',name:'APP_BRAND_NAME',text:'AI Workspace Studio'},
+        {type:'plain_text',name:'APP_DEVELOPER_NAME',text:'صدام القاضي'},
+        {type:'plain_text',name:'APP_UPGRADE_EMAIL',text:'tntntt830@gmail.com'},
+        {type:'plain_text',name:'AUTH_REQUIRE_LOGIN',text:'true'},
+        {type:'plain_text',name:'GOOGLE_CLIENT_ID_WEB',text:'320883717933-d8p8877if6u4udo9tfvhbq1en2ps486m.apps.googleusercontent.com'},
+        {type:'plain_text',name:'OPENROUTER_REFERER',text:'https://app.saddamalkadi.com/'},
+        {type:'plain_text',name:'OPENROUTER_TITLE',text:'AI Workspace Studio'}
+      ],
+      compatibility_date: '2024-09-23',
+      compatibility_flags: ['nodejs_compat']
+    });
+    const body = [
+      `--${boundary}`,
+      'Content-Disposition: form-data; name="metadata"',
+      'Content-Type: application/json',
+      '',
+      metaJson,
+      `--${boundary}`,
+      'Content-Disposition: form-data; name="keys-worker.js"; filename="keys-worker.js"',
+      'Content-Type: application/javascript+module',
+      '',
+      code,
+      `--${boundary}--`
+    ].join('\r\n');
+
+    const result = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/workers/scripts/${WORKER_NAME}`,
+      { method: 'PUT', headers: { 'Authorization': `Bearer ${CF_TOKEN}`, 'Content-Type': `multipart/form-data; boundary=${boundary}` }, body, signal: AbortSignal.timeout(30000) }
+    ).then(r => r.json());
+
+    if (result.success) {
+      console.log('[worker-fix] ✓ Worker redeployed successfully');
+    } else {
+      console.log('[worker-fix] ✗ Deploy failed:', JSON.stringify(result.errors||[]).substring(0, 300));
+    }
+  } catch (e) {
+    console.log('[worker-fix] Error:', e.message);
+  }
+}
+autoFixWorker();
+// ──────────────────────────────────────────────────────────────────────────
+
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',
