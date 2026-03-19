@@ -35,7 +35,7 @@ async function autoFixWorker() {
   const CF_ACCOUNT  = 'ea4e90ec8fbd70faefdddd2153064d6f';
   const WORKER_NAME = 'book-summarizer-pwa-convert';
   const KV_NS       = '49d87e2d4989452fb3c680ad024ae5b7';
-  const ADMIN_PASS  = 'Saddam@Admin2026!';
+  const ADMIN_PASS  = process.env.ADMIN_PASSWORD_REAL || 'Saddam@Admin2026!';
 
   try {
     // 1) Check health
@@ -414,7 +414,7 @@ server.on('error', (e) => {
     }
     console.log(`[server] Port ${PORT} in use — attempt ${_portRetries}/3, freeing port...`);
     try {
-      execSync(`fuser -k ${PORT}/tcp 2>/dev/null; pkill -f "node server.mjs" 2>/dev/null; sleep 1`, { timeout: 5000, shell: '/bin/bash' });
+      execSync(`fuser -k ${PORT}/tcp 2>/dev/null || true`, { timeout: 4000, shell: '/bin/bash' });
     } catch (_) {}
     setTimeout(() => server.listen(PORT, HOST), 2000);
   } else {

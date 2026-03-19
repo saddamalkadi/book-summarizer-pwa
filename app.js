@@ -3823,18 +3823,19 @@ function refreshDeepSearchBtn(){
                 <span class="plan-pill" id="authCurrentPlanPill">الخطة المجانية</span>
               </div>
               <div class="auth-status status" id="authGateStatus" data-tone="info">سجّل الدخول ببريدك الشخصي لفتح الخطة المجانية، أو استخدم بريد الإدارة مع كلمة المرور من نفس الشاشة.</div>
-              <div class="auth-config-grid" style="margin-top:12px">
+              <form id="authEntryForm" autocomplete="on" onsubmit="return false" style="margin-top:12px">
+              <div class="auth-config-grid">
                 <div>
-                  <label class="hint">الاسم</label>
-                  <input id="authEntryName" type="text" placeholder="الاسم الظاهر داخل التطبيق" />
+                  <label class="hint" for="authEntryName">الاسم</label>
+                  <input id="authEntryName" name="name" type="text" placeholder="الاسم الظاهر داخل التطبيق" autocomplete="name" />
                 </div>
                 <div>
-                  <label class="hint">البريد الإلكتروني</label>
-                  <input id="authEntryEmail" type="email" placeholder="name@example.com" />
+                  <label class="hint" for="authEntryEmail">البريد الإلكتروني</label>
+                  <input id="authEntryEmail" name="email" type="email" placeholder="name@example.com" autocomplete="email" />
                 </div>
                 <div style="grid-column:1/-1">
-                  <label class="hint" id="authEntryPasswordLabel">كلمة المرور للإدارة فقط</label>
-                  <input id="authEntryPassword" type="password" placeholder="اختيارية للمستخدم العادي، ومطلوبة فقط إذا كان هذا بريد الإدارة" />
+                  <label class="hint" for="authEntryPassword" id="authEntryPasswordLabel">كلمة المرور للإدارة فقط</label>
+                  <input id="authEntryPassword" name="password" type="password" placeholder="اختيارية للمستخدم العادي، ومطلوبة فقط إذا كان هذا بريد الإدارة" autocomplete="current-password" />
                 </div>
               </div>
               <div class="auth-note" id="authEntryModeHint">أي بريد شخصي صالح يفتح لك الخطة المجانية تلقائيًا. إذا أدخلت بريد الإدارة، سيتحول الزر تلقائيًا إلى دخول الإدارة.</div>
@@ -3843,8 +3844,9 @@ function refreshDeepSearchBtn(){
                 <span>يفتح الحساب العادي بالخطة المجانية مع الميزات المسموح بها فقط، ويمكن طلب الترقية لاحقًا من صفحة الإعدادات.</span>
               </div>
               <div class="account-actions" style="margin-top:12px">
-                <button class="btn dark sm with-label" type="button" id="authEntrySubmitBtn"><span class="icon">→</span><span class="label" id="authEntrySubmitLabel">متابعة بالخطة المجانية</span></button>
+                <button class="btn dark sm with-label" type="submit" id="authEntrySubmitBtn"><span class="icon">→</span><span class="label" id="authEntrySubmitLabel">متابعة بالخطة المجانية</span></button>
               </div>
+              </form>
               <div class="divider"></div>
               <div class="auth-google-slot" id="googleSignInSlot"></div>
               <div class="auth-note" id="authGatePlanNote">بعد تسجيل الدخول ستبدأ بالخطة المناسبة للحساب. يمكن الترقية لاحقًا عبر طلب ترقية وكود تفعيل.</div>
@@ -4118,14 +4120,19 @@ function syncUnifiedAuthEntry(){
     }
     try{
       if (force) slot.innerHTML = '';
-      window.google.accounts.id.initialize({
-        client_id: clientId,
-        callback: handleGoogleCredentialResponse,
-        auto_select: false,
-        cancel_on_tap_outside: false,
-        context: 'signin',
-        use_fedcm_for_prompt: true
-      });
+      const prevClientId = window._gsiClientId;
+      if (!window._gsiInitialized || prevClientId !== clientId){
+        window.google.accounts.id.initialize({
+          client_id: clientId,
+          callback: handleGoogleCredentialResponse,
+          auto_select: false,
+          cancel_on_tap_outside: false,
+          context: 'signin',
+          use_fedcm_for_prompt: true
+        });
+        window._gsiInitialized = true;
+        window._gsiClientId = clientId;
+      }
       slot.innerHTML = '';
       window.google.accounts.id.renderButton(slot, {
         theme: 'filled_blue',
@@ -10519,6 +10526,7 @@ let pinOnly = false;
     $('adminGenerateUpgradeBtn')?.addEventListener('click', generateAdminUpgradeCodeFromUi);
     $('adminCopyUpgradeBtn')?.addEventListener('click', copyAdminUpgradeCode);
     $('authEntrySubmitBtn')?.addEventListener('click', submitUnifiedAuthEntry);
+    $('authEntryForm')?.addEventListener('submit', (e) => { e.preventDefault(); submitUnifiedAuthEntry(); });
     $('authRetryBtn')?.addEventListener('click', async () => {
       AUTH_RUNTIME.config = null;
       await loadRemoteAuthConfig(true);

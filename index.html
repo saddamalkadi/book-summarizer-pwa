@@ -2306,7 +2306,10 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
               <div class="row" style="margin-top:10px">
                 <div class="col">
                   <label class="hint">رمز عميل البوابة (اختياري)</label>
-                  <input id="gatewayToken" type="password" placeholder="إن فعلت حماية إضافية في الـWorker" />
+                  <form autocomplete="off" onsubmit="return false" style="margin:0;padding:0">
+                  <input type="text" name="username" autocomplete="username" aria-hidden="true" style="display:none;position:absolute;width:0;height:0;opacity:0" tabindex="-1" />
+                  <input id="gatewayToken" type="password" placeholder="إن فعلت حماية إضافية في الـWorker" autocomplete="new-password" />
+                  </form>
                 </div>
                 <div class="col">
                   <label class="hint">رابط التحويل السحابي PDF→Word (الأساسي)</label>
@@ -2384,17 +2387,20 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
                   </div>
                 </div>
               </div>
+<form autocomplete="off" onsubmit="return false" style="margin:0;padding:0">
+<input type="text" name="username" autocomplete="username" aria-hidden="true" style="display:none;position:absolute;width:0;height:0;opacity:0" tabindex="-1" />
 <div class="row">
                 <div class="col">
                   <label class="hint">مفتاح API (OpenRouter/OpenAI)</label>
-                  <input id="apiKey" type="password" placeholder="ضع المفتاح هنا" />
+                  <input id="apiKey" type="password" placeholder="ضع المفتاح هنا" autocomplete="new-password" />
                   <div class="hint" style="margin-top:6px">OpenRouter يوصي بإرسال <span class="kbd">HTTP-Referer</span> و <span class="kbd">X-Title</span>.</div>
                 </div>
                 <div class="col">
                   <label class="hint">مفتاح Gemini</label>
-                  <input id="geminiKey" type="password" placeholder="اختياري" />
+                  <input id="geminiKey" type="password" placeholder="اختياري" autocomplete="new-password" />
                 </div>
               </div>
+</form>
 
               <div class="row" style="margin-top:10px">
                 <div class="col">
