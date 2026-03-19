@@ -101,7 +101,7 @@
     rag: false,
     toolsEnabled: false,
 
-    authMode: 'browser',          // browser | gateway
+    authMode: 'gateway',          // browser | gateway
     gatewayUrl: 'https://api.saddamalkadi.com',
     gatewayToken: '',             // optional extra protection
     cloudConvertEndpoint: 'https://api.saddamalkadi.com/convert/pdf-to-docx',
@@ -925,8 +925,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   function getAccountRuntimeState(settings = getSettings()){
     const auth = getAuthState();
     const config = getEffectiveAuthConfig(settings);
-    // authRequired only applies when using gateway mode; browser mode always bypasses auth gate
-    const authRequired = settings.authMode === 'gateway' && config.authRequired === true;
+    const authRequired = config.authRequired === true;
     const signedIn = hasValidAuthSession(auth);
     const premium = signedIn && auth.plan === 'premium';
     return {
