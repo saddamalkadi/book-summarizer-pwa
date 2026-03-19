@@ -3,11 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.44</title>
+    <title>AI Workspace Studio v8.45</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
   <link rel="apple-touch-icon" href="icons/icon-192.webp" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@400;500;700;900&display=swap" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 
@@ -1876,6 +1879,530 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
 /* — Mobile speak button always visible — */
 @media (max-width:640px){
   .speak-btn{ padding:5px 12px; font-size:13px; }
+}
+
+/* ═══════════════════════════════════════════════
+   PHASE 4 — Modern UI Overhaul (2025 Standards)
+   ═══════════════════════════════════════════════ */
+
+/* 1. Typography — Noto Sans Arabic */
+body, input, textarea, select, button{
+  font-family: 'Noto Sans Arabic', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
+.bubble .body{
+  font-family: 'Noto Sans Arabic', system-ui, Arial, sans-serif;
+  font-size: 15.5px;
+  line-height: 2;
+  letter-spacing: .01em;
+}
+
+/* 2. Chat bubbles — bold visual distinction */
+@keyframes bubble-in{
+  from{ opacity:0; transform:translateY(10px) scale(.98); }
+  to{   opacity:1; transform:none; }
+}
+.bubble{
+  animation: bubble-in .22s cubic-bezier(.22,.68,0,1.2) both;
+  border-radius: 22px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  position: relative;
+  transition: box-shadow .2s ease;
+  border: none;
+}
+.bubble:hover{
+  box-shadow: 0 20px 45px rgba(15,23,42,.1);
+}
+
+/* AI bubble — clean white card */
+.bubble.assistant{
+  background: #ffffff;
+  border: 1px solid rgba(10,20,60,.07);
+  box-shadow: 0 8px 24px rgba(15,23,42,.06), 0 2px 6px rgba(15,23,42,.04);
+}
+
+/* User bubble — bold dark navy */
+.bubble.user{
+  background: linear-gradient(145deg, #0f1e3d, #1b3870 55%, #1e4a9e);
+  border: 1px solid rgba(94,132,255,.2);
+  box-shadow: 0 10px 28px rgba(11,16,50,.22), 0 3px 8px rgba(27,80,180,.18);
+  color: #e8eeff;
+}
+.bubble.user .bubble-role-badge{
+  background: rgba(255,255,255,.12);
+  color: rgba(220,230,255,.9);
+}
+.bubble.user .meta{
+  color: rgba(180,200,255,.82);
+}
+.bubble.user .body{
+  color: #e8eeff;
+}
+.bubble.user .actions{
+  border-top-color: rgba(255,255,255,.1);
+}
+.bubble.user .btn.ghost{
+  background: rgba(255,255,255,.1);
+  color: rgba(220,235,255,.9);
+  border: 1px solid rgba(255,255,255,.15);
+}
+.bubble.user .btn.ghost:hover{
+  background: rgba(255,255,255,.18);
+}
+
+/* Code blocks in AI bubble */
+.bubble.assistant .body pre{
+  background: #0f1629;
+  color: #c9d8f8;
+  border-radius: 14px;
+  padding: 16px 18px;
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.8;
+  overflow-x: auto;
+  border: 1px solid rgba(94,132,255,.15);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+  margin: 14px 0;
+}
+.bubble.assistant .body code:not(pre code){
+  background: rgba(27,102,255,.1);
+  color: #1b66ff;
+  padding: 2px 7px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-family: ui-monospace, Consolas, monospace;
+}
+.bubble.assistant .body blockquote{
+  border-inline-start: 3px solid #1b66ff;
+  padding-inline-start: 14px;
+  color: #4b5e80;
+  margin-inline-start: 0;
+  font-style: italic;
+}
+.bubble.assistant .body table{
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0;
+  font-size: 14px;
+}
+.bubble.assistant .body th{
+  background: linear-gradient(180deg, #f0f4ff, #e8efff);
+  color: #162033;
+  font-weight: 900;
+  padding: 10px 14px;
+  border: 1px solid rgba(27,102,255,.12);
+}
+.bubble.assistant .body td{
+  padding: 9px 14px;
+  border: 1px solid rgba(10,20,60,.07);
+  color: #2a3855;
+}
+.bubble.assistant .body tr:hover td{
+  background: rgba(27,102,255,.03);
+}
+
+/* 3. Chatbar — floating modern composer */
+.chatbar{
+  background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,251,255,.98));
+  border-top: 1px solid rgba(10,20,60,.06);
+  padding: 12px var(--page-gutter, 16px) max(12px, env(safe-area-inset-bottom));
+  gap: 10px;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+#page-chat > .chatbar{
+  margin-top: auto;
+}
+.chatbar textarea,
+.chatbar input[type="text"]{
+  background: #ffffff;
+  border: 1.5px solid rgba(27,102,255,.14);
+  border-radius: 18px;
+  padding: 13px 16px;
+  font-size: 15px;
+  line-height: 1.8;
+  box-shadow: 0 2px 12px rgba(27,102,255,.06), inset 0 1px 0 rgba(255,255,255,.9);
+  transition: border-color .18s ease, box-shadow .18s ease;
+  resize: none;
+}
+.chatbar textarea:focus,
+.chatbar input[type="text"]:focus{
+  border-color: rgba(27,102,255,.4);
+  box-shadow: 0 0 0 3px rgba(27,102,255,.08), 0 4px 16px rgba(27,102,255,.1);
+  outline: none;
+}
+#page-chat > .composer-meta{
+  background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,251,255,.98));
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+}
+
+/* Send button — primary gradient */
+#sendBtn{
+  background: linear-gradient(145deg, #1b66ff, #0e4fd8);
+  color: #fff;
+  border: none;
+  border-radius: 16px;
+  min-width: 50px;
+  min-height: 50px;
+  font-size: 18px;
+  box-shadow: 0 8px 22px rgba(27,102,255,.32);
+  transition: transform .15s, box-shadow .15s;
+  align-self: flex-end;
+}
+#sendBtn:hover{
+  transform: translateY(-2px) scale(1.04);
+  box-shadow: 0 12px 28px rgba(27,102,255,.4);
+}
+#sendBtn:active{
+  transform: scale(.97);
+}
+
+/* Voice input button */
+#voiceInputBtn{
+  align-self: flex-end;
+  min-width: 46px;
+  min-height: 46px;
+  border-radius: 14px;
+  font-size: 20px;
+  border: 1.5px solid rgba(27,102,255,.12);
+  background: rgba(27,102,255,.07);
+  color: #1b66ff;
+  transition: background .15s, transform .12s, box-shadow .15s;
+}
+#voiceInputBtn:hover{
+  background: rgba(27,102,255,.14);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(27,102,255,.12);
+}
+#voiceInputBtn.is-recording{
+  background: rgba(239,68,68,.12);
+  color: #dc2626;
+  border-color: rgba(239,68,68,.3);
+  animation: pulse-btn .8s ease-in-out infinite;
+}
+
+/* 4. Sidebar refinement */
+.side{
+  background: linear-gradient(180deg, #09152e, #0f1e40 55%, #0b1a35);
+  border-radius: 22px;
+  gap: 10px;
+}
+.brand{
+  background: rgba(255,255,255,.07);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 18px;
+  padding: 13px 14px;
+}
+.brand .name{
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: -.01em;
+}
+.navbtn{
+  border-radius: 14px;
+  padding: 11px 14px;
+  font-size: 13.5px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.08);
+  transition: background .15s, transform .15s, border-color .15s, box-shadow .15s;
+}
+.navbtn:hover{
+  background: rgba(255,255,255,.13);
+  border-color: rgba(255,255,255,.2);
+  transform: translateX(-2px);
+}
+.navbtn.active{
+  background: linear-gradient(135deg, rgba(27,102,255,.35), rgba(11,70,190,.2));
+  border-color: rgba(110,165,255,.45);
+  box-shadow: 0 8px 20px rgba(10,18,50,.22);
+  transform: none;
+}
+
+/* Nav separator after chat and before settings */
+.nav .navbtn[data-page="chat"]::after,
+.nav .navbtn[data-page="workflows"]::after{
+  content: '';
+  display: block;
+  height: 1px;
+  background: rgba(255,255,255,.07);
+  margin-top: 10px;
+  position: relative;
+  bottom: -10px;
+  width: 100%;
+}
+
+/* 5. Topbar refinement */
+.topbar{
+  border-radius: 20px;
+  background: rgba(255,255,255,.94);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(10,20,60,.07);
+  box-shadow: 0 6px 20px rgba(15,23,42,.06), 0 1px 4px rgba(15,23,42,.04);
+}
+.topbar .title{
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: -.01em;
+  color: #0b1020;
+}
+#topRuntimeBadge{
+  font-size: 11px;
+  font-weight: 900;
+  background: linear-gradient(135deg, rgba(27,102,255,.1), rgba(20,184,166,.12));
+  border: 1px solid rgba(27,102,255,.16);
+  color: #16325f;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+/* Topbar action buttons */
+.topbar .btn.ghost.sm{
+  border-radius: 12px;
+  border: 1px solid rgba(10,20,60,.09);
+  background: linear-gradient(180deg, #f8faff, #f0f5ff);
+  color: #162045;
+  transition: background .15s, transform .12s, box-shadow .15s, border-color .15s;
+}
+.topbar .btn.ghost.sm:hover{
+  background: linear-gradient(180deg, #eef3ff, #e4edff);
+  border-color: rgba(27,102,255,.2);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(27,102,255,.08);
+}
+.topbar .btn.dark.sm{
+  background: linear-gradient(145deg, #0f1e3d, #1b3870);
+  border: 1px solid rgba(94,132,255,.2);
+  box-shadow: 0 6px 16px rgba(11,16,50,.22);
+  border-radius: 12px;
+  transition: transform .12s, box-shadow .15s;
+}
+.topbar .btn.dark.sm:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(11,16,50,.3);
+}
+
+/* 6. Global input/select focus states */
+textarea:focus, input[type="text"]:focus, input[type="password"]:focus, select:focus{
+  border-color: rgba(27,102,255,.35) !important;
+  box-shadow: 0 0 0 3px rgba(27,102,255,.08) !important;
+  outline: none !important;
+  background: #fff !important;
+}
+select{
+  cursor: pointer;
+}
+
+/* 7. General button refinements */
+.btn{
+  font-family: 'Noto Sans Arabic', system-ui, Arial, sans-serif;
+  border-radius: 13px;
+  transition: transform .13s, box-shadow .15s, background .15s, opacity .15s;
+}
+.btn:not(:disabled):hover{
+  transform: translateY(-1px);
+}
+.btn:not(:disabled):active{
+  transform: scale(.97);
+}
+.btn.ghost{
+  background: linear-gradient(180deg, #f0f5ff, #e8f0ff);
+  border: 1px solid rgba(27,102,255,.12);
+  color: #1b3870;
+}
+.btn.ghost:hover{
+  background: linear-gradient(180deg, #e4edff, #dae7ff);
+  border-color: rgba(27,102,255,.22);
+}
+
+/* 8. Tool groups in chat toolbar */
+#page-chat .tool-group{
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff, #f5f8ff);
+  border: 1px solid rgba(10,20,60,.07);
+  box-shadow: 0 8px 20px rgba(15,23,42,.04);
+}
+
+/* 9. Status box refinement */
+.status{
+  border-radius: 16px;
+  border: 1px solid rgba(27,102,255,.12);
+  background: linear-gradient(180deg, #f0f5ff, #eef3ff);
+  font-size: 13.5px;
+  box-shadow: 0 4px 14px rgba(27,102,255,.06);
+}
+.status[data-tone="success"]{
+  background: linear-gradient(180deg, #ecfdf5, #e6fbf2);
+  border-color: rgba(16,185,129,.2);
+  box-shadow: 0 4px 14px rgba(16,185,129,.06);
+}
+.status[data-tone="error"]{
+  background: linear-gradient(180deg, #fff1f2, #fff0f1);
+  border-color: rgba(239,68,68,.2);
+  box-shadow: 0 4px 14px rgba(239,68,68,.06);
+}
+.status[data-tone="busy"]{
+  background: linear-gradient(180deg, #eff6ff, #e8f2ff);
+  border-color: rgba(59,130,246,.22);
+}
+
+/* 10. Thread drawer refinement */
+.thread-drawer{
+  background: linear-gradient(180deg, #09152e, #0f1e40) !important;
+}
+.thread-item{
+  border-radius: 14px;
+  transition: background .15s, transform .12s;
+  border: 1px solid transparent;
+}
+.thread-item:hover{
+  background: rgba(255,255,255,.09);
+  border-color: rgba(255,255,255,.1);
+  transform: translateX(-2px);
+}
+.thread-item.active{
+  background: rgba(27,102,255,.18) !important;
+  border-color: rgba(110,165,255,.28) !important;
+}
+
+/* 11. Empty state — final polish */
+.chatlog .empty-chat-state{
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+  border: 1px solid rgba(27,102,255,.1);
+  box-shadow: 0 20px 60px rgba(15,23,42,.06);
+  border-radius: 28px;
+  padding: 28px 26px;
+}
+.empty-chat-title{
+  font-weight: 900;
+  background: linear-gradient(135deg, #0b1020, #1b3870 50%, #1b66ff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.prompt-chip{
+  background: linear-gradient(180deg, #f4f8ff, #eef3ff);
+  border: 1.5px solid rgba(27,102,255,.16);
+  color: #1b3870;
+  font-weight: 700;
+  transition: background .15s, transform .13s, box-shadow .15s, border-color .15s;
+}
+.prompt-chip:hover{
+  background: linear-gradient(180deg, #e4edff, #dae7ff);
+  border-color: rgba(27,102,255,.32);
+  box-shadow: 0 6px 18px rgba(27,102,255,.14);
+  transform: translateY(-2px);
+}
+
+/* 12. Scrollbar — minimal sleek */
+*{
+  scrollbar-width: thin;
+  scrollbar-color: rgba(27,102,255,.25) transparent;
+}
+*::-webkit-scrollbar{ width:6px; height:6px; }
+*::-webkit-scrollbar-track{ background:transparent; }
+*::-webkit-scrollbar-thumb{
+  background: rgba(27,102,255,.22);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover{
+  background: rgba(27,102,255,.4);
+}
+
+/* 13. Modal polish */
+.modal .panel{
+  border-radius: 24px;
+  box-shadow: 0 40px 100px rgba(0,0,0,.28);
+}
+
+/* 14. Account strip in sidebar */
+.side-account-strip{
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 16px;
+  transition: background .15s, box-shadow .15s;
+}
+.side-account-strip:hover{
+  background: rgba(255,255,255,.14);
+  box-shadow: 0 8px 20px rgba(0,0,0,.12);
+}
+
+/* 15. Toast refinement */
+#toastContainer > div,
+.toast-msg{
+  font-family: 'Noto Sans Arabic', system-ui, Arial, sans-serif;
+  border-radius: 16px;
+  font-weight: 700;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* 16. Signal cards */
+.signal-card{
+  border-radius: 22px;
+  transition: transform .15s, box-shadow .15s;
+}
+.signal-card:hover{
+  transform: translateY(-2px);
+  box-shadow: 0 20px 48px rgba(15,23,42,.12);
+}
+
+/* 17. Workspace hero */
+.workspace-hero{
+  background:
+    radial-gradient(circle at top left, rgba(255,255,255,.18), transparent 30%),
+    radial-gradient(circle at bottom right, rgba(94,234,212,.22), transparent 28%),
+    linear-gradient(145deg, #060e22 0%, #12275a 48%, #1b66ff 100%);
+  border-radius: 24px;
+}
+
+/* 18. Mobile + desktop: chatbar always above floating nav */
+.chatbar{
+  position: sticky;
+  bottom: 0;
+  z-index: 80;
+}
+#page-chat > .composer-meta{
+  position: sticky;
+  bottom: 0;
+  z-index: 79;
+  background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,251,255,.98));
+}
+.floating-scroll-nav{
+  z-index: 32 !important;
+}
+@media (max-width:768px){
+  .chatbar{
+    border-radius: 0 0 18px 18px;
+    border-top: 1px solid rgba(10,20,60,.08);
+  }
+  .bubble{
+    border-radius: 18px;
+    padding: 14px 16px;
+  }
+  .bubble.user{
+    background: linear-gradient(145deg, #0f1e3d, #163068);
+  }
+}
+
+/* 19. Typing indicator animation */
+@keyframes typing-pulse{
+  0%,100%{ opacity:.35; transform:scale(.85); }
+  50%{ opacity:1; transform:scale(1); }
+}
+.typing-dot{
+  animation: typing-pulse 1.1s ease-in-out infinite;
+}
+.typing-dot:nth-child(2){ animation-delay:.18s; }
+.typing-dot:nth-child(3){ animation-delay:.36s; }
+
+/* 20. Page transitions */
+.page.active{
+  animation: page-enter .18s ease both;
+}
+@keyframes page-enter{
+  from{ opacity:0; transform:translateY(6px); }
+  to{ opacity:1; transform:none; }
 }
 </style>
 </head>
