@@ -2552,15 +2552,28 @@ function applyShellLayout(){
   function chooseSpeechSynthesisVoice(lang = 'ar-SA'){
     try{
       const voices = window.speechSynthesis?.getVoices?.() || [];
-      const exact = voices.find((voice) => String(voice.lang || '').toLowerCase() === lang.toLowerCase());
-      if (exact) return exact;
-      const family = voices.find((voice) => String(voice.lang || '').toLowerCase().startsWith(lang.split('-')[0].toLowerCase()));
-      if (family) return family;
-      if (String(lang || '').toLowerCase().startsWith('ar')){
-        const namedArabic = voices.find((voice) => /arabic|العربية|ar-/i.test(`${voice?.name || ''} ${voice?.lang || ''}`));
-        if (namedArabic) return namedArabic;
+      if (!voices.length) return null;
+      const isArabic = String(lang || '').toLowerCase().startsWith('ar');
+      if (isArabic){
+        const arabicVoices = voices.filter((v) => /^ar/i.test(v.lang || '') || /arabic|العربية/i.test(v.name || ''));
+        if (arabicVoices.length){
+          const priority = [
+            arabicVoices.find((v) => /google.*arabic|arabic.*google/i.test(v.name)),
+            arabicVoices.find((v) => /microsoft.*arabic|arabic.*microsoft/i.test(v.name)),
+            arabicVoices.find((v) => /naayf|hoda|asma|zariyah|tarik|omar|laila|amira/i.test(v.name)),
+            arabicVoices.find((v) => /ar-SA/i.test(v.lang)),
+            arabicVoices.find((v) => /ar-EG/i.test(v.lang)),
+            arabicVoices[0]
+          ];
+          const chosen = priority.find(Boolean);
+          if (chosen) return chosen;
+        }
       }
-      return voices.find((voice) => voice.default) || voices[0] || null;
+      const exact = voices.find((v) => String(v.lang || '').toLowerCase() === lang.toLowerCase());
+      if (exact) return exact;
+      const family = voices.find((v) => String(v.lang || '').toLowerCase().startsWith(lang.split('-')[0].toLowerCase()));
+      if (family) return family;
+      return voices.find((v) => v.default) || voices[0] || null;
     }catch(_){
       return null;
     }
@@ -2715,9 +2728,20 @@ function applyShellLayout(){
     return transcript;
   }
 
+  function isTtsModelArabicCapable(model){
+    if (!model) return false;
+    const m = String(model).toLowerCase();
+    if (/melotts|melo-tts/i.test(m)) return false;
+    if (/tts-1|tts-1-hd|gpt-4o.*audio|eleven|azure|google.*tts|neural|wavenet|polly|edge-tts|openai/i.test(m)) return true;
+    return false;
+  }
+
   async function speakAssistantReplyByCloud(text, settings = getSettings()){
     const voice = getVoiceCloudConfig(settings);
     if (!voice.ttsReady || !String(text || '').trim()) return false;
+    const lang = String(voice.preferredLanguage || getPreferredSpeechLanguage() || '').toLowerCase();
+    const isArabic = lang.startsWith('ar');
+    if (isArabic && !isTtsModelArabicCapable(voice.synthesisModel)) return false;
     const response = await fetchAuthResponse('/voice/speak', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2979,11 +3003,15 @@ function applyShellLayout(){
     }
 
     return await new Promise((resolve) => {
+      const isArabicLang = /^ar/i.test(lang || '');
+      const utterLang = isArabicLang ? (lang || 'ar-SA') : lang;
+      const bestVoice = chooseSpeechSynthesisVoice(utterLang) || (isArabicLang ? chooseSpeechSynthesisVoice('ar-SA') : null);
       const utter = new SpeechSynthesisUtterance(text);
-      utter.lang = lang;
-      utter.voice = chooseSpeechSynthesisVoice(lang) || chooseSpeechSynthesisVoice('ar-SA');
-      utter.rate = 0.92;
-      utter.pitch = 1;
+      utter.lang = utterLang;
+      if (bestVoice) utter.voice = bestVoice;
+      utter.rate = isArabicLang ? 0.88 : 0.92;
+      utter.pitch = isArabicLang ? 1.05 : 1;
+      utter.volume = 1;
       utter.onstart = () => { VOICE_RUNTIME.speaking = true; };
       utter.onend = () => {
         VOICE_RUNTIME.speaking = false;
@@ -11204,6 +11232,15 @@ ${e?.message||e}`, false);
     applyShellLayout();
     initializeAuthExperience().catch(()=>{});
     refreshStrategicWorkspace().catch(()=>{});
+
+    try{
+      if ('speechSynthesis' in window){
+        window.speechSynthesis.getVoices();
+        window.speechSynthesis.addEventListener('voiceschanged', () => {
+          window.speechSynthesis.getVoices();
+        }, { once: true });
+      }
+    }catch(_){}
   }
 
   init();
