@@ -9541,15 +9541,20 @@ let pinOnly = false;
     $('navDlMeta').textContent = String(dl.length);
     if (overview){
       const webUrl = 'https://app.saddamalkadi.com/';
-      const apkUrl = 'https://raw.githubusercontent.com/saddamalkadi/book-summarizer-pwa/main/downloads/ai-workspace-studio-latest.apk';
-      const aabUrl = 'https://raw.githubusercontent.com/saddamalkadi/book-summarizer-pwa/main/downloads/ai-workspace-studio-latest.aab';
+      const downloadsBase = 'https://app.saddamalkadi.com/downloads';
+      const apkUrl = `${downloadsBase}/ai-workspace-studio-latest.apk`;
+      const aabUrl = `${downloadsBase}/ai-workspace-studio-latest.aab`;
+      const apkFallbackUrl = 'https://github.com/saddamalkadi/book-summarizer-pwa/blob/main/downloads/ai-workspace-studio-latest.apk?raw=1';
+      const aabFallbackUrl = 'https://github.com/saddamalkadi/book-summarizer-pwa/blob/main/downloads/ai-workspace-studio-latest.aab?raw=1';
       overview.innerHTML = `
         <div class="bubble" style="margin:0">
           <div style="font-weight:1000">تحديث التطبيق والتنزيل المباشر</div>
-          <div class="hint" style="margin-top:6px">الويب يعمل مباشرة من الموقع، وAndroid متاح بروابط تنزيل مباشرة محدثة دائمًا.</div>
+          <div class="hint" style="margin-top:6px">الروابط الأساسية تعمل من نفس الموقع مباشرة. إذا تعذر التنزيل من الشبكة الحالية ستجد رابطًا احتياطيًا من GitHub.</div>
           <div class="actions">
             <a class="btn sm" href="${apkUrl}" target="_blank" rel="noopener noreferrer">تنزيل APK</a>
             <a class="btn ghost sm" href="${aabUrl}" target="_blank" rel="noopener noreferrer">تنزيل AAB</a>
+            <a class="btn ghost sm" href="${apkFallbackUrl}" target="_blank" rel="noopener noreferrer">APK احتياطي</a>
+            <a class="btn ghost sm" href="${aabFallbackUrl}" target="_blank" rel="noopener noreferrer">AAB احتياطي</a>
             <a class="btn ghost sm" href="${webUrl}" target="_blank" rel="noopener noreferrer">فتح نسخة الويب</a>
           </div>
         </div>`;

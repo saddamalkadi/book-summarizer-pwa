@@ -77,6 +77,12 @@
       color:rgba(255,255,255,.9);
     }
     a.inline{color:#fff; font-weight:1000;}
+    code{
+      background:rgba(255,255,255,.12);
+      border-radius:8px;
+      padding:2px 6px;
+      font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+    }
     @media (max-width:640px){
       body{padding:14px;}
       .hero,.card{border-radius:22px; padding:18px;}
@@ -94,45 +100,47 @@
           <span>أحدث مخرجات Android الجاهزة للتنزيل</span>
         </div>
       </div>
-      <p>هذه الصفحة مخصصة لتسليم نسخة Android النهائية فقط. ستجد هنا أحدث ملف تثبيت مباشر `APK` وأحدث حزمة `AAB` للنشر على Google Play، بروابط تنزيل مباشرة ومحدثة.</p>
+      <p>هذه الصفحة مخصصة لتنزيل أحدث نسخة Android الجاهزة. الروابط الأساسية تعمل من نفس الموقع مباشرة لتقليل مشاكل الحجب أو تعطل روابط GitHub الخام، مع إبقاء رابط احتياطي من GitHub عند الحاجة.</p>
     </section>
 
     <section class="grid">
       <article class="card">
         <span class="tag">Android APK</span>
         <h2>ملف التثبيت المباشر</h2>
-        <p>هذا الملف مناسب للتنزيل والتثبيت المباشر على أجهزة Android، ويتضمن إصلاح تحديث مسارات التحويل السحابي القديمة تلقائيًا ومنع أخطاء NOT_FOUND في PDF إلى Word.</p>
+        <p>استخدم هذا الملف للتثبيت المباشر على الهاتف. تم تحديثه إلى آخر نسخة ثابتة مع إصلاحات الدخول والصوت وروابط التحميل.</p>
         <ul>
-          <li>الإصدار: `v8.43 release signed`</li>
-          <li>الحد الأدنى للنظام: `Android 7.0+`</li>
-          <li>مناسب للتثبيت اليدوي المباشر</li>
+          <li>الإصدار: <code>v8.43 release signed</code></li>
+          <li>الحد الأدنى للنظام: <code>Android 7.0+</code></li>
+          <li>الأفضل للتثبيت اليدوي المباشر</li>
         </ul>
         <div class="actions">
-          <a class="btn primary" href="https://raw.githubusercontent.com/saddamalkadi/book-summarizer-pwa/main/downloads/ai-workspace-studio-latest.apk">تنزيل APK</a>
+          <a class="btn primary" href="./ai-workspace-studio-latest.apk" download="ai-workspace-studio-latest.apk">تنزيل APK</a>
+          <a class="btn ghost" href="https://github.com/saddamalkadi/book-summarizer-pwa/blob/main/downloads/ai-workspace-studio-latest.apk?raw=1" target="_blank" rel="noopener noreferrer">رابط احتياطي</a>
         </div>
-        <div class="meta">رابط مباشر ثابت للتنزيل. إذا أردت ملف هذا الإصدار تحديدًا فاستخدم: `ai-workspace-studio-v8.43-android-release.apk`.</div>
+        <div class="meta">إذا لم يبدأ التنزيل مباشرة من الموقع، استخدم الرابط الاحتياطي من GitHub أو ملف الإصدار المحدد: <code>ai-workspace-studio-v8.43-android-release.apk</code>.</div>
       </article>
 
       <article class="card">
         <span class="tag">Android AAB</span>
         <h2>حزمة Google Play</h2>
-        <p>هذا الملف مناسب للنشر أو الرفع إلى Google Play Console، وليس للتثبيت المباشر على الهاتف.</p>
+        <p>هذا الملف مخصص لرفع التطبيق إلى Google Play Console، وليس للتثبيت المباشر على الهاتف.</p>
         <ul>
-          <li>الإصدار: `v8.43 release signed`</li>
-          <li>مناسب لرفع المتجر</li>
+          <li>الإصدار: <code>v8.43 release signed</code></li>
+          <li>مناسب للنشر على المتجر</li>
           <li>متوافق مع نفس نسخة Android الحالية</li>
         </ul>
         <div class="actions">
-          <a class="btn primary" href="https://raw.githubusercontent.com/saddamalkadi/book-summarizer-pwa/main/downloads/ai-workspace-studio-latest.aab">تنزيل AAB</a>
+          <a class="btn primary" href="./ai-workspace-studio-latest.aab" download="ai-workspace-studio-latest.aab">تنزيل AAB</a>
+          <a class="btn ghost" href="https://github.com/saddamalkadi/book-summarizer-pwa/blob/main/downloads/ai-workspace-studio-latest.aab?raw=1" target="_blank" rel="noopener noreferrer">رابط احتياطي</a>
           <a class="btn ghost" href="../">فتح نسخة الويب</a>
         </div>
-        <div class="meta">رابط مباشر ثابت للنشر على Google Play. ويمكنك أيضًا تنزيل ملف الإصدار نفسه باسم `ai-workspace-studio-v8.43-android-release.aab`.</div>
+        <div class="meta">يمكنك أيضًا تنزيل ملف الإصدار المحدد باسم <code>ai-workspace-studio-v8.43-android-release.aab</code>.</div>
       </article>
     </section>
 
     <section class="note">
-      إخراج iPhone التنفيذي النهائي غير متاح من هذا الجهاز لأن ذلك يحتاج `macOS + Xcode + Apple Developer`.
-      إذا احتجنا نسخة iPhone لاحقًا فسيتم تجهيزها في مرحلة مستقلة. وحتى ذلك الوقت يمكنك استخدام
+      إخراج iPhone التنفيذي النهائي غير متاح من هذا الجهاز لأنه يحتاج <code>macOS + Xcode + Apple Developer</code>.
+      وحتى ذلك الوقت يمكنك استخدام
       <a class="inline" href="../">نسخة الويب المباشرة</a>
       أو متابعة التوزيع الحالي عبر Android فقط.
     </section>

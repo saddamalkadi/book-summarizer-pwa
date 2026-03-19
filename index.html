@@ -2407,7 +2407,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     })();
   </script>
 
-<script src="app.js?v=836"></script>
+<script src="app.js?v=844"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -2419,7 +2419,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     })();
     if ("serviceWorker" in navigator && !isNativeCapacitorApp) {
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=836").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=844").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {
