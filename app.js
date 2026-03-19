@@ -4143,6 +4143,14 @@ function syncUnifiedAuthEntry(){
         width: Math.min(360, Math.max(260, slot.clientWidth || 320)),
         use_fedcm_for_button: true
       });
+      setTimeout(() => {
+        if (slot && !slot.querySelector('iframe') && !slot.querySelector('div[data-idom-class]')){
+          slot.innerHTML = `<div class="hint" style="display:flex;align-items:center;gap:8px;padding:8px 0">
+            <span style="font-size:18px">🔒</span>
+            <span>تسجيل الدخول بـ Google متاح على الموقع الرسمي: <a href="https://app.saddamalkadi.com" target="_blank" rel="noopener" style="color:#1b66ff;font-weight:600">app.saddamalkadi.com</a></span>
+          </div>`;
+        }
+      }, 2000);
     }catch(error){
       slot.innerHTML = '<div class="hint">تعذر تهيئة زر تسجيل الدخول حاليًا.</div>';
       setAuthGateStatus(`تعذر تهيئة Google Sign-In: ${error?.message || error}`, 'error');
@@ -8410,27 +8418,70 @@ ${clip}` });
     toast('✅ تم إرسال الرد إلى اللوحة');
   }
 
+  const PROMPT_CHIPS = [
+    'اشرح لي مفهوم ',
+    'ساعدني في كتابة ',
+    'لخّص هذا النص:\n',
+    'اكتب خطة عمل لـ ',
+    'ترجم هذا النص إلى العربية:\n',
+    'راجع هذا الكود وأصلح الأخطاء:\n',
+  ];
+
+  function fillPromptChip(text){
+    const input = $('chatInput');
+    if (!input) return;
+    input.value = text;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    resizeComposerInput(input);
+    input.focus();
+    const len = text.length;
+    input.setSelectionRange(len, len);
+  }
+
   function renderEmptyChatState(log){
     if (!log) return;
-    log.innerHTML = `
-      <div class="empty-chat-state empty-chat-state--compact">
-        <div class="empty-chat-title">المساحة جاهزة لبحث، منتج، أو خطة تنفيذ.</div>
-        <div class="empty-chat-text">ابدأ من اللوحة العليا أو اكتب الهدف مباشرة. سيستخدم التطبيق الملفات، المعرفة، وملحقات المحادثة لبناء استجابة أوضح وأكثر احترافية.</div>
-        <div class="empty-chat-points">
-          <div class="empty-chat-point">
-            <strong>مخرجات مريحة للقراءة</strong>
-            <span>تقارير، ملخصات، وخطط عمل مكتوبة بطريقة واضحة ومريحة للقراءة الطويلة.</span>
-          </div>
-          <div class="empty-chat-point">
-            <strong>سياق غني</strong>
-            <span>الملفات، قاعدة المعرفة، والمرفقات تندمج داخل نفس سياق التشغيل بدل الدردشة المعزولة.</span>
-          </div>
-          <div class="empty-chat-point">
-            <strong>جاهز للتنفيذ</strong>
-            <span>استخدم القوالب، سير العمل، ونمط الوكيل لتحويل الطلب إلى مخرجات تنفيذية قابلة للاستخدام.</span>
-          </div>
+    const state = document.createElement('div');
+    state.className = 'empty-chat-state empty-chat-state--compact';
+    state.innerHTML = `
+      <div class="empty-chat-title">المساحة جاهزة لبحث، منتج، أو خطة تنفيذ.</div>
+      <div class="empty-chat-text">ابدأ من اللوحة العليا أو اكتب الهدف مباشرة. سيستخدم التطبيق الملفات، المعرفة، وملحقات المحادثة لبناء استجابة أوضح وأكثر احترافية.</div>
+      <div class="empty-chat-points">
+        <div class="empty-chat-point" data-chip="0">
+          <strong>مخرجات مريحة للقراءة</strong>
+          <span>تقارير، ملخصات، وخطط عمل مكتوبة بطريقة واضحة ومريحة للقراءة الطويلة.</span>
         </div>
-      </div>`;
+        <div class="empty-chat-point" data-chip="1">
+          <strong>سياق غني</strong>
+          <span>الملفات، قاعدة المعرفة، والمرفقات تندمج داخل نفس سياق التشغيل بدل الدردشة المعزولة.</span>
+        </div>
+        <div class="empty-chat-point" data-chip="2">
+          <strong>جاهز للتنفيذ</strong>
+          <span>استخدم القوالب، سير العمل، ونمط الوكيل لتحويل الطلب إلى مخرجات تنفيذية قابلة للاستخدام.</span>
+        </div>
+      </div>
+      <div class="prompt-chips" id="emptyChatChips"></div>`;
+    log.innerHTML = '';
+    log.appendChild(state);
+
+    const chipsContainer = state.querySelector('#emptyChatChips');
+    PROMPT_CHIPS.forEach((txt) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'prompt-chip';
+      btn.textContent = txt.trim().replace(/\n$/, '') + '…';
+      btn.addEventListener('click', () => fillPromptChip(txt));
+      chipsContainer.appendChild(btn);
+    });
+
+    state.querySelectorAll('.empty-chat-point[data-chip]').forEach((point) => {
+      const chipIdx = Number(point.dataset.chip);
+      const chipTexts = [
+        'اكتب تقريراً احترافياً عن ',
+        'ساعدني في كتابة ',
+        'اكتب خطة تنفيذية لـ ',
+      ];
+      point.addEventListener('click', () => fillPromptChip(chipTexts[chipIdx] || PROMPT_CHIPS[0]));
+    });
   }
 
   function renderChat(){

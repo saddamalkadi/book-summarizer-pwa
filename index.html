@@ -1007,6 +1007,43 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       line-height: 1.75;
       font-size: 13px;
     }
+    .empty-chat-point{
+      cursor: pointer;
+      transition: transform .15s, box-shadow .15s, background .15s;
+    }
+    .empty-chat-point:hover{
+      transform: translateY(-2px);
+      box-shadow: 0 6px 18px rgba(27,102,255,.1);
+      background: linear-gradient(180deg, #eef4ff, #f8fbff);
+      border-color: rgba(27,102,255,.18);
+    }
+    .prompt-chips{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    .prompt-chip{
+      padding: 8px 14px;
+      border-radius: 24px;
+      background: #f0f4ff;
+      border: 1px solid rgba(27,102,255,.18);
+      color: #1b66ff;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background .15s, transform .12s, box-shadow .15s;
+      white-space: nowrap;
+      font-family: inherit;
+      line-height: 1.4;
+    }
+    .prompt-chip:hover{
+      background: #ddeaff;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(27,102,255,.15);
+    }
+    .prompt-chip:active{
+      transform: translateY(0);
+    }
     .chatbar{
       gap: 10px;
       padding: 12px 0 10px;
@@ -1119,6 +1156,10 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       }
       .empty-chat-points{
         grid-template-columns: 1fr;
+      }
+      .prompt-chip{
+        font-size: 12px;
+        padding: 7px 12px;
       }
       .chatbar{
         padding-top: 10px;
