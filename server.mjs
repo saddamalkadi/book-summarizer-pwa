@@ -71,7 +71,10 @@ async function autoFixWorker() {
     const jEnd = code.lastIndexOf('\n--');
     if (jEnd > 0) code = code.substring(0, jEnd);
 
-    // 4) Patch with KV helpers if missing
+    // 4) Patch Worker code
+    let patched = false;
+
+    // 4a) KV helpers for persistent API key + admin password
     if (!code.includes('getServerKeyWithKv')) {
       const KV_HELPERS = `
 async function getKvConfig(env2,key){try{if(env2&&env2.USER_DATA&&typeof env2.USER_DATA.get==='function'){const v=await env2.USER_DATA.get('_config:'+key);if(v&&String(v).trim())return String(v).trim();}}catch(_){}return '';}
@@ -80,21 +83,63 @@ async function getServerKeyWithKv(env2){const k=getServerKey(env2);if(k)return k
 __name(getServerKeyWithKv,'getServerKeyWithKv');
 async function getAdminPasswordWithKv(env2){const p=getAdminPassword(env2);if(p)return p;return await getKvConfig(env2,'admin_password');}
 __name(getAdminPasswordWithKv,'getAdminPasswordWithKv');`;
-
       code = code.replace('__name(getServerKey, "getServerKey");', '__name(getServerKey, "getServerKey");' + KV_HELPERS);
       code = code
-        .replace(
-          'const serverKey = getServerKey(env2);',
-          'const serverKey = await getServerKeyWithKv(env2);'
-        )
-        .replace(
-          'const adminPassword = getAdminPassword(env2);',
-          'const adminPassword = await getAdminPasswordWithKv(env2);'
-        );
+        .replace('const serverKey = getServerKey(env2);', 'const serverKey = await getServerKeyWithKv(env2);')
+        .replace('const adminPassword = getAdminPassword(env2);', 'const adminPassword = await getAdminPasswordWithKv(env2);');
+      patched = true;
+      console.log('[worker-fix] Patched: KV helpers');
+    }
+
+    // 4b) Google TTS proxy — free Arabic TTS, no API key needed
+    if (!code.includes('handleGoogleTtsProxy')) {
+      const GTTS_HANDLER = `
+async function handleGoogleTtsProxy(request){
+  try{
+    const body=await request.json().catch(()=>({}));
+    const text=String(body?.text||'').trim();
+    const lang=String(body?.lang||'ar').split('-')[0]||'ar';
+    if(!text)return new Response(JSON.stringify({error:'text required'}),{status:400,headers:{'Content-Type':'application/json'}});
+    const chunks=[];
+    const words=text.split(/\\s+/);
+    let cur='';
+    for(const w of words){
+      if((cur+' '+w).trim().length>180){if(cur.trim())chunks.push(cur.trim());cur=w;}
+      else cur=(cur+' '+w).trim();
+    }
+    if(cur.trim())chunks.push(cur.trim());
+    const bufs=[];
+    for(const c of chunks){
+      const url='https://translate.googleapis.com/translate_tts?ie=UTF-8&q='+encodeURIComponent(c)+'&tl='+encodeURIComponent(lang)+'&client=gtx&ttsspeed=0.9';
+      const r=await fetch(url,{headers:{'User-Agent':'Mozilla/5.0','Referer':'https://translate.google.com/','Accept':'audio/mpeg,audio/*;q=0.8'}});
+      if(!r.ok)throw new Error('Google TTS '+r.status);
+      bufs.push(await r.arrayBuffer());
+    }
+    const total=bufs.reduce((s,b)=>s+b.byteLength,0);
+    const out=new Uint8Array(total);let off=0;
+    for(const b of bufs){out.set(new Uint8Array(b),off);off+=b.byteLength;}
+    return new Response(out,{status:200,headers:{'Content-Type':'audio/mpeg','Cache-Control':'no-store','Content-Length':String(total)}});
+  }catch(e){return new Response(JSON.stringify({error:String(e.message)}),{status:502,headers:{'Content-Type':'application/json'}});}
+}
+__name(handleGoogleTtsProxy,'handleGoogleTtsProxy');`;
+
+      // Inject the function before the main fetch handler
+      code = code.replace('__name(handleVoiceSynthesis, "handleVoiceSynthesis");',
+        '__name(handleVoiceSynthesis, "handleVoiceSynthesis");' + GTTS_HANDLER);
+
+      // Add the route just before /voice/speak route
+      code = code.replace(
+        'if (url.pathname === "/voice/speak" && request.method === "POST")',
+        'if (url.pathname === "/proxy/tts" && (request.method === "POST" || request.method === "GET")) {\n        return withCors(await handleGoogleTtsProxy(request), request);\n      }\n      if (url.pathname === "/voice/speak" && request.method === "POST")'
+      );
+      patched = true;
+      console.log('[worker-fix] Patched: Google TTS proxy (/proxy/tts)');
+    }
+
+    if (patched) {
       code = '// autofix-' + Date.now() + '\n' + code;
-      console.log('[worker-fix] Code patched with KV helpers');
     } else {
-      console.log('[worker-fix] Code already patched — just redeploying');
+      console.log('[worker-fix] Code already fully patched — just redeploying');
     }
 
     // 5) Redeploy Worker
