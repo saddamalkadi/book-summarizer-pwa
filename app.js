@@ -2732,14 +2732,15 @@ function applyShellLayout(){
     if (!model) return false;
     const m = String(model).toLowerCase();
     if (/melotts|melo-tts/i.test(m)) return false;
-    if (/tts-1|tts-1-hd|gpt-4o.*audio|eleven|azure|google.*tts|neural|wavenet|polly|edge-tts|openai/i.test(m)) return true;
+    if (/tts-1|tts-1-hd|gpt-4o|eleven|azure|google.*tts|neural|wavenet|polly|edge-tts|openai/i.test(m)) return true;
     return false;
   }
 
   async function speakAssistantReplyByProxyTts(text, lang = 'ar'){
     if (!String(text || '').trim()) return false;
     try{
-      const proxyUrl = '/proxy/tts';
+      const apiRoot = (getAuthServiceRoot() || '').replace(/\/+$/, '');
+      const proxyUrl = apiRoot ? `${apiRoot}/proxy/tts` : '/proxy/tts';
       const response = await fetch(proxyUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
