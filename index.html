@@ -1733,6 +1733,109 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
         grid-template-columns: 1fr;
       }
     }
+
+/* ═══════════════════════════════════════════
+   v8.45 — UI/UX IMPROVEMENTS
+   ═══════════════════════════════════════════ */
+
+/* — Sidebar account strip — */
+.side-account-strip{
+  display:flex; align-items:center; gap:10px; padding:10px 12px;
+  background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.10);
+  border-radius:14px; cursor:pointer; transition:background .15s;
+  text-decoration:none; color:inherit;
+}
+.side-account-strip:hover{ background:rgba(255,255,255,.13); }
+.side-account-avatar{
+  width:34px; height:34px; min-width:34px; border-radius:50%; object-fit:cover;
+  background:linear-gradient(135deg,#1b66ff,#5eead4);
+  display:grid; place-items:center; font-size:15px; font-weight:1000; color:#fff;
+  border:2px solid rgba(255,255,255,.2);
+}
+.side-account-info{ min-width:0; flex:1; }
+.side-account-name{ font-size:13px; font-weight:1000; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.side-account-plan{ font-size:11px; opacity:.75; font-weight:700; }
+.side-account-badge{
+  font-size:10px; font-weight:1000; padding:3px 8px; border-radius:999px;
+  background:linear-gradient(135deg,#ffe28b,#f59e0b); color:#6e4a00;
+  white-space:nowrap;
+}
+.side-account-badge.free{ background:rgba(255,255,255,.14); color:rgba(255,255,255,.82); }
+.side-account-badge.premium{ background:linear-gradient(135deg,#ffe28b,#f59e0b); color:#6e4a00; }
+
+/* — Speak button improved — */
+.speak-btn{
+  display:inline-flex; align-items:center; gap:5px;
+  border:none; cursor:pointer; border-radius:10px; padding:4px 10px;
+  background:rgba(27,102,255,.08); color:#1b66ff;
+  font-size:12px; font-weight:900; transition:background .15s, transform .12s;
+}
+.speak-btn:hover{ background:rgba(27,102,255,.16); transform:translateY(-1px); }
+.speak-btn.speaking{ background:rgba(239,68,68,.1); color:#dc2626; animation:pulse-btn .9s ease-in-out infinite; }
+@keyframes pulse-btn{ 0%,100%{opacity:1;} 50%{opacity:.6;} }
+.speak-btn .speak-icon{ font-size:14px; }
+
+/* — Bubble enhancements — */
+.bubble{ position:relative; }
+.bubble .actions{
+  display:flex; gap:6px; flex-wrap:wrap; margin-top:10px;
+  padding-top:10px; border-top:1px solid rgba(10,20,60,.06);
+}
+.bubble.user .actions{ border-top-color:rgba(27,102,255,.1); }
+.bubble .meta{
+  font-size:12px; color:var(--muted); font-weight:900;
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px;
+}
+.bubble-role-badge{
+  display:inline-flex; align-items:center; gap:5px; padding:3px 9px;
+  border-radius:999px; font-size:11px; font-weight:1000;
+  background:rgba(10,20,60,.06); color:var(--muted);
+}
+.bubble.user .bubble-role-badge{ background:rgba(27,102,255,.1); color:#1d4ed8; }
+.bubble.assistant .bubble-role-badge{ background:rgba(16,185,129,.1); color:#047857; }
+
+/* — Auth gate improvement — */
+.auth-gate{
+  background:
+    radial-gradient(circle at 20% 20%, rgba(27,102,255,.22), transparent 36%),
+    radial-gradient(circle at 80% 80%, rgba(94,234,212,.18), transparent 32%),
+    rgba(6,10,20,.82) !important;
+}
+.auth-shell{
+  gap:14px;
+  animation: auth-enter .35s cubic-bezier(.22,.68,0,1.2);
+}
+@keyframes auth-enter{
+  from{ opacity:0; transform:translateY(18px) scale(.97); }
+  to{ opacity:1; transform:none; }
+}
+.auth-card{ gap:12px !important; }
+.auth-card h2{ font-size:22px !important; }
+.auth-status{ font-size:13px !important; min-height:44px !important; }
+
+/* — Nav badge improved — */
+.navbtn .meta{
+  min-width:28px; text-align:center;
+  background:rgba(255,255,255,.16) !important;
+  border-radius:8px !important;
+  padding:2px 7px !important;
+}
+.navbtn.active .meta{ background:rgba(103,145,255,.3) !important; }
+
+/* — Topbar account button — */
+.account-trigger{
+  border-radius:14px !important;
+  padding:7px 12px !important;
+  gap:8px !important;
+}
+
+/* — Status box improved — */
+.status{ font-size:13.5px; line-height:1.85; }
+
+/* — Mobile speak button always visible — */
+@media (max-width:640px){
+  .speak-btn{ padding:5px 12px; font-size:13px; }
+}
 </style>
 </head>
 <body>
@@ -1759,6 +1862,17 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
         <button class="navbtn" data-page="projects"><span>🗂️ المشاريع</span><span class="meta" id="navProjMeta">—</span></button>
         <button class="navbtn" data-page="settings"><span>⚙️ الإعدادات</span><span class="meta" id="navSetMeta">—</span></button>
       </nav>
+
+      <div style="padding:10px 12px 14px; margin-top:auto;">
+        <div class="side-account-strip" id="sideAccountStrip" role="button" tabindex="0" title="الحساب والإعدادات">
+          <div class="side-account-avatar" id="sideAccountAvatar">؟</div>
+          <div class="side-account-info">
+            <div class="side-account-name" id="sideAccountName">تسجيل الدخول</div>
+            <div class="side-account-plan" id="sideAccountPlan">الخطة المجانية</div>
+          </div>
+          <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
+        </div>
+      </div>
     </aside>
 
     <main class="main">

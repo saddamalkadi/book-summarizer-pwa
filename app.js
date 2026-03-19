@@ -4011,6 +4011,26 @@ function refreshDeepSearchBtn(){
       $('authCurrentPlanPill').classList.toggle('premium', role === 'admin' || plan === 'premium');
     }
 
+    if ($('sideAccountName')) $('sideAccountName').textContent = signedIn ? (role === 'admin' ? `الإدارة` : (auth.name || auth.email || 'الحساب')) : 'تسجيل الدخول';
+    if ($('sideAccountPlan')) $('sideAccountPlan').textContent = signedIn ? (role === 'admin' ? 'صلاحيات كاملة' : planLabel) : 'غير مسجل';
+    if ($('sideAccountAvatar')){
+      const av = $('sideAccountAvatar');
+      const n = signedIn ? (auth.name || auth.email || '') : '';
+      av.textContent = n ? n.charAt(0).toUpperCase() : '؟';
+      if (signedIn && auth.picture){ av.innerHTML = `<img src="${auth.picture}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">`; }
+    }
+    if ($('sideAccountBadge')){
+      const isBadgePremium = role === 'admin' || plan === 'premium';
+      $('sideAccountBadge').textContent = role === 'admin' ? 'مدير' : (plan === 'premium' ? 'مدفوع' : 'مجاني');
+      $('sideAccountBadge').classList.toggle('free', !isBadgePremium);
+      $('sideAccountBadge').classList.toggle('premium', isBadgePremium);
+    }
+    if ($('sideAccountStrip') && !$('sideAccountStrip').dataset.bound){
+      $('sideAccountStrip').dataset.bound = '1';
+      $('sideAccountStrip').addEventListener('click', () => { setActiveNav('settings'); $('closeSideBtn')?.click(); });
+      $('sideAccountStrip').addEventListener('keydown', e => { if(e.key==='Enter'||e.key===' '){ setActiveNav('settings'); $('closeSideBtn')?.click(); }});
+    }
+
     renderUsageIndicators(settings);
     const remembered = getRememberedAuthEntry();
     if ($('authRememberToggle')) $('authRememberToggle').checked = remembered.remember;
@@ -8427,7 +8447,13 @@ ${clip}` });
       b.dataset.mid = m.id || '';
       const meta = document.createElement('div');
       meta.className = 'meta';
-      meta.textContent = formatMessageMetaLine(m);
+      const roleBadge = document.createElement('span');
+      roleBadge.className = 'bubble-role-badge';
+      roleBadge.textContent = m.role === 'user' ? '👤 أنت' : '🤖 المساعد';
+      const metaText = document.createElement('span');
+      metaText.textContent = formatMessageMetaLine(m);
+      meta.appendChild(roleBadge);
+      meta.appendChild(metaText);
 
       const body = document.createElement('div');
       body.className = 'body';
@@ -8590,7 +8616,13 @@ ${clip}` });
 
       const meta = document.createElement('div');
       meta.className = 'meta';
-      meta.textContent = formatMessageMetaLine(m);
+      const roleBadge2 = document.createElement('span');
+      roleBadge2.className = 'bubble-role-badge';
+      roleBadge2.textContent = m.role === 'user' ? '👤 أنت' : '🤖 المساعد';
+      const metaText2 = document.createElement('span');
+      metaText2.textContent = formatMessageMetaLine(m);
+      meta.appendChild(roleBadge2);
+      meta.appendChild(metaText2);
 
       const body = document.createElement('div');
       body.className = 'body';
@@ -8628,10 +8660,17 @@ ${clip}` });
         actions.appendChild(canvasBtn);
 
         const speakBtn = document.createElement('button');
-        speakBtn.className = 'btn ghost sm';
-        speakBtn.textContent = 'استماع';
-        speakBtn.addEventListener('click', () => {
-          const played = speakAssistantReply(m.content || '', { force: true });
+        speakBtn.className = 'speak-btn';
+        speakBtn.innerHTML = '<span class="speak-icon">🔊</span><span>استماع</span>';
+        speakBtn.title = 'استماع للرد بصوت عربي';
+        speakBtn.addEventListener('click', async () => {
+          const wasSpeaking = speakBtn.classList.contains('speaking');
+          if (wasSpeaking){ window._ttsStop?.(); speakBtn.classList.remove('speaking'); return; }
+          speakBtn.classList.add('speaking');
+          speakBtn.querySelector('.speak-icon').textContent = '⏹️';
+          const played = await speakAssistantReply(m.content || '', { force: true });
+          speakBtn.classList.remove('speaking');
+          speakBtn.querySelector('.speak-icon').textContent = '🔊';
           if (!played) toast('⚠️ التشغيل الصوتي غير متاح لهذا الرد.');
         });
         actions.appendChild(speakBtn);
