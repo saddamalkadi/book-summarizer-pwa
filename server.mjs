@@ -359,23 +359,19 @@ const server = createServer(async (req, res) => {
   createReadStream(path).pipe(res);
 });
 
+let _portRetries = 0;
 server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
-    console.log(`[server] Port ${PORT} in use — finding and killing old process...`);
+    _portRetries++;
+    if (_portRetries > 3) {
+      console.log(`[server] Port ${PORT} still in use after ${_portRetries} attempts — exiting`);
+      process.exit(1);
+    }
+    console.log(`[server] Port ${PORT} in use — attempt ${_portRetries}/3, killing old process...`);
     try {
-      const hexPort = PORT.toString(16).toUpperCase().padStart(4, '0');
-      const tcp = readFileSync('/proc/net/tcp', 'utf8');
-      const line = tcp.split('\n').find(l => l.includes(`:${hexPort} `));
-      if (line) {
-        const inode = line.trim().split(/\s+/)[9];
-        const pid = execSync(
-          `grep -rl 'socket:\\[${inode}\\]' /proc/*/fd 2>/dev/null | head -1`,
-          { timeout: 3000 }
-        ).toString().match(/\/proc\/(\d+)\//)?.[1];
-        if (pid) { process.kill(Number(pid), 'SIGKILL'); console.log(`[server] Killed PID ${pid}`); }
-      }
+      execSync(`fuser -k ${PORT}/tcp 2>/dev/null || lsof -ti:${PORT} | xargs kill -9 2>/dev/null`, { timeout: 3000 });
     } catch (_) {}
-    setTimeout(() => server.listen(PORT, HOST), 2000);
+    setTimeout(() => { _portRetries = 0; server.listen(PORT, HOST); }, 3000);
   } else {
     throw e;
   }
