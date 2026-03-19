@@ -1279,7 +1279,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       body: JSON.stringify({
         reason,
         state: snapshot,
-        appVersion: '8.33.0'
+        appVersion: '8.44.0'
       })
     }).then((payload) => {
       CLOUD_RUNTIME.lastHash = hash;

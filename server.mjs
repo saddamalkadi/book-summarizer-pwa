@@ -185,6 +185,11 @@ createServer(async (req, res) => {
     return handleTtsProxy(req, res);
   }
 
+  if (urlPath === '/download' || urlPath === '/download/') {
+    res.writeHead(302, { Location: '/downloads/' });
+    return res.end();
+  }
+
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8' });
     return res.end('Method Not Allowed');
