@@ -2736,6 +2736,62 @@ function applyShellLayout(){
     return false;
   }
 
+  async function speakAssistantReplyByProxyTts(text, lang = 'ar'){
+    if (!String(text || '').trim()) return false;
+    try{
+      const proxyUrl = '/proxy/tts';
+      const response = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, lang }),
+        signal: AbortSignal.timeout(30000)
+      });
+      if (!response.ok) return false;
+      const audioBlob = await response.blob();
+      if (!audioBlob || !audioBlob.size) return false;
+
+      const audio = new Audio();
+      const objectUrl = URL.createObjectURL(audioBlob);
+      audio.src = objectUrl;
+      audio.__objectUrl = objectUrl;
+      audio.preload = 'auto';
+      VOICE_RUNTIME.audioPlayer = audio;
+
+      return await new Promise((resolve) => {
+        const cleanup = (played) => {
+          VOICE_RUNTIME.speaking = false;
+          if (VOICE_RUNTIME.audioPlayer === audio) VOICE_RUNTIME.audioPlayer = null;
+          try{ if (audio.__objectUrl) URL.revokeObjectURL(audio.__objectUrl); }catch(_){ }
+          if (played) scheduleVoiceConversationRestart(700);
+          resolve(played);
+        };
+        audio.onended = () => cleanup(true);
+        audio.onerror = () => cleanup(false);
+        try{
+          VOICE_RUNTIME.speaking = true;
+          const p = audio.play();
+          if (p && typeof p.then === 'function') p.catch(() => cleanup(false));
+        }catch(_){ cleanup(false); }
+      });
+    }catch(_){
+      return false;
+    }
+  }
+
+  async function waitForSpeechVoices(timeoutMs = 2500){
+    return new Promise((resolve) => {
+      try{
+        const voices = window.speechSynthesis?.getVoices?.() || [];
+        if (voices.length > 0){ resolve(voices); return; }
+        const timer = setTimeout(() => resolve([]), timeoutMs);
+        window.speechSynthesis?.addEventListener?.('voiceschanged', () => {
+          clearTimeout(timer);
+          resolve(window.speechSynthesis?.getVoices?.() || []);
+        }, { once: true });
+      }catch(_){ resolve([]); }
+    });
+  }
+
   async function speakAssistantReplyByCloud(text, settings = getSettings()){
     const voice = getVoiceCloudConfig(settings);
     if (!voice.ttsReady || !String(text || '').trim()) return false;
@@ -2965,6 +3021,17 @@ function applyShellLayout(){
     }
 
     await stopVoicePlayback();
+
+    const preferredLang = String(getPreferredSpeechLanguage() || 'ar-SA');
+    const isArabicSession = /^ar/i.test(preferredLang);
+
+    if (isArabicSession){
+      try{
+        const proxyPlayed = await speakAssistantReplyByProxyTts(text, preferredLang.split('-')[0] || 'ar');
+        if (proxyPlayed) return true;
+      }catch(_){ }
+    }
+
     try{
       const cloudPlayed = await speakAssistantReplyByCloud(text, getSettings());
       if (cloudPlayed) return true;
@@ -3001,6 +3068,8 @@ function applyShellLayout(){
       if (force) toast('التشغيل الصوتي غير مدعوم في هذا المتصفح.');
       return false;
     }
+
+    await waitForSpeechVoices(2000);
 
     return await new Promise((resolve) => {
       const isArabicLang = /^ar/i.test(lang || '');
