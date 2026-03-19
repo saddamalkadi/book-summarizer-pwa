@@ -93,7 +93,7 @@ createServer((req, res) => {
   res.writeHead(200, {
     'Content-Type': type,
     'Content-Length': stats.size,
-    'Cache-Control': extname(path) === '.html' ? 'no-cache' : 'public, max-age=3600'
+    'Cache-Control': 'no-cache, no-store, must-revalidate'
   });
 
   if (req.method === 'HEAD') return res.end();

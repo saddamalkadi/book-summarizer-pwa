@@ -101,7 +101,7 @@
     rag: false,
     toolsEnabled: false,
 
-    authMode: 'gateway',          // browser | gateway
+    authMode: 'browser',          // browser | gateway
     gatewayUrl: 'https://api.saddamalkadi.com',
     gatewayToken: '',             // optional extra protection
     cloudConvertEndpoint: 'https://api.saddamalkadi.com/convert/pdf-to-docx',
@@ -136,7 +136,7 @@
   };
 
   const DEFAULT_AUTH_CONFIG = {
-    authRequired: true,
+    authRequired: false,
     brandName: 'AI Workspace Studio',
     developerName: 'صدام القاضي',
     upgradeEmail: 'tntntt830@gmail.com',
@@ -925,7 +925,8 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   function getAccountRuntimeState(settings = getSettings()){
     const auth = getAuthState();
     const config = getEffectiveAuthConfig(settings);
-    const authRequired = config.authRequired !== false;
+    // authRequired only applies when using gateway mode; browser mode always bypasses auth gate
+    const authRequired = settings.authMode === 'gateway' && config.authRequired === true;
     const signedIn = hasValidAuthSession(auth);
     const premium = signedIn && auth.plan === 'premium';
     return {
@@ -1044,7 +1045,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     AUTH_RUNTIME.configPromise = requestRemoteConfig(settings).catch((err) => {
       const repaired = repairGatewayAfterAccessIssue(err, settings);
       if (repaired){
-        return requestRemoteConfig(repaired);
+        return requestRemoteConfig(repaired).catch(() => setAuthConfigCached(getLocalAuthConfig(settings)));
       }
       return setAuthConfigCached(getLocalAuthConfig(settings));
     }).finally(() => {
@@ -4221,6 +4222,7 @@ function syncUnifiedAuthEntry(){
   }
 
   function openAuthGate(message = ''){
+    if (getAccountRuntimeState().authRequired !== true) return;
     ensureAccountChrome();
     $('authGate')?.classList.add('show');
     setAuthGateStatus(message || 'سجّل الدخول ببريدك الشخصي لفتح الخطة المجانية، أو استخدم بريد الإدارة مع كلمة المرور من نفس الشاشة.', 'info');
@@ -4524,8 +4526,8 @@ async function submitUnifiedAuthEntry(){
     if (AUTH_RUNTIME.booting) return;
     AUTH_RUNTIME.booting = true;
     try{
-      await loadRemoteAuthConfig(false);
-      await verifyStoredAuthSession(false);
+      await loadRemoteAuthConfig(false).catch(() => null);
+      await verifyStoredAuthSession(false).catch(() => null);
       syncAccountUi();
       const account = getAccountRuntimeState();
       if (account.authRequired && !hasValidAuthSession()){
@@ -4534,6 +4536,8 @@ async function submitUnifiedAuthEntry(){
         await hydrateCloudState(false).catch(() => null);
         closeAuthGate(true);
       }
+    }catch(_){
+      closeAuthGate(true);
     }finally{
       AUTH_RUNTIME.booting = false;
     }
@@ -11153,6 +11157,10 @@ ${e?.message||e}`, false);
 
   // ---------------- Init ----------------
   function init(){
+    // Clear stale auth config cache so DEFAULT_AUTH_CONFIG.authRequired=false takes effect
+    try{ localStorage.removeItem(KEYS.authConfigCache); }catch(_){}
+    AUTH_RUNTIME.config = null;
+
     loadProjects();
     const pid = getCurProjectId();
     loadThreads(pid);
