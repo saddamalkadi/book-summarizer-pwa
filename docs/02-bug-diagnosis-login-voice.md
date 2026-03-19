@@ -1,178 +1,131 @@
 # تشخيص أخطاء تسجيل الدخول والدردشة الصوتية
 
 **التاريخ:** مارس 2026  
-**الإصدار:** v8.43
+**الإصدار:** v8.45
 
 ---
 
-## أولًا: مشكلة تسجيل الدخول (Login)
+## الحالة العامة (مُحدَّث)
 
-### السبب الجذري (Root Cause)
+| الميزة | الحالة | ملاحظات |
+|--------|--------|---------|
+| تسجيل الدخول (بريد إلكتروني) | ✅ يعمل | gateway متاح |
+| تسجيل الدخول (Google) | ❌ في Replit | ✅ يعمل على `app.saddamalkadi.com` |
+| الدردشة النصية | ✅ يعمل | OpenRouter عبر gateway |
+| الدردشة الصوتية (TTS عربي) | ✅ يعمل | مؤكد من المستخدم |
+| STT (تحويل صوت→نص) | ✅ يعمل | Workers AI |
 
-عند تحميل التطبيق، تحدث هذه التسلسل:
+---
 
-```
-init()
-  └─► initializeAuthExperience()
-        ├─► loadRemoteAuthConfig()   → GET https://api.saddamalkadi.com/auth/config
-        │     └─► HTTP 401 ← المشكلة الأولى
-        ├─► verifyStoredAuthSession() → لا جلسة مخزّنة → null
-        └─► openAuthGate()           → تظهر شاشة الدخول
-```
+## أولاً: تسجيل الدخول (Login)
 
-### المشاكل المحددة
-
-#### 1. خطأ 401 من gateway المصادقة
-- **المصدر:** `GET https://api.saddamalkadi.com/auth/config`
-- **السبب:** الـ gateway يرفض الطلب (ربما خادم مؤمّن أو يتطلب token)
-- **التأثير:** لا يتم تحميل إعدادات المصادقة من الخادم، يُستخدم fallback محلي
-- **الخطورة:** عالية — يمنع تهيئة Google Sign-In ومعرفة حالة المصادقة المطلوبة
-
-#### 2. خطأ 403 من مورد ثانوي
-- **المصدر:** طلب آخر إلى `https://api.saddamalkadi.com` (على الأرجح `/auth/session`)
-- **السبب:** لا توجد جلسة صالحة، الخادم يرفض الطلب بـ 403
-- **التأثير:** تُمسح حالة الجلسة المحلية
-
-#### 3. Google Sign-In: الأصل غير مسموح به
-- **الخطأ:** `[GSI_LOGGER]: The given origin is not allowed for the given client ID.`
-- **السبب:** نطاق Replit (`*.replit.dev`) غير مضاف في إعدادات Google Cloud Console كـ Authorized JavaScript origin
-- **التأثير:** زر Google Sign-In لا يعمل إطلاقًا في بيئة Replit
-- **الحل المطلوب:** إضافة `https://77f44e08-4d2e-4759-b860-9c5ce5cb9427-00-29uh3q2g4naso.pike.replit.dev` كـ Authorized Origin — أو استخدام نطاق ثابت
-
-#### 4. Google GSI يُهيَّأ عدة مرات
-- **الخطأ:** `google.accounts.id.initialize() is called multiple times`
-- **السبب:** الدالة `renderGoogleButton()` أو `renderNativeGoogleButton()` تُستدعى أكثر من مرة بدون تتبع الحالة
-- **التأثير:** سلوك غير متوقع لزر Google، قد يُعطّل عمله
-
-#### 5. حقول كلمة المرور خارج عنصر `<form>`
-- **الخطأ:** `[DOM] Password field is not contained in a form`
-- **السبب:** نموذج تسجيل الدخول يُبنى ديناميكيًا داخل `<div>` وليس `<form>`
-- **التأثير:** قد يمنع بعض المتصفحات من حفظ كلمة المرور، وقد يُضعف إمكانية الوصول (accessibility)
-
-### تدفق تسجيل الدخول (Login Flow) المفصّل
+### تدفق تسجيل الدخول
 
 ```
-المستخدم يكتب email + name ← يضغط "متابعة بالخطة المجانية"
+المستخدم → يُدخل الاسم + البريد → يضغط "متابعة"
   └─► submitUnifiedAuthEntry()
-        ├─► يتحقق إذا كان البريد هو بريد الإدارة
-        │     ├─► [إدارة] POST /auth/login  {email, password}
-        │     └─► [عادي]  POST /auth/register {name, email, upgradeCode}
-        └─► applyAuthResponse() ← يحفظ sessionToken في localStorage
-              └─► closeAuthGate() ← يُغلق شاشة الدخول
+        ├─► [بريد إدارة] POST /auth/login  {email, password}
+        └─► [بريد عادي]  POST /auth/register {name, email}
+              └─► applyAuthResponse() → يحفظ sessionToken
+                    └─► closeAuthGate() → يفتح التطبيق
 ```
 
-**المشكلة العملية:**
-- عند محاولة `POST /auth/register` على `https://api.saddamalkadi.com/auth/register`، الخادم قد يرفض الطلب إذا كانت سياسة CORS تمنع نطاق Replit، أو إذا كان الخادم لا يقبل تسجيلات جديدة
+### المشاكل الموجودة
 
-### ما يعمل حاليًا
-- ✅ واجهة نموذج تسجيل الدخول تظهر وتعمل بشكل مرئي
-- ✅ التحقق من صحة البريد الإلكتروني يعمل
-- ✅ fallback للإعدادات المحلية يعمل عند فشل الخادم
-- ✅ حفظ بيانات الجلسة في localStorage يعمل
+#### 1. Google OAuth لا يعمل في Replit
+- **السبب:** نطاق `*.replit.dev` غير مضاف في Google Cloud Console
+- **التأثير:** محدود — لأن التطبيق الفعلي يعمل على `app.saddamalkadi.com` حيث Google يعمل
+- **الإصلاح في Replit:** غير ضروري (بيئة تطوير فقط)
+
+#### 2. Google GSI يُهيَّأ عدة مرات
+- **الخطأ:** `google.accounts.id.initialize() is called multiple times`
+- **السبب:** `renderGoogleButton()` تُستدعى عند كل تحديث للواجهة
+- **الإصلاح:** إضافة فحص `window._gsiInitialized` قبل الاستدعاء
+
+#### 3. حقول كلمة المرور خارج `<form>`
+- **الخطأ:** `Password field is not contained in a form`
+- **التأثير:** تحذيرات فقط — المتصفح لا يحفظ كلمة المرور تلقائيًا
+- **الإصلاح:** تغليف الحقول في `<form>` مع `onsubmit="return false"`
+
+#### 4. upstream_configured: false (عند التشغيل)
+- **السبب:** مفتاح OpenRouter غير مخزّن في KV بعد
+- **الإصلاح:** نظام auto-fix في `server.mjs` يُعالجه تلقائيًا عند كل بدء تشغيل
 
 ---
 
-## ثانيًا: مشكلة الدردشة الصوتية (Voice Chat)
+## ثانياً: الدردشة الصوتية (Voice Chat)
 
-### السبب الجذري (Root Cause)
-
-الدردشة الصوتية لها ثلاثة مستويات:
+### البنية الحالية (v8.45)
 
 ```
-1. Cloud Voice (STT + TTS عبر Gateway)
-   ← تعتمد على voiceCloudReady=true من /auth/config
-   ← معطّلة الآن بسبب خطأ 401 في جلب auth/config
-
-2. Native Speech Recognition (Web Speech API)
-   ← تعمل في Chrome/Edge على سطح المكتب
-   ← محدودة على iOS Safari
-   ← لا تعمل في بعض بيئات الإطارات المضمّنة (iframes)
-
-3. Capacitor Native Plugin (SpeechRecognition)
-   ← تعمل فقط على Android/iOS native
-   ← غير متاحة على الويب
+speakAssistantReply(text)
+  ├─► [أولاً]  speakAssistantReplyByProxyTts()  → POST /proxy/tts (Google TTS مجاني)
+  ├─► [ثانياً] speakAssistantReplyByCloud()     → POST /voice/speak (Workers AI)
+  └─► [أخيراً] Web Speech API                  → المتصفح (Chrome فقط)
 ```
 
-### المشاكل المحددة
+### حالة كل مكوّن
 
-#### 1. Cloud Voice معطّلة كليًا
-- **السبب:** `voiceCloudReady = false` (القيمة الافتراضية)
-- **الشرط لتفعيلها:** يجب أن يُعيد `/auth/config` قيمة `voiceCloudReady: true`
-- **الحالة الحالية:** الخادم يُعيد 401، لذا تبقى القيمة `false`
-- **التأثير:** زر الميكروفون للتحويل السحابي معطّل
-
-#### 2. زر Voice Mode (🎙️) قد يعمل جزئيًا
-- يعتمد على `startComposerDictation()` الذي يجرب:
-  1. Cloud transcription → معطّل
-  2. Native Capacitor plugin → غير متاح على الويب
-  3. Web Speech API → يعمل في Chrome إذا أذن المستخدم
-- **التأثير:** قد يعمل في Chrome فقط إذا كان الـ gateway غير متاح
-
-#### 3. مشكلة الأذونات (Permissions)
-- `getUserMedia()` يتطلب HTTPS أو localhost
-- **الحالة:** التطبيق يعمل على HTTPS في Replit → لا مشكلة هنا
-- **لكن:** في iframe، قد يُمنع الوصول للميكروفون
-
-#### 4. Web Speech API في بيئة Replit (iframe)
-- التطبيق يُعرض داخل iframe في Replit
-- بعض المتصفحات تمنع `getUserMedia` و `SpeechRecognition` في iframes بدون `allow="microphone"`
-- **التأثير:** قد لا يعمل الصوت مطلقًا داخل الـ preview بسبب قيود iframe
-
-### حالة كل مكوّن صوتي
-
-| المكوّن | الحالة | السبب |
+| المكوّن | الحالة | المسار |
 |--------|--------|-------|
-| Cloud STT (Transcription) | ❌ معطّل | `voiceCloudReady=false` بسبب 401 |
-| Cloud TTS (Synthesis) | ❌ معطّل | `voiceTtsReady=false` بسبب 401 |
-| Web Speech API | ⚠️ جزئي | يعمل في Chrome خارج iframe |
-| Native Capacitor Plugin | ❌ على الويب | متاح فقط في Android/iOS native |
-| MediaRecorder API | ✅ متاح | لكن بدون Cloud STT لا فائدة منه |
+| Google TTS Proxy | ✅ يعمل | `/proxy/tts` (server.mjs) |
+| Cloud TTS (Workers AI) | ✅ جاهز | `/voice/speak` (gateway) |
+| Web Speech API | ⚠️ Chrome فقط | متصفح مباشرة |
+| Capacitor Native STT | ✅ Android/iOS | plugin أصلي |
+
+### مشاكل بيئة Replit للصوت
+
+| المشكلة | السبب | التأثير |
+|--------|-------|--------|
+| iframe يمنع الميكروفون | قيود المتصفح | لا يعمل داخل preview |
+| `lsof` غير موجود | بيئة NixOS | لا يؤثر على الوظائف |
+
+> **ملاحظة مهمة:** الدردشة الصوتية العربية تعمل بشكل كامل على `app.saddamalkadi.com` وعلى نسخة Android. مشاكل الميكروفون تظهر فقط داخل iframe الـ preview في Replit.
 
 ---
 
-## ثالثًا: أخطاء console أخرى
+## ثالثاً: المشاكل الحرجة المُكتشفة (v8.45)
 
-| الخطأ | المصدر | الخطورة |
-|-------|--------|---------|
-| `401` from gateway | `/auth/config` | عالية |
-| `403` from gateway | `/auth/session` | متوسطة |
-| `GSI_LOGGER: initialize() called multiple times` | `renderGoogleButton()` | منخفضة |
-| `GSI_LOGGER: origin not allowed` | Google OAuth | عالية |
-| `Password field not in form` | Auth Gate HTML | منخفضة |
+### 🔴 حلقة لا نهائية في server.mjs
 
----
+**المشكلة:**
+```js
+// كود خاطئ:
+setTimeout(() => { _portRetries = 0; server.listen(PORT, HOST); }, 3000);
+//                  ^^^^^^^^^^^^^^^^ يُعيد العداد لصفر → الحلقة لا تنتهي
+```
 
-## رابعًا: ما يحتاج إلى معلومات من المطوّر
+**الإصلاح (تم في v8.45):**
+```js
+// كود صحيح:
+setTimeout(() => server.listen(PORT, HOST), 2000);
+// + استخدام pkill بدلاً من lsof
+```
 
-لإصلاح هذه المشاكل بشكل كامل، نحتاج إجابة على:
-
-1. **هل الـ gateway `https://api.saddamalkadi.com` يعمل حاليًا؟** — إذا كان المفروض يعمل، ما سبب 401؟
-2. **هل تريد إضافة نطاق Replit لـ Google OAuth؟** — يتطلب الوصول إلى Google Cloud Console
-3. **هل هناك `gatewayToken` مطلوب؟** — `DEFAULT_SETTINGS.gatewayToken = ''` فارغ حاليًا
-4. **هل `voiceCloudReady` مفعّل على الخادم؟** — إذا نعم، سيعمل تلقائيًا بعد إصلاح 401
-5. **هل تريد دعم تسجيل الدخول بدون gateway؟** — يمكن تعديل `authRequired: false` محليًا
+**الأثر:** السيرفر كان عالقًا في حلقة إعادة محاولة بدون نهاية.
 
 ---
 
-## خامسًا: الإصلاحات الممكنة بدون الخادم
+## رابعاً: ما لا يزال يحتاج إصلاحاً
 
-يمكن تطبيق هذه الإصلاحات فورًا بدون الحاجة لتعديل الـ gateway:
-
-1. **تجنب استدعاء `google.accounts.id.initialize()` أكثر من مرة** — إضافة فحص بسيط
-2. **وضع حقول الدخول داخل `<form>`** — يُحسّن UX والـ accessibility
-3. **إضافة رسالة واضحة عند فشل الاتصال بالخادم** — بدلًا من الفشل الصامت
-4. **تحسين Web Speech API fallback** — جعله الخيار الرئيسي عند غياب Cloud Voice
-5. **إضافة `allow="microphone"` للـ iframe** — يحتاج تعديل على مستوى Replit
+| المشكلة | الأولوية | الجهد |
+|--------|---------|-------|
+| Google GSI يُهيَّأ عدة مرات | متوسطة | منخفض |
+| حقول كلمة المرور خارج `<form>` | متوسطة | منخفض |
+| `ADMIN_PASSWORD_REAL` غير موجود كـ env var | متوسطة | منخفض |
+| Responsive design على الشاشات الصغيرة | متوسطة | متوسط |
 
 ---
 
-## خلاصة التشخيص
+## خامساً: بيانات الاعتماد والإعدادات المهمة
 
-| المشكلة | الخطورة | قابل للإصلاح محليًا؟ |
-|---------|---------|---------------------|
-| Gateway يُعيد 401 | 🔴 عالية | ❌ يتطلب تعديل في الخادم |
-| Google OAuth origin غير مسموح | 🔴 عالية | ❌ يتطلب Google Cloud Console |
-| Voice Cloud معطّل | 🔴 عالية | ❌ تابع لإصلاح 401 |
-| GSI يتهيأ عدة مرات | 🟡 متوسطة | ✅ نعم |
-| حقول كلمة المرور خارج form | 🟢 منخفضة | ✅ نعم |
-| Web Speech API في iframe | 🟡 متوسطة | ⚠️ جزئيًا |
+| العنصر | القيمة |
+|--------|-------|
+| Admin Email | `tntntt830@gmail.com` |
+| Admin Password (مكتوب في الكود) | `Saddam@Admin2026!` |
+| Cloudflare Account ID | `ea4e90ec8fbd70faefdddd2153064d6f` |
+| KV Namespace ID | `49d87e2d4989452fb3c680ad024ae5b7` |
+| Worker Name | `book-summarizer-pwa-convert` |
+| Google Client ID | `320883717933-d8p8877if6u4udo9tfvhbq1en2ps486m.apps.googleusercontent.com` |
+
+> ⚠️ **تحذير أمني:** كلمة مرور الإدارة مكتوبة مباشرةً في `server.mjs`. يُنصح بنقلها لـ Secret `ADMIN_PASSWORD_REAL` في مرحلة النشر.

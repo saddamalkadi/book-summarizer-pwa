@@ -409,14 +409,14 @@ server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
     _portRetries++;
     if (_portRetries > 3) {
-      console.log(`[server] Port ${PORT} still in use after ${_portRetries} attempts — exiting`);
+      console.log(`[server] Port ${PORT} still in use after ${_portRetries} attempts — giving up`);
       process.exit(1);
     }
-    console.log(`[server] Port ${PORT} in use — attempt ${_portRetries}/3, killing old process...`);
+    console.log(`[server] Port ${PORT} in use — attempt ${_portRetries}/3, freeing port...`);
     try {
-      execSync(`fuser -k ${PORT}/tcp 2>/dev/null || lsof -ti:${PORT} | xargs kill -9 2>/dev/null`, { timeout: 3000 });
+      execSync(`fuser -k ${PORT}/tcp 2>/dev/null; pkill -f "node server.mjs" 2>/dev/null; sleep 1`, { timeout: 5000, shell: '/bin/bash' });
     } catch (_) {}
-    setTimeout(() => { _portRetries = 0; server.listen(PORT, HOST); }, 3000);
+    setTimeout(() => server.listen(PORT, HOST), 2000);
   } else {
     throw e;
   }

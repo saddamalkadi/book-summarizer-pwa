@@ -1,7 +1,7 @@
 # التدقيق الأساسي للمشروع (Baseline Audit)
 
 **التاريخ:** مارس 2026  
-**الإصدار:** v8.43  
+**الإصدار:** v8.45  
 **المُدقِّق:** Replit Agent
 
 ---
@@ -11,7 +11,9 @@
 **الاسم:** AI Workspace Studio  
 **الوصف:** منصة عربية للذكاء الاصطناعي تعمل كـ PWA وتدعم Android وiOS عبر Capacitor.  
 **المطوّر:** صدام القاضي  
-**معرّف التطبيق:** `com.saddamalkadi.aiworkspace`
+**معرّف التطبيق:** `com.saddamalkadi.aiworkspace`  
+**Frontend:** GitHub Pages — `app.saddamalkadi.com`  
+**Backend:** Cloudflare Worker — `api.saddamalkadi.com`  
 
 ---
 
@@ -19,27 +21,24 @@
 
 ```
 /
-├── index.html              # نقطة الدخول الرئيسية (2,451 سطر) - يحتوي على HTML + CSS + بعض JS
-├── app.js                  # الكود الرئيسي للتطبيق (11,205 سطر) - IIFE واحدة كبيرة
-├── server.mjs              # خادم Node.js بسيط لخدمة الملفات الثابتة
-├── sw.js                   # Service Worker لدعم PWA والعمل بدون اتصال
-├── auth-bridge.html        # صفحة وسيطة لمصادقة Google عبر المتصفح
-├── convert-worker.js       # Web Worker لتحويل الملفات (PDF→DOCX وغيره)
-├── keys-worker.js          # Web Worker لإدارة المفاتيح والتشفير
-├── manifest.webmanifest    # ملف PWA manifest
-├── capacitor.config.json   # إعدادات Capacitor للتطبيقات الأصلية
-├── package.json            # تبعيات Capacitor فقط (لا build step)
-├── package-lock.json
-├── codemagic.yaml          # إعدادات CI/CD لبناء Android/iOS
-├── wrangler.jsonc          # إعدادات Cloudflare Worker (gateway رئيسي)
-├── wrangler.convert.jsonc  # إعدادات Cloudflare Worker (خدمة التحويل)
-├── GUIDE.ar.md             # دليل الاستخدام بالعربية
-├── android/                # مشروع Android الأصلي (Gradle)
-├── ios/                    # مشروع iOS الأصلي (Xcode)
-├── assets/                 # ملفات ثابتة (logo.svg فقط حاليًا)
-├── icons/                  # أيقونات التطبيق
-├── downloads/              # ملفات APK/AAB جاهزة للتوزيع
-└── scripts/                # سكريبتات المساعدة (sync-web.mjs, prepare_ios_cloud_build.py)
+├── index.html              # نقطة الدخول (2,565 سطر) — HTML + CSS كامل
+├── app.js                  # كود التطبيق (11,366 سطر) — IIFE واحدة
+├── server.mjs              # خادم Node.js لـ Replit (تطوير فقط)
+├── sw.js                   # Service Worker للـ PWA
+├── auth-bridge.html        # صفحة وسيطة لـ Google OAuth
+├── convert-worker.js       # Web Worker لتحويل الملفات
+├── keys-worker.js          # كود Cloudflare Worker (المنشور على api.saddamalkadi.com)
+├── manifest.webmanifest    # ملف PWA
+├── capacitor.config.json   # إعدادات Capacitor
+├── package.json            # تبعيات Capacitor
+├── codemagic.yaml          # CI/CD لـ Android/iOS
+├── wrangler.jsonc          # إعدادات Cloudflare Worker الرئيسي
+├── wrangler.convert.jsonc  # إعدادات Worker الخاص بالتحويل
+├── android/                # مشروع Android (Gradle)
+├── ios/                    # مشروع iOS (Xcode)
+├── downloads/              # APK/AAB جاهزة للتوزيع
+├── docs/                   # توثيق المشروع
+└── scripts/                # سكريبتات مساعدة
 ```
 
 ---
@@ -48,77 +47,79 @@
 
 | العنصر | التفاصيل |
 |--------|---------|
-| **نوع المشروع** | Static SPA (تطبيق صفحة واحدة ثابت) |
-| **نظام البناء** | لا يوجد - ملفات JavaScript/HTML/CSS خام بدون bundler |
-| **مدير الحزم** | npm (للتبعيات الأصلية فقط - Capacitor) |
-| **نقطة الدخول الويب** | `index.html` |
-| **الكود الرئيسي** | `app.js` - IIFE واحدة تضم كل منطق التطبيق |
-| **الخادم المحلي** | `server.mjs` - خادم HTTP بسيط مبني على Node.js |
-| **المنفذ** | 5000 (Replit) |
-| **الـ Host** | 0.0.0.0 (مناسب لـ Replit) |
+| نوع المشروع | Static SPA — صفحة واحدة |
+| نظام البناء | لا يوجد bundler — ملفات خام |
+| الخادم المحلي | `server.mjs` على منفذ 5000 |
+| الـ Gateway | Cloudflare Worker على `api.saddamalkadi.com` |
+| GitHub Pages | `app.saddamalkadi.com` (Frontend) |
 
 ---
 
 ## 4. المكتبات الخارجية (CDN)
 
-| المكتبة | الإصدار | الغرض |
-|--------|---------|-------|
-| `marked` | آخر إصدار | تحويل Markdown إلى HTML |
-| `pdf.js` | 3.11.174 | قراءة ملفات PDF |
-| `mammoth` | 1.9.0 | قراءة ملفات DOCX |
-| `tesseract.js` | 5.1.1 | تقنية OCR لاستخراج النصوص من الصور |
-| `@turbodocx/html-to-docx` | 1.20.1 | تصدير المحتوى كملف DOCX |
-| Google GSI Client | - | مصادقة Google |
-
----
-
-## 5. الخدمات الخلفية (Backend Services)
-
-التطبيق يعتمد على **Cloudflare Workers** كـ gateway رئيسي:
-
-| الخدمة | الـ URL | الغرض |
-|--------|--------|-------|
-| **Gateway الرئيسي** | `https://api.saddamalkadi.com` | المصادقة + AI APIs |
-| **خدمة التحويل** | `https://api.saddamalkadi.com/convert/...` | تحويل PDF↔DOCX |
-| **خدمة OCR** | `https://api.saddamalkadi.com/ocr` | استخراج النص من الصور |
-| **الصوت (STT)** | `https://api.saddamalkadi.com/voice/transcribe` | تحويل الصوت إلى نص |
-| **الصوت (TTS)** | `https://api.saddamalkadi.com/voice/speak` | تحويل النص إلى صوت |
-| **OpenRouter** | `https://openrouter.ai/api/v1` | نماذج AI (افتراضي) |
-
----
-
-## 6. نموذج المصادقة
-
-نظام مزدوج:
-- **وضع Gateway** (`authMode: 'gateway'`): يعتمد على `https://api.saddamalkadi.com` لإدارة الجلسات  
-- **وضع المتصفح** (`authMode: 'browser'`): API key مباشر بدون خادم
-
-الوضع الافتراضي هو **gateway** مع الـ URL الثابت: `https://api.saddamalkadi.com`
-
----
-
-## 7. صفحات/أقسام التطبيق
-
-| المعرف | الاسم |
+| المكتبة | الغرض |
 |--------|-------|
-| `chat` | الدردشة الرئيسية |
-| `kb` | قاعدة المعرفة (RAG) |
-| `files` | إدارة الملفات |
-| `canvas` | اللوحة التفاعلية |
-| `workflows` | سير العمل |
-| `downloads` | التحميلات والتصدير |
-| `projects` | المشاريع |
-| `settings` | الإعدادات |
-| `guide` | دليل الاستخدام |
+| `marked` | تحويل Markdown |
+| `pdf.js` 3.11.174 | قراءة PDF |
+| `mammoth` 1.9.0 | قراءة DOCX |
+| `tesseract.js` 5.1.1 | OCR |
+| `@turbodocx/html-to-docx` 1.20.1 | تصدير DOCX |
+| Google GSI Client | مصادقة Google |
 
 ---
 
-## 8. وضع التشغيل في Replit
+## 5. الخدمات الخلفية (Backend)
+
+| الخدمة | الـ URL | الحالة |
+|--------|--------|--------|
+| Gateway الرئيسي | `https://api.saddamalkadi.com` | ✅ يعمل |
+| المصادقة | `/auth/login`, `/auth/register` | ✅ يعمل |
+| دردشة AI | `/v1/chat/completions` | ✅ OpenRouter |
+| الصوت STT | `/voice/transcribe` | ✅ Workers AI |
+| الصوت TTS | `/voice/speak` | ✅ Workers AI |
+| TTS مجاني | `/proxy/tts` | ✅ Google TTS |
+| تحويل الملفات | `/convert/*` | ✅ يعمل |
+| OCR | `/ocr` | ✅ يعمل |
+
+---
+
+## 6. حالة Gateway الحية (من فحص مارس 2026)
+
+```json
+{
+  "ok": true,
+  "ready": true,
+  "upstream_configured": false,   ← OpenRouter key في KV (يُصلحه auto-fix)
+  "auth_required": true,
+  "voice_cloud_ready": true,      ← الصوت السحابي جاهز
+  "voice_stt_ready": true,
+  "voice_tts_ready": true,
+  "admin_password_ready": false,  ← يُصلحه auto-fix عند كل تشغيل
+  "google_client_configured": true
+}
+```
+
+> ملاحظة: `upstream_configured: false` و `admin_password_ready: false` يُصلحهما نظام auto-fix في `server.mjs` تلقائيًا عند كل إعادة تشغيل.
+
+---
+
+## 7. وضع التشغيل في Replit
 
 - **الأمر:** `PORT=5000 node server.mjs`
-- **الحالة الحالية:** يعمل بنجاح على منفذ 5000
-- **عرض الملفات:** يخدم جميع الملفات الثابتة من مجلد العمل
-- **SPA Fallback:** أي مسار غير معروف يُعيد `index.html`
+- **المنفذ:** 5000
+- **Auto-fix:** يعمل عند كل تشغيل — يخزن المفاتيح في KV ويُعيد نشر الـ Worker إذا لزم
+
+---
+
+## 8. المتغيرات البيئية المطلوبة
+
+| المتغير | الغرض | الحالة |
+|--------|-------|--------|
+| `CF_API_TOKEN` | Cloudflare API للنشر | ✅ موجود |
+| `OPENROUTER_API_KEY` | مفتاح OpenRouter | ✅ موجود |
+| `GITHUB_TOKEN` | رفع الكود للـ GitHub Pages | ✅ موجود |
+| `ADMIN_PASSWORD_REAL` | كلمة مرور الإدارة | ❌ غير موجود |
+| `CF_ACCOUNT_ID` | معرّف حساب Cloudflare | ❌ غير موجود (مكتوب في الكود) |
 
 ---
 
@@ -126,23 +127,22 @@
 
 | العنصر | الحالة |
 |--------|--------|
-| **Android** | مشروع Gradle جاهز + ملفات APK/AAB موجودة في `downloads/` |
-| **iOS** | مشروع Xcode موجود في `ios/` |
-| **Capacitor** | الإصدار 7.x |
-| **webDir** | `www` (يتطلب `sync-web.mjs` لنسخ الملفات) |
-| **آخر بناء Android** | v8.43 |
+| Android (APK/AAB) | ✅ v8.44 جاهز في `downloads/` |
+| iOS (Xcode) | ⚠️ يتطلب macOS/Xcode |
+| Capacitor | الإصدار 7.x |
+| webDir | `www` (عبر `sync-web.mjs`) |
 
 ---
 
-## 10. ملاحظات حرجة من الفحص الأولي
+## 10. ملاحظات حرجة (مارس 2026)
 
-1. ✅ الخادم يعمل على منفذ 5000 بشكل سليم
-2. ⚠️ **بوابة المصادقة تظهر فورًا** عند تحميل التطبيق (متوقع عند عدم وجود جلسة)
-3. ❌ **خطأ 401** من `https://api.saddamalkadi.com/auth/config` - انظر `02-bug-diagnosis-login-voice.md`
-4. ❌ **خطأ 403** من مورد آخر على نفس الخادم
-5. ⚠️ **Google GSI يتهيأ عدة مرات** (`initialize() called multiple times`)
-6. ❌ **أصل Replit غير مسموح به** في Google OAuth Client ID
-7. ⚠️ حقول كلمة المرور ليست داخل عنصر `<form>` (تحذيرات المتصفح)
-8. ✅ PWA manifest موجود وصحيح
-9. ✅ Service Worker موجود
-10. ✅ RTL و Arabic fonts تعمل بشكل صحيح
+1. ✅ Gateway يعمل على `api.saddamalkadi.com`
+2. ✅ الدردشة النصية تعمل
+3. ✅ الدردشة الصوتية العربية تعمل (مؤكد من المستخدم)
+4. ✅ TTS مجاني عبر `/proxy/tts` (Google TTS)
+5. ⚠️ **حلقة لا نهائية في server.mjs** — تم الإصلاح في v8.45
+6. ⚠️ Google OAuth لا يعمل في بيئة Replit (نطاق غير مسموح)
+7. ⚠️ حقول كلمة المرور خارج `<form>` (تحذيرات المتصفح)
+8. ✅ PWA manifest صحيح
+9. ✅ Service Worker يعمل
+10. ✅ RTL والعربية تعملان بشكل ممتاز
