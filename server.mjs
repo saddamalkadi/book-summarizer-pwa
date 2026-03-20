@@ -232,10 +232,10 @@ __name(handleGoogleTtsProxy,'handleGoogleTtsProxy');`;
       `--${boundary}--`
     ].join('\r\n');
 
-    // Use the versions POST endpoint — returns UUID immediately (no race condition)
+    // PUT to workers/scripts/{name} — updates classic slot and auto-creates a versioned entry
     const result = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/workers/scripts/${WORKER_NAME}/versions`,
-      { method: 'POST', headers: { 'Authorization': `Bearer ${CF_TOKEN}`, 'Content-Type': `multipart/form-data; boundary=${boundary}` }, body, signal: AbortSignal.timeout(30000) }
+      `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/workers/scripts/${WORKER_NAME}`,
+      { method: 'PUT', headers: { 'Authorization': `Bearer ${CF_TOKEN}`, 'Content-Type': `multipart/form-data; boundary=${boundary}` }, body, signal: AbortSignal.timeout(30000) }
     ).then(r => r.json());
 
     if (!result.success) {
