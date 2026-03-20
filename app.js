@@ -4782,7 +4782,7 @@ async function submitUnifiedAuthEntry(){
     });
     $('agentTaskApplyBtn')?.remove();
     const legacyQuickGroup = $('agentTaskTemplate')?.closest('.tool-group')?.nextElementSibling;
-    if (legacyQuickGroup?.querySelector?.('#scrollTopBtn') == null){
+    if (legacyQuickGroup && legacyQuickGroup.querySelector('#scrollTopBtn') == null){
       legacyQuickGroup.style.display = 'none';
     }
 
