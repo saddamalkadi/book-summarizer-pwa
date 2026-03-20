@@ -5178,7 +5178,7 @@ async function submitUnifiedAuthEntry(){
       guide: '📘 دليل الاستخدام'
     };
     document.querySelectorAll('.navbtn[data-page]').forEach((btn) => {
-      const label = btn.querySelector('span:not(.meta)');
+      const label = btn.querySelector('.navbtn-label') || btn.querySelector('span:not(.meta):not(.navbtn-icon)');
       if (label && navLabels[btn.dataset.page]) label.textContent = navLabels[btn.dataset.page];
     });
 
