@@ -280,13 +280,25 @@ async function handleGoogleTtsProxy(request){
       return;
     }
 
-    // versions POST returns the version UUID directly
+    // PUT /scripts/{name} may not return a UUID — query /versions?limit=1 to find the latest
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const versionId = [result?.result?.id, result?.result?.version_id].find(v => v && UUID_RE.test(v));
-    console.log('[worker-fix] ✓ Version created:', versionId ? versionId.substring(0,8) : JSON.stringify(result.result||{}).substring(0,80));
+    let versionId = [result?.result?.id, result?.result?.version_id].find(v => v && UUID_RE.test(v));
 
     if (!versionId) {
-      console.log('[worker-fix] No UUID in response — skipping deploy');
+      // Fallback: GET latest version from the versions list
+      await new Promise(r => setTimeout(r, 2000)); // wait for CF to index
+      const versionsResp = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/workers/scripts/${WORKER_NAME}/versions?limit=1`,
+        { headers: { 'Authorization': `Bearer ${CF_TOKEN}` }, signal: AbortSignal.timeout(15000) }
+      ).then(r => r.json());
+      versionId = versionsResp?.result?.[0]?.id;
+      if (versionId) console.log('[worker-fix] ✓ Version UUID from list:', versionId.substring(0,8));
+    } else {
+      console.log('[worker-fix] ✓ Version UUID from upload:', versionId.substring(0,8));
+    }
+
+    if (!versionId) {
+      console.log('[worker-fix] No UUID available — skipping deploy (worker updated but not pinned)');
       return;
     }
 
