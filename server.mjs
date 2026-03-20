@@ -64,7 +64,8 @@ async function autoFixWorker() {
       { headers: { 'Authorization': `Bearer ${CF_TOKEN}` }, signal: AbortSignal.timeout(15000) }
     ).then(r => r.text()).catch(() => '');
 
-    if (liveCode.includes('/*aistudio-key-injected*/') && liveCode.includes(OR_KEY.substring(0,12))) {
+    // CF compiles the source and strips comments, so check for the literal key string (not the marker comment)
+    if (liveCode.includes(OR_KEY.substring(0, 12))) {
       console.log('[worker-fix] Code already has key — waiting 15s for edge propagation...');
       await new Promise(r => setTimeout(r, 15000));
       health = await fetch('https://api.saddamalkadi.com/health', { signal: AbortSignal.timeout(8000) })
@@ -73,10 +74,10 @@ async function autoFixWorker() {
         console.log('[worker-fix] Worker OK after propagation wait');
         return;
       }
-      console.log('[worker-fix] Still propagating — no further action (re-upload would create redundant version)');
-      return;
+      console.log('[worker-fix] Still misconfigured after propagation wait — re-uploading fresh...');
+    } else {
+      console.log('[worker-fix] Worker misconfigured — auto-fixing...');
     }
-    console.log('[worker-fix] Worker misconfigured — auto-fixing...');
 
     // 2) Store keys in KV
     const kvHeaders = { 'Authorization': `Bearer ${CF_TOKEN}`, 'Content-Type': 'text/plain' };
