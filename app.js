@@ -4029,8 +4029,8 @@ function refreshDeepSearchBtn(){
     }
     if ($('sideAccountStrip') && !$('sideAccountStrip').dataset.bound){
       $('sideAccountStrip').dataset.bound = '1';
-      $('sideAccountStrip').addEventListener('click', () => { setActiveNav('settings'); $('closeSideBtn')?.click(); });
-      $('sideAccountStrip').addEventListener('keydown', e => { if(e.key==='Enter'||e.key===' '){ setActiveNav('settings'); $('closeSideBtn')?.click(); }});
+      $('sideAccountStrip').addEventListener('click', () => { $('closeSideBtn')?.click(); openAccountCenter(); });
+      $('sideAccountStrip').addEventListener('keydown', e => { if(e.key==='Enter'||e.key===' '){ $('closeSideBtn')?.click(); openAccountCenter(); }});
     }
 
     renderUsageIndicators(settings);
@@ -5195,7 +5195,7 @@ async function submitUnifiedAuthEntry(){
         launch_plan: 'خطة إطلاق',
         pm_review: 'مراجعة منتج'
       };
-      if (labels[key]) btn.textContent = labels[key];
+      if (labels[key] && btn.children.length === 0) btn.textContent = labels[key];
     });
   }
 
