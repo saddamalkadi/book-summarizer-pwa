@@ -79,7 +79,7 @@ On every startup, `autoFixWorker()` runs asynchronously:
 - **Secondary Toolbar**: `#chatMoreBtn` toggles `.toolbar-secondary-open` class with `aria-expanded`
 - **Settings**: OCR/cloud checkboxes moved to Advanced section; main view simplified to 2 checkboxes
 - **Accessibility**: Focus rings (`*:focus-visible`), ARIA labels on all interactive elements, 42px+ touch targets
-- **Worker Deploy**: UUID fallback — if `PUT /scripts/` response lacks UUID, query `GET /versions?items[0].id`
+- **Worker Deploy**: UUID fallback — `GET /versions?limit=1` → `result.items[0].id` (CF returns `{result:{items:[...]}}` not `{result:[...]}`) — now deploys correctly every time
 - **Docs**: accessibility-final-pass, login-voice-production-validation, mobile-device-validation, final-launch-signoff
 
 ## System Status (as of v8.47)
