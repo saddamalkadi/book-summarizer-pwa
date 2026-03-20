@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -50,18 +53,57 @@ jobs:
       - name: Grant Gradle wrapper permission
         run: chmod +x android/gradlew
 
+      - name: Extract version from build.gradle
+        id: version
+        run: |
+          VERSION_NAME=$(grep 'versionName' android/app/build.gradle | grep -oP '"\K[^"]+')
+          VERSION_CODE=$(grep 'versionCode' android/app/build.gradle | grep -oP '\d+')
+          echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
+          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION_NAME ($VERSION_CODE)"
+
       - name: Build debug APK
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Rename APK
+      - name: Rename APK for release
         run: |
-          mv android/app/build/outputs/apk/debug/app-debug.apk \
-             AI-Workspace-Studio-v8.51-debug.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk \
+             AI-Workspace-Studio-latest.apk
+          echo "APK size: $(du -sh AI-Workspace-Studio-latest.apk)"
 
-      - name: Upload APK artifact
+      - name: Upload APK artifact (GitHub Actions)
         uses: actions/upload-artifact@v4
         with:
-          name: AI-Workspace-Studio-v8.51
-          path: AI-Workspace-Studio-v8.51-debug.apk
+          name: AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}
+          path: AI-Workspace-Studio-latest.apk
           retention-days: 30
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version_name }}
+          name: "AI Workspace Studio v${{ steps.version.outputs.version_name }}"
+          body: |
+            ## AI Workspace Studio v${{ steps.version.outputs.version_name }}
+
+            **تطبيق مساحة العمل العربية بالذكاء الاصطناعي**
+
+            - **Build**: ${{ steps.version.outputs.version_code }}
+            - **Platform**: Android 7.0+ (API ${{ steps.version.outputs.version_code >= '851' && '24' || '24' }}+)
+            - **Type**: Debug APK (تثبيت مباشر — ليس عبر متجر Google Play)
+
+            ### التثبيت
+            1. حمّل ملف `AI-Workspace-Studio-latest.apk`
+            2. فعّل "مصادر غير معروفة" في إعدادات الأمان
+            3. افتح الملف وثبّت التطبيق
+
+            ### الجديد
+            - مساحة العمل العربية بالذكاء الاصطناعي مع دعم OpenRouter
+            - محادثة عربية مع TTS/STT
+            - تحليل الملفات والمستندات
+            - دعم Google OAuth وتسجيل الدخول بالبريد
+          files: AI-Workspace-Studio-latest.apk
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
