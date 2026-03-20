@@ -9741,24 +9741,78 @@ let pinOnly = false;
     const dl = loadDownloads();
     $('navDlMeta').textContent = String(dl.length);
     if (overview){
-      const webUrl = 'https://app.saddamalkadi.com/';
-      const downloadsBase = 'https://app.saddamalkadi.com/downloads';
-      const apkUrl = `${downloadsBase}/ai-workspace-studio-latest.apk`;
-      const aabUrl = `${downloadsBase}/ai-workspace-studio-latest.aab`;
-      const apkFallbackUrl = 'https://github.com/saddamalkadi/book-summarizer-pwa/blob/main/downloads/ai-workspace-studio-latest.apk?raw=1';
-      const aabFallbackUrl = 'https://github.com/saddamalkadi/book-summarizer-pwa/blob/main/downloads/ai-workspace-studio-latest.aab?raw=1';
+      const REPO = 'saddamalkadi/book-summarizer-pwa';
+      const GH_BASE = `https://github.com/${REPO}`;
+      const APK_LATEST_URL = `${GH_BASE}/releases/latest/download/AI-Workspace-Studio-latest.apk`;
+      const WEB_URL = 'https://app.saddamalkadi.com/';
+      const RELEASES_PAGE = `${GH_BASE}/releases/latest`;
+      const GH_API = `https://api.github.com/repos/${REPO}/releases/latest`;
+
       overview.innerHTML = `
-        <div class="bubble" style="margin:0">
-          <div style="font-weight:1000">تحديث التطبيق والتنزيل المباشر</div>
-          <div class="hint" style="margin-top:6px">الروابط الأساسية تعمل من نفس الموقع مباشرة. إذا تعذر التنزيل من الشبكة الحالية ستجد رابطًا احتياطيًا من GitHub.</div>
-          <div class="actions">
-            <a class="btn sm" href="${apkUrl}" target="_blank" rel="noopener noreferrer">تنزيل APK</a>
-            <a class="btn ghost sm" href="${aabUrl}" target="_blank" rel="noopener noreferrer">تنزيل AAB</a>
-            <a class="btn ghost sm" href="${apkFallbackUrl}" target="_blank" rel="noopener noreferrer">APK احتياطي</a>
-            <a class="btn ghost sm" href="${aabFallbackUrl}" target="_blank" rel="noopener noreferrer">AAB احتياطي</a>
-            <a class="btn ghost sm" href="${webUrl}" target="_blank" rel="noopener noreferrer">فتح نسخة الويب</a>
+        <div class="bubble app-dl-card" style="margin:0;padding:16px">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+            <img src="./logo.svg" style="width:52px;height:52px;border-radius:14px;flex-shrink:0;border:1px solid rgba(10,20,60,.08)" alt="logo" onerror="this.textContent='🤖';this.style.fontSize='32px'"/>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:900;font-size:1.08em;letter-spacing:-.01em">AI Workspace Studio</div>
+              <div class="hint" id="releaseVersionMeta" style="margin-top:2px">جارٍ تحميل معلومات الإصدار…</div>
+            </div>
+            <span id="releaseLiveBadge" style="flex-shrink:0;padding:3px 10px;border-radius:20px;background:var(--accent,#2563eb);color:#fff;font-size:.72em;font-weight:800;display:none">● مباشر</span>
+          </div>
+          <div id="releaseProgressBar" style="height:3px;border-radius:2px;background:rgba(10,20,60,.06);margin-bottom:14px;overflow:hidden">
+            <div style="height:100%;width:30%;background:var(--accent,#2563eb);border-radius:2px;animation:dl-progress 1.5s ease-in-out infinite alternate"></div>
+          </div>
+          <div class="actions" style="flex-wrap:wrap;gap:8px">
+            <a class="btn" id="apkMainBtn" href="${APK_LATEST_URL}" download="AI-Workspace-Studio-latest.apk" target="_blank" rel="noopener noreferrer">⬇ تنزيل APK — Android</a>
+            <a class="btn ghost sm" href="${WEB_URL}" target="_blank" rel="noopener noreferrer">🌐 تطبيق الويب</a>
+            <a class="btn ghost sm" href="${RELEASES_PAGE}" target="_blank" rel="noopener noreferrer">📋 كل الإصدارات</a>
+          </div>
+          <div id="releaseExtraInfo" style="margin-top:10px;font-size:.8em;color:var(--muted,#888);display:none">
+            <span id="releaseSize"></span><span id="releaseDateStr"></span>
+          </div>
+          <div class="hint" style="margin-top:10px;font-size:.78em">
+            Android 7.0+ • قم بتفعيل "تثبيت من مصادر غير معروفة" في الإعدادات قبل التثبيت
           </div>
         </div>`;
+
+      // Fetch latest release info from GitHub API (no auth needed for public repos)
+      fetch(GH_API, { headers: { 'Accept': 'application/vnd.github+json' } })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          const bar = $('releaseProgressBar');
+          if (bar) bar.remove();
+          if (!data) {
+            const meta = $('releaseVersionMeta');
+            if (meta) meta.textContent = 'تعذّر الاتصال بـ GitHub لجلب معلومات الإصدار';
+            return;
+          }
+          const badge = $('releaseLiveBadge');
+          if (badge) badge.style.display = '';
+
+          const tag = data.tag_name || '';
+          const publishedAt = data.published_at ? new Date(data.published_at) : null;
+          const apkAsset = (data.assets || []).find(a => a.name.endsWith('.apk'));
+          const apkSize = apkAsset ? (apkAsset.size / 1024 / 1024).toFixed(1) + ' MB' : '';
+          const apkUrl = apkAsset?.browser_download_url || APK_LATEST_URL;
+
+          const meta = $('releaseVersionMeta');
+          if (meta) meta.textContent = `الإصدار ${tag}` + (publishedAt ? ` • ${publishedAt.toLocaleDateString('ar')}` : '');
+
+          const mainBtn = $('apkMainBtn');
+          if (mainBtn && apkUrl) mainBtn.href = apkUrl;
+
+          const extra = $('releaseExtraInfo');
+          const sizeEl = $('releaseSize');
+          const dateEl = $('releaseDateStr');
+          if (extra && (apkSize || publishedAt)) {
+            if (sizeEl && apkSize) sizeEl.textContent = `حجم الملف: ${apkSize}`;
+            if (dateEl && publishedAt) dateEl.textContent = (apkSize ? ' • ' : '') + `تاريخ الإصدار: ${publishedAt.toLocaleString('ar')}`;
+            extra.style.display = '';
+          }
+        })
+        .catch(() => {
+          const bar = $('releaseProgressBar');
+          if (bar) bar.remove();
+        });
     }
     const q = String($('dlSearch')?.value || '').trim().toLowerCase();
     const filtered = dl.filter(d => {
