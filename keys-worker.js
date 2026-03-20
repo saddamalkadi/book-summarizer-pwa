@@ -60,6 +60,10 @@ export default {
         return withCors(await handleVoiceTranscription(request, env), request);
       }
 
+      if (url.pathname === '/proxy/tts' && (request.method === 'POST' || request.method === 'GET')) {
+        return withCors(await handleGoogleTtsProxy(request), request);
+      }
+
       if (url.pathname === '/voice/speak' && request.method === 'POST') {
         return withCors(await handleVoiceSynthesis(request, env), request);
       }
@@ -621,6 +625,36 @@ async function handleVoiceTranscription(request, env) {
       error: message,
       code: /Missing signed session|Invalid or expired session/i.test(message) ? 'AUTH_SESSION_REQUIRED' : 'VOICE_STT_FAILED'
     }, /Missing signed session|Invalid or expired session/i.test(message) ? 401 : 500);
+  }
+}
+
+async function handleGoogleTtsProxy(request) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const text = String(body?.text || '').trim();
+    const lang = String(body?.lang || 'ar').split('-')[0] || 'ar';
+    if (!text) return new Response(JSON.stringify({ error: 'text required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    const chunks = [];
+    const words = text.split(/\s+/);
+    let cur = '';
+    for (const w of words) {
+      if ((cur + ' ' + w).trim().length > 180) { if (cur.trim()) chunks.push(cur.trim()); cur = w; }
+      else cur = (cur + ' ' + w).trim();
+    }
+    if (cur.trim()) chunks.push(cur.trim());
+    const bufs = [];
+    for (const c of chunks) {
+      const url = 'https://translate.googleapis.com/translate_tts?ie=UTF-8&q=' + encodeURIComponent(c) + '&tl=' + encodeURIComponent(lang) + '&client=gtx&ttsspeed=0.9';
+      const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://translate.google.com/', 'Accept': 'audio/mpeg,audio/*;q=0.8' } });
+      if (!r.ok) throw new Error('Google TTS ' + r.status);
+      bufs.push(await r.arrayBuffer());
+    }
+    const total = bufs.reduce((s, b) => s + b.byteLength, 0);
+    const out = new Uint8Array(total); let off = 0;
+    for (const b of bufs) { out.set(new Uint8Array(b), off); off += b.byteLength; }
+    return new Response(out, { status: 200, headers: { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store', 'Content-Length': String(total) } });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: String(e.message) }), { status: 502, headers: { 'Content-Type': 'application/json' } });
   }
 }
 

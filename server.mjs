@@ -90,17 +90,26 @@ async function autoFixWorker() {
     );
     console.log('[worker-fix] KV values stored');
 
-    // 3) Get current Worker script
-    let code = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/workers/services/${WORKER_NAME}/environments/production/content`,
-      { headers: { 'Authorization': `Bearer ${CF_TOKEN}` }, signal: AbortSignal.timeout(20000) }
-    ).then(r => r.text());
-
-    // Extract JS from multipart response
-    const jStart = code.indexOf('var __defProp');
-    if (jStart > 0) code = code.substring(jStart);
-    const jEnd = code.lastIndexOf('\n--');
-    if (jEnd > 0) code = code.substring(0, jEnd);
+    // 3) Get Worker source from local file (avoids multipart extraction issues from services endpoint)
+    let code;
+    try {
+      const { readFileSync } = await import('node:fs');
+      const localSource = join(ROOT, 'keys-worker.js');
+      code = readFileSync(localSource, 'utf8');
+      console.log('[worker-fix] Using local source keys-worker.js (' + code.length + ' bytes)');
+    } catch (_) {
+      // Fallback: download from services endpoint
+      let raw = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/workers/services/${WORKER_NAME}/environments/production/content`,
+        { headers: { 'Authorization': `Bearer ${CF_TOKEN}` }, signal: AbortSignal.timeout(20000) }
+      ).then(r => r.text());
+      const jStart = raw.indexOf('var __defProp');
+      if (jStart > 0) raw = raw.substring(jStart);
+      const jEnd = raw.lastIndexOf('\n--');
+      if (jEnd > 0) raw = raw.substring(0, jEnd);
+      code = raw;
+      console.log('[worker-fix] Using services endpoint fallback (' + code.length + ' bytes)');
+    }
 
     // 4) Patch Worker code
     let patched = false;
@@ -108,30 +117,47 @@ async function autoFixWorker() {
     // 4a) Inject platform API key directly into getServerKey function (most reliable approach)
     const INJECT_MARKER = '/*aistudio-key-injected*/';
     if (!code.includes(INJECT_MARKER)) {
-      const OLD_FN = `function getServerKey(env2) {\n  return (env2.OPENROUTER_API_KEY || env2.OPEN_ROUTER_API_KEY || env2.OPENROUTER_KEY || "").trim();\n}`;
-      const NEW_FN = `function getServerKey(env2) {\n  ${INJECT_MARKER}\n  return (env2.OPENROUTER_API_KEY || env2.OPEN_ROUTER_API_KEY || env2.OPENROUTER_KEY || ${JSON.stringify(OR_KEY)}).trim();\n}`;
-      if (code.includes(OLD_FN)) {
-        code = code.replace(OLD_FN, NEW_FN);
-        patched = true;
-        console.log('[worker-fix] Patched: API key injected into getServerKey');
-      } else {
-        // Fallback: try to inject by finding the function with looser match
-        const fnStart = code.indexOf('function getServerKey(env2)');
-        const fnEnd = code.indexOf('\n}', fnStart) + 2;
-        if (fnStart > 0 && fnEnd > fnStart) {
-          const oldFnBody = code.substring(fnStart, fnEnd);
-          const newFnBody = `function getServerKey(env2) {\n  ${INJECT_MARKER}\n  return (env2.OPENROUTER_API_KEY || env2.OPEN_ROUTER_API_KEY || env2.OPENROUTER_KEY || ${JSON.stringify(OR_KEY)}).trim();\n}`;
-          code = code.substring(0, fnStart) + newFnBody + code.substring(fnEnd);
-          patched = true;
-          console.log('[worker-fix] Patched: API key injected (fallback method)');
-        } else {
-          console.log('[worker-fix] WARNING: Could not find getServerKey to patch');
+      // Support both bundled format (env2) and local source format (env)
+      const patchFn = (envVar) => {
+        // Try exact match for bundled format: single-line return
+        const OLD_BUNDLE = `function getServerKey(${envVar}) {\n  return (${envVar}.OPENROUTER_API_KEY || ${envVar}.OPEN_ROUTER_API_KEY || ${envVar}.OPENROUTER_KEY || "").trim();\n}`;
+        const NEW_BUNDLE = `function getServerKey(${envVar}) {\n  ${INJECT_MARKER}\n  return (${envVar}.OPENROUTER_API_KEY || ${envVar}.OPEN_ROUTER_API_KEY || ${envVar}.OPENROUTER_KEY || ${JSON.stringify(OR_KEY)}).trim();\n}`;
+        if (code.includes(OLD_BUNDLE)) {
+          code = code.replace(OLD_BUNDLE, NEW_BUNDLE);
+          return 'bundled';
         }
+        // Try multi-line return (local source format)
+        const fnStart = code.indexOf(`function getServerKey(${envVar})`);
+        if (fnStart < 0) return null;
+        const fnEnd = code.indexOf('\n}', fnStart) + 2;
+        const oldFnBody = code.substring(fnStart, fnEnd);
+        // Replace the empty string fallback with the real key
+        const newFnBody = oldFnBody
+          .replace(`    ''\n  ).trim();`, `    ${JSON.stringify(OR_KEY)}\n  ).trim(); // ${INJECT_MARKER}`)
+          .replace(`    ""\n  ).trim();`, `    ${JSON.stringify(OR_KEY)}\n  ).trim(); // ${INJECT_MARKER}`);
+        if (newFnBody !== oldFnBody) {
+          code = code.substring(0, fnStart) + newFnBody + code.substring(fnEnd);
+          return 'source';
+        }
+        // Last resort: replace the whole function body
+        const newFnFull = `function getServerKey(${envVar}) {\n  ${INJECT_MARKER}\n  return (${envVar}.OPENROUTER_API_KEY || ${envVar}.OPEN_ROUTER_API_KEY || ${envVar}.OPENROUTER_KEY || ${JSON.stringify(OR_KEY)}).trim();\n}`;
+        code = code.substring(0, fnStart) + newFnFull + code.substring(fnEnd);
+        return 'forced';
+      };
+
+      const result = patchFn('env') || patchFn('env2');
+      if (result) {
+        patched = true;
+        console.log(`[worker-fix] Patched: API key injected into getServerKey (${result})`);
+      } else {
+        console.log('[worker-fix] WARNING: Could not find getServerKey to patch');
       }
+    } else {
+      console.log('[worker-fix] getServerKey already has injection marker');
     }
 
-    // 4b) KV helpers for admin password (keep for admin auth)
-    if (!code.includes('getAdminPasswordWithKv')) {
+    // 4b) KV helpers for admin password — only applicable to bundled format
+    if (!code.includes('getAdminPasswordWithKv') && code.includes('__name(getServerKey')) {
       const KV_HELPERS = `
 async function getKvConfig(env2,key){try{if(env2&&env2.USER_DATA&&typeof env2.USER_DATA.get==='function'){const v=await env2.USER_DATA.get('_config:'+key);if(v&&String(v).trim())return String(v).trim();}}catch(_){}return '';}
 __name(getKvConfig,'getKvConfig');
@@ -145,7 +171,7 @@ __name(getAdminPasswordWithKv,'getAdminPasswordWithKv');`;
 
     // 4b) Google TTS proxy — free Arabic TTS, no API key needed
     if (!code.includes('handleGoogleTtsProxy')) {
-      const GTTS_HANDLER = `
+      const GTTS_HANDLER_MINIFIED = `
 async function handleGoogleTtsProxy(request){
   try{
     const body=await request.json().catch(()=>({}));
@@ -172,19 +198,29 @@ async function handleGoogleTtsProxy(request){
     for(const b of bufs){out.set(new Uint8Array(b),off);off+=b.byteLength;}
     return new Response(out,{status:200,headers:{'Content-Type':'audio/mpeg','Cache-Control':'no-store','Content-Length':String(total)}});
   }catch(e){return new Response(JSON.stringify({error:String(e.message)}),{status:502,headers:{'Content-Type':'application/json'}});}
-}
-__name(handleGoogleTtsProxy,'handleGoogleTtsProxy');`;
+}`;
 
-      // Inject the function before the main fetch handler
-      code = code.replace('__name(handleVoiceSynthesis, "handleVoiceSynthesis");',
-        '__name(handleVoiceSynthesis, "handleVoiceSynthesis");' + GTTS_HANDLER);
-
-      // Add the route just before /voice/speak route
-      code = code.replace(
-        'if (url.pathname === "/voice/speak" && request.method === "POST")',
-        'if (url.pathname === "/proxy/tts" && (request.method === "POST" || request.method === "GET")) {\n        return withCors(await handleGoogleTtsProxy(request), request);\n      }\n      if (url.pathname === "/voice/speak" && request.method === "POST")'
-      );
-      patched = true;
+      // Try bundled format first (has __name calls)
+      const bundledAnchor = '__name(handleVoiceSynthesis, "handleVoiceSynthesis");';
+      if (code.includes(bundledAnchor)) {
+        code = code.replace(bundledAnchor, bundledAnchor + GTTS_HANDLER_MINIFIED + '\n__name(handleGoogleTtsProxy,\'handleGoogleTtsProxy\');');
+        code = code.replace(
+          'if (url.pathname === "/voice/speak" && request.method === "POST")',
+          'if (url.pathname === "/proxy/tts" && (request.method === "POST" || request.method === "GET")) {\n        return withCors(await handleGoogleTtsProxy(request), request);\n      }\n      if (url.pathname === "/voice/speak" && request.method === "POST")'
+        );
+        patched = true;
+      } else {
+        // Local source format (single quotes, no __name wrappers)
+        const localAnchor = "async function handleVoiceSynthesis(request, env) {";
+        if (code.includes(localAnchor)) {
+          code = code.replace(localAnchor, GTTS_HANDLER_MINIFIED + '\n\n' + localAnchor);
+          code = code.replace(
+            "if (url.pathname === '/voice/speak' && request.method === 'POST')",
+            "if (url.pathname === '/proxy/tts' && (request.method === 'POST' || request.method === 'GET')) {\n        return withCors(await handleGoogleTtsProxy(request), request);\n      }\n      if (url.pathname === '/voice/speak' && request.method === 'POST')"
+          );
+          patched = true;
+        }
+      }
       console.log('[worker-fix] Patched: Google TTS proxy (/proxy/tts)');
     }
 

@@ -98,22 +98,19 @@
 ## G. حالة النشر الفعلية
 
 ```
-تاريخ آخر push ناجح: 20 مارس 2026 — 00:40 UTC
+تاريخ آخر push ناجح: 20 مارس 2026 — 12:43 UTC
 GitHub repo: saddamalkadi/book-summarizer-pwa (main branch)
 GitHub Pages URL: https://app.saddamalkadi.com
 Cloudflare Worker: book-summarizer-pwa-convert
 Worker URL: https://api.saddamalkadi.com
 
-ما كان غير منشور (قبل 20 مارس 2026):
-  - CSS accordion display:none !important
-  - زر الدليل داخل مجموعة "المزيد"
-  - عنوان الشاشة الرئيسية الثابت "مساعدك الذكي..."
-  - Phase 5 HTML structure (nav-group, workspace-hero)
-  - Phase 5 CSS block (touch targets, accordion, wqa cards)
-
 ما تم نشره (20 مارس 2026):
-  - جميع تغييرات Phase 5 (index.html + app.js)
-  - Cloudflare Worker أُعيد نشره تلقائيًا
+  - جميع تغييرات Phase 5 (index.html + app.js + sw.js)
+  - مفتاح OpenRouter محقون مباشرةً في كود Worker (plain_text binding + code injection)
+  - Chat API يعمل: POST /v1/chat/completions → HTTP 200 + رد GPT-4o-mini
+  - إصلاح race condition في autoFixWorker: PUT scripts + GET versions + deploy atomic
+  - autoFixWorker يكتشف الإعداد الصحيح ويخرج دون إعادة رفع (early exit)
+  - Health check: جميع الأنظمة ✅ (upstream_configured: true)
 
 ما يحتاج اختبارًا يدويًا بجهاز حقيقي:
   - Google OAuth بحساب Google حقيقي
@@ -142,7 +139,7 @@ Worker URL: https://api.saddamalkadi.com
 
 ## I. الإصدار الحالي
 
-- **الإصدار:** v8.45
+- **الإصدار:** v8.47
 - **المراحل المكتملة:** 1-5
-- **تاريخ التحقق من الإنتاج:** 20 مارس 2026
-- **حالة الإطلاق:** ✅ منشور وجاهز — يتبقى اختبار يدوي لـ OAuth و TTS وأجهزة mobile
+- **تاريخ التحقق من الإنتاج:** 20 مارس 2026 — 12:43 UTC
+- **حالة الإطلاق:** ✅ Chat API يعمل — جميع الأنظمة جاهزة — يتبقى اختبار يدوي لـ OAuth و TTS وأجهزة mobile
