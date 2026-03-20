@@ -137,9 +137,28 @@ Worker URL: https://api.saddamalkadi.com
 
 ---
 
+## J. Phase 5 UI Polish (Release Hardening — مارس 2026)
+
+| البند | الحالة |
+|------|-------|
+| Sidebar nav: 5 primary + Tools/More accordion | ✅ |
+| Chat onboarding (MutationObserver — يظهر عند فراغ chatlog) | ✅ |
+| Secondary toolbar toggle (chatMoreBtn + aria-expanded) | ✅ |
+| OCR/cloud checkboxes نُقلت إلى Advanced settings | ✅ |
+| Touch targets ≥ 42px على chatbar buttons | ✅ |
+| Focus rings واضحة (focus-visible CSS) | ✅ |
+| ARIA labels على جميع الأزرار والـ checkboxes | ✅ |
+| UUID deploy fallback (GET /versions?limit=1) | ✅ |
+| docs/accessibility-final-pass.md | ✅ |
+| docs/login-voice-production-validation.md | ✅ |
+| docs/mobile-device-validation.md | ✅ |
+| docs/final-launch-signoff.md | ✅ |
+
+---
+
 ## I. الإصدار الحالي
 
 - **الإصدار:** v8.47
-- **المراحل المكتملة:** 1-5
-- **تاريخ التحقق من الإنتاج:** 20 مارس 2026 — 12:43 UTC
-- **حالة الإطلاق:** ✅ Chat API يعمل — جميع الأنظمة جاهزة — يتبقى اختبار يدوي لـ OAuth و TTS وأجهزة mobile
+- **المراحل المكتملة:** 1-5 (+ Phase 5 Release Hardening)
+- **تاريخ التحقق من الإنتاج:** 20 مارس 2026
+- **حالة الإطلاق:** ✅ جاهز للـ Soft Launch — يتبقى اختبار يدوي لـ Google OAuth و TTS وأجهزة mobile
