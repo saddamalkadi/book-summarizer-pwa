@@ -72,6 +72,16 @@ On every startup, `autoFixWorker()` runs asynchronously:
 | `GITHUB_TOKEN` | GitHub token (auto-push to GitHub Pages) |
 | `ADMIN_PASSWORD_REAL` | Admin login password (optional, fallback: Saddam@Admin2026!) |
 
+## Phase 5 Release Hardening (مارس 2026)
+
+- **Navigation**: Sidebar restructured to 5 primary (Chat, Files, Projects, Tools, More) + collapsible sub-groups
+- **Chat Onboarding**: `#chatOnboarding` div auto-shown/hidden via MutationObserver on `#chatLog`
+- **Secondary Toolbar**: `#chatMoreBtn` toggles `.toolbar-secondary-open` class with `aria-expanded`
+- **Settings**: OCR/cloud checkboxes moved to Advanced section; main view simplified to 2 checkboxes
+- **Accessibility**: Focus rings (`*:focus-visible`), ARIA labels on all interactive elements, 42px+ touch targets
+- **Worker Deploy**: UUID fallback — if `PUT /scripts/` response lacks UUID, query `GET /versions?items[0].id`
+- **Docs**: accessibility-final-pass, login-voice-production-validation, mobile-device-validation, final-launch-signoff
+
 ## System Status (as of v8.47)
 
 | Feature | Status |
@@ -84,3 +94,6 @@ On every startup, `autoFixWorker()` runs asynchronously:
 | File Conversion (`/ocr`, `/convert`) | ✅ Working |
 | PWA Install / Service Worker | ✅ Working |
 | Health endpoint (`/health`) | ✅ All green |
+| Chat Onboarding (MutationObserver) | ✅ Working |
+| Secondary Toolbar Toggle (chatMoreBtn) | ✅ Working |
+| Worker UUID deploy fallback | ✅ Fixed |
