@@ -693,7 +693,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     #page-chat{
       background: linear-gradient(180deg, rgba(248,251,255,.95), rgba(255,255,255,.98));
       scroll-padding-top: calc(var(--sticky-toolbar-top) + 22px);
-      padding-bottom: clamp(12px, 2vw, 24px);
+      overflow: hidden;
     }
     #page-chat > .toolbar.mainToolbar,
     #page-chat > .workspace-deck,
@@ -2568,6 +2568,51 @@ select{
   line-height: 1.4;
 }
 
+/* === Workspace Nav Shortcuts === */
+.workspace-nav-shortcuts{
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 680px;
+  margin-bottom: 20px;
+}
+.wnav-card{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1.5px solid #e4e9f5;
+  background: rgba(255,255,255,.75);
+  cursor: pointer;
+  min-width: 72px;
+  flex: 0 0 auto;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease, background .15s ease;
+}
+.wnav-card:hover{
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(10,20,60,.10);
+  border-color: #b8caff;
+  background: #eef3ff;
+}
+.wnav-card:focus-visible{
+  outline: 2px solid #1b66ff;
+  outline-offset: 3px;
+}
+.wnav-icon{
+  font-size: 20px;
+  line-height: 1;
+}
+.wnav-label{
+  font-size: 11px;
+  font-weight: 900;
+  color: #3a4468;
+  white-space: nowrap;
+}
+
 /* === Workspace Status Strip === */
 .workspace-status-strip{
   display: flex;
@@ -3136,6 +3181,32 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
                   <span class="uc-desc">من الفكرة إلى خطة متكاملة</span>
                 </button>
               </div>
+              <div class="workspace-nav-shortcuts" role="list" aria-label="تنقل سريع">
+                <button class="wnav-card" type="button" role="listitem" data-page="files" aria-label="الملفات">
+                  <span class="wnav-icon" aria-hidden="true">📁</span>
+                  <span class="wnav-label">الملفات</span>
+                </button>
+                <button class="wnav-card" type="button" role="listitem" data-page="projects" aria-label="المشاريع">
+                  <span class="wnav-icon" aria-hidden="true">🗂</span>
+                  <span class="wnav-label">المشاريع</span>
+                </button>
+                <button class="wnav-card" type="button" role="listitem" data-page="canvas" aria-label="اللوحة">
+                  <span class="wnav-icon" aria-hidden="true">📝</span>
+                  <span class="wnav-label">اللوحة</span>
+                </button>
+                <button class="wnav-card" type="button" role="listitem" data-page="transcription" aria-label="التفريغ النصي">
+                  <span class="wnav-icon" aria-hidden="true">🧾</span>
+                  <span class="wnav-label">التفريغ</span>
+                </button>
+                <button class="wnav-card" type="button" role="listitem" data-page="knowledge" aria-label="قاعدة المعرفة">
+                  <span class="wnav-icon" aria-hidden="true">🧠</span>
+                  <span class="wnav-label">المعرفة</span>
+                </button>
+                <button class="wnav-card" type="button" role="listitem" data-page="settings" aria-label="الإعدادات">
+                  <span class="wnav-icon" aria-hidden="true">⚙</span>
+                  <span class="wnav-label">الإعدادات</span>
+                </button>
+              </div>
               <div class="workspace-status-strip" id="workspaceStatusStrip" aria-label="حالة النظام">
                 <span class="wss-item"><span class="wss-label">النموذج</span><span class="wss-value" id="signalModel">—</span></span>
                 <span class="wss-sep" aria-hidden="true">•</span>
@@ -3690,7 +3761,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
     })();
   </script>
 
-<script src="app.js?v=850"></script>
+<script src="app.js?v=851"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{

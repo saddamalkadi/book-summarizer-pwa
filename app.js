@@ -2407,7 +2407,6 @@ function syncChatScrollDock(){
   const nearTop = top <= 24;
   const nearBottom = (max - top) <= 24;
 
-  if ($('floatingScrollTopBtn')) $('floatingScrollTopBtn').disabled = !visible || nearTop;
   if ($('floatingScrollBottomBtn')) $('floatingScrollBottomBtn').disabled = !visible || nearBottom;
 }
 
@@ -4874,10 +4873,6 @@ async function submitUnifiedAuthEntry(){
     if (chatPage && !$('chatScrollDock')){
       chatPage.insertAdjacentHTML('beforeend', `
         <div class="floating-scroll-nav" id="chatScrollDock" aria-label="التنقل داخل الدردشة" aria-hidden="true">
-          <button class="scroll-fab" id="floatingScrollTopBtn" type="button" title="الانتقال إلى أعلى الدردشة" aria-label="الانتقال إلى أعلى الدردشة">
-            <span class="icon">⬆</span>
-            <span class="label">للأعلى</span>
-          </button>
           <button class="scroll-fab" id="floatingScrollBottomBtn" type="button" title="الانتقال إلى أحدث رسالة" aria-label="الانتقال إلى أحدث رسالة">
             <span class="icon">⬇</span>
             <span class="label">للأسفل</span>
@@ -10774,6 +10769,14 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
     });
     $('wqaFiles') && $('wqaFiles').addEventListener('click', openChatAttachmentPicker);
 
+    // Workspace nav shortcut cards
+    document.querySelectorAll('.wnav-card[data-page]').forEach((card) => {
+      card.addEventListener('click', () => {
+        const page = card.dataset.page;
+        if (page) setActiveNav(page);
+      });
+    });
+
     // Chat attachments (inline)
     $('chatAttachBtn') && $('chatAttachBtn').addEventListener('click', openChatAttachmentPicker);
     $('chatAttachFiles') && $('chatAttachFiles').addEventListener('change', (e) => {
@@ -10789,7 +10792,6 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
     $('agentTaskTemplate') && $('agentTaskTemplate').addEventListener('change', applyAgentTaskTemplate);
     $('scrollTopBtn') && $('scrollTopBtn').addEventListener('click', () => scrollChat('top'));
     $('scrollBottomBtn') && $('scrollBottomBtn').addEventListener('click', () => scrollChat('bottom'));
-    $('floatingScrollTopBtn') && $('floatingScrollTopBtn').addEventListener('click', () => scrollChat('top'));
     $('floatingScrollBottomBtn') && $('floatingScrollBottomBtn').addEventListener('click', () => scrollChat('bottom'));
     $('chatLog') && $('chatLog').addEventListener('scroll', scheduleChatScrollDockSync, { passive:true });
 
