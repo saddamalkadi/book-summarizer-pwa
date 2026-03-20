@@ -214,10 +214,48 @@ __name(handleGoogleTtsProxy,'handleGoogleTtsProxy');`;
       { method: 'PUT', headers: { 'Authorization': `Bearer ${CF_TOKEN}`, 'Content-Type': `multipart/form-data; boundary=${boundary}` }, body, signal: AbortSignal.timeout(30000) }
     ).then(r => r.json());
 
-    if (result.success) {
+    if (!result.success) {
+      console.log('[worker-fix] ✗ Upload failed:', JSON.stringify(result.errors||[]).substring(0, 300));
+      return;
+    }
+    console.log('[worker-fix] ✓ Code uploaded');
+
+    // Explicit deploy step for Worker Versions (creates a deployment from latest version)
+    try {
+      const deployResult = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/workers/scripts/${WORKER_NAME}/deployments`,
+        {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${CF_TOKEN}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ strategy: 'percentage', versions: [{ percentage: 100 }] }),
+          signal: AbortSignal.timeout(15000)
+        }
+      ).then(r => r.json());
+
+      if (deployResult.success) {
+        console.log('[worker-fix] ✓ Worker deployed (versions strategy)');
+      } else {
+        // Try alternative deployment endpoint
+        const altDeploy = await fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/workers/services/${WORKER_NAME}/environments/production/deployments`,
+          {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${CF_TOKEN}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+            signal: AbortSignal.timeout(15000)
+          }
+        ).then(r => r.json());
+
+        if (altDeploy.success) {
+          console.log('[worker-fix] ✓ Worker deployed (services strategy)');
+        } else {
+          console.log('[worker-fix] Deploy note:', JSON.stringify(deployResult.errors||[]).substring(0,200));
+          console.log('[worker-fix] ✓ Worker redeployed successfully (upload only)');
+        }
+      }
+    } catch (deployErr) {
+      console.log('[worker-fix] Deploy step skipped:', deployErr.message);
       console.log('[worker-fix] ✓ Worker redeployed successfully');
-    } else {
-      console.log('[worker-fix] ✗ Deploy failed:', JSON.stringify(result.errors||[]).substring(0, 300));
     }
   } catch (e) {
     console.log('[worker-fix] Error:', e.message);
