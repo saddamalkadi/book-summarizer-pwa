@@ -82,6 +82,16 @@ On every startup, `autoFixWorker()` runs asynchronously:
 - **Worker Deploy**: UUID fallback — `GET /versions?limit=1` → `result.items[0].id` (CF returns `{result:{items:[...]}}` not `{result:[...]}`) — now deploys correctly every time
 - **Docs**: accessibility-final-pass, login-voice-production-validation, mobile-device-validation, final-launch-signoff
 
+## Functional Stabilization Audit (مارس 2026) — docs/13
+
+Three bugs found and fixed during a complete handler/auth audit:
+
+1. **Auth gate never showed for voluntary sign-in** — `openAuthGate()` had a hard early-return guard (`authRequired !== true`). Added `{ force: true }` parameter; all voluntary call sites now pass it (sideAccountStrip, accountSignInBtn, logout, upgrade flows).
+2. **"تسجيل الدخول" strip navigated to Settings instead of auth modal** — fixed `sideAccountStrip` handler to call `openAccountCenter()` directly.
+3. **`refreshNavMeta()` destroyed use-case card icons/descriptions** — `btn.textContent =` was overwriting child elements. Added `btn.children.length === 0` guard.
+
+All static + dynamic buttons audited: 100% handler coverage confirmed. Auth gate close button also fixed to show when auth is optional.
+
 ## System Status (as of v8.47)
 
 | Feature | Status |
