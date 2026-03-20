@@ -291,8 +291,10 @@ async function handleGoogleTtsProxy(request){
         `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/workers/scripts/${WORKER_NAME}/versions?limit=1`,
         { headers: { 'Authorization': `Bearer ${CF_TOKEN}` }, signal: AbortSignal.timeout(15000) }
       ).then(r => r.json());
-      console.log('[worker-fix] Versions API:', JSON.stringify(versionsResp?.result||versionsResp?.errors||'no-result').substring(0,120));
-      versionId = versionsResp?.result?.[0]?.id;
+      console.log('[worker-fix] Versions API:', JSON.stringify(versionsResp?.result||versionsResp?.items||versionsResp?.errors||'no-result').substring(0,120));
+      // Versions endpoint may use result[] or items[] depending on API version
+      const vItems = versionsResp?.result || versionsResp?.items || [];
+      versionId = vItems[0]?.id;
       if (versionId) console.log('[worker-fix] ✓ Version UUID from list:', versionId.substring(0,8));
     } else {
       console.log('[worker-fix] ✓ Version UUID from upload:', versionId.substring(0,8));
