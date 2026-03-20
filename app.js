@@ -4787,10 +4787,11 @@ async function submitUnifiedAuthEntry(){
     const nav = $('nav');
     if (nav && !nav.querySelector('[data-page="guide"]')){
       const guideBtn = document.createElement('button');
-      guideBtn.className = 'navbtn';
+      guideBtn.className = 'navbtn sub';
       guideBtn.dataset.page = 'guide';
-      guideBtn.innerHTML = '<span>دليل الاستخدام</span><span class="meta" id="navGuideMeta">AR</span>';
-      nav.appendChild(guideBtn);
+      guideBtn.innerHTML = '<span class="navbtn-icon">📖</span><span class="navbtn-label">دليل الاستخدام</span><span class="meta" id="navGuideMeta">AR</span>';
+      const moreItems = $('moreGroupItems') || nav;
+      moreItems.appendChild(guideBtn);
     }
 
     const contentRoot = document.querySelector('.content');
@@ -5146,7 +5147,7 @@ async function submitUnifiedAuthEntry(){
       $('topRuntimeBadge').textContent = 'جاهز';
     }
     const fixedCopy = [
-      ['workspaceHeadline', 'ابدأ من مساحة عمل عربية للدردشة والملفات والمعرفة.'],
+      ['workspaceHeadline', 'مساعدك الذكي للعمل باللغة العربية'],
       ['workspaceSummary', 'اعمل داخل مشروع واحد مع واجهة منظمة وخيارات تشغيل واضحة.'],
       ['signalProviderNote', 'المزوّد الحالي وطريقة المصادقة'],
       ['signalModelNote', 'مسار النموذج الرئيسي'],
@@ -5683,9 +5684,7 @@ async function submitUnifiedAuthEntry(){
     if (runtimeBadge) runtimeBadge.textContent = `${settings.provider.toUpperCase()} • ${policy.freeMode ? 'مجاني' : getCostGuardLabel(policy.costGuard)}`;
     if ($('curProjectName')) $('curProjectName').textContent = project.name;
     if ($('workspaceHeadline')){
-      $('workspaceHeadline').textContent = messageCount
-        ? `تابع العمل على ${project.name} من شاشة دردشة واسعة وواضحة.`
-        : 'ابدأ مشروعًا جديدًا أو افتح مشروعًا موجودًا لمتابعة العمل.';
+      $('workspaceHeadline').textContent = 'مساعدك الذكي للعمل باللغة العربية';
     }
     if ($('workspaceSummary')){
       const briefPart = hasProjectBrief(brief) ? ` • الذاكرة: ${summarizeProjectBrief(brief)}` : '';
@@ -10093,14 +10092,41 @@ let pinOnly = false;
   }
 
   // ---------------- Navigation ----------------
+  const NAV_GROUPS = {
+    tools: ['canvas','transcription','workflows'],
+    more:  ['knowledge','downloads','settings','guide']
+  };
+
   function setActiveNav(page){
     if (page !== 'chat' && composerListening) stopComposerDictation();
-    document.querySelectorAll('.navbtn').forEach(b => b.classList.toggle('active', b.dataset.page === page));
+    document.querySelectorAll('.navbtn[data-page]').forEach(b => {
+      const isActive = b.dataset.page === page;
+      b.classList.toggle('active', isActive);
+      b.setAttribute('aria-current', isActive ? 'page' : 'false');
+    });
     document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === `page-${page}`));
-    const titles = { chat:'الدردشة', knowledge:'المعرفة (KB)', canvas:'اللوحة', files:'الملفات', transcription:'مختبر الوثائق', workflows:'سير العمل', downloads:'التحديث والتنزيل', projects:'المشاريع', guide:'دليل الاستخدام', settings:'الإعدادات' };
+    const titles = { chat:'الدردشة', knowledge:'قاعدة المعرفة', canvas:'اللوحة', files:'الملفات', transcription:'التفريغ النصي', workflows:'سير العمل', downloads:'التنزيل', projects:'المشاريع', guide:'دليل الاستخدام', settings:'الإعدادات' };
     $('topTitle').textContent = titles[page] || 'استوديو الذكاء';
+    if (NAV_GROUPS.tools.includes(page)) expandNavGroup('toolsGroup');
+    if (NAV_GROUPS.more.includes(page)) expandNavGroup('moreGroup');
     refreshStrategicWorkspace().catch(()=>{});
     scheduleChatScrollDockSync();
+  }
+
+  function expandNavGroup(groupId){
+    const group = $(groupId);
+    if (!group) return;
+    group.classList.add('open');
+    const toggle = group.querySelector('.nav-group-toggle');
+    if (toggle) toggle.setAttribute('aria-expanded','true');
+  }
+
+  function toggleNavGroup(groupId){
+    const group = $(groupId);
+    if (!group) return;
+    const isOpen = group.classList.toggle('open');
+    const toggle = group.querySelector('.nav-group-toggle');
+    if (toggle) toggle.setAttribute('aria-expanded', String(isOpen));
   }
 
   function refreshNavMeta(){
@@ -10250,7 +10276,7 @@ let pinOnly = false;
     const profile = model.capabilities || buildModelCapabilityProfile(model);
     const keys = getEnabledCapabilityKeys(profile);
     if (!keys.length) return 'ط¹ط§ظ…';
-    return keys.slice(0, Math.max(1, limit)).map(getModelCapabilityLabel).join(' â€¢ ');
+    return keys.slice(0, Math.max(1, limit)).map(getModelCapabilityLabel).join(' • ');
   }
   function getModelRoutingNote(model = {}){
     const profile = model.capabilities || buildModelCapabilityProfile(model);
@@ -10617,6 +10643,12 @@ let pinOnly = false;
     $('nav').addEventListener('click', (e) => {
       const btn = e.target.closest('.navbtn');
       if (!btn) return;
+      if (btn.classList.contains('nav-group-toggle')) {
+        const group = btn.closest('.nav-group');
+        if (group) toggleNavGroup(group.id);
+        return;
+      }
+      if (!btn.dataset.page) return;
       setActiveNav(btn.dataset.page);
       closeSide();
       if (btn.dataset.page === 'downloads') renderDownloads();
@@ -10731,6 +10763,13 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
 
     // chat
     
+    // Workspace quick-action buttons (home screen)
+    $('wqaChat') && $('wqaChat').addEventListener('click', () => {
+      $('chatInput') && $('chatInput').focus();
+      if ($('workspaceDeck')) $('workspaceDeck').classList.add('workspace-deck-collapsed');
+    });
+    $('wqaFiles') && $('wqaFiles').addEventListener('click', openChatAttachmentPicker);
+
     // Chat attachments (inline)
     $('chatAttachBtn') && $('chatAttachBtn').addEventListener('click', openChatAttachmentPicker);
     $('chatAttachFiles') && $('chatAttachFiles').addEventListener('change', (e) => {

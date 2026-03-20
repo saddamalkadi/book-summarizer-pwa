@@ -80,10 +80,22 @@
     .brand .sub{opacity:.82; font-size:11px; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
     .iconbtn{border:none; background:rgba(255,255,255,.12); color:#fff; width:34px; height:34px; border-radius:12px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; font-size:15px;}
     .nav{display:flex; flex:1; min-height:0; flex-direction:column; gap:10px; overflow:auto; padding:4px;}
-    .navbtn{border:none; cursor:pointer; padding:12px 14px; border-radius:16px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12); color:#fff; display:flex; align-items:center; justify-content:space-between; gap:10px; font-weight:1000; width:100%; -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); transition:transform .2s ease, background .2s ease, border-color .2s ease;}
-    .navbtn:hover{transform:translateY(-1px); background:rgba(255,255,255,.15); border-color:rgba(255,255,255,.26);}
+    .navbtn{border:none; cursor:pointer; padding:12px 14px; border-radius:16px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12); color:#fff; display:flex; align-items:center; gap:10px; font-weight:700; width:100%; min-height:46px; -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); transition:transform .15s ease, background .15s ease, border-color .15s ease; font-family:inherit;}
+    .navbtn-icon{font-size:16px; flex-shrink:0; line-height:1;}
+    .navbtn-label{flex:1; text-align:start; font-size:13.5px;}
+    .navbtn:hover{transform:translateX(-2px); background:rgba(255,255,255,.15); border-color:rgba(255,255,255,.26);}
+    .navbtn:focus-visible{outline:2px solid #6fa3ff; outline-offset:2px;}
     .navbtn.active{background:linear-gradient(135deg,rgba(103,145,255,.45),rgba(55,95,225,.25)); border-color:rgba(179,199,255,.65); box-shadow:0 10px 25px rgba(9,20,60,.25);}
-    .navbtn .meta{opacity:.8; font-size:11px; font-weight:900; padding:2px 8px; border-radius:999px; background:rgba(255,255,255,.12);}
+    .navbtn .meta{opacity:.8; font-size:11px; font-weight:900; padding:2px 8px; border-radius:999px; background:rgba(255,255,255,.12); margin-inline-start:auto; flex-shrink:0;}
+    .nav-group{display:flex; flex-direction:column; gap:0;}
+    .nav-group-toggle{justify-content:flex-start;}
+    .nav-group-arrow{margin-inline-start:auto; font-size:18px; font-weight:900; transition:transform .2s ease; color:rgba(255,255,255,.55); flex-shrink:0;}
+    .nav-group.open .nav-group-arrow{transform:rotate(90deg); color:rgba(255,255,255,.9);}
+    .nav-group.open .nav-group-toggle{background:rgba(255,255,255,.12);}
+    .nav-group-items{display:none !important; flex-direction:column; gap:4px; padding:6px 0 2px 8px;}
+    .nav-group.open .nav-group-items{display:flex !important;}
+    .navbtn.sub{padding:10px 12px; min-height:40px; font-size:13px; background:rgba(255,255,255,.05); border-color:rgba(255,255,255,.08);}
+    .navbtn.sub.active{background:linear-gradient(135deg,rgba(103,145,255,.35),rgba(55,95,225,.18)); border-color:rgba(179,199,255,.5);}
     .sidecard{display:none;}
     .main{display:flex; flex-direction:column; gap:12px; min-width:0; min-height:0; max-height:calc(var(--app-vh) - 24px); overflow:hidden;}
     .topbar{background:var(--card); border:1px solid rgba(10,20,60,0.06); border-radius:var(--r); box-shadow:var(--shadow); padding:10px; display:flex; align-items:center; justify-content:space-between; gap:10px; position:sticky; top:0; z-index:24;}
@@ -2404,6 +2416,283 @@ select{
   from{ opacity:0; transform:translateY(6px); }
   to{ opacity:1; transform:none; }
 }
+
+/* ===================== PHASE 5: Release Polish ===================== */
+
+/* === Workspace Hero Redesign === */
+.workspace-hero{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: clamp(28px,4vw,52px) clamp(20px,5vw,60px) clamp(20px,3vw,36px);
+  gap: 0;
+}
+.workspace-hero-badge{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: rgba(27,102,255,.12);
+  border: 1px solid rgba(27,102,255,.25);
+  color: #1b66ff;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  margin-bottom: 18px;
+}
+.workspace-title{
+  font-size: clamp(22px,3.2vw,38px);
+  font-weight: 900;
+  line-height: 1.2;
+  margin: 0 0 12px;
+  color: #0b1020;
+}
+.workspace-summary{
+  max-width: 600px;
+  line-height: 1.75;
+  color: #5c6782;
+  font-size: clamp(13px,1.4vw,15px);
+  margin: 0 0 28px;
+}
+
+/* === Quick Action Buttons === */
+.workspace-quick-actions{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 28px;
+}
+.wqa-btn{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  border-radius: 18px;
+  border: 1.5px solid #d7dbea;
+  background: #fff;
+  cursor: pointer;
+  min-width: 160px;
+  min-height: 60px;
+  text-align: start;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+  box-shadow: 0 2px 12px rgba(10,20,60,.06);
+}
+.wqa-btn:hover{
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(10,20,60,.12);
+  border-color: #a8c0ff;
+}
+.wqa-btn:focus-visible{
+  outline: 2px solid #1b66ff;
+  outline-offset: 3px;
+}
+.wqa-btn.primary{
+  background: linear-gradient(135deg,#1b66ff,#0b3fbf);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 4px 20px rgba(27,102,255,.35);
+}
+.wqa-btn.primary:hover{
+  box-shadow: 0 8px 28px rgba(27,102,255,.48);
+}
+.wqa-icon{
+  font-size: 22px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.wqa-text{
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wqa-text strong{
+  font-size: 13.5px;
+  font-weight: 900;
+  color: inherit;
+}
+.wqa-text span{
+  font-size: 11.5px;
+  opacity: .72;
+}
+.wqa-btn.primary .wqa-text span{ opacity:.85; }
+
+/* === Use Case Cards === */
+.workspace-use-cases{
+  display: grid;
+  grid-template-columns: repeat(4,minmax(0,1fr));
+  gap: 10px;
+  width: 100%;
+  max-width: 760px;
+  margin-bottom: 24px;
+}
+.use-case-card{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 12px;
+  border-radius: 16px;
+  border: 1.5px solid #e8ecf4;
+  background: #f8faff;
+  cursor: pointer;
+  text-align: center;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease, background .15s ease;
+  min-height: 100px;
+}
+.use-case-card:hover{
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(10,20,60,.10);
+  border-color: #bed0ff;
+  background: #eef3ff;
+}
+.use-case-card:focus-visible{
+  outline: 2px solid #1b66ff;
+  outline-offset: 3px;
+}
+.uc-icon{
+  font-size: 26px;
+  line-height: 1;
+}
+.uc-title{
+  font-size: 12.5px;
+  font-weight: 900;
+  color: #0b1020;
+}
+.uc-desc{
+  font-size: 11px;
+  color: #5c6782;
+  line-height: 1.4;
+}
+
+/* === Workspace Status Strip === */
+.workspace-status-strip{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: #f4f6fb;
+  border: 1px solid #e0e4f0;
+  border-radius: 12px;
+  font-size: 12px;
+  color: #5c6782;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.wss-item{
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.wss-label{
+  font-weight: 900;
+  color: #3a4468;
+}
+.wss-value{
+  font-weight: 700;
+  color: #1b66ff;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wss-sep{
+  color: #c0c8dd;
+  font-size: 14px;
+}
+
+/* === Responsive workspace === */
+@media (max-width: 768px){
+  .workspace-use-cases{
+    grid-template-columns: repeat(2,minmax(0,1fr));
+  }
+  .workspace-quick-actions{
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .wqa-btn{
+    min-width: 0;
+  }
+}
+@media (max-width: 480px){
+  .workspace-use-cases{
+    grid-template-columns: repeat(2,minmax(0,1fr));
+  }
+}
+
+/* === Accessibility: Focus & Touch Targets === */
+button:not(.navbtn):not(.wqa-btn):not(.use-case-card):not(.scroll-fab):not(.chip .x){
+  min-height: 36px;
+}
+.btn{ min-height: 36px; }
+.btn.sm{ min-height: 30px; }
+.btn.icon{ min-width: 36px; min-height: 36px; }
+.chatbar .btn{ min-height: 44px; min-width: 44px; }
+#sendBtn, #voiceInputBtn, #chatAttachBtn{
+  min-width: 44px;
+  min-height: 44px;
+}
+:focus-visible{
+  outline: 2px solid #1b66ff;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.navbtn:focus-visible,
+.wqa-btn:focus-visible,
+.use-case-card:focus-visible{
+  outline-offset: 3px;
+  border-radius: 16px;
+}
+
+/* === Voice Chat UI States === */
+#voiceInputBtn[data-state="listening"]{
+  background: linear-gradient(135deg,#ff3b30,#e0321e) !important;
+  box-shadow: 0 0 0 4px rgba(255,59,48,.25);
+  animation: voice-pulse 1.4s ease infinite;
+}
+#voiceInputBtn[data-state="processing"]{
+  background: linear-gradient(135deg,#f59e0b,#d97706) !important;
+  animation: voice-pulse 0.8s ease infinite;
+}
+@keyframes voice-pulse{
+  0%,100%{ box-shadow: 0 0 0 3px rgba(255,255,255,.2); }
+  50%{ box-shadow: 0 0 0 7px rgba(255,255,255,.06); }
+}
+
+/* === Strategic Strip (simplified) === */
+.strategic-strip{
+  padding: 6px clamp(12px,2vw,20px);
+}
+
+/* === Empty state improvements === */
+.empty-chat-state{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: clamp(20px,4vw,40px) 20px;
+}
+
+/* === Error & Loading States === */
+.status[data-type="error"]{
+  background: #fff0ef;
+  border-color: #ffcbc8;
+  color: #c0392b;
+}
+.status[data-type="success"]{
+  background: #effff4;
+  border-color: #b2f0c8;
+  color: #166534;
+}
+
+/* === Typography: Noto Sans Arabic applied globally === */
+body, input, textarea, select, button{
+  font-family: 'Noto Sans Arabic', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
 </style>
 </head>
 <body>
@@ -2419,16 +2708,34 @@ select{
         <button class="iconbtn" id="closeSideBtn" title="إغلاق">✕</button>
       </div>
 
-      <nav class="nav" id="nav">
-        <button class="navbtn active" data-page="chat"><span>💬 الدردشة</span><span class="meta" id="navChatMeta">—</span></button>
-        <button class="navbtn" data-page="knowledge"><span>🧠 المعرفة (KB)</span><span class="meta" id="navKbMeta">—</span></button>
-        <button class="navbtn" data-page="canvas"><span>📝 اللوحة</span><span class="meta" id="navCanvasMeta">—</span></button>
-        <button class="navbtn" data-page="files"><span>📎 الملفات</span><span class="meta" id="navFilesMeta">—</span></button>
-        <button class="navbtn" data-page="transcription"><span>🧾 التفريغ النصي</span><span class="meta" id="navTransMeta">—</span></button>
-        <button class="navbtn" data-page="workflows"><span>⚡ سير العمل</span><span class="meta" id="navWorkMeta">—</span></button>
-        <button class="navbtn" data-page="downloads"><span>⬇️ التحديث والتنزيل</span><span class="meta" id="navDlMeta">—</span></button>
-        <button class="navbtn" data-page="projects"><span>🗂️ المشاريع</span><span class="meta" id="navProjMeta">—</span></button>
-        <button class="navbtn" data-page="settings"><span>⚙️ الإعدادات</span><span class="meta" id="navSetMeta">—</span></button>
+      <nav class="nav" id="nav" role="navigation" aria-label="التنقل الرئيسي">
+        <button class="navbtn active" data-page="chat" aria-current="page"><span class="navbtn-icon">💬</span><span class="navbtn-label">الدردشة</span><span class="meta" id="navChatMeta">—</span></button>
+        <button class="navbtn" data-page="files"><span class="navbtn-icon">📁</span><span class="navbtn-label">الملفات</span><span class="meta" id="navFilesMeta">—</span></button>
+        <button class="navbtn" data-page="projects"><span class="navbtn-icon">🗂️</span><span class="navbtn-label">المشاريع</span><span class="meta" id="navProjMeta">—</span></button>
+
+        <div class="nav-group" id="toolsGroup">
+          <button class="navbtn nav-group-toggle" id="toolsGroupToggle" aria-expanded="false" aria-controls="toolsGroupItems">
+            <span class="navbtn-icon">🛠️</span><span class="navbtn-label">الأدوات</span>
+            <span class="nav-group-arrow" aria-hidden="true">›</span>
+          </button>
+          <div class="nav-group-items" id="toolsGroupItems" role="group" aria-label="أدوات العمل">
+            <button class="navbtn sub" data-page="canvas"><span class="navbtn-icon">📝</span><span class="navbtn-label">اللوحة</span><span class="meta" id="navCanvasMeta">—</span></button>
+            <button class="navbtn sub" data-page="transcription"><span class="navbtn-icon">🧾</span><span class="navbtn-label">التفريغ النصي</span><span class="meta" id="navTransMeta">—</span></button>
+            <button class="navbtn sub" data-page="workflows"><span class="navbtn-icon">⚡</span><span class="navbtn-label">سير العمل</span><span class="meta" id="navWorkMeta">—</span></button>
+          </div>
+        </div>
+
+        <div class="nav-group" id="moreGroup">
+          <button class="navbtn nav-group-toggle" id="moreGroupToggle" aria-expanded="false" aria-controls="moreGroupItems">
+            <span class="navbtn-icon">⋯</span><span class="navbtn-label">المزيد</span>
+            <span class="nav-group-arrow" aria-hidden="true">›</span>
+          </button>
+          <div class="nav-group-items" id="moreGroupItems" role="group" aria-label="إعدادات ومزيد">
+            <button class="navbtn sub" data-page="knowledge"><span class="navbtn-icon">🧠</span><span class="navbtn-label">قاعدة المعرفة</span><span class="meta" id="navKbMeta">—</span></button>
+            <button class="navbtn sub" data-page="downloads"><span class="navbtn-icon">⬇️</span><span class="navbtn-label">التنزيل</span><span class="meta" id="navDlMeta">—</span></button>
+            <button class="navbtn sub" data-page="settings"><span class="navbtn-icon">⚙️</span><span class="navbtn-label">الإعدادات</span><span class="meta" id="navSetMeta">—</span></button>
+          </div>
+        </div>
       </nav>
 
       <div style="padding:10px 12px 14px; margin-top:auto;">
@@ -2539,40 +2846,60 @@ select{
 
           <div class="workspace-deck" id="workspaceDeck">
             <section class="workspace-hero">
-              <div>
-                <div class="workspace-eyebrow">مساحة العمل</div>
-                <div class="workspace-title" id="workspaceHeadline">الدردشة والملفات والمعرفة في مساحة واحدة.</div>
-                <div class="workspace-summary" id="workspaceSummary">ابدأ من مشروع منظم، ثم بدّل بين الأدوات حسب حاجتك.</div>
+              <div class="workspace-hero-badge">AI Workspace Studio</div>
+              <h1 class="workspace-title" id="workspaceHeadline">مساعدك الذكي للعمل باللغة العربية</h1>
+              <p class="workspace-summary" id="workspaceSummary">دردش مع الذكاء الاصطناعي، حلّل ملفاتك، استخرج النصوص، وأنتج مخرجات احترافية — كل شيء في مكان واحد.</p>
+              <div class="workspace-quick-actions">
+                <button class="wqa-btn primary" type="button" id="wqaChat" aria-label="ابدأ محادثة جديدة">
+                  <span class="wqa-icon">💬</span>
+                  <span class="wqa-text"><strong>ابدأ محادثة</strong><span>اطرح سؤالك الآن</span></span>
+                </button>
+                <button class="wqa-btn" type="button" id="wqaFiles" aria-label="ارفع ملفات للتحليل">
+                  <span class="wqa-icon">📁</span>
+                  <span class="wqa-text"><strong>ارفع ملفات</strong><span>PDF, Word, صور…</span></span>
+                </button>
+                <button class="wqa-btn" type="button" data-quick-prompt="strategy_brief" aria-label="شغّل مهمة جاهزة">
+                  <span class="wqa-icon">⚡</span>
+                  <span class="wqa-text"><strong>مهمة جاهزة</strong><span>قوالب احترافية</span></span>
+                </button>
               </div>
-              <div class="workspace-actions">
-                <button class="workspace-btn primary" type="button" data-quick-prompt="strategy_brief">ملف تنفيذي</button>
-                <button class="workspace-btn" type="button" data-quick-prompt="deep_research">بحث عميق</button>
-                <button class="workspace-btn" type="button" data-quick-prompt="system_audit">مراجعة نظام</button>
-                <button class="workspace-btn" type="button" data-quick-prompt="build_product">بناء منتج</button>
+              <div class="workspace-use-cases" role="list" aria-label="حالات استخدام شائعة">
+                <button class="use-case-card" type="button" role="listitem" data-quick-prompt="analysis_ar">
+                  <span class="uc-icon" aria-hidden="true">📊</span>
+                  <span class="uc-title">تحليل ملف</span>
+                  <span class="uc-desc">تحليل عميق وتوصيات فورية</span>
+                </button>
+                <button class="use-case-card" type="button" role="listitem" data-quick-prompt="deep_research">
+                  <span class="uc-icon" aria-hidden="true">🔬</span>
+                  <span class="uc-title">بحث عميق</span>
+                  <span class="uc-desc">تحليل شامل بمصادر موثّقة</span>
+                </button>
+                <button class="use-case-card" type="button" role="listitem" data-quick-prompt="report_ar">
+                  <span class="uc-icon" aria-hidden="true">📄</span>
+                  <span class="uc-title">إنتاج تقرير</span>
+                  <span class="uc-desc">تقرير جاهز للتسليم الفوري</span>
+                </button>
+                <button class="use-case-card" type="button" role="listitem" data-quick-prompt="build_product">
+                  <span class="uc-icon" aria-hidden="true">🚀</span>
+                  <span class="uc-title">بناء منتج</span>
+                  <span class="uc-desc">من الفكرة إلى خطة متكاملة</span>
+                </button>
+              </div>
+              <div class="workspace-status-strip" id="workspaceStatusStrip" aria-label="حالة النظام">
+                <span class="wss-item"><span class="wss-label">النموذج</span><span class="wss-value" id="signalModel">—</span></span>
+                <span class="wss-sep" aria-hidden="true">•</span>
+                <span class="wss-item"><span class="wss-label">المزوّد</span><span class="wss-value" id="signalProvider">—</span></span>
+                <span class="wss-sep" aria-hidden="true">•</span>
+                <span class="wss-item"><span class="wss-label">السياق</span><span class="wss-value" id="signalContext">—</span></span>
               </div>
             </section>
-            <section class="workspace-signals">
-              <div class="signal-card">
-                <div class="signal-label">المزوّد</div>
-                <div class="signal-value" id="signalProvider">â€”</div>
-                <div class="signal-note" id="signalProviderNote">المزوّد الحالي وطريقة المصادقة</div>
-              </div>
-              <div class="signal-card">
-                <div class="signal-label">النموذج</div>
-                <div class="signal-value" id="signalModel">â€”</div>
-                <div class="signal-note" id="signalModelNote">مسار النموذج الرئيسي</div>
-              </div>
-              <div class="signal-card">
-                <div class="signal-label">السياق</div>
-                <div class="signal-value" id="signalContext">â€”</div>
-                <div class="signal-note" id="signalContextNote">الملفات والمعرفة وذاكرة المشروع</div>
-              </div>
-              <div class="signal-card">
-                <div class="signal-label">أوضاع التشغيل</div>
-                <div class="signal-value" id="signalModes">â€”</div>
-                <div class="signal-note" id="signalModesNote">البث والأدوات والويب وأنماط التشغيل</div>
-              </div>
-            </section>
+            <div hidden aria-hidden="true">
+              <div id="signalProviderNote"></div>
+              <div id="signalModelNote"></div>
+              <div id="signalContextNote"></div>
+              <div id="signalModes"></div>
+              <div id="signalModesNote"></div>
+            </div>
           </div>
 
           <div class="strategic-strip" id="strategicStrip">
