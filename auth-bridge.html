@@ -320,14 +320,18 @@
           setStatus('تم تسجيل الدخول بنجاح. سنحاول إعادتك إلى التطبيق تلقائيًا، ويمكنك الرجوع يدويًا إذا لزم.', 'success');
           window.setTimeout(() => openHref(intentUrl), 700);
         } else {
-          footnote.textContent = 'تم إنشاء الجلسة. يمكنك المتابعة في الويب مباشرة.';
-          setStatus('تم تسجيل الدخول بنجاح. يمكنك متابعة استخدام المنصة الآن.', 'success');
+          setStatus('تم تسجيل الدخول بنجاح.', 'success');
           window.setTimeout(() => {
             try{
               if (window.opener && !window.opener.closed){
                 window.opener.postMessage({ type:'aistudio-auth', payload }, window.location.origin);
+                footnote.textContent = 'تم تسجيل الدخول. ستُغلق هذه النافذة تلقائيًا.';
+                window.setTimeout(() => { try{ window.close(); }catch(_){} }, 900);
+                return;
               }
             }catch(_){}
+            footnote.textContent = 'تم إنشاء الجلسة. يتم إعادة توجيهك إلى التطبيق...';
+            openHref(webFallbackUrl);
           }, 100);
         }
       };
