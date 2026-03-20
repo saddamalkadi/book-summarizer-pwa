@@ -2387,6 +2387,15 @@ function syncStickyShellMetrics(){
   root.style.setProperty('--floating-nav-bottom', `${floatingBottom}px`);
 }
 
+function scrollChatToBottom(){
+  const log = $('chatLog');
+  if (!log) return;
+  if (window.innerWidth <= 640) {
+    window.scrollTo(0, document.documentElement.scrollHeight + 1000);
+  }
+  log.scrollTop = log.scrollHeight + 1000;
+}
+
 function syncChatScrollDock(){
   const dock = $('chatScrollDock');
   const log = $('chatLog');
@@ -2398,16 +2407,17 @@ function syncChatScrollDock(){
   const sideOpen = !!(side && side.classList.contains('show'));
   const keyboardEditing = document.body.classList.contains('keyboardEditing');
   const hasMessages = log.querySelectorAll('.bubble').length > 0;
-  const canScroll = hasMessages && (log.scrollHeight - log.clientHeight) > 120;
+  const isMobile = window.innerWidth <= 640;
+  const scrollTop = isMobile
+    ? Math.max(0, window.scrollY || document.documentElement.scrollTop || 0)
+    : Math.max(0, Number(log.scrollTop || 0));
+  const scrollHeight = isMobile ? document.documentElement.scrollHeight : log.scrollHeight;
+  const clientHeight = isMobile ? window.innerHeight : log.clientHeight;
+  const canScroll = hasMessages && (scrollHeight - clientHeight) > 120;
   const visible = activeChat && canScroll && !keyboardEditing && !drawerOpen && !sideOpen;
   dock.classList.toggle('show', visible);
   dock.setAttribute('aria-hidden', visible ? 'false' : 'true');
-
-  const top = Math.max(0, Number(log.scrollTop || 0));
-  const max = Math.max(0, Number(log.scrollHeight - log.clientHeight || 0));
-  const nearTop = top <= 24;
-  const nearBottom = (max - top) <= 24;
-
+  const nearBottom = (scrollHeight - clientHeight - scrollTop) <= 60;
   if ($('floatingScrollBottomBtn')) $('floatingScrollBottomBtn').disabled = !visible || nearBottom;
 }
 
@@ -4355,8 +4365,15 @@ function syncUnifiedAuthEntry(){
           toolbarColor: '#1f6bff'
         });
       } else {
-        setAuthGateStatus('جارٍ فتح تسجيل Google في نفس الصفحة...', 'busy');
-        window.location.assign(url);
+        setAuthGateStatus('جارٍ فتح تسجيل Google في نافذة منبثقة...', 'busy');
+        const pw = 520, ph = 640;
+        const pl = Math.max(0, Math.round(((screen.width || 1024) - pw) / 2));
+        const pt = Math.max(0, Math.round(((screen.height || 768) - ph) / 2));
+        const popup = window.open(url, 'ai-auth-bridge', `width=${pw},height=${ph},left=${pl},top=${pt},popup=1,resizable=yes,scrollbars=yes`);
+        if (!popup || popup.closed) {
+          setAuthGateStatus('جارٍ فتح تسجيل Google في نفس الصفحة...', 'busy');
+          window.location.assign(url);
+        }
       }
     }catch(error){
       setAuthGateStatus(`تعذّر فتح تسجيل Google في المتصفح: ${error?.message || error}`, 'error');
@@ -6132,8 +6149,12 @@ function newThread(){
   function scrollChat(direction){
     const log = $('chatLog');
     if (!log) return;
-    const top = direction === 'top';
-    log.scrollTo({ top: top ? 0 : log.scrollHeight, behavior: 'smooth' });
+    const toTop = direction === 'top';
+    if (window.innerWidth <= 640) {
+      window.scrollTo({ top: toTop ? 0 : document.documentElement.scrollHeight, behavior: 'smooth' });
+    } else {
+      log.scrollTo({ top: toTop ? 0 : log.scrollHeight, behavior: 'smooth' });
+    }
     window.setTimeout(scheduleChatScrollDockSync, 260);
   }
 
@@ -8557,7 +8578,7 @@ ${clip}` });
       log.appendChild(b);
     });
 
-    log.scrollTop = log.scrollHeight + 1000;
+    scrollChatToBottom();
     refreshNavMeta();
     renderThreadHistory();
     refreshStrategicWorkspace().catch(()=>{});
@@ -8573,7 +8594,7 @@ ${clip}` });
       body.innerHTML = renderAssistantMessageHtml(text || '', downloadState.entries);
       bindAssistantDownloadLinks(body);
     }
-    log.scrollTop = log.scrollHeight + 1000;
+    scrollChatToBottom();
     scheduleChatScrollDockSync();
   }
 
@@ -8753,7 +8774,7 @@ ${clip}` });
       log.appendChild(bubble);
     });
 
-    log.scrollTop = log.scrollHeight + 1000;
+    scrollChatToBottom();
     refreshNavMeta();
     renderDownloads();
     renderThreadHistory();
@@ -10849,6 +10870,7 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
     $('scrollBottomBtn') && $('scrollBottomBtn').addEventListener('click', () => scrollChat('bottom'));
     $('floatingScrollBottomBtn') && $('floatingScrollBottomBtn').addEventListener('click', () => scrollChat('bottom'));
     $('chatLog') && $('chatLog').addEventListener('scroll', scheduleChatScrollDockSync, { passive:true });
+    window.addEventListener('scroll', scheduleChatScrollDockSync, { passive:true });
 
     // Deep Search toggle (send = Research)
     $('deepSearchToggleBtn') && $('deepSearchToggleBtn').addEventListener('click', () => {
