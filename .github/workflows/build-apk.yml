@@ -20,6 +20,14 @@ jobs:
       - name: Install npm dependencies
         run: npm install
 
+      - name: Prepare www directory for Capacitor
+        run: |
+          mkdir -p www/icons
+          cp index.html app.js sw.js manifest.webmanifest logo.svg www/ 2>/dev/null || true
+          cp auth-bridge.html www/ 2>/dev/null || true
+          cp icons/*.webp www/icons/ 2>/dev/null || true
+          echo "www/ contents:"; ls www/
+
       - name: Sync Capacitor (generates capacitor-cordova-android-plugins)
         run: npx cap sync android
 
