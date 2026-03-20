@@ -14,6 +14,18 @@ try { unlinkSync(join(ROOT, '.git/index.lock')); } catch (_) {}
 if (process.env.GITHUB_TOKEN) {
   try {
     const token = process.env.GITHUB_TOKEN;
+    // Commit any uncommitted working-tree changes before pushing
+    try {
+      execSync(`git -C "${ROOT}" config user.email "deploy@aistudio.bot"`, { stdio: 'pipe' });
+      execSync(`git -C "${ROOT}" config user.name "AI Studio Deploy"`, { stdio: 'pipe' });
+      execSync(`git -C "${ROOT}" add -A`, { stdio: 'pipe' });
+      execSync(`git -C "${ROOT}" commit -m "chore: auto-commit working-tree changes [deploy]" --allow-empty`, { stdio: 'pipe' });
+      console.log('[startup] Git commit: SUCCESS');
+    } catch (ce) {
+      // nothing to commit or already clean
+      const cmsg = ((ce.stdout||'')+(ce.stderr||'')).toString().substring(0, 100);
+      console.log('[startup] Git commit skipped:', cmsg);
+    }
     execSync(
       `git -C "${ROOT}" push "https://saddamalkadi:${token}@github.com/saddamalkadi/book-summarizer-pwa.git" main`,
       { timeout: 60000, stdio: 'pipe' }

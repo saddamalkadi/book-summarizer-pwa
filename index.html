@@ -3422,7 +3422,7 @@ body, input, textarea, select, button{
     })();
   </script>
 
-<script src="app.js?v=845"></script>
+<script src="app.js?v=845p5"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -3434,7 +3434,7 @@ body, input, textarea, select, button{
     })();
     if ("serviceWorker" in navigator && !isNativeCapacitorApp) {
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=844").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=845").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {
