@@ -221,9 +221,11 @@ __name(handleGoogleTtsProxy,'handleGoogleTtsProxy');`;
       return;
     }
 
-    // Extract version_id from upload response (Worker Versions returns it in result)
+    // Extract version_id from upload response (must be UUID format, not script name)
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     let versionId = result?.result?.id || result?.result?.version_id;
-    console.log('[worker-fix] ✓ Code uploaded, version:', versionId ? versionId.substring(0,8) : 'unknown');
+    if (versionId && !UUID_RE.test(versionId)) versionId = null; // discard script name
+    console.log('[worker-fix] ✓ Code uploaded, version:', versionId ? versionId.substring(0,8) : '(fetching from list...)');
 
     // If version_id not in upload response, fetch latest from versions list
     if (!versionId) {
