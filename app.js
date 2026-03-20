@@ -2397,7 +2397,8 @@ function syncChatScrollDock(){
   const drawerOpen = !!(drawer && drawer.classList.contains('show'));
   const sideOpen = !!(side && side.classList.contains('show'));
   const keyboardEditing = document.body.classList.contains('keyboardEditing');
-  const canScroll = (log.scrollHeight - log.clientHeight) > 120;
+  const hasMessages = log.querySelectorAll('.bubble').length > 0;
+  const canScroll = hasMessages && (log.scrollHeight - log.clientHeight) > 120;
   const visible = activeChat && canScroll && !keyboardEditing && !drawerOpen && !sideOpen;
   dock.classList.toggle('show', visible);
   dock.setAttribute('aria-hidden', visible ? 'false' : 'true');
