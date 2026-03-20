@@ -3416,6 +3416,8 @@ function refreshDeepSearchBtn(){
     const templates = {
       strategy_brief: 'أنشئ brief استراتيجي احترافي لهذا الطلب. المطلوب: 1) الهدف 2) الوضع الحالي 3) الفرص 4) المخاطر 5) خطة التنفيذ 6) المخرجات النهائية.',
       deep_research: 'نفّذ بحثًا عميقًا منظمًا. ابدأ بخطة بحث، ثم أسئلة التحقيق، ثم النتائج، ثم الاستنتاجات، ثم التوصيات العملية.',
+      analysis_ar: 'حلّل هذا الملف أو المحتوى تحليلاً عميقًا. أريد: 1) الملخص التنفيذي 2) النقاط الرئيسية 3) التوصيات الفورية 4) المخاطر أو الفجوات 5) الخطوات التالية المقترحة.',
+      report_ar: 'اكتب تقريرًا احترافيًا جاهزًا للتسليم. يشمل: صفحة العنوان، الملخص التنفيذي، المحتوى التفصيلي، الجداول والإحصائيات إن وجدت، والخلاصة مع التوصيات.',
       system_audit: 'قم بمراجعة تشغيلية للنظام أو التطبيق الحالي. أريد: المشاكل، الأولويات، المخاطر، الإصلاحات السريعة، وخطة تحسين احترافية.',
       build_product: 'ساعدني في بناء منتج احترافي من هذه الفكرة. أريد: التموضع، البنية، تدفقات الاستخدام، خارطة الطريق، ومواصفات الإصدار الأول.',
       exec_summary: 'اكتب ملخصًا تنفيذيًا واضحًا وموجزًا مع النقاط الحاسمة والقرار المقترح.',
@@ -10763,8 +10765,12 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
     
     // Workspace quick-action buttons (home screen)
     $('wqaChat') && $('wqaChat').addEventListener('click', () => {
-      $('chatInput') && $('chatInput').focus();
       if ($('workspaceDeck')) $('workspaceDeck').classList.add('workspace-deck-collapsed');
+      const inp = $('chatInput');
+      if (inp) {
+        inp.focus();
+        inp.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }
     });
     $('wqaFiles') && $('wqaFiles').addEventListener('click', openChatAttachmentPicker);
 
