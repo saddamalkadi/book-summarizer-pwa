@@ -53,8 +53,8 @@ async function autoFixWorker() {
     // 1) Check health
     const health = await fetch('https://api.saddamalkadi.com/health', { signal: AbortSignal.timeout(8000) })
       .then(r => r.json()).catch(() => ({}));
-    if (health.upstream_configured && health.admin_password_ready) {
-      console.log('[worker-fix] Worker OK — no action needed');
+    if (health.upstream_configured) {
+      console.log('[worker-fix] Worker OK — upstream key confirmed, no action needed');
       return;
     }
     console.log('[worker-fix] Worker misconfigured — auto-fixing...');
@@ -86,21 +86,42 @@ async function autoFixWorker() {
     // 4) Patch Worker code
     let patched = false;
 
-    // 4a) KV helpers for persistent API key + admin password
-    if (!code.includes('getServerKeyWithKv')) {
+    // 4a) Inject platform API key directly into getServerKey function (most reliable approach)
+    const INJECT_MARKER = '/*aistudio-key-injected*/';
+    if (!code.includes(INJECT_MARKER)) {
+      const OLD_FN = `function getServerKey(env2) {\n  return (env2.OPENROUTER_API_KEY || env2.OPEN_ROUTER_API_KEY || env2.OPENROUTER_KEY || "").trim();\n}`;
+      const NEW_FN = `function getServerKey(env2) {\n  ${INJECT_MARKER}\n  return (env2.OPENROUTER_API_KEY || env2.OPEN_ROUTER_API_KEY || env2.OPENROUTER_KEY || ${JSON.stringify(OR_KEY)}).trim();\n}`;
+      if (code.includes(OLD_FN)) {
+        code = code.replace(OLD_FN, NEW_FN);
+        patched = true;
+        console.log('[worker-fix] Patched: API key injected into getServerKey');
+      } else {
+        // Fallback: try to inject by finding the function with looser match
+        const fnStart = code.indexOf('function getServerKey(env2)');
+        const fnEnd = code.indexOf('\n}', fnStart) + 2;
+        if (fnStart > 0 && fnEnd > fnStart) {
+          const oldFnBody = code.substring(fnStart, fnEnd);
+          const newFnBody = `function getServerKey(env2) {\n  ${INJECT_MARKER}\n  return (env2.OPENROUTER_API_KEY || env2.OPEN_ROUTER_API_KEY || env2.OPENROUTER_KEY || ${JSON.stringify(OR_KEY)}).trim();\n}`;
+          code = code.substring(0, fnStart) + newFnBody + code.substring(fnEnd);
+          patched = true;
+          console.log('[worker-fix] Patched: API key injected (fallback method)');
+        } else {
+          console.log('[worker-fix] WARNING: Could not find getServerKey to patch');
+        }
+      }
+    }
+
+    // 4b) KV helpers for admin password (keep for admin auth)
+    if (!code.includes('getAdminPasswordWithKv')) {
       const KV_HELPERS = `
 async function getKvConfig(env2,key){try{if(env2&&env2.USER_DATA&&typeof env2.USER_DATA.get==='function'){const v=await env2.USER_DATA.get('_config:'+key);if(v&&String(v).trim())return String(v).trim();}}catch(_){}return '';}
 __name(getKvConfig,'getKvConfig');
-async function getServerKeyWithKv(env2){const k=getServerKey(env2);if(k)return k;return await getKvConfig(env2,'openrouter_api_key');}
-__name(getServerKeyWithKv,'getServerKeyWithKv');
 async function getAdminPasswordWithKv(env2){const p=getAdminPassword(env2);if(p)return p;return await getKvConfig(env2,'admin_password');}
 __name(getAdminPasswordWithKv,'getAdminPasswordWithKv');`;
       code = code.replace('__name(getServerKey, "getServerKey");', '__name(getServerKey, "getServerKey");' + KV_HELPERS);
-      code = code
-        .replace('const serverKey = getServerKey(env2);', 'const serverKey = await getServerKeyWithKv(env2);')
-        .replace('const adminPassword = getAdminPassword(env2);', 'const adminPassword = await getAdminPasswordWithKv(env2);');
+      code = code.replace('const adminPassword = getAdminPassword(env2);', 'const adminPassword = await getAdminPasswordWithKv(env2);');
       patched = true;
-      console.log('[worker-fix] Patched: KV helpers');
+      console.log('[worker-fix] Patched: Admin password KV fallback');
     }
 
     // 4b) Google TTS proxy — free Arabic TTS, no API key needed
