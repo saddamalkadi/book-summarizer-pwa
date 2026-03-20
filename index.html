@@ -2746,6 +2746,202 @@ button:not(.navbtn):not(.wqa-btn):not(.use-case-card):not(.scroll-fab):not(.chip
 body, input, textarea, select, button{
   font-family: 'Noto Sans Arabic', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
 }
+
+/* ══════════════════════════════════════════════
+   FINAL CLOSURE PASS — v8.47 UI POLISH
+   ══════════════════════════════════════════════ */
+
+/* 1. Chat Toolbar — secondary groups collapsed by default */
+.mainToolbar .tool-group.tg-secondary {
+  display: none;
+}
+.mainToolbar.toolbar-secondary-open .tool-group.tg-secondary {
+  display: flex;
+}
+.tg-more-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  height: 28px;
+  border-radius: 20px;
+  background: rgba(0,0,0,.04);
+  border: 1px solid rgba(0,0,0,.1);
+  cursor: pointer;
+  color: #5a6080;
+  white-space: nowrap;
+  transition: background .15s, border-color .15s;
+  margin-inline-start: 8px;
+  flex-shrink: 0;
+}
+.tg-more-btn:hover { background: rgba(98,114,255,.1); border-color: rgba(98,114,255,.3); color: #4050c8; }
+.tg-more-btn.active { background: rgba(98,114,255,.15); border-color: rgba(98,114,255,.5); color: #3040b0; }
+.tg-more-btn .tg-more-arrow { font-size: 9px; transition: transform .2s; }
+.tg-more-btn.active .tg-more-arrow { transform: rotate(180deg); }
+
+/* Desktop: show secondary groups by default */
+@media (min-width: 1100px) {
+  .mainToolbar .tool-group.tg-secondary { display: flex; }
+  .tg-more-btn { display: none; }
+}
+
+/* 2. Visual Hierarchy — tool group separation */
+.mainToolbar {
+  flex-wrap: wrap;
+  gap: 0;
+  row-gap: 2px;
+  padding: 4px 8px;
+  align-items: flex-start;
+}
+.mainToolbar .tool-group {
+  padding: 5px 10px;
+  border-inline-start: 1.5px solid rgba(0,0,0,.07);
+}
+.mainToolbar .tool-group:first-child {
+  border-inline-start: none;
+  padding-inline-start: 4px;
+}
+.tool-group-title {
+  font-size: 9px;
+  letter-spacing: .06em;
+  margin-bottom: 5px;
+}
+.toolbar-strip {
+  gap: 5px;
+}
+
+/* Workspace deck: more breathing room */
+.workspace-deck {
+  padding-bottom: 8px;
+}
+.workspace-status-strip {
+  margin-top: 12px;
+  opacity: .7;
+  font-size: 11px;
+}
+
+/* 3. Chatbar buttons — larger touch targets */
+#page-chat > .chatbar {
+  gap: 5px;
+  padding: 7px 10px;
+}
+#page-chat > .chatbar > .btn {
+  min-height: 42px;
+  min-width: 42px;
+  border-radius: 11px;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+#sendBtn {
+  min-width: 50px;
+  font-size: 17px;
+  border-radius: 12px;
+}
+#regenBtn {
+  font-size: 18px;
+}
+#chatAttachBtn {
+  font-size: 18px;
+}
+/* Chatbar input */
+#chatInput {
+  border-radius: 11px;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
+/* 4. Accessibility — focus rings */
+*:focus-visible {
+  outline: 2.5px solid rgba(98, 114, 255, .75);
+  outline-offset: 2px;
+  border-radius: 5px;
+}
+button:focus-visible, a:focus-visible {
+  outline: 2.5px solid rgba(98, 114, 255, .75);
+  outline-offset: 2px;
+}
+select:focus-visible, input:focus-visible, textarea:focus-visible {
+  outline: 2px solid rgba(98, 114, 255, .6);
+  outline-offset: 0;
+  box-shadow: 0 0 0 3px rgba(98, 114, 255, .15);
+}
+
+/* 5. Onboarding / empty chat state */
+.chat-onboarding {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 24px 20px 16px;
+  text-align: center;
+  pointer-events: none;
+}
+.chat-onboarding .ob-icon { font-size: 2.4em; line-height: 1.1; }
+.chat-onboarding .ob-title { font-size: 15px; font-weight: 700; color: #4a5170; margin: 0; }
+.chat-onboarding .ob-steps {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 4px;
+}
+.chat-onboarding .ob-step {
+  background: rgba(98,114,255,.07);
+  border: 1px solid rgba(98,114,255,.18);
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 12px;
+  color: #5a6080;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chat-onboarding .ob-step strong { color: #3a4060; }
+
+/* 6. Settings — cleaner section labels */
+#page-settings .settings-section-label {
+  margin-top: 20px;
+  padding-bottom: 8px;
+}
+#page-settings .panel > .body > .settings-section-label:first-child {
+  margin-top: 2px;
+}
+#page-settings .panel > .body {
+  padding: 14px 16px 24px;
+}
+
+/* 7. Use-case cards — better mobile grid */
+@media (max-width: 480px) {
+  .workspace-use-cases { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .use-case-card { padding: 10px 8px; }
+  .uc-desc { display: none; }
+}
+
+/* 8. Topbar buttons touch targets */
+.topbar-actions .btn {
+  min-height: 36px;
+  padding: 0 10px;
+}
+
+/* 9. Workspace quick actions — bigger on mobile */
+@media (max-width: 600px) {
+  .workspace-quick-actions { gap: 8px; }
+  .wqa-btn { padding: 10px 12px; font-size: 13px; }
+}
+
+/* 10. Settings panel base url — hide from main toolbar, visible in settings only */
+#baseUrl { display: none !important; }
+
+/* 11. Pill labels in settings: better spacing */
+.settings-inline-pills {
+  gap: 8px;
+}
+.settings-inline-pills .pill {
+  font-size: 13px;
+  padding: 5px 10px;
+}
 </style>
 </head>
 <body>
@@ -2835,23 +3031,27 @@ body, input, textarea, select, button{
 
 <div class="toolbar mainToolbar">
             <div class="tool-group">
-              <span class="tool-group-title">إعدادات النموذج</span>
-              <div class="toolbar-strip">
-              <select id="provider" class="pill" style="max-width:220px">
+              <span class="tool-group-title">النموذج</span>
+              <div class="toolbar-strip" style="align-items:center">
+              <select id="provider" class="pill" style="max-width:160px" aria-label="مزوّد النموذج">
                 <option value="openrouter">OpenRouter</option>
                 <option value="openai">OpenAI</option>
                 <option value="gemini">Gemini</option>
               </select>
-              <input id="baseUrl" type="text" value="https://openrouter.ai/api/v1" style="max-width:420px" />
-              <input id="model" type="text" value="openai/gpt-4o-mini" style="max-width:420px" />
-              <button class="btn ghost sm with-label" id="pickModelBtn" title="الموديلات" aria-label="الموديلات"><span class="icon">🧩</span><span class="label">الموديلات</span></button>
+              <input id="baseUrl" type="text" value="https://openrouter.ai/api/v1" style="max-width:420px" aria-label="رابط البوابة" />
+              <input id="model" type="text" value="openai/gpt-4o-mini" style="max-width:300px" aria-label="اسم النموذج" />
+              <button class="btn ghost sm with-label" id="pickModelBtn" title="اختيار نموذج" aria-label="اختيار نموذج"><span class="icon">🧩</span><span class="label">نموذج</span></button>
+              <button class="tg-more-btn" id="chatMoreBtn" type="button" title="خيارات إضافية" aria-label="خيارات إضافية" aria-expanded="false">⚙ خيارات <span class="tg-more-arrow">▾</span></button>
+              <button class="btn ghost sm with-label" id="clearChatBtn" type="button" title="مسح الدردشة الحالية" aria-label="مسح الدردشة"><span class="icon">🗑</span><span class="label">مسح</span></button>
+              <button class="btn ghost sm with-label" id="chatToolbarPinBtn" type="button" title="تثبيت شريط الأدوات" aria-label="تثبيت شريط الأدوات"><span class="icon">📌</span><span class="label">تثبيت</span></button>
+              <button class="btn ghost sm with-label" id="chatToolbarCollapseBtn" type="button" title="طي الأدوات" aria-label="طي الأدوات"><span class="icon">▾</span><span class="label">إخفاء</span></button>
               </div>
             </div>
 
-            <div class="tool-group">
-              <span class="tool-group-title">أنماط وميزات</span>
+            <div class="tool-group tg-secondary">
+              <span class="tool-group-title">قوالب وأنماط</span>
               <div class="toolbar-strip">
-              <select id="promptSelect" class="pill" style="max-width:260px">
+              <select id="promptSelect" class="pill" style="max-width:220px" aria-label="القوالب الجاهزة">
                 <option value="">قوالب…</option>
                 <option value="report_ar">📄 تقرير احترافي</option>
                 <option value="email_ar">✉️ بريد رسمي</option>
@@ -2860,40 +3060,38 @@ body, input, textarea, select, button{
                 <option value="json_schema">🧩 JSON منظم</option>
               </select>
 
-              <label class="pill" style="display:flex; align-items:center; gap:8px; user-select:none;">
-                <input type="checkbox" id="streamToggle" />
-                بث مباشر
+              <label class="pill" style="display:flex; align-items:center; gap:6px; user-select:none;">
+                <input type="checkbox" id="streamToggle" aria-label="بث مباشر" />
+                بث
               </label>
 
-              <label class="pill" style="display:flex; align-items:center; gap:8px; user-select:none;">
-                <input type="checkbox" id="ragToggle" />
+              <label class="pill" style="display:flex; align-items:center; gap:6px; user-select:none;">
+                <input type="checkbox" id="ragToggle" aria-label="تفعيل الاسترجاع" />
                 استرجاع
               </label>
 
-              <label class="pill" style="display:flex; align-items:center; gap:8px; user-select:none;">
-                <input type="checkbox" id="toolsToggle" />
+              <label class="pill" style="display:flex; align-items:center; gap:6px; user-select:none;">
+                <input type="checkbox" id="toolsToggle" aria-label="تفعيل الأدوات" />
                 أدوات
               </label>
 
               <button class="btn ghost sm with-label" id="researchBtn" type="button" title="بحث تفصيلي متعدد الخطوات" aria-label="بحث تفصيلي"><span class="icon">🧪</span><span class="label">بحث</span></button>
-              <button class="btn ghost sm with-label" id="deepSearchToggleBtn" type="button" title="تشغيل/إيقاف البحث العميق" aria-label="البحث العميق"><span class="icon">🔬</span><span class="label">بحث عميق</span></button>
-              <select id="agentTaskTemplate" class="pill" style="max-width:260px">
-                <option value="">🤖 مهمة وكيل…</option>
-                <option value="site_login_project">🌐 دخول موقع + إنشاء مشروع/حساب</option>
-                <option value="excel_process">📊 معالجة ملف Excel</option>
-                <option value="web_task_plan">🧭 تنفيذ مهمة ويب خطوة بخطوة</option>
-              </select>
+              <button class="btn ghost sm with-label" id="deepSearchToggleBtn" type="button" title="تشغيل/إيقاف البحث العميق" aria-label="البحث العميق"><span class="icon">🔬</span><span class="label">عميق</span></button>
               </div>
             </div>
-            <div class="tool-group">
-              <span class="tool-group-title">إجراءات سريعة</span>
+
+            <div class="tool-group tg-secondary">
+              <span class="tool-group-title">وكيل ذكي</span>
               <div class="toolbar-strip">
+              <select id="agentTaskTemplate" class="pill" style="max-width:220px" aria-label="قوالب مهمة الوكيل">
+                <option value="">🤖 مهمة وكيل…</option>
+                <option value="site_login_project">🌐 دخول موقع + إنشاء مشروع</option>
+                <option value="excel_process">📊 معالجة ملف Excel</option>
+                <option value="web_task_plan">🧭 تنفيذ مهمة ويب</option>
+              </select>
               <button class="btn ghost sm with-label" id="agentTaskApplyBtn" type="button" title="إدراج قالب مهمة الوكيل" aria-label="إدراج مهمة"><span class="icon">➕</span><span class="label">إدراج</span></button>
               <button class="btn ghost sm with-label" id="scrollTopBtn" type="button" title="الانتقال للأعلى" aria-label="للأعلى"><span class="icon">⬆</span><span class="label">للأعلى</span></button>
               <button class="btn ghost sm with-label" id="scrollBottomBtn" type="button" title="الانتقال للأسفل" aria-label="للأسفل"><span class="icon">⬇</span><span class="label">للأسفل</span></button>
-              <button class="btn ghost sm with-label" id="clearChatBtn" type="button" title="مسح الدردشة الحالية" aria-label="مسح الدردشة"><span class="icon">🗑</span><span class="label">مسح</span></button>
-              <button class="btn ghost sm with-label" id="chatToolbarPinBtn" type="button" title="تثبيت شريط الأدوات" aria-label="تثبيت شريط الأدوات"><span class="icon">📌</span><span class="label">تثبيت</span></button>
-              <button class="btn ghost sm with-label" id="chatToolbarCollapseBtn" type="button" title="طي الأدوات" aria-label="طي الأدوات"><span class="icon">▾</span><span class="label">إخفاء</span></button>
               </div>
             </div>
           </div>
@@ -2957,15 +3155,25 @@ body, input, textarea, select, button{
 
           <div class="strategic-strip" id="strategicStrip" hidden aria-hidden="true"></div>
 
+          <div class="chat-onboarding" id="chatOnboarding" aria-hidden="true">
+            <div class="ob-icon" aria-hidden="true">💬</div>
+            <p class="ob-title">كيف يمكنني مساعدتك؟</p>
+            <div class="ob-steps">
+              <span class="ob-step"><strong>💬</strong> اطرح سؤالاً</span>
+              <span class="ob-step"><strong>📁</strong> ارفع ملفاً</span>
+              <span class="ob-step"><strong>⚡</strong> استخدم قالباً</span>
+            </div>
+          </div>
+
           <div class="chatlog" id="chatLog"></div>
 
           <div class="chatbar">
-            <input id="chatAttachFiles" type="file" multiple hidden accept="*/*" />
-            <button class="btn ghost" id="chatAttachBtn" type="button" title="إرفاق ملف/صورة للدردشة">📎</button>
-            <input id="chatInput" dir="auto" placeholder="اكتب سؤالك… ويمكنك إرفاق ملفات هنا." />
-            <button class="btn ghost" id="regenBtn" type="button">↻</button>
-            <button class="btn danger icon" id="stopBtn" type="button" style="display:none" title="إيقاف" aria-label="إيقاف">⏹</button>
-            <button class="btn dark icon" id="sendBtn" type="button" title="إرسال" aria-label="إرسال">➤</button>
+            <input id="chatAttachFiles" type="file" multiple hidden accept="*/*" aria-label="اختيار ملفات للإرفاق" />
+            <button class="btn ghost" id="chatAttachBtn" type="button" title="إرفاق ملف أو صورة" aria-label="إرفاق ملف أو صورة">📎</button>
+            <input id="chatInput" dir="auto" placeholder="اكتب سؤالك… أو ارفع ملفاً للتحليل" aria-label="حقل إدخال الرسالة" />
+            <button class="btn ghost" id="regenBtn" type="button" title="إعادة توليد الإجابة" aria-label="إعادة توليد">↺</button>
+            <button class="btn danger icon" id="stopBtn" type="button" style="display:none" title="إيقاف التوليد" aria-label="إيقاف التوليد">⏹</button>
+            <button class="btn dark icon" id="sendBtn" type="button" title="إرسال الرسالة" aria-label="إرسال">▶</button>
           </div>
 
           <div class="chips" id="chatAttachChips"></div>
@@ -3285,19 +3493,11 @@ body, input, textarea, select, button{
                 <div class="col" style="align-self:flex-start; padding-top:4px">
                   <div class="settings-inline-pills">
                     <label class="pill" style="display:flex; align-items:center; gap:8px;">
-                      <input type="checkbox" id="freeMode" />
+                      <input type="checkbox" id="freeMode" aria-label="الوضع المجاني" />
                       الوضع المجاني
                     </label>
                     <label class="pill" style="display:flex; align-items:center; gap:8px;">
-                      <input type="checkbox" id="allowCloudOcr" checked />
-                      OCR سحابي
-                    </label>
-                    <label class="pill" style="display:flex; align-items:center; gap:8px;">
-                      <input type="checkbox" id="allowCloudPolish" checked />
-                      تحسين سحابي
-                    </label>
-                    <label class="pill" style="display:flex; align-items:center; gap:8px;">
-                      <input type="checkbox" id="streamDefault" />
+                      <input type="checkbox" id="streamDefault" aria-label="بث مباشر افتراضياً" />
                       بث مباشر
                     </label>
                   </div>
@@ -3309,7 +3509,27 @@ body, input, textarea, select, button{
                 <summary class="settings-advanced-toggle">إعدادات متقدمة</summary>
                 <div class="settings-advanced-body">
 
-                  <div class="settings-section-label" style="margin-top:10px">تكامل الخدمات السحابية</div>
+                  <div class="settings-section-label" style="margin-top:10px">معالجة المحتوى</div>
+                  <div class="row" style="margin-top:6px">
+                    <div class="col">
+                      <div class="settings-inline-pills">
+                        <label class="pill" style="display:flex; align-items:center; gap:8px;">
+                          <input type="checkbox" id="allowCloudOcr" checked aria-label="تفعيل OCR السحابي" />
+                          OCR سحابي
+                        </label>
+                        <label class="pill" style="display:flex; align-items:center; gap:8px;">
+                          <input type="checkbox" id="allowCloudPolish" checked aria-label="تفعيل التحسين السحابي" />
+                          تحسين سحابي
+                        </label>
+                        <label class="pill" style="display:flex; align-items:center; gap:8px;">
+                          <input type="checkbox" id="toolsDefault" aria-label="تفعيل الأدوات افتراضياً" />
+                          أدوات افتراضياً
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="settings-section-label" style="margin-top:12px">تكامل الخدمات السحابية</div>
                   <div class="row" style="margin-top:6px">
                     <div class="col">
                       <label class="hint">رمز عميل البوابة (اختياري)</label>
@@ -3339,11 +3559,9 @@ body, input, textarea, select, button{
                       <input id="ocrLang" type="text" placeholder="ara+eng" />
                     </div>
                     <div class="col">
-                      <label class="hint">الأدوات (أدوات الوكيل)</label>
-                      <label class="pill" style="display:flex; align-items:center; gap:8px; max-width:260px">
-                        <input type="checkbox" id="toolsDefault" />
-                        تفعيل الأدوات افتراضيًا
-                      </label>
+                      <label class="hint">لغات OCR</label>
+                      <input id="ocrLang2" type="text" placeholder="ara+eng" style="display:none" aria-hidden="true" />
+                      <span class="hint" style="font-size:11px; color:#8a92ab">Tesseract: ara+eng</span>
                     </div>
                   </div>
 
@@ -3522,6 +3740,36 @@ body, input, textarea, select, button{
         regs.forEach((reg) => reg.unregister().catch(() => {}));
       }).catch(() => {});
     }
+  </script>
+
+  <script>
+    /* Final Closure Pass — UI interaction enhancements */
+    (function() {
+      /* 1. Chat toolbar "خيارات" toggle */
+      const moreBtn = document.getElementById('chatMoreBtn');
+      const toolbar = document.querySelector('.mainToolbar');
+      if (moreBtn && toolbar) {
+        moreBtn.addEventListener('click', function() {
+          const open = toolbar.classList.toggle('toolbar-secondary-open');
+          moreBtn.classList.toggle('active', open);
+          moreBtn.setAttribute('aria-expanded', String(open));
+        });
+      }
+
+      /* 2. Chat onboarding — show when chatLog is empty, hide on first message */
+      const chatLog = document.getElementById('chatLog');
+      const onboarding = document.getElementById('chatOnboarding');
+      if (chatLog && onboarding) {
+        const updateOnboarding = () => {
+          const hasMessages = chatLog.children.length > 0;
+          onboarding.style.display = hasMessages ? 'none' : '';
+          onboarding.setAttribute('aria-hidden', String(hasMessages));
+        };
+        updateOnboarding();
+        const obs = new MutationObserver(updateOnboarding);
+        obs.observe(chatLog, { childList: true });
+      }
+    })();
   </script>
 </body>
 </html>
