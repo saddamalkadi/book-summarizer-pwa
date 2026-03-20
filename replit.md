@@ -12,7 +12,7 @@ Arabic AI Workspace Studio PWA — commercial-ready platform with full chat, voi
 
 - **Frontend**: Pure static HTML/CSS/JS PWA (`index.html`, `app.js` ~530KB, `sw.js`)
 - **Server**: `server.mjs` — Node.js static file server + auto-fix Cloudflare Worker on startup
-- **Worker**: `keys-worker.js` (source, 41KB) → deployed as minified bundle (~64KB) on Cloudflare
+- **Worker**: `keys-worker.js` (source, ~43KB with TTS proxy) — deployed directly to Cloudflare (ESM module, no bundling needed)
 - **Mobile**: Capacitor wrappers for Android/iOS (`capacitor.config.json`)
 
 ## Key Files
@@ -23,7 +23,7 @@ Arabic AI Workspace Studio PWA — commercial-ready platform with full chat, voi
 | `app.js` | Application bundle (~530KB, ?v=847) |
 | `sw.js` | Service Worker (APP_VERSION="847") |
 | `server.mjs` | Static server + Cloudflare Worker auto-fix |
-| `keys-worker.js` | Worker source (auth, chat, TTS, KV) |
+| `keys-worker.js` | Worker source (auth, chat, TTS proxy, KV, Google TTS at /proxy/tts) |
 | `convert-worker.js` | File conversion worker |
 | `manifest.webmanifest` | PWA manifest |
 | `capacitor.config.json` | Capacitor mobile config |
@@ -42,52 +42,45 @@ Server starts on `0.0.0.0:5000`, auto-commits/pushes to GitHub, then auto-fixes 
 On every startup, `autoFixWorker()` runs asynchronously:
 
 1. **Health check** → if `upstream_configured: true`, exit early (no action needed)
-2. **Download live code** → if injection marker already present + key in code, wait 15s for propagation then exit
-3. **Otherwise**: download from services endpoint, patch `getServerKey` with hardcoded OR key + `plain_text` binding, add KV helpers + Google TTS proxy
-4. **Upload**: `PUT /workers/scripts/{name}` (updates classic slot, auto-creates versioned entry)
-5. **Deploy**: `GET /workers/scripts/{name}/versions?limit=1` → deploy that specific UUID
+2. **Download live code** → if `OR_KEY.substring(0,12)` already in code (CF strips comments), wait 15s for propagation then exit
+3. **Otherwise**: read LOCAL `keys-worker.js` source file (avoids multipart extraction issues from services endpoint)
+4. **Patch**: inject `OPENROUTER_API_KEY` literal into `getServerKey()` fallback (handles both `env` and `env2` param names, and both single-line and multi-line return formats)
+5. **TTS Proxy**: inject `handleGoogleTtsProxy` if not already present (supports both bundled and local source format)
+6. **Upload**: `PUT /workers/scripts/{name}` with metadata including all bindings + `OPENROUTER_API_KEY` as `plain_text` binding
+7. **Deploy**: `GET /workers/scripts/{name}/versions?limit=1` → deploy that specific UUID via `POST /deployments`
 
-Key env vars: `CF_API_TOKEN`, `OPENROUTER_API_KEY`, `GITHUB_TOKEN`, `ADMIN_PASSWORD_REAL`
+## Critical Facts
 
-## Cloudflare Resources
+- **Worker versions**: Using Cloudflare's Worker Versions (gradual rollout) — each upload creates a versioned entry that must be explicitly deployed
+- **Bindings are per-version**: `/script-settings` PATCH fails (error 10004); global bindings don't work; must use `plain_text` binding in each upload's metadata
+- **Local source vs bundled**: Deploying `keys-worker.js` (self-contained ESM, ~43KB) instead of the services endpoint extraction (which had multipart `\r` artifact causing SyntaxError at line 1943)
+- **Cloudflare strips comments**: The `/*aistudio-key-injected*/` marker won't be in `GET /workers/scripts/{name}` response; use `liveCode.includes(OR_KEY.substring(0,12))` instead
+- **Race condition resolved**: Old lingering autoFix processes (from rapid restarts) all deploy within ~3-4 minutes. Once they finish, the health check exits early on subsequent restarts. Run fixes ONLY after all old processes are done (no new versions created for 2+ minutes)
+
+## Cloudflare Account
 
 - **Account ID**: `ea4e90ec8fbd70faefdddd2153064d6f`
-- **Worker**: `book-summarizer-pwa-convert`
-- **KV Namespace** (`USER_DATA`): `49d87e2d4989452fb3c680ad024ae5b7`
-- **Secrets limitation**: Worker Versions enabled → can't set secrets via API (error 10215) → use code injection + plain_text bindings
+- **KV Namespace**: `49d87e2d4989452fb3c680ad024ae5b7`
+- **Worker Name**: `book-summarizer-pwa-convert`
 
-## Production Status (20 March 2026)
+## Required Env Vars
 
-All systems confirmed working via `/health` endpoint:
+| Variable | Purpose |
+|---------|---------|
+| `CF_API_TOKEN` | Cloudflare API token (Workers + KV read/write) |
+| `OPENROUTER_API_KEY` | OpenRouter API key (injected into Worker) |
+| `GITHUB_TOKEN` | GitHub token (auto-push to GitHub Pages) |
+| `ADMIN_PASSWORD_REAL` | Admin login password (optional, fallback: Saddam@Admin2026!) |
 
-| System | Status |
-|--------|--------|
-| Chat AI (OpenRouter/GPT-4o-mini) | ✅ Working |
-| Google OAuth | ✅ Configured |
-| Auth/Session | ✅ Working |
-| Arabic TTS/STT (Workers AI) | ✅ Working |
-| File Conversion | ✅ Working |
-| Cloud KV Storage | ✅ Working |
-| Admin Login | ✅ Working |
+## System Status (as of v8.47)
 
-## Pending Manual Tests (require real devices)
-
-- Google OAuth with real Google account on `app.saddamalkadi.com`
-- Arabic TTS / voice chat (mic + speaker on real device)
-- Android Chrome PWA install
-- iPhone Safari PWA install
-
-## Phase 5 Features (Completed)
-
-- Navigation restructured: Chat / Files / Projects + Accordions (Tools, More)
-- Home screen redesign: clean workspace-hero, value prop subtitle
-- Settings two-tier: basic visible, advanced hidden in `<details>` accordion
-- Accessibility: 44px touch targets, ARIA labels, focus states
-- Icons: removed variation selectors (U+FE0F)
-- SW cache: v8.47 (`aistudio-cache-v847`)
-- Auto-fix Worker: idempotent, race-condition-free deployment
-
-## Version History
-
-- v8.47: Final polish, settings advanced accordion, SW cache cleanup, Worker chat fix
-- v8.45: Phase 5 navigation + home screen redesign
+| Feature | Status |
+|---------|--------|
+| Chat (GPT-4o-mini via OpenRouter) | ✅ Working |
+| Auth (Email/Password + Google OAuth) | ✅ Working |
+| Arabic TTS (`/proxy/tts` via Google Translate) | ✅ Working |
+| Voice STT (Cloudflare Workers AI Whisper) | ✅ Working |
+| KV Storage (user data, sessions) | ✅ Working |
+| File Conversion (`/ocr`, `/convert`) | ✅ Working |
+| PWA Install / Service Worker | ✅ Working |
+| Health endpoint (`/health`) | ✅ All green |
