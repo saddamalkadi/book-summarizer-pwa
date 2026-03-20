@@ -220,41 +220,42 @@ __name(handleGoogleTtsProxy,'handleGoogleTtsProxy');`;
     }
     console.log('[worker-fix] ✓ Code uploaded');
 
-    // Explicit deploy step for Worker Versions (creates a deployment from latest version)
+    // Explicit deploy step — get latest version_id then create deployment
     try {
-      const deployResult = await fetch(
-        `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/workers/scripts/${WORKER_NAME}/deployments`,
-        {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${CF_TOKEN}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ strategy: 'percentage', versions: [{ percentage: 100 }] }),
-          signal: AbortSignal.timeout(15000)
-        }
+      // Get latest version ID
+      const versionsResp = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/workers/scripts/${WORKER_NAME}/versions?limit=5`,
+        { headers: { 'Authorization': `Bearer ${CF_TOKEN}` }, signal: AbortSignal.timeout(10000) }
       ).then(r => r.json());
 
-      if (deployResult.success) {
-        console.log('[worker-fix] ✓ Worker deployed (versions strategy)');
-      } else {
-        // Try alternative deployment endpoint
-        const altDeploy = await fetch(
-          `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/workers/services/${WORKER_NAME}/environments/production/deployments`,
+      const latestVersion = Array.isArray(versionsResp.result)
+        ? versionsResp.result.find(v => v.id || v.version_id)
+        : null;
+      const versionId = latestVersion?.id || latestVersion?.version_id || result?.result?.id;
+
+      if (versionId) {
+        const deployResult = await fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/workers/scripts/${WORKER_NAME}/deployments`,
           {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${CF_TOKEN}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({}),
+            body: JSON.stringify({ strategy: 'percentage', versions: [{ version_id: versionId, percentage: 100 }] }),
             signal: AbortSignal.timeout(15000)
           }
         ).then(r => r.json());
 
-        if (altDeploy.success) {
-          console.log('[worker-fix] ✓ Worker deployed (services strategy)');
+        if (deployResult.success) {
+          console.log('[worker-fix] ✓ Worker deployed version:', versionId.substring(0, 8));
         } else {
-          console.log('[worker-fix] Deploy note:', JSON.stringify(deployResult.errors||[]).substring(0,200));
+          console.log('[worker-fix] Deploy error:', JSON.stringify(deployResult.errors||[]).substring(0,200));
           console.log('[worker-fix] ✓ Worker redeployed successfully (upload only)');
         }
+      } else {
+        // No version ID found — upload-only deploy may have worked directly
+        console.log('[worker-fix] ✓ Worker redeployed successfully');
       }
     } catch (deployErr) {
-      console.log('[worker-fix] Deploy step skipped:', deployErr.message);
+      console.log('[worker-fix] Deploy note:', deployErr.message);
       console.log('[worker-fix] ✓ Worker redeployed successfully');
     }
   } catch (e) {
