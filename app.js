@@ -4802,7 +4802,7 @@ async function submitUnifiedAuthEntry(){
       page.innerHTML = `
         <div class="toolbar">
           <input id="guideSearch" type="text" placeholder="ابحث داخل دليل الاستخدام..." style="max-width:320px" />
-          <button class="btn ghost sm with-label" id="guideExportBtn" type="button"><span class="icon">⬇️</span><span class="label">تنزيل الدليل</span></button>
+          <button class="btn ghost sm with-label" id="guideExportBtn" type="button"><span class="icon">⬇</span><span class="label">تنزيل الدليل</span></button>
         </div>
         <div class="guide-shell">
           <aside class="guide-index" id="guideIndex"></aside>
@@ -4860,7 +4860,7 @@ async function submitUnifiedAuthEntry(){
         </div>
         <div class="thread-drawer-toolbar">
           <input id="threadSearchInput" type="text" placeholder="ابحث في السجل..." />
-          <button class="btn ghost sm with-label" id="threadExportAllBtn" type="button"><span class="icon">⬇️</span><span class="label">تصدير الكل</span></button>
+          <button class="btn ghost sm with-label" id="threadExportAllBtn" type="button"><span class="icon">⬇</span><span class="label">تصدير الكل</span></button>
         </div>
         <div class="thread-drawer-list" id="threadDrawerList"></div>`;
       chatPage.appendChild(drawer);
@@ -4873,11 +4873,11 @@ async function submitUnifiedAuthEntry(){
       chatPage.insertAdjacentHTML('beforeend', `
         <div class="floating-scroll-nav" id="chatScrollDock" aria-label="التنقل داخل الدردشة" aria-hidden="true">
           <button class="scroll-fab" id="floatingScrollTopBtn" type="button" title="الانتقال إلى أعلى الدردشة" aria-label="الانتقال إلى أعلى الدردشة">
-            <span class="icon">⬆️</span>
+            <span class="icon">⬆</span>
             <span class="label">للأعلى</span>
           </button>
           <button class="scroll-fab" id="floatingScrollBottomBtn" type="button" title="الانتقال إلى أحدث رسالة" aria-label="الانتقال إلى أحدث رسالة">
-            <span class="icon">⬇️</span>
+            <span class="icon">⬇</span>
             <span class="label">للأسفل</span>
           </button>
         </div>`);
@@ -4893,7 +4893,7 @@ async function submitUnifiedAuthEntry(){
             <p>راجع حالة الاتصال، الإعدادات الحالية، ومسارات التحويل من مكان واحد.</p>
             <div class="settings-actions">
               <button class="btn dark sm with-label" id="settingsHealthBtn" type="button"><span class="icon">◎</span><span class="label">فحص الصحة</span></button>
-              <button class="btn ghost sm with-label" id="settingsDefaultsBtn" type="button"><span class="icon">⚙️</span><span class="label">تطبيق الإعدادات</span></button>
+              <button class="btn ghost sm with-label" id="settingsDefaultsBtn" type="button"><span class="icon">⚙</span><span class="label">تطبيق الإعدادات</span></button>
               <button class="btn ghost sm with-label" id="settingsRecommendModelBtn" type="button"><span class="icon">✨</span><span class="label">اقتراح نموذج</span></button>
             </div>
             <div class="settings-health-output" id="settingsHealthOutput">شغّل الفحص للتحقق من البوابة والنموذج وخدمات التحويل.</div>
@@ -5148,7 +5148,7 @@ async function submitUnifiedAuthEntry(){
     }
     const fixedCopy = [
       ['workspaceHeadline', 'مساعدك الذكي للعمل باللغة العربية'],
-      ['workspaceSummary', 'اعمل داخل مشروع واحد مع واجهة منظمة وخيارات تشغيل واضحة.'],
+      ['workspaceSummary', 'دردش، حلّل ملفاتك، واستخرج النصوص — كل شيء في مكان واحد.'],
       ['signalProviderNote', 'المزوّد الحالي وطريقة المصادقة'],
       ['signalModelNote', 'مسار النموذج الرئيسي'],
       ['signalContextNote', 'الملفات والمعرفة وذاكرة المشروع'],
@@ -5172,9 +5172,9 @@ async function submitUnifiedAuthEntry(){
       files: '📎 الملفات',
       transcription: '🧾 مختبر الوثائق',
       workflows: '⚡ سير العمل',
-      downloads: '⬇️ التحميلات',
-      projects: '🗂️ المشاريع',
-      settings: '⚙️ الإعدادات',
+      downloads: '⬇ التحميلات',
+      projects: '🗂 المشاريع',
+      settings: '⚙ الإعدادات',
       guide: '📘 دليل الاستخدام'
     };
     document.querySelectorAll('.navbtn[data-page]').forEach((btn) => {
@@ -5287,7 +5287,7 @@ async function submitUnifiedAuthEntry(){
       lines.push('');
     });
     downloadBlob(`${(thread.title || 'chat').replace(/[^\w\u0600-\u06FF\-]+/g,'_')}.md`, new Blob([lines.join('\n')], { type:'text/markdown;charset=utf-8' }));
-    toast('⬇️ تم تصدير المحادثة');
+    toast('⬇ تم تصدير المحادثة');
   }
 
   function exportAllThreads(){
@@ -5298,7 +5298,7 @@ async function submitUnifiedAuthEntry(){
       threads: loadThreads(pid)
     };
     downloadBlob(`threads-${pid}.json`, new Blob([JSON.stringify(payload, null, 2)], { type:'application/json;charset=utf-8' }));
-    toast('⬇️ تم تصدير سجل المشروع');
+    toast('⬇ تم تصدير سجل المشروع');
   }
 
   function renderThreadHistory(){
@@ -5608,7 +5608,7 @@ async function submitUnifiedAuthEntry(){
       out.push('');
     });
     downloadBlob('دليل-الاستخدام-العربي.md', new Blob([out.join('\n')], { type:'text/markdown;charset=utf-8' }));
-    toast('⬇️ تم تنزيل دليل الاستخدام');
+    toast('⬇ تم تنزيل دليل الاستخدام');
   }
 
   function syncTranscribeControls(){
@@ -5687,9 +5687,7 @@ async function submitUnifiedAuthEntry(){
       $('workspaceHeadline').textContent = 'مساعدك الذكي للعمل باللغة العربية';
     }
     if ($('workspaceSummary')){
-      const briefPart = hasProjectBrief(brief) ? ` • الذاكرة: ${summarizeProjectBrief(brief)}` : '';
-      const policyPart = policy.blockedReason ? ` • تنبيه: ${policy.blockedReason}` : '';
-      $('workspaceSummary').textContent = `التشغيل الفعلي ${policy.modeLabel} • المزوّد ${settings.provider} • النموذج ${getDisplayModelName(settings.model)} • القدرات ${modelCapabilitySummary} • ${files.length} ملفًا • ${chunks} مقطع معرفة • ${downloads} ملفًا مؤرشفًا${briefPart}${policyPart}.`;
+      $('workspaceSummary').textContent = 'دردش، حلّل ملفاتك، واستخرج النصوص — كل شيء في مكان واحد.';
     }
     if ($('signalProvider')) $('signalProvider').textContent = settings.provider.toUpperCase();
     if ($('signalProviderNote')) $('signalProviderNote').textContent = `${readiness} • ${settings.authMode === 'gateway' ? 'اتصال محمي عبر البوابة' : 'اتصال مباشر من المتصفح'}`;
@@ -8745,8 +8743,8 @@ ${clip}` });
           const info = document.createElement('span');
           info.className = 'hint';
           info.textContent = downloadState.newCount
-            ? `⬇️ تمت إضافة ${downloadState.newCount} ملف جديد`
-            : `⬇️ ${downloadState.entries.length} ملف قابل للتنزيل`;
+            ? `⬇ تمت إضافة ${downloadState.newCount} ملف جديد`
+            : `⬇ ${downloadState.entries.length} ملف قابل للتنزيل`;
           actions.appendChild(info);
         }
       }
@@ -9458,7 +9456,7 @@ async function runResearchAgent(topicOverride){
         html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title></head><body><pre style="white-space:pre-wrap">${escapeHtml(content)}</pre></body></html>`;
       }
       downloadBlob(`${title}.html`, new Blob([html], { type:'text/html;charset=utf-8' }));
-      return toast('⬇️ تم تصدير HTML');
+      return toast('⬇ تم تصدير HTML');
     }
     if (kind === 'docx'){
       const fn = window.htmlToDocx || window.HTMLtoDOCX || null;
@@ -9466,12 +9464,12 @@ async function runResearchAgent(topicOverride){
       const html = `<h1>${escapeHtml(title)}</h1><div>${renderMarkdown(content)}</div>`;
       Promise.resolve(fn(html)).then((blob) => {
         downloadBlob(`${title}.docx`, toDocxBlob(blob));
-        toast('⬇️ تم تصدير DOCX');
+        toast('⬇ تم تصدير DOCX');
       }).catch((e)=> toast('DOCX فشل: ' + (e?.message||e)));
       return;
     }
     downloadBlob(`${title}.txt`, new Blob([content], { type:'text/plain;charset=utf-8' }));
-    toast('⬇️ تم تصدير TXT');
+    toast('⬇ تم تصدير TXT');
   }
 
   // ---------------- Files page ----------------
@@ -11298,7 +11296,7 @@ ${txt}`;
               : 'اكتمل التحويل عبر المسار السحابي الهيكلي. راجع النتيجة إذا كان المستند يحتوي على جداول أو هوامش معقدة.'
           });
         }
-        toast('⬇️ تم تنزيل ملف Word قابل للتعديل');
+        toast('⬇ تم تنزيل ملف Word قابل للتعديل');
       }catch(e){
         const friendly = getFriendlyDocxCloudError(e);
         updateTranscribeLabState({ engine:'فشل التحويل', quality:'توقف', note:friendly });

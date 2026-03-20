@@ -2662,10 +2662,63 @@ button:not(.navbtn):not(.wqa-btn):not(.use-case-card):not(.scroll-fab):not(.chip
   50%{ box-shadow: 0 0 0 7px rgba(255,255,255,.06); }
 }
 
-/* === Strategic Strip (simplified) === */
-.strategic-strip{
-  padding: 6px clamp(12px,2vw,20px);
+/* === Strategic Strip (hidden) === */
+.strategic-strip{ display:none !important; }
+
+/* === Settings Two-Tier Layout === */
+.settings-section-label{
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: #8a92ab;
+  padding: 2px 0 6px;
+  border-bottom: 1px solid rgba(0,0,0,.06);
+  margin-bottom: 4px;
 }
+.settings-advanced{
+  border: 1.5px solid #d7dbea;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.settings-advanced-toggle{
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #4a5170;
+  cursor: pointer;
+  user-select: none;
+  background: rgba(0,0,0,.02);
+  transition: background .15s;
+}
+.settings-advanced-toggle::-webkit-details-marker{ display:none; }
+.settings-advanced-toggle::before{
+  content: '▸';
+  font-size: 10px;
+  color: #8a92ab;
+  transition: transform .2s;
+  display: inline-block;
+}
+.settings-advanced[open] > .settings-advanced-toggle::before{
+  transform: rotate(90deg);
+}
+.settings-advanced-toggle:hover{ background: rgba(0,0,0,.04); }
+.settings-advanced-body{
+  padding: 10px 14px 14px;
+  border-top: 1px solid #e8eaf0;
+}
+
+/* === Home Hero Tightened === */
+.workspace-hero{
+  padding-top: clamp(20px,3vw,40px);
+  padding-bottom: clamp(12px,2vw,24px);
+}
+.workspace-title{ margin-bottom: 8px; }
+.workspace-summary{ margin-bottom: 20px; }
 
 /* === Empty state improvements === */
 .empty-chat-state{
@@ -2711,11 +2764,11 @@ body, input, textarea, select, button{
       <nav class="nav" id="nav" role="navigation" aria-label="التنقل الرئيسي">
         <button class="navbtn active" data-page="chat" aria-current="page"><span class="navbtn-icon">💬</span><span class="navbtn-label">الدردشة</span><span class="meta" id="navChatMeta">—</span></button>
         <button class="navbtn" data-page="files"><span class="navbtn-icon">📁</span><span class="navbtn-label">الملفات</span><span class="meta" id="navFilesMeta">—</span></button>
-        <button class="navbtn" data-page="projects"><span class="navbtn-icon">🗂️</span><span class="navbtn-label">المشاريع</span><span class="meta" id="navProjMeta">—</span></button>
+        <button class="navbtn" data-page="projects"><span class="navbtn-icon">🗂</span><span class="navbtn-label">المشاريع</span><span class="meta" id="navProjMeta">—</span></button>
 
         <div class="nav-group" id="toolsGroup">
           <button class="navbtn nav-group-toggle" id="toolsGroupToggle" aria-expanded="false" aria-controls="toolsGroupItems">
-            <span class="navbtn-icon">🛠️</span><span class="navbtn-label">الأدوات</span>
+            <span class="navbtn-icon">🛠</span><span class="navbtn-label">الأدوات</span>
             <span class="nav-group-arrow" aria-hidden="true">›</span>
           </button>
           <div class="nav-group-items" id="toolsGroupItems" role="group" aria-label="أدوات العمل">
@@ -2732,8 +2785,8 @@ body, input, textarea, select, button{
           </button>
           <div class="nav-group-items" id="moreGroupItems" role="group" aria-label="إعدادات ومزيد">
             <button class="navbtn sub" data-page="knowledge"><span class="navbtn-icon">🧠</span><span class="navbtn-label">قاعدة المعرفة</span><span class="meta" id="navKbMeta">—</span></button>
-            <button class="navbtn sub" data-page="downloads"><span class="navbtn-icon">⬇️</span><span class="navbtn-label">التنزيل</span><span class="meta" id="navDlMeta">—</span></button>
-            <button class="navbtn sub" data-page="settings"><span class="navbtn-icon">⚙️</span><span class="navbtn-label">الإعدادات</span><span class="meta" id="navSetMeta">—</span></button>
+            <button class="navbtn sub" data-page="downloads"><span class="navbtn-icon">⬇</span><span class="navbtn-label">التنزيل</span><span class="meta" id="navDlMeta">—</span></button>
+            <button class="navbtn sub" data-page="settings"><span class="navbtn-icon">⚙</span><span class="navbtn-label">الإعدادات</span><span class="meta" id="navSetMeta">—</span></button>
           </div>
         </div>
       </nav>
@@ -2775,7 +2828,7 @@ body, input, textarea, select, button{
         <div class="page active" id="page-chat">
           
           <div class="toolbar" id="chatMiniToolbar" style="display:none">
-            <button class="btn ghost sm icon" id="chatToolbarExpandBtn" type="button" title="إظهار الأدوات" aria-label="إظهار الأدوات">⚙️</button>
+            <button class="btn ghost sm icon" id="chatToolbarExpandBtn" type="button" title="إظهار الأدوات" aria-label="إظهار الأدوات">⚙</button>
             <span class="tag" id="chatMiniModelTag">—</span>
           </div>
 
@@ -2835,9 +2888,9 @@ body, input, textarea, select, button{
               <span class="tool-group-title">إجراءات سريعة</span>
               <div class="toolbar-strip">
               <button class="btn ghost sm with-label" id="agentTaskApplyBtn" type="button" title="إدراج قالب مهمة الوكيل" aria-label="إدراج مهمة"><span class="icon">➕</span><span class="label">إدراج</span></button>
-              <button class="btn ghost sm with-label" id="scrollTopBtn" type="button" title="الانتقال للأعلى" aria-label="للأعلى"><span class="icon">⬆️</span><span class="label">للأعلى</span></button>
-              <button class="btn ghost sm with-label" id="scrollBottomBtn" type="button" title="الانتقال للأسفل" aria-label="للأسفل"><span class="icon">⬇️</span><span class="label">للأسفل</span></button>
-              <button class="btn ghost sm with-label" id="clearChatBtn" type="button" title="مسح الدردشة الحالية" aria-label="مسح الدردشة"><span class="icon">🗑️</span><span class="label">مسح</span></button>
+              <button class="btn ghost sm with-label" id="scrollTopBtn" type="button" title="الانتقال للأعلى" aria-label="للأعلى"><span class="icon">⬆</span><span class="label">للأعلى</span></button>
+              <button class="btn ghost sm with-label" id="scrollBottomBtn" type="button" title="الانتقال للأسفل" aria-label="للأسفل"><span class="icon">⬇</span><span class="label">للأسفل</span></button>
+              <button class="btn ghost sm with-label" id="clearChatBtn" type="button" title="مسح الدردشة الحالية" aria-label="مسح الدردشة"><span class="icon">🗑</span><span class="label">مسح</span></button>
               <button class="btn ghost sm with-label" id="chatToolbarPinBtn" type="button" title="تثبيت شريط الأدوات" aria-label="تثبيت شريط الأدوات"><span class="icon">📌</span><span class="label">تثبيت</span></button>
               <button class="btn ghost sm with-label" id="chatToolbarCollapseBtn" type="button" title="طي الأدوات" aria-label="طي الأدوات"><span class="icon">▾</span><span class="label">إخفاء</span></button>
               </div>
@@ -2846,9 +2899,8 @@ body, input, textarea, select, button{
 
           <div class="workspace-deck" id="workspaceDeck">
             <section class="workspace-hero">
-              <div class="workspace-hero-badge">AI Workspace Studio</div>
               <h1 class="workspace-title" id="workspaceHeadline">مساعدك الذكي للعمل باللغة العربية</h1>
-              <p class="workspace-summary" id="workspaceSummary">دردش مع الذكاء الاصطناعي، حلّل ملفاتك، استخرج النصوص، وأنتج مخرجات احترافية — كل شيء في مكان واحد.</p>
+              <p class="workspace-summary" id="workspaceSummary">دردش، حلّل ملفاتك، واستخرج النصوص — كل شيء في مكان واحد.</p>
               <div class="workspace-quick-actions">
                 <button class="wqa-btn primary" type="button" id="wqaChat" aria-label="ابدأ محادثة جديدة">
                   <span class="wqa-icon">💬</span>
@@ -2902,13 +2954,7 @@ body, input, textarea, select, button{
             </div>
           </div>
 
-          <div class="strategic-strip" id="strategicStrip">
-            <button class="quick-prompt-btn" type="button" data-quick-prompt="exec_summary">ملخص تنفيذي</button>
-            <button class="quick-prompt-btn" type="button" data-quick-prompt="action_board">لوحة تنفيذ</button>
-            <button class="quick-prompt-btn" type="button" data-quick-prompt="kb_orchestrator">تنسيق المعرفة</button>
-            <button class="quick-prompt-btn" type="button" data-quick-prompt="launch_plan">خطة إطلاق</button>
-            <button class="quick-prompt-btn" type="button" data-quick-prompt="pm_review">مراجعة منتج</button>
-          </div>
+          <div class="strategic-strip" id="strategicStrip" hidden aria-hidden="true"></div>
 
           <div class="chatlog" id="chatLog"></div>
 
@@ -2922,7 +2968,6 @@ body, input, textarea, select, button{
           </div>
 
           <div class="chips" id="chatAttachChips"></div>
-          <div class="hint" style="padding:0 10px 10px">أي ملف ينشئه التطبيق سيظهر في قسم التحميلات.</div>
         </div>
 
 
@@ -2930,7 +2975,7 @@ body, input, textarea, select, button{
         <div class="page" id="page-knowledge">
           <div class="toolbar">
             <button class="btn icon" id="kbBuildBtn" title="فهرسة KB" aria-label="فهرسة KB">🧠</button>
-            <button class="btn ghost icon" id="kbClearBtn" title="مسح KB" aria-label="مسح KB">🗑️</button>
+            <button class="btn ghost icon" id="kbClearBtn" title="مسح KB" aria-label="مسح KB">🗑</button>
             <span class="tag" id="kbStats">—</span>
           </div>
 
@@ -3027,7 +3072,7 @@ body, input, textarea, select, button{
           <div class="toolbar">
             <input id="filePicker" type="file" multiple hidden accept=".pdf,.docx,.txt,.md,.csv,.json,.xml,.html,.htm,.png,.jpg,.jpeg,.webp" />
             <button class="btn icon" id="addFilesBtn" title="إضافة ملفات" aria-label="إضافة ملفات">📎</button>
-            <button class="btn ghost icon" id="clearFilesBtn" title="مسح" aria-label="مسح">🗑️</button>
+            <button class="btn ghost icon" id="clearFilesBtn" title="مسح" aria-label="مسح">🗑</button>
             <span class="hint">يدعم: PDF/DOCX/Text + Images مع OCR محلي + سحابي اختياري.</span>
           </div>
           <div class="split">
@@ -3052,7 +3097,7 @@ body, input, textarea, select, button{
             <button class="btn ghost with-label" id="transcribePasteBtn" title="لصق من الحافظة" aria-label="لصق من الحافظة"><span class="icon">📋</span><span class="label">لصق من الحافظة</span></button>
             <button class="btn ghost with-label" id="transcribeExtractBtn" title="استخراج النص" aria-label="استخراج النص"><span class="icon">🧠</span><span class="label">استخراج النص</span></button>
             <button class="btn ghost with-label" id="transcribeCopyBtn" title="نسخ النص" aria-label="نسخ النص"><span class="icon">📎</span><span class="label">نسخ النص</span></button>
-            <button class="btn ghost with-label" id="transcribeSaveArchiveBtn" title="حفظ في الأرشيف" aria-label="حفظ في الأرشيف"><span class="icon">🗂️</span><span class="label">حفظ في الأرشيف</span></button>
+            <button class="btn ghost with-label" id="transcribeSaveArchiveBtn" title="حفظ في الأرشيف" aria-label="حفظ في الأرشيف"><span class="icon">🗂</span><span class="label">حفظ في الأرشيف</span></button>
             <button class="btn ghost with-label" id="transcribeSendChatBtn" title="إرسال إلى الدردشة / الملخص" aria-label="إرسال إلى الدردشة / الملخص"><span class="icon">💬</span><span class="label">إرسال للدردشة</span></button>
             <button class="btn ghost with-label" id="transcribeClearBtn" title="مسح" aria-label="مسح"><span class="icon">🧹</span><span class="label">مسح</span></button>
             <button class="btn ghost with-label" id="transcribeCloudBtn" title="تحسين سحابي للنص" aria-label="تحسين سحابي للنص"><span class="icon">☁️</span><span class="label">تحسين سحابي</span></button>
@@ -3118,7 +3163,7 @@ body, input, textarea, select, button{
             <input id="dlSearch" type="text" placeholder="بحث في التحميلات..." style="max-width:320px"/>
             <button class="btn ghost icon" id="refreshDlBtn" title="تحديث" aria-label="تحديث">🔄</button>
             <button class="btn ghost icon" id="pinFilterBtn" title="المثبت" aria-label="المثبت">📌</button>
-            <button class="btn danger icon" id="clearDlBtn" title="مسح" aria-label="مسح">🗑️</button>
+            <button class="btn danger icon" id="clearDlBtn" title="مسح" aria-label="مسح">🗑</button>
           </div>
           <div class="hint" style="padding:10px">هنا تجد تنزيلات التطبيق وملفاته التي أنشأها الذكاء الاصطناعي، إضافة إلى روابط تحديث نسخة الويب وAndroid.</div>
           <div id="downloadsOverview" style="padding:0 10px 10px"></div>
@@ -3132,7 +3177,7 @@ body, input, textarea, select, button{
           <div class="toolbar">
             <button class="btn icon" id="newProjectBtn" title="مشروع جديد" aria-label="مشروع جديد">✚</button>
             <button class="btn ghost icon" id="renameProjectBtn" title="إعادة تسمية" aria-label="إعادة تسمية">✏️</button>
-            <button class="btn danger icon" id="deleteProjectBtn" title="حذف" aria-label="حذف">🗑️</button>
+            <button class="btn danger icon" id="deleteProjectBtn" title="حذف" aria-label="حذف">🗑</button>
           </div>
           <div class="panel" style="margin:10px; min-height:0; flex:1">
             <div class="head"><span>المشاريع</span><span class="hint">محادثات + كانفس + ملفات + إعدادات</span></div>
@@ -3160,7 +3205,7 @@ body, input, textarea, select, button{
               </select>
               <button class="btn sm icon" id="workflowRunBtn" type="button" title="تشغيل" aria-label="تشغيل">▶</button>
               <button class="btn ghost sm icon" id="workflowLoadBtn" type="button" title="تحميل القالب" aria-label="تحميل القالب">📥</button>
-              <button class="btn ghost sm icon" id="workflowClearLogBtn" type="button" title="مسح السجل" aria-label="مسح السجل">🗑️</button>
+              <button class="btn ghost sm icon" id="workflowClearLogBtn" type="button" title="مسح السجل" aria-label="مسح السجل">🗑</button>
             </div>
             <div class="row" style="margin-top:10px">
               <textarea id="workflowEditor" rows="8" placeholder='JSON لسير العمل (اختياري)...' style="width:100%"></textarea>
@@ -3180,176 +3225,180 @@ body, input, textarea, select, button{
             <button class="btn ghost icon" id="resetSettingsBtn" title="إعادة ضبط" aria-label="إعادة ضبط">↺</button>
           </div>
           <div class="panel" style="margin:10px; min-height:0; flex:1">
-            <div class="head"><span>الإعدادات</span><span class="hint">BYOK + مزودات</span></div>
+            <div class="head"><span>الإعدادات</span><span class="hint">النموذج والاتصال</span></div>
             <div class="body">
-              
-              <div class="row" style="margin-top:0">
+
+              <!-- ── الاتصال ── -->
+              <div class="settings-section-label">الاتصال والمصادقة</div>
+              <div class="row" style="margin-top:6px">
                 <div class="col">
                   <label class="hint">نمط المصادقة</label>
                   <select id="authMode">
                     <option value="browser" selected>المتصفح (BYOK داخل المتصفح)</option>
                     <option value="gateway">البوابة (Cloudflare Worker — آمن)</option>
                   </select>
-                  <div class="hint" style="margin-top:6px">وضع البوابة يحمي المفاتيح: لا تُخزن داخل المتصفح.</div>
                 </div>
                 <div class="col">
                   <label class="hint">رابط البوابة</label>
                   <input id="gatewayUrl" type="text" placeholder="مثال: https://api.saddamalkadi.com" />
-                  <div class="hint" style="margin-top:6px">سيُستخدم بدل الرابط الأساسي عند تفعيل وضع البوابة.</div>
                 </div>
               </div>
-              <div class="row" style="margin-top:10px">
+
+              <!-- ── مفاتيح API ── -->
+              <div class="settings-section-label" style="margin-top:14px">مفاتيح API</div>
+              <form autocomplete="off" onsubmit="return false" style="margin:0;padding:0">
+              <input type="text" name="username" autocomplete="username" aria-hidden="true" style="display:none;position:absolute;width:0;height:0;opacity:0" tabindex="-1" />
+              <div class="row" style="margin-top:6px">
                 <div class="col">
-                  <label class="hint">رمز عميل البوابة (اختياري)</label>
-                  <form autocomplete="off" onsubmit="return false" style="margin:0;padding:0">
-                  <input type="text" name="username" autocomplete="username" aria-hidden="true" style="display:none;position:absolute;width:0;height:0;opacity:0" tabindex="-1" />
-                  <input id="gatewayToken" type="password" placeholder="إن فعلت حماية إضافية في الـWorker" autocomplete="new-password" />
-                  </form>
+                  <label class="hint">مفتاح OpenRouter / OpenAI</label>
+                  <input id="apiKey" type="password" placeholder="ضع المفتاح هنا" autocomplete="new-password" />
                 </div>
                 <div class="col">
-                  <label class="hint">رابط التحويل السحابي PDF→Word (الأساسي)</label>
-                  <input id="cloudConvertEndpoint" type="text" placeholder="مثال: https://api.saddamalkadi.com/convert/pdf-to-docx" />
-                  <div class="hint" style="margin-top:6px">يُستخدم أولاً للتحويل السحابي عالي الدقة (PDF إلى Word).</div>
-                </div>
-              </div>
-              <div class="row" style="margin-top:10px">
-                <div class="col">
-                  <label class="hint">رابط التحويل السحابي الاحتياطي</label>
-                  <input id="cloudConvertFallbackEndpoint" type="text" placeholder="اختياري: endpoint احتياطي عند فشل الرئيسي" />
-                </div>
-                <div class="col">
-                  <label class="hint">رابط OCR السحابي (اختياري)</label>
-                  <input id="ocrCloudEndpoint" type="text" placeholder="مثال: https://api.saddamalkadi.com/ocr" />
-                  <div class="hint" style="margin-top:6px">يرفع الصورة للـOCR السحابي عند ضعف نتيجة OCR المحلي.</div>
+                  <label class="hint">مفتاح Gemini (اختياري)</label>
+                  <input id="geminiKey" type="password" placeholder="اختياري" autocomplete="new-password" />
                 </div>
               </div>
-              <div class="row" style="margin-top:10px">
+              </form>
+
+              <!-- ── النموذج والأداء ── -->
+              <div class="settings-section-label" style="margin-top:14px">النموذج والأداء</div>
+              <div class="row" style="margin-top:6px">
                 <div class="col">
-                  <label class="hint">لغات OCR (Tesseract)</label>
-                  <input id="ocrLang" type="text" placeholder="ara+eng" />
-                  <div class="hint" style="margin-top:6px">مثال: <span class="kbd">ara+eng</span> أو <span class="kbd">ara</span> حسب اللغة.</div>
-                </div>
-                <div class="col">
-                  <label class="hint">الأدوات (أدوات الوكيل)</label>
-                  <label class="pill" style="display:flex; align-items:center; gap:8px; max-width:260px">
-                    <input type="checkbox" id="toolsDefault" />
-                    تفعيل الأدوات افتراضيًا
-                  </label>
-                  <div class="hint" style="margin-top:6px">يسمح للموديل باستدعاء أدوات: KB/Web/Files.</div>
-                </div>
-              </div>
-              <div class="row" style="margin-top:10px">
-                <div class="col">
-                  <label class="hint">وضع التشغيل والتكلفة</label>
+                  <label class="hint">وضع التشغيل</label>
                   <select id="costGuard">
                     <option value="strict">اقتصادي صارم</option>
                     <option value="balanced" selected>متوازن</option>
                     <option value="open">جودة قصوى</option>
                   </select>
-                  <div class="settings-inline-pills">
-                    <label class="pill" style="display:flex; align-items:center; gap:8px;">
-                      <input type="checkbox" id="freeMode" />
-                      تفعيل الوضع المجاني
-                    </label>
-                    <label class="pill" style="display:flex; align-items:center; gap:8px;">
-                      <input type="checkbox" id="allowCloudOcr" checked />
-                      OCR سحابي عند الحاجة
-                    </label>
-                    <label class="pill" style="display:flex; align-items:center; gap:8px;">
-                      <input type="checkbox" id="allowCloudPolish" checked />
-                      تحسين سحابي للنص
-                    </label>
-                  </div>
-                  <div class="hint" style="margin-top:6px">الوضع المجاني يفرض المعالجة المحلية. وضع التكلفة يحدد متى يسمح بالتحويل أو OCR السحابي.</div>
-                </div>
-                <div class="col">
-                  <label class="hint">حدود التحويل السحابي</label>
-                  <div class="row" style="margin-top:0">
-                    <div class="col">
-                      <input id="maxCloudPdfPages" type="number" min="1" max="400" placeholder="25" />
-                      <div class="hint" style="margin-top:6px">الحد الأقصى لصفحات PDF.</div>
-                    </div>
-                    <div class="col">
-                      <input id="maxCloudFileMB" type="number" min="1" max="200" step="0.5" placeholder="12" />
-                      <div class="hint" style="margin-top:6px">الحد الأقصى لحجم الملف (MB).</div>
-                    </div>
-                  </div>
-                  <div class="row" style="margin-top:10px">
-                    <div class="col">
-                      <input id="cloudRetryMax" type="number" min="1" max="5" placeholder="2" />
-                      <div class="hint" style="margin-top:6px">عدد محاولات السحابة قبل العودة للمسار المحلي.</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-<form autocomplete="off" onsubmit="return false" style="margin:0;padding:0">
-<input type="text" name="username" autocomplete="username" aria-hidden="true" style="display:none;position:absolute;width:0;height:0;opacity:0" tabindex="-1" />
-<div class="row">
-                <div class="col">
-                  <label class="hint">مفتاح API (OpenRouter/OpenAI)</label>
-                  <input id="apiKey" type="password" placeholder="ضع المفتاح هنا" autocomplete="new-password" />
-                  <div class="hint" style="margin-top:6px">OpenRouter يوصي بإرسال <span class="kbd">HTTP-Referer</span> و <span class="kbd">X-Title</span>.</div>
-                </div>
-                <div class="col">
-                  <label class="hint">مفتاح Gemini</label>
-                  <input id="geminiKey" type="password" placeholder="اختياري" autocomplete="new-password" />
-                </div>
-              </div>
-</form>
-
-              <div class="row" style="margin-top:10px">
-                <div class="col">
-                  <label class="hint">HTTP-Referer (OpenRouter)</label>
-                  <input id="orReferer" type="text" placeholder="مثال: https://your-site.github.io" />
-                </div>
-                <div class="col">
-                  <label class="hint">عنوان التطبيق (OpenRouter)</label>
-                  <input id="orTitle" type="text" placeholder="AI Workspace Studio" />
-                </div>
-              </div>
-
-              <div class="row" style="margin-top:10px">
-                <div class="col">
-                  <label class="hint">التوجيه النظامي</label>
-                  <textarea id="systemPrompt" rows="4" placeholder="اختياري…"></textarea>
                 </div>
                 <div class="col">
                   <label class="hint">الحد الأقصى للإخراج</label>
                   <input id="maxOut" type="text" value="2000" />
-                  <div class="hint" style="margin-top:6px">إذا ظهر خطأ من الموديل قلّل القيمة.</div>
                 </div>
               </div>
-
               <div class="row" style="margin-top:10px">
                 <div class="col">
-                  <label class="hint">حفظ الملفات كنص (حد أقصى)</label>
-                  <input id="fileClip" type="text" value="12000" />
+                  <label class="hint">التوجيه النظامي</label>
+                  <textarea id="systemPrompt" rows="3" placeholder="اختياري…"></textarea>
                 </div>
-                <div class="col">
-                  <label class="hint">نمط الويب</label>
-                  <select id="webMode">
-                    <option value="off">إيقاف</option>
-                    <option value="openrouter_online">OpenRouter :online</option>
-                  </select>
-                </div>
-              </div>
-
-              <div class="row" style="margin-top:10px">
-                <div class="col">
-                  <label class="hint">ذاكرة كاش النماذج</label>
-                  <button class="btn ghost icon" id="refreshModelsBtn" title="تحديث موديلات OpenRouter" aria-label="تحديث موديلات OpenRouter">🔄</button>
-                  <button class="btn ghost icon" id="clearModelsCacheBtn" title="مسح الكاش" aria-label="مسح الكاش">🗑️</button>
-                </div>
-                <div class="col">
-                  <label class="hint">البث المباشر الافتراضي</label>
-                  <label class="pill" style="display:flex; align-items:center; gap:8px; max-width:220px">
-                    <input type="checkbox" id="streamDefault" />
-                    تفعيل البث المباشر
-                  </label>
+                <div class="col" style="align-self:flex-start; padding-top:4px">
+                  <div class="settings-inline-pills">
+                    <label class="pill" style="display:flex; align-items:center; gap:8px;">
+                      <input type="checkbox" id="freeMode" />
+                      الوضع المجاني
+                    </label>
+                    <label class="pill" style="display:flex; align-items:center; gap:8px;">
+                      <input type="checkbox" id="allowCloudOcr" checked />
+                      OCR سحابي
+                    </label>
+                    <label class="pill" style="display:flex; align-items:center; gap:8px;">
+                      <input type="checkbox" id="allowCloudPolish" checked />
+                      تحسين سحابي
+                    </label>
+                    <label class="pill" style="display:flex; align-items:center; gap:8px;">
+                      <input type="checkbox" id="streamDefault" />
+                      بث مباشر
+                    </label>
+                  </div>
                 </div>
               </div>
 
-              <div class="hint" style="margin-top:12px">بحث الويب يعتمد على المزوّد والإعدادات الحالية.</div>
+              <!-- ── الإعدادات المتقدمة ── -->
+              <details class="settings-advanced" style="margin-top:16px">
+                <summary class="settings-advanced-toggle">إعدادات متقدمة</summary>
+                <div class="settings-advanced-body">
+
+                  <div class="settings-section-label" style="margin-top:10px">تكامل الخدمات السحابية</div>
+                  <div class="row" style="margin-top:6px">
+                    <div class="col">
+                      <label class="hint">رمز عميل البوابة (اختياري)</label>
+                      <form autocomplete="off" onsubmit="return false" style="margin:0;padding:0">
+                      <input type="text" name="username2" autocomplete="username" aria-hidden="true" style="display:none;position:absolute;width:0;height:0;opacity:0" tabindex="-1" />
+                      <input id="gatewayToken" type="password" placeholder="حماية إضافية في الـWorker" autocomplete="new-password" />
+                      </form>
+                    </div>
+                    <div class="col">
+                      <label class="hint">رابط تحويل PDF → Word</label>
+                      <input id="cloudConvertEndpoint" type="text" placeholder="https://api.saddamalkadi.com/convert/pdf-to-docx" />
+                    </div>
+                  </div>
+                  <div class="row" style="margin-top:8px">
+                    <div class="col">
+                      <label class="hint">رابط تحويل احتياطي</label>
+                      <input id="cloudConvertFallbackEndpoint" type="text" placeholder="endpoint احتياطي" />
+                    </div>
+                    <div class="col">
+                      <label class="hint">رابط OCR سحابي</label>
+                      <input id="ocrCloudEndpoint" type="text" placeholder="https://api.saddamalkadi.com/ocr" />
+                    </div>
+                  </div>
+                  <div class="row" style="margin-top:8px">
+                    <div class="col">
+                      <label class="hint">لغات OCR (Tesseract)</label>
+                      <input id="ocrLang" type="text" placeholder="ara+eng" />
+                    </div>
+                    <div class="col">
+                      <label class="hint">الأدوات (أدوات الوكيل)</label>
+                      <label class="pill" style="display:flex; align-items:center; gap:8px; max-width:260px">
+                        <input type="checkbox" id="toolsDefault" />
+                        تفعيل الأدوات افتراضيًا
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="settings-section-label" style="margin-top:12px">حدود السحابة</div>
+                  <div class="row" style="margin-top:6px">
+                    <div class="col">
+                      <label class="hint">حد صفحات PDF</label>
+                      <input id="maxCloudPdfPages" type="number" min="1" max="400" placeholder="25" />
+                    </div>
+                    <div class="col">
+                      <label class="hint">حد حجم الملف (MB)</label>
+                      <input id="maxCloudFileMB" type="number" min="1" max="200" step="0.5" placeholder="12" />
+                    </div>
+                    <div class="col">
+                      <label class="hint">محاولات السحابة</label>
+                      <input id="cloudRetryMax" type="number" min="1" max="5" placeholder="2" />
+                    </div>
+                  </div>
+
+                  <div class="settings-section-label" style="margin-top:12px">OpenRouter</div>
+                  <div class="row" style="margin-top:6px">
+                    <div class="col">
+                      <label class="hint">HTTP-Referer</label>
+                      <input id="orReferer" type="text" placeholder="https://your-site.github.io" />
+                    </div>
+                    <div class="col">
+                      <label class="hint">X-Title</label>
+                      <input id="orTitle" type="text" placeholder="AI Workspace Studio" />
+                    </div>
+                  </div>
+
+                  <div class="settings-section-label" style="margin-top:12px">سلوك النص والويب</div>
+                  <div class="row" style="margin-top:6px">
+                    <div class="col">
+                      <label class="hint">حد نص الملف (أحرف)</label>
+                      <input id="fileClip" type="text" value="12000" />
+                    </div>
+                    <div class="col">
+                      <label class="hint">نمط بحث الويب</label>
+                      <select id="webMode">
+                        <option value="off">إيقاف</option>
+                        <option value="openrouter_online">OpenRouter :online</option>
+                      </select>
+                    </div>
+                    <div class="col" style="align-self:flex-end">
+                      <label class="hint">كاش النماذج</label>
+                      <div style="display:flex; gap:4px; margin-top:4px">
+                        <button class="btn ghost icon" id="refreshModelsBtn" title="تحديث" aria-label="تحديث موديلات OpenRouter">🔄</button>
+                        <button class="btn ghost icon" id="clearModelsCacheBtn" title="مسح الكاش" aria-label="مسح الكاش">🗑</button>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+              </details>
+
             </div>
           </div>
         </div>
@@ -3422,7 +3471,7 @@ body, input, textarea, select, button{
     })();
   </script>
 
-<script src="app.js?v=845p5"></script>
+<script src="app.js?v=846"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -3434,7 +3483,7 @@ body, input, textarea, select, button{
     })();
     if ("serviceWorker" in navigator && !isNativeCapacitorApp) {
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=845").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=846").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {
