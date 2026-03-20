@@ -190,8 +190,10 @@ __name(handleGoogleTtsProxy,'handleGoogleTtsProxy');`;
 
     if (patched) {
       code = '// autofix-' + Date.now() + '\n' + code;
+      console.log('[worker-fix] Patched code size:', code.length, '| has-injection:', code.includes('/*aistudio-key-injected*/'), '| has-key:', code.includes(OR_KEY.substring(0,12)));
     } else {
       console.log('[worker-fix] Code already fully patched — just redeploying');
+      console.log('[worker-fix] Code size:', code.length, '| has-injection:', code.includes('/*aistudio-key-injected*/'));
     }
 
     // 5) Redeploy Worker — add OR key as plain_text binding (most reliable; no secrets API needed)
