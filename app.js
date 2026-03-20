@@ -4361,13 +4361,13 @@ function syncUnifiedAuthEntry(){
     }
   }
 
-  function openAuthGate(message = ''){
-    if (getAccountRuntimeState().authRequired !== true) return;
+  function openAuthGate(message = '', { force = false } = {}){
+    if (!force && getAccountRuntimeState().authRequired !== true) return;
     ensureAccountChrome();
     $('authGate')?.classList.add('show');
     setAuthGateStatus(message || 'سجّل الدخول ببريدك الشخصي لفتح الخطة المجانية، أو استخدم بريد الإدارة مع كلمة المرور من نفس الشاشة.', 'info');
     syncUnifiedAuthEntry();
-    if ($('authCloseBtn')) $('authCloseBtn').style.display = hasValidAuthSession() ? '' : 'none';
+    if ($('authCloseBtn')) $('authCloseBtn').style.display = (hasValidAuthSession() || !getAccountRuntimeState().authRequired) ? '' : 'none';
     renderGoogleButton().catch((error) => {
       setAuthGateStatus(`تعذر تهيئة تسجيل Google: ${error?.message || error}`, 'error');
     });
@@ -4528,7 +4528,7 @@ async function submitUnifiedAuthEntry(){
   async function requestUpgradeByEmail(){
     const account = getAuthState();
     if (!hasValidAuthSession(account)){
-      openAuthGate('سجّل الدخول أولاً ثم أرسل طلب الترقية.');
+      openAuthGate('سجّل الدخول أولاً ثم أرسل طلب الترقية.', { force: true });
       return;
     }
     try{
@@ -4547,7 +4547,7 @@ async function submitUnifiedAuthEntry(){
   async function activateUpgradeCodeFromUi(){
     const auth = getAuthState();
     if (!hasValidAuthSession(auth)){
-      openAuthGate('سجّل الدخول أولاً ثم فعّل كود الترقية.');
+      openAuthGate('سجّل الدخول أولاً ثم فعّل كود الترقية.', { force: true });
       return;
     }
     const code = String($('upgradeCodeInput')?.value || '').trim();
@@ -4631,7 +4631,7 @@ async function submitUnifiedAuthEntry(){
     syncAccountUi();
     refreshModeButtons();
     refreshStrategicWorkspace().catch(()=>{});
-    openAuthGate('تم تسجيل الخروج. سجّل الدخول مرة أخرى ببريدك الشخصي للمتابعة.');
+    openAuthGate('تم تسجيل الخروج. سجّل الدخول مرة أخرى ببريدك الشخصي للمتابعة.', { force: true });
   }
 
   let shellResizeTimer = 0;
@@ -4650,7 +4650,7 @@ async function submitUnifiedAuthEntry(){
 
   function openAccountCenter(){
     if (!hasValidAuthSession()){
-      openAuthGate();
+      openAuthGate('', { force: true });
       return;
     }
     setActiveNav('settings');
@@ -10594,7 +10594,7 @@ let pinOnly = false;
     $('closeSideBtn').addEventListener('click', closeSide);
     back.addEventListener('click', closeSide);
     $('accountTriggerBtn')?.addEventListener('click', openAccountCenter);
-    $('accountSignInBtn')?.addEventListener('click', () => openAuthGate());
+    $('accountSignInBtn')?.addEventListener('click', () => openAuthGate('', { force: true }));
     $('accountUpgradeRequestBtn')?.addEventListener('click', requestUpgradeByEmail);
     $('accountLogoutBtn')?.addEventListener('click', logoutCurrentAccount);
     $('activateUpgradeBtn')?.addEventListener('click', activateUpgradeCodeFromUi);
