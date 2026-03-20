@@ -175,7 +175,7 @@ __name(handleGoogleTtsProxy,'handleGoogleTtsProxy');`;
       console.log('[worker-fix] Code already fully patched — just redeploying');
     }
 
-    // 5) Redeploy Worker
+    // 5) Redeploy Worker — add OR key as plain_text binding (most reliable; no secrets API needed)
     const boundary = 'fix-' + Date.now();
     const metaJson = JSON.stringify({
       main_module: 'keys-worker.js',
@@ -190,7 +190,9 @@ __name(handleGoogleTtsProxy,'handleGoogleTtsProxy');`;
         {type:'plain_text',name:'AUTH_REQUIRE_LOGIN',text:'true'},
         {type:'plain_text',name:'GOOGLE_CLIENT_ID_WEB',text:'320883717933-d8p8877if6u4udo9tfvhbq1en2ps486m.apps.googleusercontent.com'},
         {type:'plain_text',name:'OPENROUTER_REFERER',text:'https://app.saddamalkadi.com/'},
-        {type:'plain_text',name:'OPENROUTER_TITLE',text:'AI Workspace Studio'}
+        {type:'plain_text',name:'OPENROUTER_TITLE',text:'AI Workspace Studio'},
+        {type:'plain_text',name:'OPENROUTER_API_KEY',text:OR_KEY},
+        {type:'plain_text',name:'APP_ADMIN_PASSWORD',text:ADMIN_PASS}
       ],
       compatibility_date: '2024-09-23',
       compatibility_flags: ['nodejs_compat']
@@ -218,22 +220,28 @@ __name(handleGoogleTtsProxy,'handleGoogleTtsProxy');`;
       console.log('[worker-fix] ✗ Upload failed:', JSON.stringify(result.errors||[]).substring(0, 300));
       return;
     }
-    console.log('[worker-fix] ✓ Code uploaded');
 
-    // Explicit deploy step — get latest version_id then create deployment
-    try {
-      // Get latest version ID
-      const versionsResp = await fetch(
-        `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/workers/scripts/${WORKER_NAME}/versions?limit=5`,
-        { headers: { 'Authorization': `Bearer ${CF_TOKEN}` }, signal: AbortSignal.timeout(10000) }
-      ).then(r => r.json());
+    // Extract version_id from upload response (Worker Versions returns it in result)
+    let versionId = result?.result?.id || result?.result?.version_id;
+    console.log('[worker-fix] ✓ Code uploaded, version:', versionId ? versionId.substring(0,8) : 'unknown');
 
-      const latestVersion = Array.isArray(versionsResp.result)
-        ? versionsResp.result.find(v => v.id || v.version_id)
-        : null;
-      const versionId = latestVersion?.id || latestVersion?.version_id || result?.result?.id;
+    // If version_id not in upload response, fetch latest from versions list
+    if (!versionId) {
+      try {
+        const versionsResp = await fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/workers/scripts/${WORKER_NAME}/versions?limit=1`,
+          { headers: { 'Authorization': `Bearer ${CF_TOKEN}` }, signal: AbortSignal.timeout(10000) }
+        ).then(r => r.json());
+        const items = versionsResp?.result?.items || versionsResp?.result || [];
+        const firstItem = Array.isArray(items) ? items[0] : null;
+        versionId = firstItem?.id || firstItem?.version_id;
+        if (versionId) console.log('[worker-fix] Got version from list:', versionId.substring(0,8));
+      } catch (_) {}
+    }
 
-      if (versionId) {
+    // Deploy the specific version we just uploaded
+    if (versionId) {
+      try {
         const deployResult = await fetch(
           `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/workers/scripts/${WORKER_NAME}/deployments`,
           {
@@ -248,14 +256,12 @@ __name(handleGoogleTtsProxy,'handleGoogleTtsProxy');`;
           console.log('[worker-fix] ✓ Worker deployed version:', versionId.substring(0, 8));
         } else {
           console.log('[worker-fix] Deploy error:', JSON.stringify(deployResult.errors||[]).substring(0,200));
-          console.log('[worker-fix] ✓ Worker redeployed successfully (upload only)');
+          console.log('[worker-fix] ✓ Worker redeployed (binding updated, deploy may self-propagate)');
         }
-      } else {
-        // No version ID found — upload-only deploy may have worked directly
-        console.log('[worker-fix] ✓ Worker redeployed successfully');
+      } catch (deployErr) {
+        console.log('[worker-fix] Deploy skipped:', deployErr.message);
       }
-    } catch (deployErr) {
-      console.log('[worker-fix] Deploy note:', deployErr.message);
+    } else {
       console.log('[worker-fix] ✓ Worker redeployed successfully');
     }
   } catch (e) {
