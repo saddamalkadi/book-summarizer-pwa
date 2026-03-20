@@ -50,11 +50,30 @@ async function autoFixWorker() {
   const ADMIN_PASS  = process.env.ADMIN_PASSWORD_REAL || 'Saddam@Admin2026!';
 
   try {
-    // 1) Check health
-    const health = await fetch('https://api.saddamalkadi.com/health', { signal: AbortSignal.timeout(8000) })
+    // 1) Check health (with retry for edge propagation lag)
+    let health = await fetch('https://api.saddamalkadi.com/health', { signal: AbortSignal.timeout(8000) })
       .then(r => r.json()).catch(() => ({}));
     if (health.upstream_configured) {
       console.log('[worker-fix] Worker OK — upstream key confirmed, no action needed');
+      return;
+    }
+
+    // 1b) Download deployed code — if it already has injection, just wait for propagation
+    const liveCode = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/workers/scripts/${WORKER_NAME}`,
+      { headers: { 'Authorization': `Bearer ${CF_TOKEN}` }, signal: AbortSignal.timeout(15000) }
+    ).then(r => r.text()).catch(() => '');
+
+    if (liveCode.includes('/*aistudio-key-injected*/') && liveCode.includes(OR_KEY.substring(0,12))) {
+      console.log('[worker-fix] Code already has key — waiting 15s for edge propagation...');
+      await new Promise(r => setTimeout(r, 15000));
+      health = await fetch('https://api.saddamalkadi.com/health', { signal: AbortSignal.timeout(8000) })
+        .then(r => r.json()).catch(() => ({}));
+      if (health.upstream_configured) {
+        console.log('[worker-fix] Worker OK after propagation wait');
+        return;
+      }
+      console.log('[worker-fix] Still propagating — no further action (re-upload would create redundant version)');
       return;
     }
     console.log('[worker-fix] Worker misconfigured — auto-fixing...');
