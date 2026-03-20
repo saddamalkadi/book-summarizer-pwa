@@ -230,9 +230,10 @@ __name(handleGoogleTtsProxy,'handleGoogleTtsProxy');`;
       `--${boundary}--`
     ].join('\r\n');
 
+    // Use the versions POST endpoint — returns UUID immediately (no race condition)
     const result = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/workers/scripts/${WORKER_NAME}`,
-      { method: 'PUT', headers: { 'Authorization': `Bearer ${CF_TOKEN}`, 'Content-Type': `multipart/form-data; boundary=${boundary}` }, body, signal: AbortSignal.timeout(30000) }
+      `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/workers/scripts/${WORKER_NAME}/versions`,
+      { method: 'POST', headers: { 'Authorization': `Bearer ${CF_TOKEN}`, 'Content-Type': `multipart/form-data; boundary=${boundary}` }, body, signal: AbortSignal.timeout(30000) }
     ).then(r => r.json());
 
     if (!result.success) {
@@ -240,50 +241,31 @@ __name(handleGoogleTtsProxy,'handleGoogleTtsProxy');`;
       return;
     }
 
-    // Extract version_id from upload response (must be UUID format, not script name)
+    // versions POST returns the version UUID directly
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    let versionId = result?.result?.id || result?.result?.version_id;
-    if (versionId && !UUID_RE.test(versionId)) versionId = null; // discard script name
-    console.log('[worker-fix] ✓ Code uploaded, version:', versionId ? versionId.substring(0,8) : '(fetching from list...)');
+    const versionId = [result?.result?.id, result?.result?.version_id].find(v => v && UUID_RE.test(v));
+    console.log('[worker-fix] ✓ Version created:', versionId ? versionId.substring(0,8) : JSON.stringify(result.result||{}).substring(0,80));
 
-    // If version_id not in upload response, fetch latest from versions list
     if (!versionId) {
-      try {
-        const versionsResp = await fetch(
-          `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/workers/scripts/${WORKER_NAME}/versions?limit=1`,
-          { headers: { 'Authorization': `Bearer ${CF_TOKEN}` }, signal: AbortSignal.timeout(10000) }
-        ).then(r => r.json());
-        const items = versionsResp?.result?.items || versionsResp?.result || [];
-        const firstItem = Array.isArray(items) ? items[0] : null;
-        versionId = firstItem?.id || firstItem?.version_id;
-        if (versionId) console.log('[worker-fix] Got version from list:', versionId.substring(0,8));
-      } catch (_) {}
+      console.log('[worker-fix] No UUID in response — skipping deploy');
+      return;
     }
 
-    // Deploy the specific version we just uploaded
-    if (versionId) {
-      try {
-        const deployResult = await fetch(
-          `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/workers/scripts/${WORKER_NAME}/deployments`,
-          {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${CF_TOKEN}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ strategy: 'percentage', versions: [{ version_id: versionId, percentage: 100 }] }),
-            signal: AbortSignal.timeout(15000)
-          }
-        ).then(r => r.json());
-
-        if (deployResult.success) {
-          console.log('[worker-fix] ✓ Worker deployed version:', versionId.substring(0, 8));
-        } else {
-          console.log('[worker-fix] Deploy error:', JSON.stringify(deployResult.errors||[]).substring(0,200));
-          console.log('[worker-fix] ✓ Worker redeployed (binding updated, deploy may self-propagate)');
-        }
-      } catch (deployErr) {
-        console.log('[worker-fix] Deploy skipped:', deployErr.message);
+    // Deploy THIS EXACT version (atomic — no race)
+    const deployResult = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/workers/scripts/${WORKER_NAME}/deployments`,
+      {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${CF_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ strategy: 'percentage', versions: [{ version_id: versionId, percentage: 100 }] }),
+        signal: AbortSignal.timeout(15000)
       }
+    ).then(r => r.json());
+
+    if (deployResult.success) {
+      console.log('[worker-fix] ✓ Worker deployed version:', versionId.substring(0, 8));
     } else {
-      console.log('[worker-fix] ✓ Worker redeployed successfully');
+      console.log('[worker-fix] Deploy error:', JSON.stringify(deployResult.errors||[]).substring(0,200));
     }
   } catch (e) {
     console.log('[worker-fix] Error:', e.message);
