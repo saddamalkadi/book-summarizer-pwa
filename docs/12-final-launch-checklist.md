@@ -1,6 +1,7 @@
-# قائمة الإطلاق النهائية — Phase 5J
+# قائمة الإطلاق النهائية — Phase 5
 
-## ✅ / ❌ / ⚠️ — نتائج الفحص النهائي
+## ✅ / ❌ / ⚠️ — نتائج الفحص الفعلي بعد النشر
+**آخر تحقق:** 20 مارس 2026 — اختبار E2E مباشر على app.saddamalkadi.com
 
 ---
 
@@ -12,37 +13,41 @@
 | Cloudflare Worker يُعيد النشر تلقائيًا | ✅ | كود auto-fix في server.mjs |
 | KV namespace مُعيّن (`USER_DATA`) | ✅ | ID: 49d87e2d... |
 | `api.saddamalkadi.com` يستجيب | ✅ | Worker نشط |
-| `app.saddamalkadi.com` يخدم frontend | ✅ | GitHub Pages / Cloudflare |
+| `app.saddamalkadi.com` يخدم frontend | ✅ | GitHub Pages |
 | HTTPS على كلا النطاقين | ✅ | Cloudflare يوفرها تلقائيًا |
 | `ADMIN_PASSWORD_REAL` مُعيّن في Worker env | ✅ | محمي في Cloudflare Secrets |
+| آلية push التلقائي لـ GitHub عند بدء الخادم | ✅ | server.mjs سطر 14-26 |
 
 ---
 
 ## B. المصادقة والأمان
 
-| البند | الحالة |
-|------|-------|
-| تسجيل دخول البريد الإلكتروني + الاسم | ✅ |
-| Google OAuth (في domain الإنتاج) | ✅ |
-| Admin password من env var | ✅ |
-| حماية من قراءة admin credentials في الكود | ✅ |
-| Session persistence في localStorage | ✅ |
-| Logout يمسح الجلسة | ✅ |
+| البند | الحالة | الملاحظة |
+|------|-------|---------|
+| تسجيل دخول البريد الإلكتروني + الاسم | ✅ مُختبر إنتاج | E2E على app.saddamalkadi.com — 20 مارس 2026 |
+| Admin password من env var | ✅ | محمي ولا يظهر في الكود |
+| حماية من قراءة admin credentials في الكود | ✅ | |
+| Session persistence في localStorage | ✅ | |
+| Logout يمسح الجلسة | ✅ | |
+| Google OAuth (في domain الإنتاج) | ⚠️ يحتاج تحقق | GSI_LOGGER يظهر في بيئة التطوير فقط؛ يحتاج اختبار بحساب Google حقيقي على app.saddamalkadi.com |
 
 ---
 
-## C. واجهة المستخدم
+## C. واجهة المستخدم — مُتحقَّق منها إنتاجيًا
 
-| البند | الحالة |
-|------|-------|
-| Noto Sans Arabic يُحمّل ويعمل | ✅ |
-| RTL (اليمين إلى اليسار) صحيح | ✅ |
-| لا نصوص مكسورة أو encoding خاطئ | ✅ مُصلح |
-| التنقل الجانبي: 5 عناصر + accordion | ✅ |
-| الشاشة الرئيسية: value prop + 3 أزرار + 4 بطاقات | ✅ |
-| فقاعات الدردشة مميّزة بصريًا | ✅ |
-| زر الإرسال دائمًا قابل للنقر | ✅ |
-| Voice button حالاته واضحة (ألوان + animation) | ✅ |
+| البند | الحالة | الملاحظة |
+|------|-------|---------|
+| Noto Sans Arabic يُحمّل ويعمل | ✅ | |
+| RTL (اليمين إلى اليسار) صحيح | ✅ | |
+| لا نصوص مكسورة أو encoding خاطئ | ✅ مُختبر إنتاج | لا يوجد â€" أو â€¢ في الإنتاج — 20 مارس 2026 |
+| التنقل الجانبي: 3 رئيسية + accordion | ✅ مُختبر إنتاج | الدردشة / الملفات / المشاريع + مجموعتا أكورديون |
+| الأكورديون "الأدوات" يفتح ويُظهر 3 عناصر | ✅ مُختبر إنتاج | اللوحة + التفريغ النصي + سير العمل |
+| الأكورديون "المزيد" يفتح ويُظهر عناصره | ✅ مُختبر إنتاج | قاعدة المعرفة + التنزيل + الإعدادات |
+| الشاشة الرئيسية: عنوان "مساعدك الذكي..." | ✅ مُختبر إنتاج | id=workspaceHeadline — 20 مارس 2026 |
+| الشاشة الرئيسية: 3 أزرار سريعة + 4 بطاقات | ✅ | |
+| فقاعات الدردشة مميّزة بصريًا | ✅ | |
+| زر الإرسال دائمًا قابل للنقر | ✅ | |
+| Voice button حالاته واضحة (ألوان + animation) | ✅ | |
 
 ---
 
@@ -55,6 +60,7 @@
 | ARIA labels على nav وbuttons | ✅ |
 | aria-current="page" على العنصر النشط | ✅ |
 | Emojis مع aria-hidden="true" | ✅ |
+| accordion مع aria-expanded وaria-label | ✅ |
 
 ---
 
@@ -66,42 +72,77 @@
 | Preconnect على CDN domains | ✅ |
 | PWA manifest موجود | ✅ |
 | Icons بصيغة WebP | ✅ |
+| Cache-buster على app.js | ✅ | ?v=845 |
 | Lazy loading للمكتبات الثقيلة | ⚠️ موصى به مستقبلاً |
 
 ---
 
 ## F. اختبارات ما قبل الإطلاق
 
-| الاختبار | الحالة |
-|---------|-------|
-| E2E: تسجيل دخول + إرسال رسالة | ✅ اجتاز |
-| E2E: prompt chips تملأ chatInput | ✅ اجتاز |
-| E2E: accordion nav يفتح/يغلق | تحقق يدوي |
-| اختبار على Chrome (desktop) | ✅ |
-| اختبار على Chrome (Android) | يتطلب جهاز حقيقي |
-| اختبار على Safari (iPhone) | يتطلب iPhone |
+| الاختبار | الحالة | الملاحظة |
+|---------|-------|---------|
+| E2E: تسجيل دخول + إرسال رسالة (محلي) | ✅ اجتاز | |
+| E2E: تسجيل دخول (إنتاج — app.saddamalkadi.com) | ✅ اجتاز | 20 مارس 2026 |
+| E2E: accordion nav يفتح/يغلق (محلي) | ✅ اجتاز | 20 اختبار / 20 نجح |
+| E2E: accordion nav (إنتاج) | ✅ اجتاز | 20 مارس 2026 |
+| E2E: home screen headline (إنتاج) | ✅ اجتاز | 20 مارس 2026 |
+| E2E: لا أخطاء encoding (إنتاج) | ✅ اجتاز | 20 مارس 2026 |
+| اختبار على Chrome (desktop) | ✅ | |
+| Google OAuth بحساب حقيقي على production | ⚠️ يحتاج اختبار يدوي | افتح app.saddamalkadi.com وانقر زر Google |
+| Arabic TTS / voice chat (إنتاج) | ⚠️ يحتاج اختبار يدوي | يتطلب ميكروفون + متصفح حقيقي |
+| اختبار على Chrome (Android) | ⚠️ يحتاج جهاز حقيقي | |
+| اختبار على Safari (iPhone) | ⚠️ يحتاج iPhone | |
 
 ---
 
-## G. قائمة ما قبل Go-Live
+## G. حالة النشر الفعلية
 
 ```
-□ تأكيد عمل OpenRouter API key في بيئة الإنتاج
-□ تأكيد عمل Arabic TTS في Worker
-□ اختبار Google OAuth مع domain الإنتاج
+تاريخ آخر push ناجح: 20 مارس 2026 — 00:40 UTC
+GitHub repo: saddamalkadi/book-summarizer-pwa (main branch)
+GitHub Pages URL: https://app.saddamalkadi.com
+Cloudflare Worker: book-summarizer-pwa-convert
+Worker URL: https://api.saddamalkadi.com
+
+ما كان غير منشور (قبل 20 مارس 2026):
+  - CSS accordion display:none !important
+  - زر الدليل داخل مجموعة "المزيد"
+  - عنوان الشاشة الرئيسية الثابت "مساعدك الذكي..."
+  - Phase 5 HTML structure (nav-group, workspace-hero)
+  - Phase 5 CSS block (touch targets, accordion, wqa cards)
+
+ما تم نشره (20 مارس 2026):
+  - جميع تغييرات Phase 5 (index.html + app.js)
+  - Cloudflare Worker أُعيد نشره تلقائيًا
+
+ما يحتاج اختبارًا يدويًا بجهاز حقيقي:
+  - Google OAuth بحساب Google حقيقي
+  - Arabic TTS (ميكروفون + صوت)
+  - Android Chrome
+  - iPhone Safari
+```
+
+---
+
+## H. بنود pending قبل الإطلاق الكامل
+
+```
+⚠️ اختبار Google OAuth يدويًا على app.saddamalkadi.com بحساب Google حقيقي
+⚠️ اختبار Arabic TTS + voice chat على جهاز فعلي
+⚠️ اختبار Android Chrome (PWA install)
+⚠️ اختبار iPhone Safari (PWA install instructions)
 □ مراجعة سياسة الاستخدام (Terms of Service)
 □ إنشاء صفحة About / Contact
 □ تجهيز APK للتوزيع المباشر (بديل Play Store)
-□ تجهيز PWA install instructions للـ iPhone
-□ إعداد Cloudflare Analytics لمتابعة الاستخدام
+□ إعداد Cloudflare Analytics
 □ إعداد Cloudflare Alerts للأخطاء والانقطاعات
 ```
 
 ---
 
-## H. الإصدار الحالي
+## I. الإصدار الحالي
 
 - **الإصدار:** v8.45
 - **المراحل المكتملة:** 1-5
-- **تاريخ اكتمال Phase 5:** مارس 2026
-- **الجاهزية:** ✅ جاهز للإطلاق التجاري
+- **تاريخ التحقق من الإنتاج:** 20 مارس 2026
+- **حالة الإطلاق:** ✅ منشور وجاهز — يتبقى اختبار يدوي لـ OAuth و TTS وأجهزة mobile
