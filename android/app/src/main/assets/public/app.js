@@ -1,4 +1,4 @@
-﻿/* AI Workspace Studio v8.34 - strategic platform skeleton (no build step) */
+/* AI Workspace Studio v8.52 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -136,7 +136,7 @@
   };
 
   const DEFAULT_AUTH_CONFIG = {
-    authRequired: false,
+    authRequired: true,
     brandName: 'AI Workspace Studio',
     developerName: 'صدام القاضي',
     upgradeEmail: 'tntntt830@gmail.com',
@@ -718,6 +718,15 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     return normalizeEndpointUrl(DEFAULT_SETTINGS.gatewayUrl || '').replace(/\/v1\/?$/i, '');
   }
 
+  function getAuthoritativeServiceRoot(settings = getSettings()){
+    const source = { ...DEFAULT_SETTINGS, ...(settings || {}) };
+    if (String(source.authMode || DEFAULT_SETTINGS.authMode).trim().toLowerCase() === 'gateway'){
+      const resolvedGateway = normalizeUrl(resolveGatewayApiRoot(source)) || getGatewayWorkerRoot(source);
+      if (resolvedGateway) return resolvedGateway.replace(/\/v1\/?$/i, '');
+    }
+    return getPlatformServiceRoot();
+  }
+
   function getLocalAuthConfig(settings = getSettings()){
     return {
       ...DEFAULT_AUTH_CONFIG,
@@ -919,13 +928,13 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   }
 
   function getAuthServiceRoot(settings = getSettings()){
-    return getPlatformServiceRoot() || getGatewayWorkerRoot(settings);
+    return getAuthoritativeServiceRoot(settings);
   }
 
   function getAccountRuntimeState(settings = getSettings()){
     const auth = getAuthState();
     const config = getEffectiveAuthConfig(settings);
-    const authRequired = config.authRequired === true;
+    const authRequired = config.authRequired !== false;
     const signedIn = hasValidAuthSession(auth);
     const premium = signedIn && auth.plan === 'premium';
     return {
@@ -1044,7 +1053,11 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     AUTH_RUNTIME.configPromise = requestRemoteConfig(settings).catch((err) => {
       const repaired = repairGatewayAfterAccessIssue(err, settings);
       if (repaired){
-        return requestRemoteConfig(repaired).catch(() => setAuthConfigCached(getLocalAuthConfig(settings)));
+        return requestRemoteConfig(repaired);
+      }
+      const cached = loadJSON(KEYS.authConfigCache, null);
+      if (cached && typeof cached === 'object' && Object.keys(cached).length){
+        return setAuthConfigCached({ ...getLocalAuthConfig(settings), ...cached });
       }
       return setAuthConfigCached(getLocalAuthConfig(settings));
     }).finally(() => {
@@ -1279,7 +1292,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       body: JSON.stringify({
         reason,
         state: snapshot,
-        appVersion: '8.44.0'
+        appVersion: '8.33.0'
       })
     }).then((payload) => {
       CLOUD_RUNTIME.lastHash = hash;
@@ -2397,8 +2410,7 @@ function syncChatScrollDock(){
   const drawerOpen = !!(drawer && drawer.classList.contains('show'));
   const sideOpen = !!(side && side.classList.contains('show'));
   const keyboardEditing = document.body.classList.contains('keyboardEditing');
-  const hasMessages = log.querySelectorAll('.bubble').length > 0;
-  const canScroll = hasMessages && (log.scrollHeight - log.clientHeight) > 120;
+  const canScroll = (log.scrollHeight - log.clientHeight) > 120;
   const visible = activeChat && canScroll && !keyboardEditing && !drawerOpen && !sideOpen;
   dock.classList.toggle('show', visible);
   dock.setAttribute('aria-hidden', visible ? 'false' : 'true');
@@ -2408,6 +2420,7 @@ function syncChatScrollDock(){
   const nearTop = top <= 24;
   const nearBottom = (max - top) <= 24;
 
+  if ($('floatingScrollTopBtn')) $('floatingScrollTopBtn').disabled = !visible || nearTop;
   if ($('floatingScrollBottomBtn')) $('floatingScrollBottomBtn').disabled = !visible || nearBottom;
 }
 
@@ -2552,28 +2565,15 @@ function applyShellLayout(){
   function chooseSpeechSynthesisVoice(lang = 'ar-SA'){
     try{
       const voices = window.speechSynthesis?.getVoices?.() || [];
-      if (!voices.length) return null;
-      const isArabic = String(lang || '').toLowerCase().startsWith('ar');
-      if (isArabic){
-        const arabicVoices = voices.filter((v) => /^ar/i.test(v.lang || '') || /arabic|العربية/i.test(v.name || ''));
-        if (arabicVoices.length){
-          const priority = [
-            arabicVoices.find((v) => /google.*arabic|arabic.*google/i.test(v.name)),
-            arabicVoices.find((v) => /microsoft.*arabic|arabic.*microsoft/i.test(v.name)),
-            arabicVoices.find((v) => /naayf|hoda|asma|zariyah|tarik|omar|laila|amira/i.test(v.name)),
-            arabicVoices.find((v) => /ar-SA/i.test(v.lang)),
-            arabicVoices.find((v) => /ar-EG/i.test(v.lang)),
-            arabicVoices[0]
-          ];
-          const chosen = priority.find(Boolean);
-          if (chosen) return chosen;
-        }
-      }
-      const exact = voices.find((v) => String(v.lang || '').toLowerCase() === lang.toLowerCase());
+      const exact = voices.find((voice) => String(voice.lang || '').toLowerCase() === lang.toLowerCase());
       if (exact) return exact;
-      const family = voices.find((v) => String(v.lang || '').toLowerCase().startsWith(lang.split('-')[0].toLowerCase()));
+      const family = voices.find((voice) => String(voice.lang || '').toLowerCase().startsWith(lang.split('-')[0].toLowerCase()));
       if (family) return family;
-      return voices.find((v) => v.default) || voices[0] || null;
+      if (String(lang || '').toLowerCase().startsWith('ar')){
+        const namedArabic = voices.find((voice) => /arabic|العربية|ar-/i.test(`${voice?.name || ''} ${voice?.lang || ''}`));
+        if (namedArabic) return namedArabic;
+      }
+      return voices.find((voice) => voice.default) || voices[0] || null;
     }catch(_){
       return null;
     }
@@ -2728,77 +2728,9 @@ function applyShellLayout(){
     return transcript;
   }
 
-  function isTtsModelArabicCapable(model){
-    if (!model) return false;
-    const m = String(model).toLowerCase();
-    if (/melotts|melo-tts/i.test(m)) return false;
-    if (/tts-1|tts-1-hd|gpt-4o|eleven|azure|google.*tts|neural|wavenet|polly|edge-tts|openai/i.test(m)) return true;
-    return false;
-  }
-
-  async function speakAssistantReplyByProxyTts(text, lang = 'ar'){
-    if (!String(text || '').trim()) return false;
-    try{
-      const apiRoot = (getAuthServiceRoot() || '').replace(/\/+$/, '');
-      const proxyUrl = apiRoot ? `${apiRoot}/proxy/tts` : '/proxy/tts';
-      const response = await fetch(proxyUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, lang }),
-        signal: AbortSignal.timeout(30000)
-      });
-      if (!response.ok) return false;
-      const audioBlob = await response.blob();
-      if (!audioBlob || !audioBlob.size) return false;
-
-      const audio = new Audio();
-      const objectUrl = URL.createObjectURL(audioBlob);
-      audio.src = objectUrl;
-      audio.__objectUrl = objectUrl;
-      audio.preload = 'auto';
-      VOICE_RUNTIME.audioPlayer = audio;
-
-      return await new Promise((resolve) => {
-        const cleanup = (played) => {
-          VOICE_RUNTIME.speaking = false;
-          if (VOICE_RUNTIME.audioPlayer === audio) VOICE_RUNTIME.audioPlayer = null;
-          try{ if (audio.__objectUrl) URL.revokeObjectURL(audio.__objectUrl); }catch(_){ }
-          if (played) scheduleVoiceConversationRestart(700);
-          resolve(played);
-        };
-        audio.onended = () => cleanup(true);
-        audio.onerror = () => cleanup(false);
-        try{
-          VOICE_RUNTIME.speaking = true;
-          const p = audio.play();
-          if (p && typeof p.then === 'function') p.catch(() => cleanup(false));
-        }catch(_){ cleanup(false); }
-      });
-    }catch(_){
-      return false;
-    }
-  }
-
-  async function waitForSpeechVoices(timeoutMs = 2500){
-    return new Promise((resolve) => {
-      try{
-        const voices = window.speechSynthesis?.getVoices?.() || [];
-        if (voices.length > 0){ resolve(voices); return; }
-        const timer = setTimeout(() => resolve([]), timeoutMs);
-        window.speechSynthesis?.addEventListener?.('voiceschanged', () => {
-          clearTimeout(timer);
-          resolve(window.speechSynthesis?.getVoices?.() || []);
-        }, { once: true });
-      }catch(_){ resolve([]); }
-    });
-  }
-
   async function speakAssistantReplyByCloud(text, settings = getSettings()){
     const voice = getVoiceCloudConfig(settings);
     if (!voice.ttsReady || !String(text || '').trim()) return false;
-    const lang = String(voice.preferredLanguage || getPreferredSpeechLanguage() || '').toLowerCase();
-    const isArabic = lang.startsWith('ar');
-    if (isArabic && !isTtsModelArabicCapable(voice.synthesisModel)) return false;
     const response = await fetchAuthResponse('/voice/speak', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2987,16 +2919,8 @@ function applyShellLayout(){
     const raw = stripFileBlocks(String(content || ''));
     return raw
       .replace(/```[\s\S]*?```/g, ' ')
-      .replace(/`[^`]*`/g, ' ')
       .replace(/\[(?:KB|FILE|IMG):[^\]]+\]/gi, ' ')
       .replace(/https?:\/\/\S+/g, ' ')
-      .replace(/^#{1,6}\s+/gm, '')
-      .replace(/^[\s]*[-*+]\s+/gm, '')
-      .replace(/^\s*\d+\.\s+/gm, '')
-      .replace(/\*\*([^*]+)\*\*/g, '$1')
-      .replace(/\*([^*]+)\*/g, '$1')
-      .replace(/__([^_]+)__/g, '$1')
-      .replace(/_([^_]+)_/g, '$1')
       .replace(/\s+/g, ' ')
       .trim();
   }
@@ -3030,17 +2954,6 @@ function applyShellLayout(){
     }
 
     await stopVoicePlayback();
-
-    const preferredLang = String(getPreferredSpeechLanguage() || 'ar-SA');
-    const isArabicSession = /^ar/i.test(preferredLang);
-
-    if (isArabicSession){
-      try{
-        const proxyPlayed = await speakAssistantReplyByProxyTts(text, preferredLang.split('-')[0] || 'ar');
-        if (proxyPlayed) return true;
-      }catch(_){ }
-    }
-
     try{
       const cloudPlayed = await speakAssistantReplyByCloud(text, getSettings());
       if (cloudPlayed) return true;
@@ -3078,18 +2991,12 @@ function applyShellLayout(){
       return false;
     }
 
-    await waitForSpeechVoices(2000);
-
     return await new Promise((resolve) => {
-      const isArabicLang = /^ar/i.test(lang || '');
-      const utterLang = isArabicLang ? (lang || 'ar-SA') : lang;
-      const bestVoice = chooseSpeechSynthesisVoice(utterLang) || (isArabicLang ? chooseSpeechSynthesisVoice('ar-SA') : null);
       const utter = new SpeechSynthesisUtterance(text);
-      utter.lang = utterLang;
-      if (bestVoice) utter.voice = bestVoice;
-      utter.rate = isArabicLang ? 0.88 : 0.92;
-      utter.pitch = isArabicLang ? 1.05 : 1;
-      utter.volume = 1;
+      utter.lang = lang;
+      utter.voice = chooseSpeechSynthesisVoice(lang) || chooseSpeechSynthesisVoice('ar-SA');
+      utter.rate = 0.92;
+      utter.pitch = 1;
       utter.onstart = () => { VOICE_RUNTIME.speaking = true; };
       utter.onend = () => {
         VOICE_RUNTIME.speaking = false;
@@ -3203,11 +3110,15 @@ function applyShellLayout(){
   }
 
   async function startComposerDictation(){
+    const voice = getVoiceCloudConfig();
+    const preferCloudForWeb = !isNativePlatform() && voice.sttReady;
+
     if (isNativePlatform() && await startNativeComposerDictation()) return true;
+    if (preferCloudForWeb && await startCloudComposerDictation()) return true;
 
     const Ctor = getSpeechRecognitionCtor();
     if (Ctor){
-      const input = $('chatInput');
+      const input = chatInput;
       if (!input) return false;
 
       composerDictationBase = String(input.value || '').trimEnd();
@@ -3221,7 +3132,7 @@ function applyShellLayout(){
       composerRecognition.onstart = () => {
         composerListening = true;
         syncVoiceInputButton();
-        showStatus(`الإملاء الصوتي يعمل الآن باللغة ${composerRecognition.lang}...`, false);
+        showStatus(`Voice dictation is active in ${composerRecognition.lang || getPreferredSpeechLanguage()}...`, false);
       };
 
       composerRecognition.onresult = (event) => {
@@ -3240,7 +3151,7 @@ function applyShellLayout(){
         composerListening = false;
         VOICE_RUNTIME.autoSendArmed = false;
         syncVoiceInputButton();
-        if (event?.error !== 'no-speech') toast(`تعذّر الإملاء الصوتي: ${event?.error || 'unknown'}`);
+        if (event?.error !== 'no-speech') toast(`Voice dictation failed: ${event?.error || 'unknown'}`);
       };
 
       composerRecognition.onend = () => {
@@ -3252,7 +3163,7 @@ function applyShellLayout(){
         showStatus('', false);
         if (shouldAutoSend){
           window.setTimeout(() => {
-            if (String($('chatInput')?.value || '').trim()) void sendMessage();
+            if (String(chatInput?.value || '').trim()) void sendMessage();
           }, 90);
         } else if (shouldKeepContinuousVoiceLoop()){
           scheduleVoiceConversationRestart(550);
@@ -3266,13 +3177,12 @@ function applyShellLayout(){
         composerListening = false;
         composerRecognition = null;
         syncVoiceInputButton();
-        toast(`تعذّر بدء الإملاء الصوتي: ${error?.message || error}`);
+        toast(`Voice dictation could not start: ${error?.message || error}`);
       }
     }
 
-    if (await startCloudComposerDictation()) return true;
+    if (!preferCloudForWeb && await startCloudComposerDictation()) return true;
 
-    const voice = getVoiceCloudConfig();
     if (!voice.sttReady && /^android/i.test(String(navigator.userAgent || ''))){
       toast('الصوت غير متاح في هذا المتصفح المحمول لأن التعرف المحلي غير مدعوم والصوت السحابي غير مفعّل لهذا الحساب أو على الخادم.');
     } else {
@@ -3288,6 +3198,7 @@ function applyShellLayout(){
   }
 
   async function toggleVoiceMode(){
+    await loadRemoteAuthConfig(true).catch(() => null);
     const next = !getVoiceModeEnabled();
     setVoiceModeEnabled(next);
     VOICE_RUNTIME.continuousConversation = next;
@@ -3416,8 +3327,6 @@ function refreshDeepSearchBtn(){
     const templates = {
       strategy_brief: 'أنشئ brief استراتيجي احترافي لهذا الطلب. المطلوب: 1) الهدف 2) الوضع الحالي 3) الفرص 4) المخاطر 5) خطة التنفيذ 6) المخرجات النهائية.',
       deep_research: 'نفّذ بحثًا عميقًا منظمًا. ابدأ بخطة بحث، ثم أسئلة التحقيق، ثم النتائج، ثم الاستنتاجات، ثم التوصيات العملية.',
-      analysis_ar: 'حلّل هذا الملف أو المحتوى تحليلاً عميقًا. أريد: 1) الملخص التنفيذي 2) النقاط الرئيسية 3) التوصيات الفورية 4) المخاطر أو الفجوات 5) الخطوات التالية المقترحة.',
-      report_ar: 'اكتب تقريرًا احترافيًا جاهزًا للتسليم. يشمل: صفحة العنوان، الملخص التنفيذي، المحتوى التفصيلي، الجداول والإحصائيات إن وجدت، والخلاصة مع التوصيات.',
       system_audit: 'قم بمراجعة تشغيلية للنظام أو التطبيق الحالي. أريد: المشاكل، الأولويات، المخاطر، الإصلاحات السريعة، وخطة تحسين احترافية.',
       build_product: 'ساعدني في بناء منتج احترافي من هذه الفكرة. أريد: التموضع، البنية، تدفقات الاستخدام، خارطة الطريق، ومواصفات الإصدار الأول.',
       exec_summary: 'اكتب ملخصًا تنفيذيًا واضحًا وموجزًا مع النقاط الحاسمة والقرار المقترح.',
@@ -3825,19 +3734,18 @@ function refreshDeepSearchBtn(){
                 <span class="plan-pill" id="authCurrentPlanPill">الخطة المجانية</span>
               </div>
               <div class="auth-status status" id="authGateStatus" data-tone="info">سجّل الدخول ببريدك الشخصي لفتح الخطة المجانية، أو استخدم بريد الإدارة مع كلمة المرور من نفس الشاشة.</div>
-              <form id="authEntryForm" autocomplete="on" onsubmit="return false" style="margin-top:12px">
-              <div class="auth-config-grid">
+              <div class="auth-config-grid" style="margin-top:12px">
                 <div>
-                  <label class="hint" for="authEntryName">الاسم</label>
-                  <input id="authEntryName" name="name" type="text" placeholder="الاسم الظاهر داخل التطبيق" autocomplete="name" />
+                  <label class="hint">الاسم</label>
+                  <input id="authEntryName" type="text" placeholder="الاسم الظاهر داخل التطبيق" />
                 </div>
                 <div>
-                  <label class="hint" for="authEntryEmail">البريد الإلكتروني</label>
-                  <input id="authEntryEmail" name="email" type="email" placeholder="name@example.com" autocomplete="email" />
+                  <label class="hint">البريد الإلكتروني</label>
+                  <input id="authEntryEmail" type="email" placeholder="name@example.com" />
                 </div>
                 <div style="grid-column:1/-1">
-                  <label class="hint" for="authEntryPassword" id="authEntryPasswordLabel">كلمة المرور للإدارة فقط</label>
-                  <input id="authEntryPassword" name="password" type="password" placeholder="اختيارية للمستخدم العادي، ومطلوبة فقط إذا كان هذا بريد الإدارة" autocomplete="current-password" />
+                  <label class="hint" id="authEntryPasswordLabel">كلمة المرور للإدارة فقط</label>
+                  <input id="authEntryPassword" type="password" placeholder="اختيارية للمستخدم العادي، ومطلوبة فقط إذا كان هذا بريد الإدارة" />
                 </div>
               </div>
               <div class="auth-note" id="authEntryModeHint">أي بريد شخصي صالح يفتح لك الخطة المجانية تلقائيًا. إذا أدخلت بريد الإدارة، سيتحول الزر تلقائيًا إلى دخول الإدارة.</div>
@@ -3846,9 +3754,8 @@ function refreshDeepSearchBtn(){
                 <span>يفتح الحساب العادي بالخطة المجانية مع الميزات المسموح بها فقط، ويمكن طلب الترقية لاحقًا من صفحة الإعدادات.</span>
               </div>
               <div class="account-actions" style="margin-top:12px">
-                <button class="btn dark sm with-label" type="submit" id="authEntrySubmitBtn"><span class="icon">→</span><span class="label" id="authEntrySubmitLabel">متابعة بالخطة المجانية</span></button>
+                <button class="btn dark sm with-label" type="button" id="authEntrySubmitBtn"><span class="icon">→</span><span class="label" id="authEntrySubmitLabel">متابعة بالخطة المجانية</span></button>
               </div>
-              </form>
               <div class="divider"></div>
               <div class="auth-google-slot" id="googleSignInSlot"></div>
               <div class="auth-note" id="authGatePlanNote">بعد تسجيل الدخول ستبدأ بالخطة المناسبة للحساب. يمكن الترقية لاحقًا عبر طلب ترقية وكود تفعيل.</div>
@@ -4015,26 +3922,6 @@ function refreshDeepSearchBtn(){
       $('authCurrentPlanPill').classList.toggle('premium', role === 'admin' || plan === 'premium');
     }
 
-    if ($('sideAccountName')) $('sideAccountName').textContent = signedIn ? (role === 'admin' ? `الإدارة` : (auth.name || auth.email || 'الحساب')) : 'تسجيل الدخول';
-    if ($('sideAccountPlan')) $('sideAccountPlan').textContent = signedIn ? (role === 'admin' ? 'صلاحيات كاملة' : planLabel) : 'غير مسجل';
-    if ($('sideAccountAvatar')){
-      const av = $('sideAccountAvatar');
-      const n = signedIn ? (auth.name || auth.email || '') : '';
-      av.textContent = n ? n.charAt(0).toUpperCase() : '؟';
-      if (signedIn && auth.picture){ av.innerHTML = `<img src="${auth.picture}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">`; }
-    }
-    if ($('sideAccountBadge')){
-      const isBadgePremium = role === 'admin' || plan === 'premium';
-      $('sideAccountBadge').textContent = role === 'admin' ? 'مدير' : (plan === 'premium' ? 'مدفوع' : 'مجاني');
-      $('sideAccountBadge').classList.toggle('free', !isBadgePremium);
-      $('sideAccountBadge').classList.toggle('premium', isBadgePremium);
-    }
-    if ($('sideAccountStrip') && !$('sideAccountStrip').dataset.bound){
-      $('sideAccountStrip').dataset.bound = '1';
-      $('sideAccountStrip').addEventListener('click', () => { $('closeSideBtn')?.click(); openAccountCenter(); });
-      $('sideAccountStrip').addEventListener('keydown', e => { if(e.key==='Enter'||e.key===' '){ $('closeSideBtn')?.click(); openAccountCenter(); }});
-    }
-
     renderUsageIndicators(settings);
     const remembered = getRememberedAuthEntry();
     if ($('authRememberToggle')) $('authRememberToggle').checked = remembered.remember;
@@ -4122,19 +4009,14 @@ function syncUnifiedAuthEntry(){
     }
     try{
       if (force) slot.innerHTML = '';
-      const prevClientId = window._gsiClientId;
-      if (!window._gsiInitialized || prevClientId !== clientId){
-        window.google.accounts.id.initialize({
-          client_id: clientId,
-          callback: handleGoogleCredentialResponse,
-          auto_select: false,
-          cancel_on_tap_outside: false,
-          context: 'signin',
-          use_fedcm_for_prompt: true
-        });
-        window._gsiInitialized = true;
-        window._gsiClientId = clientId;
-      }
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: handleGoogleCredentialResponse,
+        auto_select: false,
+        cancel_on_tap_outside: false,
+        context: 'signin',
+        use_fedcm_for_prompt: true
+      });
       slot.innerHTML = '';
       window.google.accounts.id.renderButton(slot, {
         theme: 'filled_blue',
@@ -4145,14 +4027,6 @@ function syncUnifiedAuthEntry(){
         width: Math.min(360, Math.max(260, slot.clientWidth || 320)),
         use_fedcm_for_button: true
       });
-      setTimeout(() => {
-        if (slot && !slot.querySelector('iframe') && !slot.querySelector('div[data-idom-class]')){
-          slot.innerHTML = `<div class="hint" style="display:flex;align-items:center;gap:8px;padding:8px 0">
-            <span style="font-size:18px">🔒</span>
-            <span>تسجيل الدخول بـ Google متاح على الموقع الرسمي: <a href="https://app.saddamalkadi.com" target="_blank" rel="noopener" style="color:#1b66ff;font-weight:600">app.saddamalkadi.com</a></span>
-          </div>`;
-        }
-      }, 2000);
     }catch(error){
       slot.innerHTML = '<div class="hint">تعذر تهيئة زر تسجيل الدخول حاليًا.</div>';
       setAuthGateStatus(`تعذر تهيئة Google Sign-In: ${error?.message || error}`, 'error');
@@ -4167,6 +4041,28 @@ function syncUnifiedAuthEntry(){
     return getCapacitorPluginProxy('App');
   }
 
+  function normalizeTargetPage(page){
+    const value = String(page || '').trim().toLowerCase();
+    return [
+      'chat',
+      'knowledge',
+      'canvas',
+      'files',
+      'transcription',
+      'workflows',
+      'downloads',
+      'projects',
+      'guide',
+      'settings'
+    ].includes(value) ? value : '';
+  }
+
+  function getCurrentActivePage(){
+    const active = document.querySelector('.page.active');
+    const id = String(active?.id || '').trim();
+    return normalizeTargetPage(id.replace(/^page-/, ''));
+  }
+
   function normalizeAuthPayload(payload){
     const sessionToken = String(payload?.sessionToken || payload?.session_token || '').trim();
     if (!sessionToken) return null;
@@ -4177,7 +4073,8 @@ function syncUnifiedAuthEntry(){
       plan: String(payload?.plan || 'free').trim(),
       role: String(payload?.role || 'user').trim(),
       sessionToken,
-      sessionExp: Number(payload?.sessionExp || payload?.session_exp || 0)
+      sessionExp: Number(payload?.sessionExp || payload?.session_exp || 0),
+      targetPage: normalizeTargetPage(payload?.targetPage || payload?.target_page || '')
     };
   }
 
@@ -4189,13 +4086,15 @@ function syncUnifiedAuthEntry(){
       plan: params.get('plan') || 'free',
       role: params.get('role') || 'user',
       sessionToken: params.get('sessionToken') || params.get('session_token') || '',
-      sessionExp: params.get('sessionExp') || params.get('session_exp') || 0
+      sessionExp: params.get('sessionExp') || params.get('session_exp') || 0,
+      targetPage: params.get('targetPage') || params.get('target_page') || ''
     });
   }
 
   async function consumeAuthPayload(payload, extra = {}){
     const normalized = normalizeAuthPayload(payload);
     if (!normalized) return false;
+    const targetPage = normalizeTargetPage(extra.targetPage || normalized.targetPage || payload?.targetPage || payload?.target_page) || getCurrentActivePage() || 'chat';
     applyAuthResponse(normalized, { upgradeCode: extra.upgradeCode || getAuthState().upgradeCode || '' });
     syncAccountUi();
     refreshModeButtons();
@@ -4203,6 +4102,7 @@ function syncUnifiedAuthEntry(){
     await hydrateCloudState(true).catch(() => null);
     refreshStrategicWorkspace().catch(() => {});
     closeAuthGate(true);
+    if (targetPage) setActiveNav(targetPage);
     setAuthGateStatus('', 'info');
     try{ await getCapacitorBrowserPlugin()?.close?.(); }catch(_){}
     toast('✅ تم تسجيل الدخول عبر Google');
@@ -4330,14 +4230,17 @@ function syncUnifiedAuthEntry(){
   }
 
   function buildBrowserGoogleAuthUrl(){
-    const workerRoot = getAuthServiceRoot(getSettings());
+    const settings = getSettings();
+    const workerRoot = getAuthServiceRoot(settings);
     if (!workerRoot) throw new Error('رابط البوابة غير مضبوط لتسجيل Google.');
     const base = getPublicWebAppBaseUrl();
     const url = new URL(BROWSER_AUTH_BRIDGE.webPath, base);
     const nativeReturn = isLikelyNativeAppContext();
+    const targetPage = getCurrentActivePage() || 'chat';
     url.searchParams.set('worker', workerRoot);
+    url.searchParams.set('gateway', getAuthoritativeServiceRoot(settings) || settings.gatewayUrl || '');
     url.searchParams.set('return_to', getBrowserAuthReturnUrl());
-    url.searchParams.set('gateway', getSettings().gatewayUrl || '');
+    url.searchParams.set('target_page', targetPage);
     url.searchParams.set('app', 'AI Workspace Studio');
     if (nativeReturn) url.searchParams.set('native_return', '1');
     url.searchParams.set('ts', String(Date.now()));
@@ -4363,21 +4266,19 @@ function syncUnifiedAuthEntry(){
     }
   }
 
-  function openAuthGate(message = '', { force = false } = {}){
-    if (!force && getAccountRuntimeState().authRequired !== true) return;
+  function openAuthGate(message = ''){
     ensureAccountChrome();
-    $('authGate')?.classList.add('show');
-    setAuthGateStatus(message || 'سجّل الدخول ببريدك الشخصي لفتح الخطة المجانية، أو استخدم بريد الإدارة مع كلمة المرور من نفس الشاشة.', 'info');
-    syncUnifiedAuthEntry();
-    if ($('authCloseBtn')) $('authCloseBtn').style.display = (hasValidAuthSession() || !getAccountRuntimeState().authRequired) ? '' : 'none';
-    renderGoogleButton().catch((error) => {
-      setAuthGateStatus(`تعذر تهيئة تسجيل Google: ${error?.message || error}`, 'error');
-    });
-    loadRemoteAuthConfig(true).then(() => {
+    authGate?.classList.add('show');
+    if (authCloseBtn) authCloseBtn.style.display = hasValidAuthSession() ? '' : 'none';
+    setAuthGateStatus(message || 'جارٍ تهيئة الدخول الآمن...', 'busy');
+    loadRemoteAuthConfig(true).catch(() => getEffectiveAuthConfig()).then(() => {
       syncUnifiedAuthEntry();
       syncAccountPlanControls();
       return renderGoogleButton(true);
-    }).catch(() => null);
+    }).catch((error) => {
+      setAuthGateStatus(`Login initialization failed: ${error?.message || error}`, 'error');
+      return null;
+    });
   }
 
   function closeAuthGate(force = false){
@@ -4530,7 +4431,7 @@ async function submitUnifiedAuthEntry(){
   async function requestUpgradeByEmail(){
     const account = getAuthState();
     if (!hasValidAuthSession(account)){
-      openAuthGate('سجّل الدخول أولاً ثم أرسل طلب الترقية.', { force: true });
+      openAuthGate('سجّل الدخول أولاً ثم أرسل طلب الترقية.');
       return;
     }
     try{
@@ -4549,7 +4450,7 @@ async function submitUnifiedAuthEntry(){
   async function activateUpgradeCodeFromUi(){
     const auth = getAuthState();
     if (!hasValidAuthSession(auth)){
-      openAuthGate('سجّل الدخول أولاً ثم فعّل كود الترقية.', { force: true });
+      openAuthGate('سجّل الدخول أولاً ثم فعّل كود الترقية.');
       return;
     }
     const code = String($('upgradeCodeInput')?.value || '').trim();
@@ -4633,7 +4534,7 @@ async function submitUnifiedAuthEntry(){
     syncAccountUi();
     refreshModeButtons();
     refreshStrategicWorkspace().catch(()=>{});
-    openAuthGate('تم تسجيل الخروج. سجّل الدخول مرة أخرى ببريدك الشخصي للمتابعة.', { force: true });
+    openAuthGate('تم تسجيل الخروج. سجّل الدخول مرة أخرى ببريدك الشخصي للمتابعة.');
   }
 
   let shellResizeTimer = 0;
@@ -4652,7 +4553,7 @@ async function submitUnifiedAuthEntry(){
 
   function openAccountCenter(){
     if (!hasValidAuthSession()){
-      openAuthGate('', { force: true });
+      openAuthGate();
       return;
     }
     setActiveNav('settings');
@@ -4668,8 +4569,8 @@ async function submitUnifiedAuthEntry(){
     if (AUTH_RUNTIME.booting) return;
     AUTH_RUNTIME.booting = true;
     try{
-      await loadRemoteAuthConfig(false).catch(() => null);
-      await verifyStoredAuthSession(false).catch(() => null);
+      await loadRemoteAuthConfig(false);
+      await verifyStoredAuthSession(false);
       syncAccountUi();
       const account = getAccountRuntimeState();
       if (account.authRequired && !hasValidAuthSession()){
@@ -4678,8 +4579,6 @@ async function submitUnifiedAuthEntry(){
         await hydrateCloudState(false).catch(() => null);
         closeAuthGate(true);
       }
-    }catch(_){
-      closeAuthGate(true);
     }finally{
       AUTH_RUNTIME.booting = false;
     }
@@ -4782,18 +4681,17 @@ async function submitUnifiedAuthEntry(){
     });
     $('agentTaskApplyBtn')?.remove();
     const legacyQuickGroup = $('agentTaskTemplate')?.closest('.tool-group')?.nextElementSibling;
-    if (legacyQuickGroup && legacyQuickGroup.querySelector('#scrollTopBtn') == null){
+    if (legacyQuickGroup?.querySelector?.('#scrollTopBtn') == null){
       legacyQuickGroup.style.display = 'none';
     }
 
     const nav = $('nav');
     if (nav && !nav.querySelector('[data-page="guide"]')){
       const guideBtn = document.createElement('button');
-      guideBtn.className = 'navbtn sub';
+      guideBtn.className = 'navbtn';
       guideBtn.dataset.page = 'guide';
-      guideBtn.innerHTML = '<span class="navbtn-icon">📖</span><span class="navbtn-label">دليل الاستخدام</span><span class="meta" id="navGuideMeta">AR</span>';
-      const moreItems = $('moreGroupItems') || nav;
-      moreItems.appendChild(guideBtn);
+      guideBtn.innerHTML = '<span>دليل الاستخدام</span><span class="meta" id="navGuideMeta">AR</span>';
+      nav.appendChild(guideBtn);
     }
 
     const contentRoot = document.querySelector('.content');
@@ -4804,7 +4702,7 @@ async function submitUnifiedAuthEntry(){
       page.innerHTML = `
         <div class="toolbar">
           <input id="guideSearch" type="text" placeholder="ابحث داخل دليل الاستخدام..." style="max-width:320px" />
-          <button class="btn ghost sm with-label" id="guideExportBtn" type="button"><span class="icon">⬇</span><span class="label">تنزيل الدليل</span></button>
+          <button class="btn ghost sm with-label" id="guideExportBtn" type="button"><span class="icon">⬇️</span><span class="label">تنزيل الدليل</span></button>
         </div>
         <div class="guide-shell">
           <aside class="guide-index" id="guideIndex"></aside>
@@ -4862,7 +4760,7 @@ async function submitUnifiedAuthEntry(){
         </div>
         <div class="thread-drawer-toolbar">
           <input id="threadSearchInput" type="text" placeholder="ابحث في السجل..." />
-          <button class="btn ghost sm with-label" id="threadExportAllBtn" type="button"><span class="icon">⬇</span><span class="label">تصدير الكل</span></button>
+          <button class="btn ghost sm with-label" id="threadExportAllBtn" type="button"><span class="icon">⬇️</span><span class="label">تصدير الكل</span></button>
         </div>
         <div class="thread-drawer-list" id="threadDrawerList"></div>`;
       chatPage.appendChild(drawer);
@@ -4874,8 +4772,12 @@ async function submitUnifiedAuthEntry(){
     if (chatPage && !$('chatScrollDock')){
       chatPage.insertAdjacentHTML('beforeend', `
         <div class="floating-scroll-nav" id="chatScrollDock" aria-label="التنقل داخل الدردشة" aria-hidden="true">
+          <button class="scroll-fab" id="floatingScrollTopBtn" type="button" title="الانتقال إلى أعلى الدردشة" aria-label="الانتقال إلى أعلى الدردشة">
+            <span class="icon">⬆️</span>
+            <span class="label">للأعلى</span>
+          </button>
           <button class="scroll-fab" id="floatingScrollBottomBtn" type="button" title="الانتقال إلى أحدث رسالة" aria-label="الانتقال إلى أحدث رسالة">
-            <span class="icon">⬇</span>
+            <span class="icon">⬇️</span>
             <span class="label">للأسفل</span>
           </button>
         </div>`);
@@ -4891,7 +4793,7 @@ async function submitUnifiedAuthEntry(){
             <p>راجع حالة الاتصال، الإعدادات الحالية، ومسارات التحويل من مكان واحد.</p>
             <div class="settings-actions">
               <button class="btn dark sm with-label" id="settingsHealthBtn" type="button"><span class="icon">◎</span><span class="label">فحص الصحة</span></button>
-              <button class="btn ghost sm with-label" id="settingsDefaultsBtn" type="button"><span class="icon">⚙</span><span class="label">تطبيق الإعدادات</span></button>
+              <button class="btn ghost sm with-label" id="settingsDefaultsBtn" type="button"><span class="icon">⚙️</span><span class="label">تطبيق الإعدادات</span></button>
               <button class="btn ghost sm with-label" id="settingsRecommendModelBtn" type="button"><span class="icon">✨</span><span class="label">اقتراح نموذج</span></button>
             </div>
             <div class="settings-health-output" id="settingsHealthOutput">شغّل الفحص للتحقق من البوابة والنموذج وخدمات التحويل.</div>
@@ -5145,8 +5047,8 @@ async function submitUnifiedAuthEntry(){
       $('topRuntimeBadge').textContent = 'جاهز';
     }
     const fixedCopy = [
-      ['workspaceHeadline', 'مساعدك الذكي للعمل باللغة العربية'],
-      ['workspaceSummary', 'دردش، حلّل ملفاتك، واستخرج النصوص — كل شيء في مكان واحد.'],
+      ['workspaceHeadline', 'ابدأ من مساحة عمل عربية للدردشة والملفات والمعرفة.'],
+      ['workspaceSummary', 'اعمل داخل مشروع واحد مع واجهة منظمة وخيارات تشغيل واضحة.'],
       ['signalProviderNote', 'المزوّد الحالي وطريقة المصادقة'],
       ['signalModelNote', 'مسار النموذج الرئيسي'],
       ['signalContextNote', 'الملفات والمعرفة وذاكرة المشروع'],
@@ -5170,13 +5072,13 @@ async function submitUnifiedAuthEntry(){
       files: '📎 الملفات',
       transcription: '🧾 مختبر الوثائق',
       workflows: '⚡ سير العمل',
-      downloads: '⬇ التحميلات',
-      projects: '🗂 المشاريع',
-      settings: '⚙ الإعدادات',
+      downloads: '⬇️ التحميلات',
+      projects: '🗂️ المشاريع',
+      settings: '⚙️ الإعدادات',
       guide: '📘 دليل الاستخدام'
     };
     document.querySelectorAll('.navbtn[data-page]').forEach((btn) => {
-      const label = btn.querySelector('.navbtn-label') || btn.querySelector('span:not(.meta):not(.navbtn-icon)');
+      const label = btn.querySelector('span:not(.meta)');
       if (label && navLabels[btn.dataset.page]) label.textContent = navLabels[btn.dataset.page];
     });
 
@@ -5193,7 +5095,7 @@ async function submitUnifiedAuthEntry(){
         launch_plan: 'خطة إطلاق',
         pm_review: 'مراجعة منتج'
       };
-      if (labels[key] && btn.children.length === 0) btn.textContent = labels[key];
+      if (labels[key]) btn.textContent = labels[key];
     });
   }
 
@@ -5285,7 +5187,7 @@ async function submitUnifiedAuthEntry(){
       lines.push('');
     });
     downloadBlob(`${(thread.title || 'chat').replace(/[^\w\u0600-\u06FF\-]+/g,'_')}.md`, new Blob([lines.join('\n')], { type:'text/markdown;charset=utf-8' }));
-    toast('⬇ تم تصدير المحادثة');
+    toast('⬇️ تم تصدير المحادثة');
   }
 
   function exportAllThreads(){
@@ -5296,7 +5198,7 @@ async function submitUnifiedAuthEntry(){
       threads: loadThreads(pid)
     };
     downloadBlob(`threads-${pid}.json`, new Blob([JSON.stringify(payload, null, 2)], { type:'application/json;charset=utf-8' }));
-    toast('⬇ تم تصدير سجل المشروع');
+    toast('⬇️ تم تصدير سجل المشروع');
   }
 
   function renderThreadHistory(){
@@ -5606,7 +5508,7 @@ async function submitUnifiedAuthEntry(){
       out.push('');
     });
     downloadBlob('دليل-الاستخدام-العربي.md', new Blob([out.join('\n')], { type:'text/markdown;charset=utf-8' }));
-    toast('⬇ تم تنزيل دليل الاستخدام');
+    toast('⬇️ تم تنزيل دليل الاستخدام');
   }
 
   function syncTranscribeControls(){
@@ -5682,10 +5584,14 @@ async function submitUnifiedAuthEntry(){
     if (runtimeBadge) runtimeBadge.textContent = `${settings.provider.toUpperCase()} • ${policy.freeMode ? 'مجاني' : getCostGuardLabel(policy.costGuard)}`;
     if ($('curProjectName')) $('curProjectName').textContent = project.name;
     if ($('workspaceHeadline')){
-      $('workspaceHeadline').textContent = 'مساعدك الذكي للعمل باللغة العربية';
+      $('workspaceHeadline').textContent = messageCount
+        ? `تابع العمل على ${project.name} من شاشة دردشة واسعة وواضحة.`
+        : 'ابدأ مشروعًا جديدًا أو افتح مشروعًا موجودًا لمتابعة العمل.';
     }
     if ($('workspaceSummary')){
-      $('workspaceSummary').textContent = 'دردش، حلّل ملفاتك، واستخرج النصوص — كل شيء في مكان واحد.';
+      const briefPart = hasProjectBrief(brief) ? ` • الذاكرة: ${summarizeProjectBrief(brief)}` : '';
+      const policyPart = policy.blockedReason ? ` • تنبيه: ${policy.blockedReason}` : '';
+      $('workspaceSummary').textContent = `التشغيل الفعلي ${policy.modeLabel} • المزوّد ${settings.provider} • النموذج ${getDisplayModelName(settings.model)} • القدرات ${modelCapabilitySummary} • ${files.length} ملفًا • ${chunks} مقطع معرفة • ${downloads} ملفًا مؤرشفًا${briefPart}${policyPart}.`;
     }
     if ($('signalProvider')) $('signalProvider').textContent = settings.provider.toUpperCase();
     if ($('signalProviderNote')) $('signalProviderNote').textContent = `${readiness} • ${settings.authMode === 'gateway' ? 'اتصال محمي عبر البوابة' : 'اتصال مباشر من المتصفح'}`;
@@ -8413,70 +8319,27 @@ ${clip}` });
     toast('✅ تم إرسال الرد إلى اللوحة');
   }
 
-  const PROMPT_CHIPS = [
-    'اشرح لي مفهوم ',
-    'ساعدني في كتابة ',
-    'لخّص هذا النص:\n',
-    'اكتب خطة عمل لـ ',
-    'ترجم هذا النص إلى العربية:\n',
-    'راجع هذا الكود وأصلح الأخطاء:\n',
-  ];
-
-  function fillPromptChip(text){
-    const input = $('chatInput');
-    if (!input) return;
-    input.value = text;
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    resizeComposerInput(input);
-    input.focus();
-    const len = text.length;
-    input.setSelectionRange(len, len);
-  }
-
   function renderEmptyChatState(log){
     if (!log) return;
-    const state = document.createElement('div');
-    state.className = 'empty-chat-state empty-chat-state--compact';
-    state.innerHTML = `
-      <div class="empty-chat-title">المساحة جاهزة لبحث، منتج، أو خطة تنفيذ.</div>
-      <div class="empty-chat-text">ابدأ من اللوحة العليا أو اكتب الهدف مباشرة. سيستخدم التطبيق الملفات، المعرفة، وملحقات المحادثة لبناء استجابة أوضح وأكثر احترافية.</div>
-      <div class="empty-chat-points">
-        <div class="empty-chat-point" data-chip="0">
-          <strong>مخرجات مريحة للقراءة</strong>
-          <span>تقارير، ملخصات، وخطط عمل مكتوبة بطريقة واضحة ومريحة للقراءة الطويلة.</span>
+    log.innerHTML = `
+      <div class="empty-chat-state empty-chat-state--compact">
+        <div class="empty-chat-title">المساحة جاهزة لبحث، منتج، أو خطة تنفيذ.</div>
+        <div class="empty-chat-text">ابدأ من اللوحة العليا أو اكتب الهدف مباشرة. سيستخدم التطبيق الملفات، المعرفة، وملحقات المحادثة لبناء استجابة أوضح وأكثر احترافية.</div>
+        <div class="empty-chat-points">
+          <div class="empty-chat-point">
+            <strong>مخرجات مريحة للقراءة</strong>
+            <span>تقارير، ملخصات، وخطط عمل مكتوبة بطريقة واضحة ومريحة للقراءة الطويلة.</span>
+          </div>
+          <div class="empty-chat-point">
+            <strong>سياق غني</strong>
+            <span>الملفات، قاعدة المعرفة، والمرفقات تندمج داخل نفس سياق التشغيل بدل الدردشة المعزولة.</span>
+          </div>
+          <div class="empty-chat-point">
+            <strong>جاهز للتنفيذ</strong>
+            <span>استخدم القوالب، سير العمل، ونمط الوكيل لتحويل الطلب إلى مخرجات تنفيذية قابلة للاستخدام.</span>
+          </div>
         </div>
-        <div class="empty-chat-point" data-chip="1">
-          <strong>سياق غني</strong>
-          <span>الملفات، قاعدة المعرفة، والمرفقات تندمج داخل نفس سياق التشغيل بدل الدردشة المعزولة.</span>
-        </div>
-        <div class="empty-chat-point" data-chip="2">
-          <strong>جاهز للتنفيذ</strong>
-          <span>استخدم القوالب، سير العمل، ونمط الوكيل لتحويل الطلب إلى مخرجات تنفيذية قابلة للاستخدام.</span>
-        </div>
-      </div>
-      <div class="prompt-chips" id="emptyChatChips"></div>`;
-    log.innerHTML = '';
-    log.appendChild(state);
-
-    const chipsContainer = state.querySelector('#emptyChatChips');
-    PROMPT_CHIPS.forEach((txt) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'prompt-chip';
-      btn.textContent = txt.trim().replace(/\n$/, '') + '…';
-      btn.addEventListener('click', () => fillPromptChip(txt));
-      chipsContainer.appendChild(btn);
-    });
-
-    state.querySelectorAll('.empty-chat-point[data-chip]').forEach((point) => {
-      const chipIdx = Number(point.dataset.chip);
-      const chipTexts = [
-        'اكتب تقريراً احترافياً عن ',
-        'ساعدني في كتابة ',
-        'اكتب خطة تنفيذية لـ ',
-      ];
-      point.addEventListener('click', () => fillPromptChip(chipTexts[chipIdx] || PROMPT_CHIPS[0]));
-    });
+      </div>`;
   }
 
   function renderChat(){
@@ -8500,13 +8363,7 @@ ${clip}` });
       b.dataset.mid = m.id || '';
       const meta = document.createElement('div');
       meta.className = 'meta';
-      const roleBadge = document.createElement('span');
-      roleBadge.className = 'bubble-role-badge';
-      roleBadge.textContent = m.role === 'user' ? '👤 أنت' : '🤖 المساعد';
-      const metaText = document.createElement('span');
-      metaText.textContent = formatMessageMetaLine(m);
-      meta.appendChild(roleBadge);
-      meta.appendChild(metaText);
+      meta.textContent = formatMessageMetaLine(m);
 
       const body = document.createElement('div');
       body.className = 'body';
@@ -8669,13 +8526,7 @@ ${clip}` });
 
       const meta = document.createElement('div');
       meta.className = 'meta';
-      const roleBadge2 = document.createElement('span');
-      roleBadge2.className = 'bubble-role-badge';
-      roleBadge2.textContent = m.role === 'user' ? '👤 أنت' : '🤖 المساعد';
-      const metaText2 = document.createElement('span');
-      metaText2.textContent = formatMessageMetaLine(m);
-      meta.appendChild(roleBadge2);
-      meta.appendChild(metaText2);
+      meta.textContent = formatMessageMetaLine(m);
 
       const body = document.createElement('div');
       body.className = 'body';
@@ -8713,17 +8564,10 @@ ${clip}` });
         actions.appendChild(canvasBtn);
 
         const speakBtn = document.createElement('button');
-        speakBtn.className = 'speak-btn';
-        speakBtn.innerHTML = '<span class="speak-icon">🔊</span><span>استماع</span>';
-        speakBtn.title = 'استماع للرد بصوت عربي';
-        speakBtn.addEventListener('click', async () => {
-          const wasSpeaking = speakBtn.classList.contains('speaking');
-          if (wasSpeaking){ window._ttsStop?.(); speakBtn.classList.remove('speaking'); return; }
-          speakBtn.classList.add('speaking');
-          speakBtn.querySelector('.speak-icon').textContent = '⏹️';
-          const played = await speakAssistantReply(m.content || '', { force: true });
-          speakBtn.classList.remove('speaking');
-          speakBtn.querySelector('.speak-icon').textContent = '🔊';
+        speakBtn.className = 'btn ghost sm';
+        speakBtn.textContent = 'استماع';
+        speakBtn.addEventListener('click', () => {
+          const played = speakAssistantReply(m.content || '', { force: true });
           if (!played) toast('⚠️ التشغيل الصوتي غير متاح لهذا الرد.');
         });
         actions.appendChild(speakBtn);
@@ -8741,8 +8585,8 @@ ${clip}` });
           const info = document.createElement('span');
           info.className = 'hint';
           info.textContent = downloadState.newCount
-            ? `⬇ تمت إضافة ${downloadState.newCount} ملف جديد`
-            : `⬇ ${downloadState.entries.length} ملف قابل للتنزيل`;
+            ? `⬇️ تمت إضافة ${downloadState.newCount} ملف جديد`
+            : `⬇️ ${downloadState.entries.length} ملف قابل للتنزيل`;
           actions.appendChild(info);
         }
       }
@@ -9454,7 +9298,7 @@ async function runResearchAgent(topicOverride){
         html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title></head><body><pre style="white-space:pre-wrap">${escapeHtml(content)}</pre></body></html>`;
       }
       downloadBlob(`${title}.html`, new Blob([html], { type:'text/html;charset=utf-8' }));
-      return toast('⬇ تم تصدير HTML');
+      return toast('⬇️ تم تصدير HTML');
     }
     if (kind === 'docx'){
       const fn = window.htmlToDocx || window.HTMLtoDOCX || null;
@@ -9462,12 +9306,12 @@ async function runResearchAgent(topicOverride){
       const html = `<h1>${escapeHtml(title)}</h1><div>${renderMarkdown(content)}</div>`;
       Promise.resolve(fn(html)).then((blob) => {
         downloadBlob(`${title}.docx`, toDocxBlob(blob));
-        toast('⬇ تم تصدير DOCX');
+        toast('⬇️ تم تصدير DOCX');
       }).catch((e)=> toast('DOCX فشل: ' + (e?.message||e)));
       return;
     }
     downloadBlob(`${title}.txt`, new Blob([content], { type:'text/plain;charset=utf-8' }));
-    toast('⬇ تم تصدير TXT');
+    toast('⬇️ تم تصدير TXT');
   }
 
   // ---------------- Files page ----------------
@@ -10088,41 +9932,14 @@ let pinOnly = false;
   }
 
   // ---------------- Navigation ----------------
-  const NAV_GROUPS = {
-    tools: ['canvas','transcription','workflows'],
-    more:  ['knowledge','downloads','settings','guide']
-  };
-
   function setActiveNav(page){
     if (page !== 'chat' && composerListening) stopComposerDictation();
-    document.querySelectorAll('.navbtn[data-page]').forEach(b => {
-      const isActive = b.dataset.page === page;
-      b.classList.toggle('active', isActive);
-      b.setAttribute('aria-current', isActive ? 'page' : 'false');
-    });
+    document.querySelectorAll('.navbtn').forEach(b => b.classList.toggle('active', b.dataset.page === page));
     document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === `page-${page}`));
-    const titles = { chat:'الدردشة', knowledge:'قاعدة المعرفة', canvas:'اللوحة', files:'الملفات', transcription:'التفريغ النصي', workflows:'سير العمل', downloads:'التنزيل', projects:'المشاريع', guide:'دليل الاستخدام', settings:'الإعدادات' };
+    const titles = { chat:'الدردشة', knowledge:'المعرفة (KB)', canvas:'اللوحة', files:'الملفات', transcription:'مختبر الوثائق', workflows:'سير العمل', downloads:'التحديث والتنزيل', projects:'المشاريع', guide:'دليل الاستخدام', settings:'الإعدادات' };
     $('topTitle').textContent = titles[page] || 'استوديو الذكاء';
-    if (NAV_GROUPS.tools.includes(page)) expandNavGroup('toolsGroup');
-    if (NAV_GROUPS.more.includes(page)) expandNavGroup('moreGroup');
     refreshStrategicWorkspace().catch(()=>{});
     scheduleChatScrollDockSync();
-  }
-
-  function expandNavGroup(groupId){
-    const group = $(groupId);
-    if (!group) return;
-    group.classList.add('open');
-    const toggle = group.querySelector('.nav-group-toggle');
-    if (toggle) toggle.setAttribute('aria-expanded','true');
-  }
-
-  function toggleNavGroup(groupId){
-    const group = $(groupId);
-    if (!group) return;
-    const isOpen = group.classList.toggle('open');
-    const toggle = group.querySelector('.nav-group-toggle');
-    if (toggle) toggle.setAttribute('aria-expanded', String(isOpen));
   }
 
   function refreshNavMeta(){
@@ -10272,7 +10089,7 @@ let pinOnly = false;
     const profile = model.capabilities || buildModelCapabilityProfile(model);
     const keys = getEnabledCapabilityKeys(profile);
     if (!keys.length) return 'ط¹ط§ظ…';
-    return keys.slice(0, Math.max(1, limit)).map(getModelCapabilityLabel).join(' • ');
+    return keys.slice(0, Math.max(1, limit)).map(getModelCapabilityLabel).join(' â€¢ ');
   }
   function getModelRoutingNote(model = {}){
     const profile = model.capabilities || buildModelCapabilityProfile(model);
@@ -10592,14 +10409,13 @@ let pinOnly = false;
     $('closeSideBtn').addEventListener('click', closeSide);
     back.addEventListener('click', closeSide);
     $('accountTriggerBtn')?.addEventListener('click', openAccountCenter);
-    $('accountSignInBtn')?.addEventListener('click', () => openAuthGate('', { force: true }));
+    $('accountSignInBtn')?.addEventListener('click', () => openAuthGate());
     $('accountUpgradeRequestBtn')?.addEventListener('click', requestUpgradeByEmail);
     $('accountLogoutBtn')?.addEventListener('click', logoutCurrentAccount);
     $('activateUpgradeBtn')?.addEventListener('click', activateUpgradeCodeFromUi);
     $('adminGenerateUpgradeBtn')?.addEventListener('click', generateAdminUpgradeCodeFromUi);
     $('adminCopyUpgradeBtn')?.addEventListener('click', copyAdminUpgradeCode);
     $('authEntrySubmitBtn')?.addEventListener('click', submitUnifiedAuthEntry);
-    $('authEntryForm')?.addEventListener('submit', (e) => { e.preventDefault(); submitUnifiedAuthEntry(); });
     $('authRetryBtn')?.addEventListener('click', async () => {
       AUTH_RUNTIME.config = null;
       await loadRemoteAuthConfig(true);
@@ -10639,12 +10455,6 @@ let pinOnly = false;
     $('nav').addEventListener('click', (e) => {
       const btn = e.target.closest('.navbtn');
       if (!btn) return;
-      if (btn.classList.contains('nav-group-toggle')) {
-        const group = btn.closest('.nav-group');
-        if (group) toggleNavGroup(group.id);
-        return;
-      }
-      if (!btn.dataset.page) return;
       setActiveNav(btn.dataset.page);
       closeSide();
       if (btn.dataset.page === 'downloads') renderDownloads();
@@ -10759,25 +10569,6 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
 
     // chat
     
-    // Workspace quick-action buttons (home screen)
-    $('wqaChat') && $('wqaChat').addEventListener('click', () => {
-      if ($('workspaceDeck')) $('workspaceDeck').classList.add('workspace-deck-collapsed');
-      const inp = $('chatInput');
-      if (inp) {
-        inp.focus();
-        inp.scrollIntoView({ behavior: 'smooth', block: 'end' });
-      }
-    });
-    $('wqaFiles') && $('wqaFiles').addEventListener('click', openChatAttachmentPicker);
-
-    // Workspace nav shortcut cards
-    document.querySelectorAll('.wnav-card[data-page]').forEach((card) => {
-      card.addEventListener('click', () => {
-        const page = card.dataset.page;
-        if (page) setActiveNav(page);
-      });
-    });
-
     // Chat attachments (inline)
     $('chatAttachBtn') && $('chatAttachBtn').addEventListener('click', openChatAttachmentPicker);
     $('chatAttachFiles') && $('chatAttachFiles').addEventListener('change', (e) => {
@@ -10793,6 +10584,7 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
     $('agentTaskTemplate') && $('agentTaskTemplate').addEventListener('change', applyAgentTaskTemplate);
     $('scrollTopBtn') && $('scrollTopBtn').addEventListener('click', () => scrollChat('top'));
     $('scrollBottomBtn') && $('scrollBottomBtn').addEventListener('click', () => scrollChat('bottom'));
+    $('floatingScrollTopBtn') && $('floatingScrollTopBtn').addEventListener('click', () => scrollChat('top'));
     $('floatingScrollBottomBtn') && $('floatingScrollBottomBtn').addEventListener('click', () => scrollChat('bottom'));
     $('chatLog') && $('chatLog').addEventListener('scroll', scheduleChatScrollDockSync, { passive:true });
 
@@ -11305,7 +11097,7 @@ ${txt}`;
               : 'اكتمل التحويل عبر المسار السحابي الهيكلي. راجع النتيجة إذا كان المستند يحتوي على جداول أو هوامش معقدة.'
           });
         }
-        toast('⬇ تم تنزيل ملف Word قابل للتعديل');
+        toast('⬇️ تم تنزيل ملف Word قابل للتعديل');
       }catch(e){
         const friendly = getFriendlyDocxCloudError(e);
         updateTranscribeLabState({ engine:'فشل التحويل', quality:'توقف', note:friendly });
@@ -11406,10 +11198,6 @@ ${e?.message||e}`, false);
 
   // ---------------- Init ----------------
   function init(){
-    // Clear stale auth config cache so DEFAULT_AUTH_CONFIG.authRequired=false takes effect
-    try{ localStorage.removeItem(KEYS.authConfigCache); }catch(_){}
-    AUTH_RUNTIME.config = null;
-
     loadProjects();
     const pid = getCurProjectId();
     loadThreads(pid);
@@ -11454,18 +11242,10 @@ ${e?.message||e}`, false);
     applyShellLayout();
     initializeAuthExperience().catch(()=>{});
     refreshStrategicWorkspace().catch(()=>{});
-
-    try{
-      if ('speechSynthesis' in window){
-        window.speechSynthesis.getVoices();
-        window.speechSynthesis.addEventListener('voiceschanged', () => {
-          window.speechSynthesis.getVoices();
-        }, { once: true });
-      }
-    }catch(_){}
   }
 
   init();
 })();
+
 
 
