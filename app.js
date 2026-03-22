@@ -154,7 +154,7 @@
     voiceRecognitionModel: 'gpt-4o-mini-transcribe',
     voiceSynthesisModel: 'gpt-4o-mini-tts',
     voiceSynthesisVoice: 'alloy',
-    voicePreferredLanguage: 'ar',
+    voicePreferredLanguage: 'ar-SA',
     voicePremiumOnly: false
   };
 
@@ -233,6 +233,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
+  const DEFAULT_POST_LOGIN_PAGE = 'chat';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
     KEYS.authState,
@@ -778,7 +779,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       recognitionModel: String(config.voiceRecognitionModel || DEFAULT_AUTH_CONFIG.voiceRecognitionModel).trim(),
       synthesisModel: String(config.voiceSynthesisModel || DEFAULT_AUTH_CONFIG.voiceSynthesisModel).trim(),
       synthesisVoice: String(config.voiceSynthesisVoice || DEFAULT_AUTH_CONFIG.voiceSynthesisVoice).trim(),
-      preferredLanguage: String(config.voicePreferredLanguage || DEFAULT_AUTH_CONFIG.voicePreferredLanguage).trim() || 'ar',
+      preferredLanguage: String(config.voicePreferredLanguage || DEFAULT_AUTH_CONFIG.voicePreferredLanguage).trim() || 'ar-SA',
       premiumOnly,
       eligible
     };
@@ -2370,6 +2371,17 @@ function scheduleChatScrollDockSync(){
   });
 }
 
+function getChatScrollContainer(){
+  const page = $('page-chat');
+  const log = $('chatLog');
+  if (!page) return log;
+  if (!log) return page;
+  const pageRange = Math.max(0, Number(page.scrollHeight - page.clientHeight || 0));
+  const logRange = Math.max(0, Number(log.scrollHeight - log.clientHeight || 0));
+  if (window.innerWidth <= 980 && pageRange > 120 && pageRange >= logRange) return page;
+  return logRange > 0 ? log : page;
+}
+
 function syncStickyShellMetrics(){
   const root = document.documentElement;
   const topbar = document.querySelector('.topbar');
@@ -2398,27 +2410,28 @@ function scrollChatToBottom(){
 
 function syncChatScrollDock(){
   const dock = $('chatScrollDock');
+  const scroller = getChatScrollContainer();
   const log = $('chatLog');
-  if (!dock || !log) return;
+  if (!dock || !scroller) return;
   const activeChat = !!document.querySelector('#page-chat.page.active');
   const drawer = $('threadDrawer');
   const side = $('side');
   const drawerOpen = !!(drawer && drawer.classList.contains('show'));
   const sideOpen = !!(side && side.classList.contains('show'));
   const keyboardEditing = document.body.classList.contains('keyboardEditing');
-  const hasMessages = log.querySelectorAll('.bubble').length > 0;
-  const isMobile = window.innerWidth <= 640;
-  const scrollTop = isMobile
-    ? Math.max(0, window.scrollY || document.documentElement.scrollTop || 0)
-    : Math.max(0, Number(log.scrollTop || 0));
-  const scrollHeight = isMobile ? document.documentElement.scrollHeight : log.scrollHeight;
-  const clientHeight = isMobile ? window.innerHeight : log.clientHeight;
-  const canScroll = hasMessages && (scrollHeight - clientHeight) > 120;
+  const hasMessages = (log?.querySelectorAll('.bubble').length || 0) > 0;
+  const canScroll = (scroller.scrollHeight - scroller.clientHeight) > 120;
   const visible = activeChat && canScroll && !keyboardEditing && !drawerOpen && !sideOpen;
   dock.classList.toggle('show', visible);
   dock.setAttribute('aria-hidden', visible ? 'false' : 'true');
-  const nearBottom = (scrollHeight - clientHeight - scrollTop) <= 60;
-  if ($('floatingScrollBottomBtn')) $('floatingScrollBottomBtn').disabled = !visible || nearBottom;
+
+  const top = Math.max(0, Number(scroller.scrollTop || 0));
+  const max = Math.max(0, Number(scroller.scrollHeight - scroller.clientHeight || 0));
+  const nearTop = top <= 24;
+  const nearBottom = (max - top) <= 24;
+
+  if ($('floatingScrollTopBtn')) $('floatingScrollTopBtn').disabled = !visible || !hasMessages || nearTop;
+  if ($('floatingScrollBottomBtn')) $('floatingScrollBottomBtn').disabled = !visible || !hasMessages || nearBottom;
 }
 
 function applyShellLayout(){
@@ -2816,7 +2829,7 @@ function applyShellLayout(){
         text,
         model: voice.synthesisModel,
         voice: voice.synthesisVoice,
-        language: voice.preferredLanguage || getPreferredSpeechLanguage()
+        language: getSpeechLanguageForText(text, voice.preferredLanguage || getPreferredSpeechLanguage())
       })
     }, settings);
     const audioBlob = await response.blob();
@@ -2858,7 +2871,7 @@ function applyShellLayout(){
     const input = $('chatInput');
     if (!voice.sttReady || !input) return false;
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined'){
-      return false;
+      return { success:false, fallbackAllowed:true, cancelled:false };
     }
 
     let stream = null;
@@ -2872,7 +2885,7 @@ function applyShellLayout(){
       });
     }catch(error){
       toast(`تعذّر الوصول إلى الميكروفون: ${error?.message || error}`);
-      return false;
+      return { success:false, fallbackAllowed:true, cancelled:false };
     }
 
     cleanupCloudVoiceCapture();
@@ -3011,6 +3024,103 @@ function applyShellLayout(){
       .trim();
   }
 
+  function containsArabicText(value = ''){
+    return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/.test(String(value || ''));
+  }
+
+  function getSpeechLanguageForText(value = '', fallback = getPreferredSpeechLanguage()){
+    const preferred = String(fallback || 'ar-SA').trim() || 'ar-SA';
+    if (containsArabicText(value)) return /^ar(?:-|$)/i.test(preferred) ? preferred : 'ar-SA';
+    return preferred;
+  }
+
+  function splitTextForSpeech(text = '', maxLen = 220){
+    const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!normalized) return [];
+    if (normalized.length <= maxLen) return [normalized];
+    const parts = normalized
+      .split(/(?<=[\.\!\?\u061F\u060C:؛])\s+/)
+      .map((item) => String(item || '').trim())
+      .filter(Boolean);
+    if (!parts.length) return [normalized];
+    const out = [];
+    let current = '';
+    for (const part of parts){
+      if (!current){
+        current = part;
+        continue;
+      }
+      if ((`${current} ${part}`).trim().length <= maxLen){
+        current = `${current} ${part}`.trim();
+        continue;
+      }
+      out.push(current);
+      if (part.length <= maxLen){
+        current = part;
+        continue;
+      }
+      const words = part.split(/\s+/).filter(Boolean);
+      let chunk = '';
+      for (const word of words){
+        const next = `${chunk} ${word}`.trim();
+        if (next.length > maxLen && chunk){
+          out.push(chunk);
+          chunk = word;
+        } else {
+          chunk = next;
+        }
+      }
+      current = chunk;
+    }
+    if (current) out.push(current);
+    return out.filter(Boolean);
+  }
+
+  async function speakWithBrowserSpeechSynthesis(text, preferredLang){
+    const parts = splitTextForSpeech(text);
+    if (!parts.length) return false;
+    return await new Promise((resolve) => {
+      let index = 0;
+      const language = getSpeechLanguageForText(text, preferredLang);
+      const speakNext = () => {
+        if (index >= parts.length){
+          VOICE_RUNTIME.speaking = false;
+          VOICE_RUNTIME.utterance = null;
+          scheduleVoiceConversationRestart(700);
+          resolve(true);
+          return;
+        }
+        const utter = new SpeechSynthesisUtterance(parts[index]);
+        utter.lang = language;
+        utter.voice = chooseSpeechSynthesisVoice(language) || chooseSpeechSynthesisVoice('ar-SA') || chooseSpeechSynthesisVoice('ar');
+        utter.rate = 0.92;
+        utter.pitch = 1;
+        utter.onstart = () => {
+          VOICE_RUNTIME.speaking = true;
+          VOICE_RUNTIME.utterance = utter;
+        };
+        utter.onend = () => {
+          index += 1;
+          window.setTimeout(speakNext, 40);
+        };
+        utter.onerror = () => {
+          VOICE_RUNTIME.speaking = false;
+          VOICE_RUNTIME.utterance = null;
+          resolve(false);
+        };
+        try{
+          window.speechSynthesis.resume?.();
+          window.speechSynthesis.speak(utter);
+        }catch(_){
+          VOICE_RUNTIME.speaking = false;
+          VOICE_RUNTIME.utterance = null;
+          resolve(false);
+        }
+      };
+      speakNext();
+    });
+  }
+
   async function stopVoicePlayback(){
     clearVoiceRestartTimer();
     const nativeTts = getNativeTextToSpeechPlugin();
@@ -3059,7 +3169,7 @@ function applyShellLayout(){
     }
 
     const nativeTts = getNativeTextToSpeechPlugin();
-    const lang = await resolveSpeechSynthesisLanguage(nativeTts);
+    const lang = getSpeechLanguageForText(text, await resolveSpeechSynthesisLanguage(nativeTts));
     const nativeLang = await ensureNativeArabicTtsLanguage(nativeTts, lang);
 
     if (nativeTts?.speak){
@@ -3088,40 +3198,7 @@ function applyShellLayout(){
       return false;
     }
 
-    await waitForSpeechVoices(2000);
-
-    return await new Promise((resolve) => {
-      const isArabicLang = /^ar/i.test(lang || '');
-      const utterLang = isArabicLang ? (lang || 'ar-SA') : lang;
-      const bestVoice = chooseSpeechSynthesisVoice(utterLang) || (isArabicLang ? chooseSpeechSynthesisVoice('ar-SA') : null);
-      const utter = new SpeechSynthesisUtterance(text);
-      utter.lang = utterLang;
-      if (bestVoice) utter.voice = bestVoice;
-      utter.rate = isArabicLang ? 0.88 : 0.92;
-      utter.pitch = isArabicLang ? 1.05 : 1;
-      utter.volume = 1;
-      utter.onstart = () => { VOICE_RUNTIME.speaking = true; };
-      utter.onend = () => {
-        VOICE_RUNTIME.speaking = false;
-        VOICE_RUNTIME.utterance = null;
-        scheduleVoiceConversationRestart(700);
-        resolve(true);
-      };
-      utter.onerror = () => {
-        VOICE_RUNTIME.speaking = false;
-        VOICE_RUNTIME.utterance = null;
-        resolve(false);
-      };
-      VOICE_RUNTIME.utterance = utter;
-      try{ window.speechSynthesis.resume?.(); }catch(_){ }
-      try{
-        window.speechSynthesis.speak(utter);
-      }catch(_){
-        VOICE_RUNTIME.speaking = false;
-        VOICE_RUNTIME.utterance = null;
-        resolve(false);
-      }
-    });
+    return await speakWithBrowserSpeechSynthesis(text, lang);
   }
 
   async function stopComposerDictation(showToast = false){
@@ -3150,7 +3227,7 @@ function applyShellLayout(){
   async function startNativeComposerDictation(){
     const plugin = getNativeSpeechRecognitionPlugin();
     const input = $('chatInput');
-    if (!plugin || !input) return false;
+    if (!plugin || !input) return { success:false, fallbackAllowed:true, cancelled:false };
 
     await resetNativeSpeechSession(plugin);
     const availability = await plugin.available?.().catch(() => ({ available:false }));
@@ -3212,8 +3289,93 @@ function applyShellLayout(){
     return true;
   }
 
+  async function startNativeComposerDictationSafe(){
+    const plugin = getNativeSpeechRecognitionPlugin();
+    const input = $('chatInput');
+    if (!plugin || !input) return { success:false, fallbackAllowed:true, cancelled:false };
+
+    await resetNativeSpeechSession(plugin);
+    const availability = await plugin.available?.().catch(() => ({ available:false }));
+    if (!availability?.available){
+      toast('التعرف الصوتي غير متاح على هذا الجهاز.');
+      return { success:false, fallbackAllowed:true, cancelled:false };
+    }
+
+    const permitted = await ensureNativeSpeechRecognitionPermission(plugin);
+    if (!permitted){
+      toast('يلزم منح إذن الميكروفون لتفعيل الدردشة الصوتية.');
+      return { success:false, fallbackAllowed:true, cancelled:false };
+    }
+
+    const language = await resolveSpeechRecognitionLanguage(plugin);
+    composerDictationBase = String(input.value || '').trimEnd();
+    VOICE_RUNTIME.autoSendArmed = true;
+    composerListening = true;
+    VOICE_RUNTIME.nativeListening = true;
+    VOICE_RUNTIME.continuousConversation = getVoiceModeEnabled();
+    syncVoiceInputButton();
+    showStatus(`الإملاء الصوتي يعمل الآن باللغة ${language}...`, false);
+
+    let transcriptCaptured = false;
+    let cancelled = false;
+    try{
+      const result = await plugin.start({
+        language,
+        maxResults: 1,
+        prompt: getVoiceModeEnabled() ? 'ابدأ الحديث الآن' : 'تحدث الآن',
+        partialResults: false,
+        popup: true
+      });
+      const transcript = Array.isArray(result?.matches)
+        ? result.matches.map((item) => String(item || '').trim()).filter(Boolean).join(' ')
+        : '';
+      if (transcript){
+        transcriptCaptured = true;
+        input.value = [composerDictationBase, transcript].filter(Boolean).join(composerDictationBase ? '\n' : '');
+        resizeComposerInput(input);
+        syncComposerMeta();
+      }
+    }catch(error){
+      const message = String(error?.message || error || '').trim();
+      cancelled = /cancel/i.test(message);
+      if (!cancelled) toast(`تعذر الإملاء الصوتي: ${message || 'unknown'}`);
+    }finally{
+      VOICE_RUNTIME.nativeListening = false;
+      composerListening = false;
+      await resetNativeSpeechSession(plugin);
+      syncVoiceInputButton();
+      showStatus('', false);
+      const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && String(input.value || '').trim();
+      VOICE_RUNTIME.autoSendArmed = false;
+      if (shouldAutoSend){
+        window.setTimeout(() => {
+          if (String($('chatInput')?.value || '').trim()) void sendMessage();
+        }, 90);
+      } else if (transcriptCaptured && shouldKeepContinuousVoiceLoop()){
+        scheduleVoiceConversationRestart(550);
+      } else if (!cancelled && shouldKeepContinuousVoiceLoop()){
+        scheduleVoiceConversationRestart(550);
+      }
+    }
+
+    return {
+      success: transcriptCaptured,
+      fallbackAllowed: !cancelled,
+      cancelled
+    };
+  }
+
   async function startComposerDictation(){
-    if (isNativePlatform() && await startNativeComposerDictation()) return true;
+    const voice = getVoiceCloudConfig();
+    const preferCloudForWeb = !isNativePlatform() && voice.sttReady;
+
+    if (isNativePlatform()){
+      const nativeResult = await startNativeComposerDictationSafe();
+      if (nativeResult?.success) return true;
+      if (nativeResult?.fallbackAllowed && voice.sttReady && await startCloudComposerDictation()) return true;
+      if (nativeResult?.cancelled) return false;
+    }
+    if (preferCloudForWeb && await startCloudComposerDictation()) return true;
 
     const Ctor = getSpeechRecognitionCtor();
     if (Ctor){
@@ -3453,9 +3615,12 @@ function refreshDeepSearchBtn(){
   }
 
   function resizeComposerInput(input = $('chatInput')){
-    if (!input || input.tagName !== 'TEXTAREA') return;
-    input.style.height = 'auto';
-    input.style.height = `${Math.min(220, Math.max(58, input.scrollHeight))}px`;
+    if (!input) return;
+    if (input.tagName === 'TEXTAREA'){
+      input.style.height = 'auto';
+      input.style.height = `${Math.min(220, Math.max(58, input.scrollHeight))}px`;
+    }
+    scheduleShellLayoutRefresh();
   }
 
   function getBrandMarkHtml(){
@@ -3672,16 +3837,8 @@ function refreshDeepSearchBtn(){
   async function startNativeGoogleButtonFlow(){
     try{
       NATIVE_GOOGLE_RUNTIME.lastDialogMessage = '';
-      setAuthGateStatus('جارٍ فتح تسجيل Google الأصلي على Android...', 'busy');
-      const plugin = await ensureNativeGoogleAuthReady();
-      if (!plugin){
-        throw new Error('Google Sign-In غير متاح داخل نسخة Android الحالية.');
-      }
-      const result = await plugin.signInWithGoogleButtonFlowForNativePlatform();
-      const success = await handleNativeGoogleSignInResult(result);
-      if (!success && String(result?.noSuccess?.noSuccessReasonCode || '').trim() === 'SIGN_IN_CANCELLED'){
-        setAuthGateStatus('تم إلغاء تسجيل الدخول من Google.', 'info');
-      }
+      setAuthGateStatus('جارٍ فتح تسجيل Google عبر المتصفح ثم العودة إلى التطبيق...', 'busy');
+      await openGoogleAuthInBrowser();
     }catch(error){
       setAuthGateStatus(`تعذر فتح تسجيل Google على Android: ${error?.message || error}`, 'error');
     }
@@ -3697,22 +3854,6 @@ function refreshDeepSearchBtn(){
         <div class="hint">سيتم فتح متصفح الجهاز لتسجيل الدخول ثم العودة إلى التطبيق تلقائيًا.</div>
       </div>`;
     $('nativeGoogleSignInBtn')?.addEventListener('click', startNativeGoogleButtonFlow);
-    const nativeGoogleBtn = $('nativeGoogleSignInBtn');
-    if (nativeGoogleBtn){
-      const label = nativeGoogleBtn.querySelector('span:last-child');
-      if (label) label.textContent = 'المتابعة باستخدام Google على هذا الجهاز';
-      const fallbackBtn = document.createElement('button');
-      fallbackBtn.className = 'soft-btn';
-      fallbackBtn.type = 'button';
-      fallbackBtn.id = 'nativeGoogleBrowserFallbackBtn';
-      fallbackBtn.textContent = 'استخدام المتصفح كخيار بديل';
-      fallbackBtn.addEventListener('click', openGoogleAuthInBrowser);
-      nativeGoogleBtn.insertAdjacentElement('afterend', fallbackBtn);
-    }
-    const nativeHint = slot.querySelector('.hint');
-    if (nativeHint){
-      nativeHint.textContent = 'سيستخدم التطبيق تسجيل Google الأصلي داخل Android أولًا. إذا فشل، يمكنك فتح المتصفح كخيار بديل.';
-    }
   }
 
   function setAuthGateStatus(message, tone = 'info'){
@@ -3950,6 +4091,22 @@ function refreshDeepSearchBtn(){
           </div>
         </div>`);
     }
+    refineAuthGateLayout();
+  }
+
+  function refineAuthGateLayout(){
+    const gate = $('authGate');
+    if (!gate || gate.dataset.cleaned === '1') return;
+    gate.dataset.cleaned = '1';
+    const heroCopy = gate.querySelector('.auth-copy');
+    if (heroCopy) heroCopy.textContent = 'استخدم بريدك للدخول السريع. البريد الإداري يفعّل نفس النموذج بصلاحيات الإدارة وفق تهيئة الخادم.';
+    gate.querySelector('.auth-feature-grid')?.remove();
+    gate.querySelector('.auth-plan-row')?.remove();
+    gate.querySelector('.auth-access-note')?.remove();
+    const formCopy = gate.querySelector('.auth-form-head-copy p');
+    if (formCopy) formCopy.textContent = 'الدخول العادي يفتح الخطة المجانية. إذا كان البريد هو بريد الإدارة فسيظهر مسار الإدارة أو Google حسب تهيئة الخادم.';
+    const planNote = $('authGatePlanNote');
+    if (planNote) planNote.textContent = 'سيتم ربط جلستك ومشاريعك وملفاتك بهذا الحساب بعد تسجيل الدخول.';
   }
 
   function syncAccountUi(){
@@ -4070,6 +4227,8 @@ function syncUnifiedAuthEntry(){
     const hint = $('authEntryModeHint');
     const passwordLabel = $('authEntryPasswordLabel');
     const passwordInput = $('authEntryPassword');
+    const passwordWrap = passwordInput?.closest('div[style*="grid-column"]') || passwordInput?.parentElement;
+    const showPassword = isAdminEntry && adminPasswordEnabled;
     if (label) label.textContent = isAdminEntry
       ? (adminGoogleOnly ? 'متابعة الإدارة عبر Google' : 'دخول الإدارة')
       : 'متابعة بالخطة المجانية';
@@ -4089,8 +4248,10 @@ function syncUnifiedAuthEntry(){
       passwordInput.placeholder = isAdminEntry
         ? (adminGoogleOnly ? 'اتركها فارغة لاستخدام Google أو أدخل كلمة المرور' : 'أدخل كلمة مرور الإدارة')
         : 'اختيارية للمستخدم العادي، ومطلوبة فقط إذا كان هذا بريد الإدارة';
-      passwordInput.disabled = false;
+      passwordInput.disabled = !showPassword;
+      if (!showPassword) passwordInput.value = '';
     }
+    if (passwordWrap) passwordWrap.style.display = showPassword ? '' : 'none';
   }
 
   function waitForGoogleIdentity(timeoutMs = 12000){
@@ -4206,12 +4367,14 @@ function syncUnifiedAuthEntry(){
   async function consumeAuthPayload(payload, extra = {}){
     const normalized = normalizeAuthPayload(payload);
     if (!normalized) return false;
+    const targetPage = normalizeTargetPage(extra.targetPage || normalized.targetPage || payload?.targetPage || payload?.target_page) || DEFAULT_POST_LOGIN_PAGE;
     applyAuthResponse(normalized, { upgradeCode: extra.upgradeCode || getAuthState().upgradeCode || '' });
     syncAccountUi();
     refreshModeButtons();
     renderSettings();
     await hydrateCloudState(true).catch(() => null);
     refreshStrategicWorkspace().catch(() => {});
+    setActiveNav(targetPage);
     closeAuthGate(true);
     setAuthGateStatus('', 'info');
     try{ await getCapacitorBrowserPlugin()?.close?.(); }catch(_){}
@@ -4345,8 +4508,10 @@ function syncUnifiedAuthEntry(){
     const base = getPublicWebAppBaseUrl();
     const url = new URL(BROWSER_AUTH_BRIDGE.webPath, base);
     const nativeReturn = isLikelyNativeAppContext();
+    const targetPage = DEFAULT_POST_LOGIN_PAGE;
     url.searchParams.set('worker', workerRoot);
     url.searchParams.set('return_to', getBrowserAuthReturnUrl());
+    url.searchParams.set('target_page', targetPage);
     url.searchParams.set('gateway', getSettings().gatewayUrl || '');
     url.searchParams.set('app', 'AI Workspace Studio');
     if (nativeReturn) url.searchParams.set('native_return', '1');
@@ -4466,6 +4631,11 @@ async function submitUnifiedAuthEntry(){
       const adminGoogleReady = !!String(config.googleClientId || '').trim();
       let payload = null;
       if (isAdminEntry){
+        if (!adminPasswordEnabled && adminGoogleReady){
+          setAuthGateStatus('هذا هو بريد الإدارة. جارٍ فتح شاشة Google الوسيطة لهذا الحساب...', 'busy');
+          await openGoogleAuthInBrowser();
+          return;
+        }
         if (!password){
           if (adminGoogleReady){
             setAuthGateStatus('هذا هو بريد الإدارة. أدخل كلمة المرور أو استخدم Google من نفس الشاشة.', 'error');
@@ -6147,14 +6317,19 @@ function newThread(){
   }
 
   function scrollChat(direction){
+    const page = $('page-chat');
     const log = $('chatLog');
-    if (!log) return;
-    const toTop = direction === 'top';
-    if (window.innerWidth <= 640) {
-      window.scrollTo({ top: toTop ? 0 : document.documentElement.scrollHeight, behavior: 'smooth' });
-    } else {
-      log.scrollTo({ top: toTop ? 0 : log.scrollHeight, behavior: 'smooth' });
-    }
+    const scroller = getChatScrollContainer();
+    if (!scroller && !log && !page) return;
+    const top = direction === 'top';
+    const targetTop = top ? 0 : Math.max(
+      Number(scroller?.scrollHeight || 0),
+      Number(log?.scrollHeight || 0),
+      Number(page?.scrollHeight || 0)
+    );
+    scroller?.scrollTo({ top: targetTop, behavior: 'smooth' });
+    if (log && log !== scroller) log.scrollTo({ top: targetTop, behavior: 'smooth' });
+    if (page && page !== scroller) page.scrollTo({ top: targetTop, behavior: 'smooth' });
     window.setTimeout(scheduleChatScrollDockSync, 260);
   }
 

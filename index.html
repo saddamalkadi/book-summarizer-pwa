@@ -220,7 +220,7 @@
       .side{inset:0 auto 0 0; width:min(330px,90vw); max-height:100%; border-radius:0 18px 18px 0; padding-top:calc(14px + env(safe-area-inset-top)); padding-top:calc(14px + constant(safe-area-inset-top));}
       .modal .panel{left:2vw; right:2vw; top:4vh; max-height:92vh;}
       .page{overscroll-behavior-y:auto;}
-      #page-chat{overflow:hidden;}
+      #page-chat{overflow:auto;}
     }
   
     /* v4 Scroll fixes (mobile/PWA) */
@@ -709,6 +709,21 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     #page-chat > .hint{
       width: min(100%, calc(var(--reading-width) + 32px));
       margin-inline: auto;
+    }
+    #page-chat > .chatbar{
+      position: sticky;
+      bottom: 0;
+      z-index: 12;
+      padding-bottom: calc(12px + env(safe-area-inset-bottom));
+      padding-bottom: calc(12px + constant(safe-area-inset-bottom));
+      background: linear-gradient(180deg, rgba(248,251,255,.86), rgba(255,255,255,.98));
+      border-top: 1px solid rgba(10,20,60,.08);
+      -webkit-backdrop-filter: blur(14px);
+      backdrop-filter: blur(14px);
+    }
+    #page-chat .chatlog{
+      padding-bottom: calc(var(--floating-nav-bottom) + 18px);
+      scroll-padding-bottom: calc(var(--floating-nav-bottom) + 12px);
     }
     #page-chat > .toolbar.mainToolbar{
       display: grid;

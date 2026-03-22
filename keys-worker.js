@@ -150,7 +150,7 @@ function getVoiceApiConfig(env) {
   const recognitionModel = String(env.VOICE_STT_MODEL || (hasWorkersAi ? '@cf/openai/whisper-large-v3-turbo' : 'gpt-4o-mini-transcribe')).trim();
   const synthesisModel = String(env.VOICE_TTS_MODEL || (hasWorkersAi ? '@cf/myshell-ai/melotts' : 'gpt-4o-mini-tts')).trim();
   const synthesisVoice = String(env.VOICE_TTS_VOICE || (hasWorkersAi ? 'ar' : 'alloy')).trim();
-  const preferredLanguage = String(env.VOICE_LANG || 'ar').trim();
+  const preferredLanguage = String(env.VOICE_LANG || 'ar-SA').trim();
   const sttReady = (!!apiKey || hasWorkersAi) && String(env.VOICE_DISABLE_STT || '').trim().toLowerCase() !== 'true';
   const ttsReady = (!!apiKey || hasWorkersAi) && String(env.VOICE_DISABLE_TTS || '').trim().toLowerCase() !== 'true';
   return {
@@ -168,11 +168,14 @@ function getVoiceApiConfig(env) {
   };
 }
 
-function normalizeVoiceLanguageTag(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return 'ar';
-  if (/^ar(?:-|$)/i.test(raw)) return 'ar';
-  return raw.split('-')[0] || raw;
+function normalizeVoiceLanguageTag(value, { preserveRegion = true } = {}) {
+  const raw = String(value || '').trim().replace(/_/g, '-');
+  if (!raw) return preserveRegion ? 'ar-SA' : 'ar';
+  if (/^ar(?:-|$)/i.test(raw)) {
+    if (!preserveRegion) return 'ar';
+    return raw.includes('-') ? raw : 'ar-SA';
+  }
+  return preserveRegion ? raw : (raw.split('-')[0] || raw);
 }
 
 function encodeArrayBufferToBase64(buffer) {
@@ -424,8 +427,12 @@ async function handleEmailRegistration(request, env) {
     }
 
     if (email === adminEmail) {
+      const authConfig = getPublicAuthConfig(env);
+      const adminGoogleOnly = authConfig.adminEnabled && !authConfig.adminPasswordEnabled && !!authConfig.googleClientId;
       return jsonResponse({
-        error: 'This email is configured as the admin account. Use the same form with the admin password.',
+        error: adminGoogleOnly
+          ? 'This email is configured as the admin account. Continue with Google sign-in using the admin Gmail account.'
+          : 'This email is configured as the admin account. Use the same form with the admin password.',
         code: 'AUTH_ADMIN_PASSWORD_REQUIRED'
       }, 400);
     }
@@ -677,11 +684,25 @@ async function handleVoiceSynthesis(request, env) {
         code: 'VOICE_TTS_TEXT_REQUIRED'
       }, 400);
     }
+    const requestedLanguage = normalizeVoiceLanguageTag(body?.language || voice.preferredLanguage);
+    const prefersArabicTts = /^ar(?:-|$)/i.test(requestedLanguage) || /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/.test(text);
+
+    if (prefersArabicTts) {
+      const proxyReq = new Request('https://tts.invalid/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          lang: normalizeVoiceLanguageTag(requestedLanguage, { preserveRegion: false })
+        })
+      });
+      return await handleGoogleTtsProxy(proxyReq);
+    }
 
     if (!voice.apiKey && voice.hasWorkersAi && env.AI?.run) {
       const aiResult = await env.AI.run(voice.synthesisModel, {
         prompt: text,
-        lang: normalizeVoiceLanguageTag(body?.language || voice.preferredLanguage),
+        lang: requestedLanguage,
         speaker: String(body?.voice || voice.synthesisVoice || 'ar').trim() || 'ar'
       });
       const audioBase64 = String(
@@ -691,6 +712,18 @@ async function handleVoiceSynthesis(request, env) {
         ''
       ).trim();
       if (!audioBase64) {
+        const isArabic = /^ar(?:-|$)/i.test(String(body?.language || voice.preferredLanguage || '').trim());
+        if (isArabic) {
+          const proxyReq = new Request('https://tts.invalid/proxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              text,
+              lang: normalizeVoiceLanguageTag(body?.language || voice.preferredLanguage || 'ar-SA', { preserveRegion: false })
+            })
+          });
+          return await handleGoogleTtsProxy(proxyReq);
+        }
         return jsonResponse({
           error: 'Workers AI returned no audio payload.',
           code: 'VOICE_TTS_EMPTY'
