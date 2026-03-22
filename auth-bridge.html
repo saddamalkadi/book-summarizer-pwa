@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="utf-8" />
@@ -16,7 +16,6 @@
       --brand-2:#163e87;
       --success:#0f9d58;
       --danger:#c62828;
-      --warn:#9a6700;
     }
     *{box-sizing:border-box}
     body{
@@ -32,195 +31,64 @@
       place-items:center;
       padding:20px;
     }
-    .shell{
-      width:min(700px,100%);
-      background:var(--card);
-      border:1px solid var(--line);
-      border-radius:28px;
-      box-shadow:0 28px 80px rgba(15,23,42,.12);
-      padding:28px;
-      display:grid;
-      gap:18px;
-    }
-    .eyebrow{
-      font-size:12px;
-      font-weight:900;
-      letter-spacing:.16em;
-      text-transform:uppercase;
-      color:#31518a;
-    }
-    h1{
-      margin:0;
-      font-size:30px;
-      line-height:1.25;
-    }
-    p{
-      margin:0;
-      color:var(--muted);
-      line-height:1.9;
-    }
-    .status{
-      border:1px solid rgba(31,107,255,.14);
-      background:#f8fbff;
-      color:#244275;
-      border-radius:18px;
-      padding:14px 16px;
-      line-height:1.8;
-      white-space:pre-wrap;
-      font-size:14px;
-    }
-    .status.success{
-      border-color:rgba(15,157,88,.18);
-      background:#ecfdf3;
-      color:#166534;
-    }
-    .status.error{
-      border-color:rgba(198,40,40,.18);
-      background:#fff1f2;
-      color:#b42318;
-    }
-    .status.warn{
-      border-color:rgba(154,103,0,.18);
-      background:#fff8e8;
-      color:#8a5a00;
-    }
-    .slot{
-      min-height:56px;
-      display:grid;
-      place-items:center;
-    }
-    .summary{
-      display:grid;
-      grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
-      gap:12px;
-    }
-    .summary-card{
-      border:1px solid var(--line);
-      border-radius:18px;
-      background:#fbfdff;
-      padding:14px;
-      display:grid;
-      gap:6px;
-    }
-    .summary-card span{
-      color:var(--muted);
-      font-size:12px;
-      font-weight:700;
-    }
-    .summary-card strong{
-      font-size:16px;
-      word-break:break-word;
-    }
-    .actions{
-      display:flex;
-      flex-wrap:wrap;
-      gap:10px;
-    }
-    .btn{
-      border:none;
-      cursor:pointer;
-      border-radius:14px;
-      padding:12px 16px;
-      font:inherit;
-      font-weight:900;
-      text-decoration:none;
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      gap:8px;
-      min-height:48px;
-    }
-    .btn.primary{
-      background:var(--brand);
-      color:#fff;
-    }
-    .btn.ghost{
-      background:#fff;
-      color:var(--brand-2);
-      border:1px solid rgba(31,107,255,.14);
-    }
-    .btn:disabled{
-      opacity:.6;
-      cursor:not-allowed;
-    }
-    .footnote{
-      font-size:12px;
-      color:var(--muted);
-      line-height:1.9;
-    }
-    code{
-      background:#eef3ff;
-      border:1px solid rgba(15,23,42,.08);
-      border-radius:8px;
-      padding:2px 6px;
-      direction:ltr;
-      unicode-bidi:embed;
-    }
-    @media (max-width:640px){
-      .shell{padding:20px;border-radius:22px}
-      h1{font-size:25px}
-      .actions{flex-direction:column}
-      .btn{width:100%}
-    }
+    .shell{width:min(720px,100%);background:var(--card);border:1px solid var(--line);border-radius:28px;box-shadow:0 28px 80px rgba(15,23,42,.12);padding:28px;display:grid;gap:18px;}
+    .eyebrow{font-size:12px;font-weight:900;letter-spacing:.16em;text-transform:uppercase;color:#31518a;}
+    h1{margin:0;font-size:30px;line-height:1.25;}
+    p{margin:0;color:var(--muted);line-height:1.9;}
+    .status{border:1px solid rgba(31,107,255,.14);background:#f8fbff;color:#244275;border-radius:18px;padding:14px 16px;line-height:1.8;white-space:pre-wrap;font-size:14px;}
+    .status.success{border-color:rgba(15,157,88,.18);background:#ecfdf3;color:#166534;}
+    .status.error{border-color:rgba(198,40,40,.18);background:#fff1f2;color:#b42318;}
+    .slot{min-height:56px;display:grid;place-items:center;}
+    .summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;}
+    .summary-card{border:1px solid var(--line);border-radius:18px;background:#fbfdff;padding:14px;display:grid;gap:6px;}
+    .summary-card span{color:var(--muted);font-size:12px;font-weight:700;}
+    .summary-card strong{font-size:16px;word-break:break-word;}
+    .actions{display:flex;flex-wrap:wrap;gap:10px;}
+    .btn{border:none;cursor:pointer;border-radius:14px;padding:12px 16px;font:inherit;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;}
+    .btn.primary{background:var(--brand);color:#fff;}
+    .btn.ghost{background:#fff;color:var(--brand-2);border:1px solid rgba(31,107,255,.14);}
+    .footnote{font-size:12px;color:var(--muted);line-height:1.9;}
+    code{background:#eef3ff;border:1px solid rgba(15,23,42,.08);border-radius:8px;padding:2px 6px;direction:ltr;unicode-bidi:embed;}
+    @media (max-width:640px){ .shell{padding:20px;border-radius:22px} h1{font-size:25px} .actions{flex-direction:column} .btn{width:100%} }
   </style>
 </head>
 <body>
   <main class="shell">
     <div class="eyebrow">Google Sign-In</div>
-    <h1>تسجيل الدخول عبر Google</h1>
+    <h1>تسجيل الدخول باستخدام Google</h1>
     <p>هذه شاشة وسيطة آمنة بين Google والتطبيق. بعد اختيار حسابك سيُنشئ النظام الجلسة ثم يعيدك إلى التطبيق أو الويب، مع زر واضح للعودة إذا لم تحدث العودة التلقائية.</p>
-
     <div class="status" id="statusBox">جارٍ تهيئة تسجيل Google...</div>
     <div class="slot" id="googleSlot"></div>
-
     <section class="summary" id="resultSummary" hidden>
-      <div class="summary-card">
-        <span>الحساب</span>
-        <strong id="resultEmail">-</strong>
-      </div>
-      <div class="summary-card">
-        <span>الاسم</span>
-        <strong id="resultName">-</strong>
-      </div>
-      <div class="summary-card">
-        <span>الخطة</span>
-        <strong id="resultPlan">-</strong>
-      </div>
+      <div class="summary-card"><span>الحساب</span><strong id="resultEmail">-</strong></div>
+      <div class="summary-card"><span>الاسم</span><strong id="resultName">-</strong></div>
+      <div class="summary-card"><span>الخطة</span><strong id="resultPlan">-</strong></div>
     </section>
-
     <div class="actions">
       <a class="btn primary" id="returnLink" href="#" hidden>العودة إلى التطبيق</a>
       <a class="btn ghost" id="schemeLink" href="#" hidden>رابط بديل للتطبيق</a>
       <a class="btn ghost" id="webLink" href="/">المتابعة في الويب</a>
     </div>
-
-    <div class="footnote" id="footnote">
-      على Android سيحاول النظام إعادتك عبر الرابط <code>aiworkspace://auth</code>. إذا لم يرجع التطبيق تلقائيًا، استخدم زر <b>العودة إلى التطبيق</b>.
-    </div>
+    <div class="footnote" id="footnote">على Android سيحاول النظام إعادتك عبر الرابط <code>aiworkspace://auth</code>. إذا لم يرجع التطبيق تلقائيًا، استخدم زر <b>العودة إلى التطبيق</b>.</div>
   </main>
-
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script>
     (() => {
       const STORAGE_KEY = 'aistudio_auth_bridge_result_v1';
       const APP_PACKAGE = 'com.saddamalkadi.aiworkspace';
       const DEFAULT_PUBLIC_WEB_HOME = 'https://app.saddamalkadi.com/';
-      const PUBLIC_WEB_HOME = (() => {
-        try{
-          const current = new URL(window.location.href);
-          if (/^https?:$/i.test(current.protocol) && current.hostname){
-            return `${current.origin}/`;
-          }
-        }catch(_){}
-        return DEFAULT_PUBLIC_WEB_HOME;
-      })();
-
+      const DEFAULT_WORKER_ROOT = 'https://api.saddamalkadi.com';
+      const VALID_PAGES = new Set(['chat','knowledge','canvas','files','transcription','workflows','downloads','projects','guide','settings']);
+      function normalizeTargetPage(page){ const value = String(page || '').trim().toLowerCase(); return VALID_PAGES.has(value) ? value : ''; }
+      function sanitizeServiceRoot(value){ const raw = String(value || '').trim(); if (!raw) return ''; try{ const url = new URL(raw, DEFAULT_PUBLIC_WEB_HOME); return `${url.origin}${url.pathname}`.replace(/\/+$/, '').replace(/\/v1\/?$/i, ''); }catch(_){ return ''; } }
+      function sanitizeWebReturn(value){ const raw = String(value || '').trim(); if (!raw) return DEFAULT_PUBLIC_WEB_HOME; try{ const url = new URL(raw, DEFAULT_PUBLIC_WEB_HOME); if (!/^https?:$/i.test(url.protocol)) return DEFAULT_PUBLIC_WEB_HOME; return url.toString(); }catch(_){ return DEFAULT_PUBLIC_WEB_HOME; } }
+      const PUBLIC_WEB_HOME = (() => { try{ const current = new URL(window.location.href); if (/^https?:$/i.test(current.protocol) && current.hostname){ return `${current.origin}/`; } }catch(_){ } return DEFAULT_PUBLIC_WEB_HOME; })();
       const params = new URLSearchParams(window.location.search);
-      const worker = String(params.get('worker') || '').trim().replace(/\/+$/,'');
+      const serviceRoot = sanitizeServiceRoot(params.get('worker') || params.get('gateway') || DEFAULT_WORKER_ROOT) || DEFAULT_WORKER_ROOT;
+      const targetPage = normalizeTargetPage(params.get('target_page') || params.get('targetPage'));
       const nativeReturn = String(params.get('native_return') || '').trim() === '1';
-      const explicitReturn = String(params.get('return_to') || '').trim();
-      const webReturn = explicitReturn && !nativeReturn ? explicitReturn : PUBLIC_WEB_HOME;
-
+      const explicitReturn = sanitizeWebReturn(params.get('return_to'));
+      const webReturn = nativeReturn ? DEFAULT_PUBLIC_WEB_HOME : explicitReturn;
       const statusBox = document.getElementById('statusBox');
       const googleSlot = document.getElementById('googleSlot');
       const resultSummary = document.getElementById('resultSummary');
@@ -231,193 +99,16 @@
       const schemeLink = document.getElementById('schemeLink');
       const webLink = document.getElementById('webLink');
       const footnote = document.getElementById('footnote');
-
-      const setStatus = (text, tone = '') => {
-        statusBox.textContent = String(text || '').trim();
-        statusBox.className = `status${tone ? ` ${tone}` : ''}`;
-      };
-
-      const encodePayload = (payload) => {
-        const q = new URLSearchParams();
-        q.set('sessionToken', String(payload.sessionToken || payload.session_token || ''));
-        q.set('sessionExp', String(payload.sessionExp || payload.session_exp || '0'));
-        q.set('email', String(payload.email || ''));
-        q.set('name', String(payload.name || ''));
-        q.set('picture', String(payload.picture || ''));
-        q.set('plan', String(payload.plan || 'free'));
-        q.set('role', String(payload.role || 'user'));
-        return q.toString();
-      };
-
-      const storePayloadForWeb = (payload) => {
-        try{
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-        }catch(_){}
-      };
-
-      const buildWebFallbackUrl = (payload) => {
-        const url = new URL(webReturn || PUBLIC_WEB_HOME, PUBLIC_WEB_HOME);
-        url.hash = encodePayload(payload);
-        return url.toString();
-      };
-
-      const buildAppSchemeUrl = (payload) => `aiworkspace://auth?${encodePayload(payload)}`;
-
-      const buildAndroidIntentUrl = (payload) => {
-        const schemeUrl = new URL(buildAppSchemeUrl(payload));
-        const host = String(schemeUrl.host || 'auth').trim() || 'auth';
-        const query = String(schemeUrl.search || '');
-        const fallback = encodeURIComponent(buildWebFallbackUrl(payload));
-        return `intent://${host}${query}#Intent;scheme=aiworkspace;package=${APP_PACKAGE};action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;S.browser_fallback_url=${fallback};end`;
-      };
-
-      const openHref = (href) => {
-        const value = String(href || '').trim();
-        if (!value) return;
-        try{
-          const anchor = document.createElement('a');
-          anchor.href = value;
-          anchor.rel = 'noopener';
-          anchor.style.display = 'none';
-          document.body.appendChild(anchor);
-          anchor.click();
-          window.setTimeout(() => anchor.remove(), 1200);
-        }catch(_){}
-        try{
-          window.location.assign(value);
-        }catch(_){}
-      };
-
-      const showReturnScreen = (payload) => {
-        const plan = String(payload.plan || 'free').trim();
-        resultSummary.hidden = false;
-        resultEmail.textContent = String(payload.email || '-');
-        resultName.textContent = String(payload.name || '-');
-        resultPlan.textContent = plan === 'premium' ? 'الخطة المدفوعة' : (plan === 'free' ? 'الخطة المجانية' : plan);
-
-        const schemeUrl = buildAppSchemeUrl(payload);
-        const intentUrl = buildAndroidIntentUrl(payload);
-        const webFallbackUrl = buildWebFallbackUrl(payload);
-
-        returnLink.hidden = !nativeReturn;
-        returnLink.href = nativeReturn ? intentUrl : webFallbackUrl;
-        returnLink.onclick = (event) => {
-          event.preventDefault();
-          openHref(nativeReturn ? intentUrl : webFallbackUrl);
-        };
-
-        schemeLink.hidden = !nativeReturn;
-        schemeLink.href = schemeUrl;
-        schemeLink.onclick = (event) => {
-          event.preventDefault();
-          openHref(schemeUrl);
-        };
-
-        webLink.href = webFallbackUrl;
-
-        if (nativeReturn){
-          footnote.innerHTML = 'تم إنشاء الجلسة. إذا لم يعد التطبيق تلقائيًا، اضغط <b>العودة إلى التطبيق</b>. وإذا لم يعمل الزر الأول، جرّب <b>الرابط البديل للتطبيق</b>.';
-          setStatus('تم تسجيل الدخول بنجاح. سنحاول إعادتك إلى التطبيق تلقائيًا، ويمكنك الرجوع يدويًا إذا لزم.', 'success');
-          window.setTimeout(() => openHref(intentUrl), 700);
-        } else {
-          setStatus('تم تسجيل الدخول بنجاح.', 'success');
-          window.setTimeout(() => {
-            try{
-              if (window.opener && !window.opener.closed){
-                window.opener.postMessage({ type:'aistudio-auth', payload }, window.location.origin);
-                footnote.textContent = 'تم تسجيل الدخول. ستُغلق هذه النافذة تلقائيًا.';
-                window.setTimeout(() => { try{ window.close(); }catch(_){} }, 900);
-                return;
-              }
-            }catch(_){}
-            footnote.textContent = 'تم إنشاء الجلسة. يتم إعادة توجيهك إلى التطبيق...';
-            openHref(webFallbackUrl);
-          }, 100);
-        }
-      };
-
-      const handleGoogleCredential = async (response) => {
-        try{
-          setStatus('جارٍ التحقق من حساب Google وإنشاء الجلسة...', '');
-          const credential = String(response?.credential || '').trim();
-          if (!credential) throw new Error('لم يصل رمز Google الكامل.');
-
-          const configResp = await fetch(`${worker}/auth/config`, { cache:'no-store' });
-          const config = await configResp.json();
-          const resp = await fetch(`${worker}/auth/google`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              credential,
-              clientId: String(config?.googleClientId || '')
-            })
-          });
-          const payload = await resp.json().catch(() => ({}));
-          if (!resp.ok) throw new Error(payload?.error || payload?.message || `HTTP ${resp.status}`);
-
-          storePayloadForWeb(payload);
-          showReturnScreen(payload);
-        }catch(error){
-          setStatus(`فشل تسجيل Google: ${error?.message || error}`, 'error');
-        }
-      };
-
-      const boot = async () => {
-        if (!worker){
-          setStatus('رابط خدمة الحسابات غير موجود في هذا الرابط.', 'error');
-          return;
-        }
-        try{
-          const configResp = await fetch(`${worker}/auth/config`, { cache:'no-store' });
-          const config = await configResp.json();
-          const clientId = String(config?.googleClientId || '').trim();
-          if (!clientId){
-            setStatus('Google Client ID غير مفعّل على الخادم بعد.', 'error');
-            return;
-          }
-
-          let attempts = 0;
-          while (!(window.google && window.google.accounts && window.google.accounts.id) && attempts < 60){
-            attempts += 1;
-            await new Promise((resolve) => setTimeout(resolve, 200));
-          }
-
-          if (!(window.google && window.google.accounts && window.google.accounts.id)){
-            setStatus('تعذر تحميل خدمة Google Sign-In. حدّث الصفحة ثم حاول مرة أخرى.', 'error');
-            return;
-          }
-
-          window.google.accounts.id.initialize({
-            client_id: clientId,
-            callback: handleGoogleCredential,
-            auto_select: false,
-            cancel_on_tap_outside: false,
-            context: 'signin',
-            use_fedcm_for_prompt: true
-          });
-
-          googleSlot.innerHTML = '';
-          window.google.accounts.id.renderButton(googleSlot, {
-            theme: 'filled_blue',
-            size: 'large',
-            shape: 'pill',
-            text: 'signin_with',
-            logo_alignment: 'right',
-            width: Math.min(360, window.innerWidth > 420 ? 360 : 300),
-            use_fedcm_for_button: true
-          });
-
-          setStatus(
-            nativeReturn
-              ? 'اختر حساب Gmail. بعد نجاح تسجيل الدخول ستظهر لك شاشة العودة إلى التطبيق مع محاولة رجوع تلقائي.'
-              : 'اختر حساب Gmail للمتابعة في الويب.',
-            ''
-          );
-        }catch(error){
-          setStatus(`تعذر تهيئة الصفحة: ${error?.message || error}`, 'error');
-        }
-      };
-
+      function setStatus(text, tone = ''){ statusBox.textContent = String(text || '').trim(); statusBox.className = `status${tone ? ` ${tone}` : ''}`; }
+      function encodePayload(payload){ const q = new URLSearchParams(); q.set('sessionToken', String(payload.sessionToken || payload.session_token || '')); q.set('sessionExp', String(payload.sessionExp || payload.session_exp || '0')); q.set('email', String(payload.email || '')); q.set('name', String(payload.name || '')); q.set('picture', String(payload.picture || '')); q.set('plan', String(payload.plan || 'free')); q.set('role', String(payload.role || 'user')); if (payload.targetPage) q.set('targetPage', String(payload.targetPage)); return q.toString(); }
+      function storePayloadForWeb(payload){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(payload)); }catch(_){ } }
+      function buildWebFallbackUrl(payload){ const url = new URL(webReturn || DEFAULT_PUBLIC_WEB_HOME, DEFAULT_PUBLIC_WEB_HOME); if (payload.targetPage) url.searchParams.set('targetPage', payload.targetPage); url.hash = encodePayload(payload); return url.toString(); }
+      function buildAppSchemeUrl(payload){ return `aiworkspace://auth?${encodePayload(payload)}`; }
+      function buildAndroidIntentUrl(payload){ const schemeUrl = new URL(buildAppSchemeUrl(payload)); const host = String(schemeUrl.host || 'auth').trim() || 'auth'; const query = String(schemeUrl.search || ''); const fallback = encodeURIComponent(buildWebFallbackUrl(payload)); return `intent://${host}${query}#Intent;scheme=aiworkspace;package=${APP_PACKAGE};action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;S.browser_fallback_url=${fallback};end`; }
+      function openHref(href){ const value = String(href || '').trim(); if (!value) return; try{ const anchor = document.createElement('a'); anchor.href = value; anchor.rel = 'noopener'; anchor.style.display = 'none'; document.body.appendChild(anchor); anchor.click(); window.setTimeout(() => anchor.remove(), 1200); }catch(_){ } try{ window.location.assign(value); }catch(_){ } }
+      function showReturnScreen(payload){ const safePayload = { ...payload, targetPage: normalizeTargetPage(payload.targetPage || targetPage) || targetPage || 'chat' }; const plan = String(safePayload.plan || 'free').trim(); resultSummary.hidden = false; resultEmail.textContent = String(safePayload.email || '-'); resultName.textContent = String(safePayload.name || '-'); resultPlan.textContent = plan === 'premium' ? 'الخطة المدفوعة' : (plan === 'free' ? 'الخطة المجانية' : plan); const schemeUrl = buildAppSchemeUrl(safePayload); const intentUrl = buildAndroidIntentUrl(safePayload); const webFallbackUrl = buildWebFallbackUrl(safePayload); returnLink.hidden = !nativeReturn; returnLink.href = nativeReturn ? intentUrl : webFallbackUrl; returnLink.onclick = (event) => { event.preventDefault(); openHref(nativeReturn ? intentUrl : webFallbackUrl); }; schemeLink.hidden = !nativeReturn; schemeLink.href = schemeUrl; schemeLink.onclick = (event) => { event.preventDefault(); openHref(schemeUrl); }; webLink.href = webFallbackUrl; if (nativeReturn){ footnote.innerHTML = 'تم إنشاء الجلسة. إذا لم يعد التطبيق تلقائيًا، اضغط <b>العودة إلى التطبيق</b>. وإذا لم يعمل الزر الأول، جرّب <b>الرابط البديل للتطبيق</b>.'; setStatus('تم تسجيل الدخول بنجاح. سنحاول إعادتك إلى التطبيق تلقائيًا، ويمكنك الرجوع يدويًا إذا لزم.', 'success'); window.setTimeout(() => openHref(intentUrl), 700); } else { footnote.textContent = 'تم إنشاء الجلسة. يمكنك المتابعة في الويب مباشرة.'; setStatus('تم تسجيل الدخول بنجاح. يمكنك متابعة استخدام المنصة الآن.', 'success'); window.setTimeout(() => { try{ if (window.opener && !window.opener.closed){ window.opener.postMessage({ type:'aistudio-auth', payload: safePayload }, window.location.origin); } }catch(_){ } }, 100); } }
+      async function handleGoogleCredential(response){ try{ setStatus('جارٍ التحقق من حساب Google وإنشاء الجلسة...', ''); const credential = String(response?.credential || '').trim(); if (!credential) throw new Error('لم يصل رمز Google الكامل.'); const configResp = await fetch(`${serviceRoot}/auth/config`, { cache:'no-store' }); const config = await configResp.json().catch(() => ({})); const resp = await fetch(`${serviceRoot}/auth/google`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential, clientId: String(config?.googleClientId || ''), targetPage }) }); const payload = await resp.json().catch(() => ({})); if (!resp.ok) throw new Error(payload?.error || payload?.message || `HTTP ${resp.status}`); payload.targetPage = normalizeTargetPage(payload.targetPage || targetPage) || targetPage || 'chat'; storePayloadForWeb(payload); showReturnScreen(payload); }catch(error){ setStatus(`فشل تسجيل Google: ${error?.message || error}`, 'error'); } }
+      async function boot(){ if (!serviceRoot){ setStatus('رابط خدمة الحسابات غير موجود في هذا الرابط.', 'error'); return; } try{ const configResp = await fetch(`${serviceRoot}/auth/config`, { cache:'no-store' }); const config = await configResp.json().catch(() => ({})); const clientId = String(config?.googleClientId || '').trim(); if (!clientId){ setStatus('Google Client ID غير مفعّل على الخادم بعد.', 'error'); return; } let attempts = 0; while (!(window.google && window.google.accounts && window.google.accounts.id) && attempts < 60){ attempts += 1; await new Promise((resolve) => setTimeout(resolve, 200)); } if (!(window.google && window.google.accounts && window.google.accounts.id)){ setStatus('تعذر تحميل خدمة Google Sign-In. حدّث الصفحة ثم حاول مرة أخرى.', 'error'); return; } window.google.accounts.id.initialize({ client_id: clientId, callback: handleGoogleCredential, auto_select: false, cancel_on_tap_outside: false, context: 'signin', use_fedcm_for_prompt: true }); googleSlot.innerHTML = ''; window.google.accounts.id.renderButton(googleSlot, { theme: 'filled_blue', size: 'large', shape: 'pill', text: 'signin_with', logo_alignment: 'right', width: Math.min(360, window.innerWidth > 420 ? 360 : 300), use_fedcm_for_button: true }); setStatus(nativeReturn ? 'اختر حساب Gmail. بعد نجاح تسجيل الدخول ستظهر لك شاشة العودة إلى التطبيق مع محاولة رجوع تلقائي.' : 'اختر حساب Gmail للمتابعة في الويب.', ''); }catch(error){ setStatus(`تعذر تهيئة الصفحة: ${error?.message || error}`, 'error'); } }
       boot();
     })();
   </script>
