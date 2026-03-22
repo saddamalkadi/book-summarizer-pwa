@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.47</title>
+    <title>AI Workspace Studio v8.53</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -764,6 +764,144 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     .workspace-deck{
       padding: 14px var(--page-gutter);
     }
+    .home-shell{
+      display: grid;
+      gap: 18px;
+      padding: 14px var(--page-gutter) 28px;
+    }
+    .home-hero-host{
+      display: grid;
+      gap: 16px;
+    }
+    .home-section{
+      display: grid;
+      gap: 14px;
+    }
+    .home-section-head{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .home-section-head h2{
+      margin: 0 0 4px;
+      font-size: 24px;
+      color: #0f172a;
+    }
+    .home-section-head p{
+      margin: 0;
+      color: #546179;
+      line-height: 1.8;
+    }
+    .home-journey-grid,
+    .home-dashboard-grid{
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+    .home-card,
+    .home-panel{
+      border-radius: 22px;
+      border: 1px solid rgba(10,20,60,.08);
+      background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(245,248,255,.98));
+      box-shadow: 0 16px 34px rgba(15,23,42,.06);
+    }
+    .home-card{
+      display: grid;
+      gap: 8px;
+      text-align: right;
+      padding: 18px 18px 16px;
+      cursor: pointer;
+      transition: transform .15s ease, box-shadow .18s ease, border-color .18s ease;
+    }
+    .home-card:hover{
+      transform: translateY(-2px);
+      box-shadow: 0 18px 38px rgba(15,23,42,.1);
+      border-color: rgba(27,102,255,.22);
+    }
+    .home-card-icon{
+      width: 44px;
+      height: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(27,102,255,.1), rgba(20,184,166,.12));
+      color: #1b3870;
+      font-size: 22px;
+    }
+    .home-card h3{
+      margin: 0;
+      font-size: 18px;
+      color: #10203f;
+    }
+    .home-card p{
+      margin: 0;
+      color: #55637b;
+      line-height: 1.8;
+      font-size: 14px;
+    }
+    .home-card-meta{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      color: #1f4fbf;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .home-panel{
+      padding: 18px;
+      display: grid;
+      gap: 14px;
+    }
+    .home-panel-head{
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .home-panel-head h3{
+      margin: 0 0 4px;
+      font-size: 20px;
+      color: #10203f;
+    }
+    .home-panel-head p{
+      margin: 0;
+      color: #55637b;
+      line-height: 1.8;
+    }
+    .home-summary-list{
+      display: grid;
+      gap: 10px;
+    }
+    .home-summary-item{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: rgba(255,255,255,.72);
+      border: 1px solid rgba(10,20,60,.06);
+    }
+    .home-summary-item strong{
+      color: #10203f;
+      font-size: 14px;
+    }
+    .home-summary-item span{
+      color: #607089;
+      font-size: 13px;
+      text-align: left;
+    }
+    .home-panel-actions,
+    .home-inline-links{
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
     .workspace-hero{
       min-height: 240px;
       padding: clamp(18px, 2vw, 26px);
@@ -1170,6 +1308,13 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       .workspace-deck{
         padding: 12px var(--page-gutter);
       }
+      .home-shell{
+        padding: 12px var(--page-gutter) 22px;
+      }
+      .home-section-head,
+      .home-panel-head{
+        align-items: stretch;
+      }
       .workspace-deck.workspace-deck-collapsed{
         display: none;
       }
@@ -1184,6 +1329,10 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       }
       .bubble{
         width: min(100%, 96%);
+      }
+      .home-journey-grid,
+      .home-dashboard-grid{
+        grid-template-columns: 1fr;
       }
       .empty-chat-points{
         grid-template-columns: 1fr;
@@ -1215,6 +1364,10 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       }
       .auth-gate{
         padding: 12px;
+      }
+      .home-card,
+      .home-panel{
+        border-radius: 18px;
       }
       .auth-hero,
       .auth-card{
@@ -1807,7 +1960,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     }
 
 /* ═══════════════════════════════════════════
-   v8.47 — Final Polish Pass
+   v8.53 — Home + Navigation Pass
    ═══════════════════════════════════════════ */
 
 /* — Sidebar account strip — */
@@ -2813,7 +2966,7 @@ body, input, textarea, select, button{
 }
 
 /* ══════════════════════════════════════════════
-   FINAL CLOSURE PASS — v8.47 UI POLISH
+   FINAL CLOSURE PASS — v8.53 HOME AND NAVIGATION
    ══════════════════════════════════════════════ */
 
 /* 1. Chat Toolbar — secondary groups collapsed by default */
@@ -3061,7 +3214,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;">v8.47</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.53</div>
       </div>
     </aside>
 
@@ -3086,8 +3239,111 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
       <div class="status" id="statusBox"></div>
 
       <section class="content">
+        <!-- HOME -->
+        <div class="page active" id="page-home">
+          <div class="home-shell">
+            <div class="home-hero-host" id="homeHeroHost"></div>
+
+            <section class="home-section">
+              <div class="home-section-head">
+                <div>
+                  <h2>المسارات الأساسية</h2>
+                  <p>ابدأ من الرحلة المناسبة، ثم انتقل إلى الأدوات المتقدمة عند الحاجة دون أن تفقد أي قدرة من قدرات المنصة.</p>
+                </div>
+                <div class="home-inline-links">
+                  <button class="btn dark sm with-label" type="button" data-open-page="chat"><span class="icon">💬</span><span class="label">متابعة الدردشة</span></button>
+                  <button class="btn ghost sm with-label" type="button" data-open-page="projects"><span class="icon">🗂</span><span class="label">فتح المشاريع</span></button>
+                </div>
+              </div>
+
+              <div class="home-journey-grid" id="homeJourneyGrid">
+                <button class="home-card" type="button" data-open-page="chat">
+                  <span class="home-card-icon" aria-hidden="true">💬</span>
+                  <h3>الدردشة</h3>
+                  <p>تابع آخر محادثة أو ابدأ سؤالًا جديدًا مع المرفقات والصوت من مساحة واحدة.</p>
+                  <span class="home-card-meta" id="homeChatMeta">—</span>
+                </button>
+                <button class="home-card" type="button" data-open-page="projects">
+                  <span class="home-card-icon" aria-hidden="true">🗂</span>
+                  <h3>المشاريع</h3>
+                  <p>نظّم العمل طويل المدى، brief المشروع، والسياق المشترك بين الدردشة والملفات.</p>
+                  <span class="home-card-meta" id="homeProjectsMeta">—</span>
+                </button>
+                <button class="home-card" type="button" data-open-page="files">
+                  <span class="home-card-icon" aria-hidden="true">📁</span>
+                  <h3>الملفات</h3>
+                  <p>استعرض الملفات، عاينها، ثم أرسلها إلى الدردشة أو اللوحة عند الحاجة.</p>
+                  <span class="home-card-meta" id="homeFilesMeta">—</span>
+                </button>
+                <button class="home-card" type="button" data-open-page="knowledge">
+                  <span class="home-card-icon" aria-hidden="true">🧠</span>
+                  <h3>المعرفة</h3>
+                  <p>أدر قاعدة المعرفة الدائمة للمشروع وافتح RAG من مكانه الصحيح بدل الشريط الرئيسي.</p>
+                  <span class="home-card-meta" id="homeKnowledgeMeta">—</span>
+                </button>
+                <button class="home-card" type="button" data-open-page="transcription">
+                  <span class="home-card-icon" aria-hidden="true">🧾</span>
+                  <h3>التفريغ والتحويل</h3>
+                  <p>OCR واستخراج النص وتحويل PDF إلى Word من مساحة تشغيل مستقلة وواضحة.</p>
+                  <span class="home-card-meta" id="homeTranscriptionMeta">—</span>
+                </button>
+                <button class="home-card" type="button" data-open-page="downloads">
+                  <span class="home-card-icon" aria-hidden="true">⬇</span>
+                  <h3>التنزيلات</h3>
+                  <p>كل الملفات المولدة والمخرجات النهائية تبقى في مكان واحد يسهل الرجوع إليه.</p>
+                  <span class="home-card-meta" id="homeDownloadsMeta">—</span>
+                </button>
+              </div>
+            </section>
+
+            <div class="home-dashboard-grid">
+              <section class="home-panel">
+                <div class="home-panel-head">
+                  <div>
+                    <h3>متابعة العمل الحالي</h3>
+                    <p>ملخص سريع للمحادثة والمشروع والملفات الحالية قبل الانتقال إلى أي مساحة تنفيذ.</p>
+                  </div>
+                  <button class="btn ghost sm with-label" type="button" data-open-page="chat"><span class="icon">↩</span><span class="label">فتح الدردشة</span></button>
+                </div>
+                <div class="home-summary-list">
+                  <div class="home-summary-item"><strong>المحادثة الحالية</strong><span id="homeCurrentThreadState">—</span></div>
+                  <div class="home-summary-item"><strong>المشروع النشط</strong><span id="homeCurrentProjectState">—</span></div>
+                  <div class="home-summary-item"><strong>ملفات المشروع</strong><span id="homeCurrentFilesState">—</span></div>
+                  <div class="home-summary-item"><strong>المعرفة والتنزيلات</strong><span id="homeCurrentKnowledgeState">—</span></div>
+                </div>
+                <div class="home-panel-actions">
+                  <button class="btn dark sm with-label" type="button" data-open-page="chat"><span class="icon">✦</span><span class="label">ابدأ من هنا</span></button>
+                  <button class="btn ghost sm with-label" type="button" data-open-page="files"><span class="icon">📎</span><span class="label">إدارة الملفات</span></button>
+                  <button class="btn ghost sm with-label" type="button" data-open-page="downloads"><span class="icon">⬇</span><span class="label">آخر التنزيلات</span></button>
+                </div>
+              </section>
+
+              <section class="home-panel">
+                <div class="home-panel-head">
+                  <div>
+                    <h3>الأدوات المتقدمة</h3>
+                    <p>كل القدرات بقيت موجودة، لكنها انتقلت إلى طبقتها المناسبة بدل ظهورها دفعة واحدة في الواجهة الأساسية.</p>
+                  </div>
+                  <button class="btn ghost sm with-label" type="button" data-open-page="settings"><span class="icon">⚙</span><span class="label">الإعدادات</span></button>
+                </div>
+                <div class="home-summary-list">
+                  <div class="home-summary-item"><strong>اللوحة</strong><span>مساحة تحرير وإخراج قابلة للحفظ والتصدير</span></div>
+                  <div class="home-summary-item"><strong>سير العمل</strong><span>تجميع القوالب والمهام التنفيذية في طبقة مستقلة</span></div>
+                  <div class="home-summary-item"><strong>الإعدادات</strong><span>الحساب، التكلفة، الصوت، التزامن، والخيارات التقنية العميقة</span></div>
+                  <div class="home-summary-item"><strong>دليل الاستخدام</strong><span>يبقى متاحًا من طبقة الإعدادات والروابط العميقة</span></div>
+                </div>
+                <div class="home-panel-actions">
+                  <button class="btn ghost sm with-label" type="button" data-open-page="canvas"><span class="icon">📝</span><span class="label">فتح اللوحة</span></button>
+                  <button class="btn ghost sm with-label" type="button" data-open-page="workflows"><span class="icon">⚡</span><span class="label">سير العمل</span></button>
+                  <button class="btn ghost sm with-label" type="button" data-open-page="guide"><span class="icon">📘</span><span class="label">دليل الاستخدام</span></button>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+
         <!-- CHAT -->
-        <div class="page active" id="page-chat">
+        <div class="page" id="page-chat">
           
           <div class="toolbar" id="chatMiniToolbar" style="display:none">
             <button class="btn ghost sm icon" id="chatToolbarExpandBtn" type="button" title="إظهار الأدوات" aria-label="إظهار الأدوات">⚙</button>
@@ -3781,7 +4037,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
     })();
   </script>
 
-<script src="app.js?v=851"></script>
+<script src="app.js?v=853"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -3795,7 +4051,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v847";
+          const CURRENT_CACHE = "aistudio-cache-v853";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -3804,7 +4060,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=851").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=853").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {
