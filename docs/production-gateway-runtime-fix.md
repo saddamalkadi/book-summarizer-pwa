@@ -12,7 +12,7 @@
 Production had two separate problems that compounded each other:
 
 1. The frontend could keep an older `gatewayUrl` in local storage from previous deployments or manual settings.
-2. The managed hosted UI was not forcing a single source of truth for the runtime service root, so chat could continue to use a stale gateway path even while auth was resolved from the platform service root.
+2. More importantly, `api.saddamalkadi.com` was not actually serving the latest `sadam-key` deployment. The worker version itself contained the right secrets and bindings, but the live custom-domain trigger was stale, so the production domain kept answering from an older runtime state.
 
 This is why users could still see the error banner:
 
@@ -33,6 +33,12 @@ In [app.js](C:/Users/Elite/OneDrive/Documenti/GitHub/book-summarizer-pwa/app.js)
   - `ocrCloudEndpoint = https://api.saddamalkadi.com/ocr`
 - Reset cached auth config when the managed alignment rewrites stale settings.
 
+On Cloudflare runtime:
+
+- Re-applied the worker custom-domain trigger with:
+  - `wrangler triggers deploy`
+- This re-bound `api.saddamalkadi.com` to the current `sadam-key` worker deployment instead of the stale trigger target.
+
 ## Why This Fix Is Safe
 - It only applies on the managed hosted UI origins.
 - It does not remove any settings or features.
@@ -46,6 +52,7 @@ After deploying the worker, live production returned:
 
 Key fields:
 - `upstream_configured: true`
+- `admin_password_ready: true`
 - `configured: true`
 - `auth_required: true`
 

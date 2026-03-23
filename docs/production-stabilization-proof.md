@@ -5,8 +5,19 @@
   - `api.saddamalkadi.com`
 - Version ID after deploy:
   - `90356e5a-e24d-4204-adcd-7d4cd67cf36d`
+- Worker trigger re-applied successfully with:
+  - `wrangler triggers deploy`
 
 ## Live checks
+
+### 0. Frontend bundle
+Request:
+- `GET https://app.saddamalkadi.com/`
+
+Observed live result:
+- `<html ... data-appver="8.54">`
+- `<title>AI Workspace Studio v8.54</title>`
+- `<script src="app.js?v=854"></script>`
 
 ### 1. Health
 Request:
