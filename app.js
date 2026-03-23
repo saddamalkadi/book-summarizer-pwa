@@ -233,7 +233,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.53';
+  const WEB_RELEASE_LABEL = 'v8.54';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -718,6 +718,48 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
 
   function getPlatformServiceRoot(){
     return normalizeEndpointUrl(DEFAULT_SETTINGS.gatewayUrl || '').replace(/\/v1\/?$/i, '');
+  }
+
+  function isManagedHostedRuntime(){
+    try{
+      const host = String(window.location.hostname || '').toLowerCase();
+      return (
+        host === 'app.saddamalkadi.com'
+        || host === 'saddamalkadi.com'
+        || /(^|\.)saddamalkadi\.github\.io$/i.test(host)
+      );
+    }catch(_){
+      return false;
+    }
+  }
+
+  function alignManagedRuntimeSettings(){
+    if (!isManagedHostedRuntime()) return getSettings();
+    const current = getSettings();
+    const nextGateway = getPlatformServiceRoot();
+    if (!nextGateway) return current;
+    const nextBase = `${nextGateway}/v1`;
+    const nextDocx = normalizeDocxCloudEndpoint(DEFAULT_SETTINGS.cloudConvertEndpoint);
+    const nextOcr = normalizeOcrCloudEndpoint(DEFAULT_SETTINGS.ocrCloudEndpoint);
+    const needsUpdate = (
+      current.authMode !== 'gateway'
+      || normalizeEndpointUrl(current.gatewayUrl || '') !== nextGateway
+      || normalizeUrl(current.baseUrl || '') !== nextBase
+      || normalizeDocxCloudEndpoint(current.cloudConvertEndpoint || '') !== nextDocx
+      || normalizeOcrCloudEndpoint(current.ocrCloudEndpoint || '') !== nextOcr
+    );
+    if (!needsUpdate) return current;
+    const next = setSettings({
+      authMode: 'gateway',
+      gatewayUrl: nextGateway,
+      baseUrl: nextBase,
+      cloudConvertEndpoint: nextDocx,
+      ocrCloudEndpoint: nextOcr
+    });
+    AUTH_RUNTIME.config = null;
+    AUTH_RUNTIME.configPromise = null;
+    AUTH_RUNTIME.configLoadedAt = 0;
+    return next;
   }
 
   function getLocalAuthConfig(settings = getSettings()){
@@ -4833,7 +4875,6 @@ async function submitUnifiedAuthEntry(){
       resizeComposerInput();
       if (!keyboardEditing){
         applyShellLayout();
-        refreshStrategicWorkspace().catch(()=>{});
       }
     }, keyboardEditing ? 180 : 60);
   }
@@ -11746,6 +11787,7 @@ ${e?.message||e}`, false);
     // Clear stale auth config cache so DEFAULT_AUTH_CONFIG.authRequired=false takes effect
     try{ localStorage.removeItem(KEYS.authConfigCache); }catch(_){}
     AUTH_RUNTIME.config = null;
+    alignManagedRuntimeSettings();
 
     loadProjects();
     const pid = getCurProjectId();
