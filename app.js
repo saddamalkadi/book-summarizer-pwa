@@ -233,7 +233,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.54';
+  const WEB_RELEASE_LABEL = 'v8.55';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -713,7 +713,8 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   }
 
   function getGatewayWorkerRoot(settings = getSettings()){
-    return normalizeEndpointUrl(settings.gatewayUrl || '').replace(/\/v1\/?$/i, '');
+    if (isManagedHostedRuntime()) return getPlatformServiceRoot();
+    return normalizeManagedGatewayUrl(settings.gatewayUrl || '').replace(/\/v1\/?$/i, '');
   }
 
   function getPlatformServiceRoot(){
@@ -878,6 +879,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   }
 
   function resolveGatewayApiRoot(settings){
+    if (isManagedHostedRuntime()) return getPlatformServiceRoot();
     const rawGateway = normalizeEndpointUrl(settings?.gatewayUrl || '');
     if (!rawGateway) return '';
 
@@ -938,8 +940,9 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
 
   function effectiveBaseUrl(settings){
     // Gateway uses a Worker URL and exposes /v1 compatible endpoints.
-    if (settings.authMode === 'gateway' && settings.gatewayUrl){
-      return normalizeUrl(resolveGatewayApiRoot(settings)) + '/v1';
+    if (settings.authMode === 'gateway'){
+      const gatewayRoot = getGatewayWorkerRoot(settings) || normalizeUrl(resolveGatewayApiRoot(settings));
+      if (gatewayRoot) return `${normalizeUrl(gatewayRoot)}/v1`;
     }
     return normalizeUrl(settings.baseUrl || '');
   }
@@ -963,7 +966,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   }
 
   function getAuthServiceRoot(settings = getSettings()){
-    return getPlatformServiceRoot() || getGatewayWorkerRoot(settings);
+    return getGatewayWorkerRoot(settings) || getPlatformServiceRoot();
   }
 
   function getAccountRuntimeState(settings = getSettings()){
@@ -2406,6 +2409,7 @@ function applyUiCollapse(){
 }
 
 let scrollDockFrame = 0;
+let lastStickyShellMetrics = '';
 function scheduleChatScrollDockSync(){
   if (scrollDockFrame) cancelAnimationFrame(scrollDockFrame);
   scrollDockFrame = requestAnimationFrame(() => {
@@ -2437,6 +2441,13 @@ function syncStickyShellMetrics(){
   const floatingBottom = window.innerWidth <= 640
     ? Math.max(92, chatbarHeight + 18)
     : Math.max(38, chatbarHeight + 22);
+  const metrics = [
+    Math.max(stickyGap, topbarHeight + stickyGap),
+    Math.max(stickyGap, topbarHeight + subtopbarHeight + (stickyGap * 2)),
+    floatingBottom
+  ].join('|');
+  if (metrics === lastStickyShellMetrics) return;
+  lastStickyShellMetrics = metrics;
   root.style.setProperty('--sticky-subtopbar-top', `${Math.max(stickyGap, topbarHeight + stickyGap)}px`);
   root.style.setProperty('--sticky-toolbar-top', `${Math.max(stickyGap, topbarHeight + subtopbarHeight + (stickyGap * 2))}px`);
   root.style.setProperty('--floating-nav-bottom', `${floatingBottom}px`);
@@ -4462,7 +4473,10 @@ function syncUnifiedAuthEntry(){
   }
 
   async function consumeAuthRedirectParams(params){
-    return consumeAuthPayload(extractAuthPayloadFromParams(params), { upgradeCode: getAuthState().upgradeCode || '' });
+    return consumeAuthPayload(extractAuthPayloadFromParams(params), {
+      upgradeCode: getAuthState().upgradeCode || '',
+      targetPage: normalizeTargetPage(params.get('target_page') || params.get('targetPage') || '')
+    });
   }
 
   async function consumeAuthRedirectFromLocation(){
@@ -4592,16 +4606,17 @@ function syncUnifiedAuthEntry(){
     if (!force && getAccountRuntimeState().authRequired !== true) return;
     ensureAccountChrome();
     $('authGate')?.classList.add('show');
-    setAuthGateStatus(message || 'سجّل الدخول ببريدك الشخصي لفتح الخطة المجانية، أو استخدم بريد الإدارة مع كلمة المرور من نفس الشاشة.', 'info');
+    setAuthGateStatus('جارٍ تحميل خيارات تسجيل الدخول...', 'busy');
     syncUnifiedAuthEntry();
     if ($('authCloseBtn')) $('authCloseBtn').style.display = (hasValidAuthSession() || !getAccountRuntimeState().authRequired) ? '' : 'none';
-    renderGoogleButton().catch((error) => {
-      setAuthGateStatus(`تعذر تهيئة تسجيل Google: ${error?.message || error}`, 'error');
-    });
     loadRemoteAuthConfig(true).then(() => {
       syncUnifiedAuthEntry();
       syncAccountPlanControls();
+      setAuthGateStatus(message || 'سجّل الدخول ببريدك الشخصي لفتح الخطة المجانية، أو استخدم بريد الإدارة مع كلمة المرور من نفس الشاشة.', 'info');
       return renderGoogleButton(true);
+    }).catch((error) => {
+      setAuthGateStatus(`تعذر تهيئة تسجيل الدخول: ${error?.message || error}`, 'error');
+      return renderGoogleButton(true).catch(() => null);
     }).catch(() => null);
   }
 
@@ -4896,7 +4911,7 @@ async function submitUnifiedAuthEntry(){
     if (AUTH_RUNTIME.booting) return;
     AUTH_RUNTIME.booting = true;
     try{
-      await loadRemoteAuthConfig(false).catch(() => null);
+      await loadRemoteAuthConfig(true).catch(() => null);
       await verifyStoredAuthSession(false).catch(() => null);
       syncAccountUi();
       const account = getAccountRuntimeState();
@@ -10418,7 +10433,6 @@ let pinOnly = false;
     document.querySelectorAll('.page').forEach((p) => p.classList.toggle('active', p.id === `page-${page}`));
     if ($('topTitle')) $('topTitle').textContent = NAV_TITLES[page] || 'استوديو الذكاء';
     if (NAV_GROUPS.tools.includes(page)) expandNavGroup('toolsGroup');
-    refreshStrategicWorkspace().catch(()=>{});
     scheduleChatScrollDockSync();
   }
 

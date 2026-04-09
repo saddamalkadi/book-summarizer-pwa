@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.54">
+<html lang="ar" dir="rtl" data-appver="8.55">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.54</title>
+    <title>AI Workspace Studio v8.55</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -702,6 +702,23 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     #page-settings > .settings-overview{
       width: min(100%, var(--toolbar-max));
       margin-inline: auto;
+    }
+    #page-settings{
+      align-items: stretch;
+      gap: 12px;
+      padding-bottom: 24px;
+    }
+    #page-settings > .toolbar,
+    #page-settings > .panel{
+      width: min(100%, var(--toolbar-max));
+      margin-inline: auto;
+    }
+    #page-settings > .panel{
+      flex: 0 0 auto;
+      overflow: visible;
+    }
+    #page-settings .panel > .body{
+      overflow: visible;
     }
     #page-chat > .chatbar,
     #page-chat > .composer-meta,
@@ -1960,7 +1977,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     }
 
 /* ═══════════════════════════════════════════
-   v8.54 — Production Stabilization Pass
+   v8.55 — Production Stabilization Pass
    ═══════════════════════════════════════════ */
 
 /* — Sidebar account strip — */
@@ -2966,7 +2983,7 @@ body, input, textarea, select, button{
 }
 
 /* ══════════════════════════════════════════════
-   FINAL CLOSURE PASS — v8.54 PRODUCTION STABILIZATION
+   FINAL CLOSURE PASS — v8.55 PRODUCTION STABILIZATION
    ══════════════════════════════════════════════ */
 
 /* 1. Chat Toolbar — secondary groups collapsed by default */
@@ -3214,7 +3231,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.54</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.55</div>
       </div>
     </aside>
 
@@ -4055,7 +4072,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
     })();
   </script>
 
-<script src="app.js?v=854"></script>
+<script src="app.js?v=855"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -4069,7 +4086,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v854";
+          const CURRENT_CACHE = "aistudio-cache-v855";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -4078,7 +4095,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=854").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=855").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {
