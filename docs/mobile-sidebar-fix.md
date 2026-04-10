@@ -15,22 +15,25 @@ It does not include:
 
 ## Final root cause
 
-The mobile sidebar bug was caused by **two overlapping sidebar rendering systems plus a late stabilization layer**:
+The final mobile portrait sidebar failure had **two layers of cause**:
 
-1. Base mobile drawer rules inside `@media (max-width: 980px)`
-2. `body.sidebarFloating .side` / `.backdrop2` rules that were originally meant for floating desktop sidebar mode
-3. A later mobile stabilization block that tried to override both
+1. An overlapping mobile drawer contract caused by:
+   - base `@media (max-width: 980px)` mobile rules
+   - `body.sidebarFloating .side` / `.backdrop2` rules
+   - a later "Mobile sidebar stabilization" block
+2. A production-only stacking failure on the login screen:
+   - `.auth-gate` is rendered as a fixed overlay with `z-index: 130`
+   - the mobile drawer was rendered with:
+     - `.side { z-index: 120 }`
+     - `.backdrop2 { z-index: 108 }`
 
-Because JavaScript only toggled `.show` and `sidebarFloating`, the DOM could end up in a contradictory state:
+That meant the drawer could be **opened correctly in DOM state**, while still being painted **under the login overlay**. This is why the button looked broken in Android portrait even when JavaScript had already toggled:
 
-- the sidebar was open logically
-- but mobile portrait still inherited floating-sidebar positioning or clipping behavior
-- or backdrop/visibility was controlled by a different CSS path than the drawer itself
+- `.side.show`
+- `.backdrop2.show`
+- `body.mobileSidebarOpen`
 
-This produced the real runtime symptom:
-
-- the menu button could be clicked
-- but the drawer became partially hidden, visually clipped, behind layers, or appeared to fail
+The drawer was not "closed"; it was simply below the auth layer and therefore visually inaccessible.
 
 ## What changed
 
@@ -69,12 +72,22 @@ That block now explicitly controls:
 - `position`
 - `transform`
 - `visibility`
+- `opacity`
 - `pointer-events`
 - `z-index`
 - `overflow`
 - safe-area padding
 
-### 4. Sidebar state is now synchronized explicitly in JavaScript
+### 4. The mobile backdrop and drawer now live above the auth overlay
+
+The final blocking issue was fixed by raising the mobile layering above `.auth-gate`:
+
+- `.backdrop2` was moved to `z-index: 138`
+- `.side` was moved to `z-index: 140`
+
+This preserves desktop behavior while making the drawer visible and interactive even when the login gate is still shown.
+
+### 5. Sidebar state is now synchronized explicitly in JavaScript
 
 In [`app.js`](C:/Users/Elite/OneDrive/Documenti/GitHub/book-summarizer-pwa/app.js):
 
@@ -97,3 +110,9 @@ Desktop behavior was intentionally preserved:
 - `sidebarFloating` still works on desktop only
 - desktop pinned/floating behavior remains controlled by the existing sidebar pin logic
 - no desktop layout redesign was introduced
+
+## Production version for this fix
+
+The live production shell used for final verification was:
+
+- `v8.58`
