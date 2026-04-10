@@ -276,6 +276,17 @@
       const openHref = (href) => {
         const value = String(href || '').trim();
         if (!value) return;
+        const isAppReturn = /^(?:aiworkspace:|intent:)/i.test(value);
+        if (isAppReturn){
+          try{
+            window.location.replace(value);
+            return;
+          }catch(_){}
+          try{
+            window.location.href = value;
+            return;
+          }catch(_){}
+        }
         try{
           const anchor = document.createElement('a');
           anchor.href = value;

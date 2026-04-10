@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.47">
+<html lang="ar" dir="rtl" data-appver="8.59">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.47</title>
+    <title>AI Workspace Studio v8.59</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -175,10 +175,6 @@
     /* Mobile */
     @media (max-width:980px){
       .app{grid-template-columns:1fr; padding:10px; min-height:100%;}
-      .side{position:fixed; inset:10px auto 10px 10px; width:min(340px,88vw); max-height:calc(var(--app-vh) - 20px); transform:translateX(-120%); transition:transform .18s ease; z-index:50;}
-      .side.show{transform:translateX(0);}
-      .backdrop2{display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:40;}
-      .backdrop2.show{display:block;}
       .split{grid-template-columns:1fr;}
       .main{max-height:none; min-height:0; overflow:visible;}
       .content{min-height:calc(var(--app-vh) - 96px);}
@@ -211,12 +207,12 @@
       .toolbar{padding:8px 8px 6px;}
       .chatlog{padding:10px 8px;}
       .bubble{margin-bottom:8px; border-radius:14px;}
-      .chatbar{position:sticky; bottom:0; background:var(--card); border-top:1px solid var(--line); padding:8px; padding-bottom:calc(8px + env(safe-area-inset-bottom)); padding-bottom:calc(8px + constant(safe-area-inset-bottom)); z-index:8;}
+      #page-chat > .chatbar{position:fixed; left:0; right:0; bottom:0; background:var(--card); border-top:1px solid var(--line); padding:8px; padding-bottom:calc(8px + env(safe-area-inset-bottom)); padding-bottom:calc(8px + constant(safe-area-inset-bottom)); z-index:20;}
+      #page-chat > .chatlog{padding-bottom:calc(76px + env(safe-area-inset-bottom)) !important;}
       .chatbar .btn{height:40px; padding:0 10px;}
       .chatbar input{min-width:0; font-size:16px;}
       .chips{padding:0 8px 8px;}
       .hint{font-size:12px;}
-      .side{inset:0 auto 0 0; width:min(330px,90vw); max-height:100%; border-radius:0 18px 18px 0; padding-top:calc(14px + env(safe-area-inset-top)); padding-top:calc(14px + constant(safe-area-inset-top));}
       .modal .panel{left:2vw; right:2vw; top:4vh; max-height:92vh;}
       .page{overscroll-behavior-y:auto;}
       #page-chat{overflow:auto;}
@@ -702,6 +698,23 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       width: min(100%, var(--toolbar-max));
       margin-inline: auto;
     }
+    #page-settings{
+      align-items: stretch;
+      gap: 12px;
+      padding-bottom: 24px;
+    }
+    #page-settings > .toolbar,
+    #page-settings > .panel{
+      width: min(100%, var(--toolbar-max));
+      margin-inline: auto;
+    }
+    #page-settings > .panel{
+      flex: 0 0 auto;
+      overflow: visible;
+    }
+    #page-settings .panel > .body{
+      overflow: visible;
+    }
     #page-chat > .chatbar,
     #page-chat > .composer-meta,
     #page-chat > .chips,
@@ -762,6 +775,144 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     }
     .workspace-deck{
       padding: 14px var(--page-gutter);
+    }
+    .home-shell{
+      display: grid;
+      gap: 18px;
+      padding: 14px var(--page-gutter) 28px;
+    }
+    .home-hero-host{
+      display: grid;
+      gap: 16px;
+    }
+    .home-section{
+      display: grid;
+      gap: 14px;
+    }
+    .home-section-head{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .home-section-head h2{
+      margin: 0 0 4px;
+      font-size: 24px;
+      color: #0f172a;
+    }
+    .home-section-head p{
+      margin: 0;
+      color: #546179;
+      line-height: 1.8;
+    }
+    .home-journey-grid,
+    .home-dashboard-grid{
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+    .home-card,
+    .home-panel{
+      border-radius: 22px;
+      border: 1px solid rgba(10,20,60,.08);
+      background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(245,248,255,.98));
+      box-shadow: 0 16px 34px rgba(15,23,42,.06);
+    }
+    .home-card{
+      display: grid;
+      gap: 8px;
+      text-align: right;
+      padding: 18px 18px 16px;
+      cursor: pointer;
+      transition: transform .15s ease, box-shadow .18s ease, border-color .18s ease;
+    }
+    .home-card:hover{
+      transform: translateY(-2px);
+      box-shadow: 0 18px 38px rgba(15,23,42,.1);
+      border-color: rgba(27,102,255,.22);
+    }
+    .home-card-icon{
+      width: 44px;
+      height: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(27,102,255,.1), rgba(20,184,166,.12));
+      color: #1b3870;
+      font-size: 22px;
+    }
+    .home-card h3{
+      margin: 0;
+      font-size: 18px;
+      color: #10203f;
+    }
+    .home-card p{
+      margin: 0;
+      color: #55637b;
+      line-height: 1.8;
+      font-size: 14px;
+    }
+    .home-card-meta{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      color: #1f4fbf;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .home-panel{
+      padding: 18px;
+      display: grid;
+      gap: 14px;
+    }
+    .home-panel-head{
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .home-panel-head h3{
+      margin: 0 0 4px;
+      font-size: 20px;
+      color: #10203f;
+    }
+    .home-panel-head p{
+      margin: 0;
+      color: #55637b;
+      line-height: 1.8;
+    }
+    .home-summary-list{
+      display: grid;
+      gap: 10px;
+    }
+    .home-summary-item{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: rgba(255,255,255,.72);
+      border: 1px solid rgba(10,20,60,.06);
+    }
+    .home-summary-item strong{
+      color: #10203f;
+      font-size: 14px;
+    }
+    .home-summary-item span{
+      color: #607089;
+      font-size: 13px;
+      text-align: left;
+    }
+    .home-panel-actions,
+    .home-inline-links{
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
     }
     .workspace-hero{
       min-height: 240px;
@@ -1169,6 +1320,13 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       .workspace-deck{
         padding: 12px var(--page-gutter);
       }
+      .home-shell{
+        padding: 12px var(--page-gutter) 22px;
+      }
+      .home-section-head,
+      .home-panel-head{
+        align-items: stretch;
+      }
       .workspace-deck.workspace-deck-collapsed{
         display: none;
       }
@@ -1183,6 +1341,10 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       }
       .bubble{
         width: min(100%, 96%);
+      }
+      .home-journey-grid,
+      .home-dashboard-grid{
+        grid-template-columns: 1fr;
       }
       .empty-chat-points{
         grid-template-columns: 1fr;
@@ -1214,6 +1376,10 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       }
       .auth-gate{
         padding: 12px;
+      }
+      .home-card,
+      .home-panel{
+        border-radius: 18px;
       }
       .auth-hero,
       .auth-card{
@@ -1414,33 +1580,35 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       gap: 10px;
       grid-column: 1 / -1;
     }
-    body.sidebarFloating .app{
-      grid-template-columns: 1fr;
-    }
-    body.sidebarFloating .side{
-      position: fixed;
-      top: 12px;
-      bottom: 12px;
-      right: 12px;
-      left: auto;
-      width: min(320px, 28vw);
-      max-height: none;
-      transform: translateX(calc(100% + 24px));
-      transition: transform .2s ease;
-      z-index: 60;
-    }
-    body.sidebarFloating .side.show{
-      transform: translateX(0);
-    }
-    body.sidebarFloating .backdrop2{
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(5,10,25,.38);
-      z-index: 55;
-    }
-    body.sidebarFloating .backdrop2.show{
-      display: block;
+    @media (min-width:981px){
+      body.sidebarFloating .app{
+        grid-template-columns: 1fr;
+      }
+      body.sidebarFloating .side{
+        position: fixed;
+        top: 12px;
+        bottom: 12px;
+        right: 12px;
+        left: auto;
+        width: min(320px, 28vw);
+        max-height: none;
+        transform: translateX(calc(100% + 24px));
+        transition: transform .2s ease;
+        z-index: 60;
+      }
+      body.sidebarFloating .side.show{
+        transform: translateX(0);
+      }
+      body.sidebarFloating .backdrop2{
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(5,10,25,.38);
+        z-index: 55;
+      }
+      body.sidebarFloating .backdrop2.show{
+        display: block;
+      }
     }
     body.focusMode #page-chat > .toolbar.mainToolbar,
     body.focusMode #page-chat > .workspace-deck,
@@ -1466,13 +1634,6 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       .workspace-brief-grid{
         grid-template-columns: 1fr;
       }
-      body.sidebarFloating .side{
-        width: min(360px, 90vw);
-        right: 10px;
-        left: auto;
-        top: 10px;
-        bottom: 10px;
-      }
     }
     @media (max-width:640px){
       .brand-dock-btn .label{
@@ -1480,10 +1641,6 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       }
       .workspace-section-summary{
         white-space: normal;
-      }
-      body.sidebarFloating .side{
-        width: min(92vw, 360px);
-        border-radius: 20px;
       }
     }
 
@@ -1806,7 +1963,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     }
 
 /* ═══════════════════════════════════════════
-   v8.47 — Final Polish Pass
+   v8.59 — Android Parity Alignment
    ═══════════════════════════════════════════ */
 
 /* — Sidebar account strip — */
@@ -2417,6 +2574,10 @@ select{
   0%,100%{ opacity:.35; transform:scale(.85); }
   50%{ opacity:1; transform:scale(1); }
 }
+@keyframes dl-progress{
+  0%{ width:15%; transform:translateX(0); }
+  100%{ width:75%; transform:translateX(30px); }
+}
 .typing-dot{
   animation: typing-pulse 1.1s ease-in-out infinite;
 }
@@ -2808,7 +2969,7 @@ body, input, textarea, select, button{
 }
 
 /* ══════════════════════════════════════════════
-   FINAL CLOSURE PASS — v8.47 UI POLISH
+   FINAL CLOSURE PASS — v8.59 ANDROID PARITY ALIGNMENT
    ══════════════════════════════════════════════ */
 
 /* 1. Chat Toolbar — secondary groups collapsed by default */
@@ -3002,6 +3163,80 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
   font-size: 13px;
   padding: 5px 10px;
 }
+
+/* 12. Mobile sidebar stabilization */
+@media (max-width: 980px) {
+  body.mobileSidebarOpen {
+    overflow: hidden;
+  }
+  body.mobileSidebarOpen .app,
+  body.mobileSidebarOpen .main,
+  body.mobileSidebarOpen .content {
+    overflow: visible !important;
+  }
+  body.mobileSidebarOpen .floating-scroll-nav {
+    opacity: 0 !important;
+    transform: translateY(14px) !important;
+    pointer-events: none !important;
+  }
+  .backdrop2 {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(5, 10, 25, .38);
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 138;
+    transition: opacity .18s ease;
+  }
+  .backdrop2.show {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .side {
+    position: fixed !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: auto !important;
+    width: min(360px, 88vw) !important;
+    max-width: calc(100vw - 22px);
+    max-height: none !important;
+    height: var(--app-vh);
+    border-radius: 0 22px 22px 0 !important;
+    padding-top: calc(14px + env(safe-area-inset-top));
+    padding-top: calc(14px + constant(safe-area-inset-top));
+    padding-bottom: calc(14px + env(safe-area-inset-bottom));
+    padding-bottom: calc(14px + constant(safe-area-inset-bottom));
+    display: flex !important;
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    z-index: 140 !important;
+    box-shadow: none;
+    transition: transform .18s ease, opacity .18s ease, visibility 0s linear .18s;
+    transform: translate3d(calc(-100% - 18px), 0, 0) !important;
+  }
+  .side.show {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+    box-shadow: 0 28px 60px rgba(5, 10, 25, .34);
+    transition-delay: 0s;
+    transform: translate3d(0, 0, 0) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .side {
+    width: min(86vw, 350px) !important;
+    border-radius: 0 18px 18px 0 !important;
+  }
+}
 </style>
 </head>
 <body>
@@ -3056,7 +3291,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;">v8.47</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.59</div>
       </div>
     </aside>
 
@@ -3081,8 +3316,111 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
       <div class="status" id="statusBox"></div>
 
       <section class="content">
+        <!-- HOME -->
+        <div class="page active" id="page-home">
+          <div class="home-shell">
+            <div class="home-hero-host" id="homeHeroHost"></div>
+
+            <section class="home-section">
+              <div class="home-section-head">
+                <div>
+                  <h2>المسارات الأساسية</h2>
+                  <p>ابدأ من الرحلة المناسبة، ثم انتقل إلى الأدوات المتقدمة عند الحاجة دون أن تفقد أي قدرة من قدرات المنصة.</p>
+                </div>
+                <div class="home-inline-links">
+                  <button class="btn dark sm with-label" type="button" data-open-page="chat"><span class="icon">💬</span><span class="label">متابعة الدردشة</span></button>
+                  <button class="btn ghost sm with-label" type="button" data-open-page="projects"><span class="icon">🗂</span><span class="label">فتح المشاريع</span></button>
+                </div>
+              </div>
+
+              <div class="home-journey-grid" id="homeJourneyGrid">
+                <button class="home-card" type="button" data-open-page="chat">
+                  <span class="home-card-icon" aria-hidden="true">💬</span>
+                  <h3>الدردشة</h3>
+                  <p>تابع آخر محادثة أو ابدأ سؤالًا جديدًا مع المرفقات والصوت من مساحة واحدة.</p>
+                  <span class="home-card-meta" id="homeChatMeta">—</span>
+                </button>
+                <button class="home-card" type="button" data-open-page="projects">
+                  <span class="home-card-icon" aria-hidden="true">🗂</span>
+                  <h3>المشاريع</h3>
+                  <p>نظّم العمل طويل المدى، brief المشروع، والسياق المشترك بين الدردشة والملفات.</p>
+                  <span class="home-card-meta" id="homeProjectsMeta">—</span>
+                </button>
+                <button class="home-card" type="button" data-open-page="files">
+                  <span class="home-card-icon" aria-hidden="true">📁</span>
+                  <h3>الملفات</h3>
+                  <p>استعرض الملفات، عاينها، ثم أرسلها إلى الدردشة أو اللوحة عند الحاجة.</p>
+                  <span class="home-card-meta" id="homeFilesMeta">—</span>
+                </button>
+                <button class="home-card" type="button" data-open-page="knowledge">
+                  <span class="home-card-icon" aria-hidden="true">🧠</span>
+                  <h3>المعرفة</h3>
+                  <p>أدر قاعدة المعرفة الدائمة للمشروع وافتح RAG من مكانه الصحيح بدل الشريط الرئيسي.</p>
+                  <span class="home-card-meta" id="homeKnowledgeMeta">—</span>
+                </button>
+                <button class="home-card" type="button" data-open-page="transcription">
+                  <span class="home-card-icon" aria-hidden="true">🧾</span>
+                  <h3>التفريغ والتحويل</h3>
+                  <p>OCR واستخراج النص وتحويل PDF إلى Word من مساحة تشغيل مستقلة وواضحة.</p>
+                  <span class="home-card-meta" id="homeTranscriptionMeta">—</span>
+                </button>
+                <button class="home-card" type="button" data-open-page="downloads">
+                  <span class="home-card-icon" aria-hidden="true">⬇</span>
+                  <h3>التنزيلات</h3>
+                  <p>كل الملفات المولدة والمخرجات النهائية تبقى في مكان واحد يسهل الرجوع إليه.</p>
+                  <span class="home-card-meta" id="homeDownloadsMeta">—</span>
+                </button>
+              </div>
+            </section>
+
+            <div class="home-dashboard-grid">
+              <section class="home-panel">
+                <div class="home-panel-head">
+                  <div>
+                    <h3>متابعة العمل الحالي</h3>
+                    <p>ملخص سريع للمحادثة والمشروع والملفات الحالية قبل الانتقال إلى أي مساحة تنفيذ.</p>
+                  </div>
+                  <button class="btn ghost sm with-label" type="button" data-open-page="chat"><span class="icon">↩</span><span class="label">فتح الدردشة</span></button>
+                </div>
+                <div class="home-summary-list">
+                  <div class="home-summary-item"><strong>المحادثة الحالية</strong><span id="homeCurrentThreadState">—</span></div>
+                  <div class="home-summary-item"><strong>المشروع النشط</strong><span id="homeCurrentProjectState">—</span></div>
+                  <div class="home-summary-item"><strong>ملفات المشروع</strong><span id="homeCurrentFilesState">—</span></div>
+                  <div class="home-summary-item"><strong>المعرفة والتنزيلات</strong><span id="homeCurrentKnowledgeState">—</span></div>
+                </div>
+                <div class="home-panel-actions">
+                  <button class="btn dark sm with-label" type="button" data-open-page="chat"><span class="icon">✦</span><span class="label">ابدأ من هنا</span></button>
+                  <button class="btn ghost sm with-label" type="button" data-open-page="files"><span class="icon">📎</span><span class="label">إدارة الملفات</span></button>
+                  <button class="btn ghost sm with-label" type="button" data-open-page="downloads"><span class="icon">⬇</span><span class="label">آخر التنزيلات</span></button>
+                </div>
+              </section>
+
+              <section class="home-panel">
+                <div class="home-panel-head">
+                  <div>
+                    <h3>الأدوات المتقدمة</h3>
+                    <p>كل القدرات بقيت موجودة، لكنها انتقلت إلى طبقتها المناسبة بدل ظهورها دفعة واحدة في الواجهة الأساسية.</p>
+                  </div>
+                  <button class="btn ghost sm with-label" type="button" data-open-page="settings"><span class="icon">⚙</span><span class="label">الإعدادات</span></button>
+                </div>
+                <div class="home-summary-list">
+                  <div class="home-summary-item"><strong>اللوحة</strong><span>مساحة تحرير وإخراج قابلة للحفظ والتصدير</span></div>
+                  <div class="home-summary-item"><strong>سير العمل</strong><span>تجميع القوالب والمهام التنفيذية في طبقة مستقلة</span></div>
+                  <div class="home-summary-item"><strong>الإعدادات</strong><span>الحساب، التكلفة، الصوت، التزامن، والخيارات التقنية العميقة</span></div>
+                  <div class="home-summary-item"><strong>دليل الاستخدام</strong><span>يبقى متاحًا من طبقة الإعدادات والروابط العميقة</span></div>
+                </div>
+                <div class="home-panel-actions">
+                  <button class="btn ghost sm with-label" type="button" data-open-page="canvas"><span class="icon">📝</span><span class="label">فتح اللوحة</span></button>
+                  <button class="btn ghost sm with-label" type="button" data-open-page="workflows"><span class="icon">⚡</span><span class="label">سير العمل</span></button>
+                  <button class="btn ghost sm with-label" type="button" data-open-page="guide"><span class="icon">📘</span><span class="label">دليل الاستخدام</span></button>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+
         <!-- CHAT -->
-        <div class="page active" id="page-chat">
+        <div class="page" id="page-chat">
           
           <div class="toolbar" id="chatMiniToolbar" style="display:none">
             <button class="btn ghost sm icon" id="chatToolbarExpandBtn" type="button" title="إظهار الأدوات" aria-label="إظهار الأدوات">⚙</button>
@@ -3747,22 +4085,40 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
       const isAndroidLike = /Android/i.test(navigator.userAgent || '');
       let resizeTimer = 0;
       let lastHeight = 0;
+      let lastEditingState = null;
       const isEditable = (el = document.activeElement) => {
         if (!el) return false;
         if (el.isContentEditable) return true;
         const tag = String(el.tagName || '').toUpperCase();
         return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
       };
+      const shouldManageViewport = () => {
+        try{
+          return window.matchMedia('(max-width: 980px), (pointer: coarse)').matches;
+        }catch(_){
+          return window.innerWidth <= 980;
+        }
+      };
       const commitViewportHeight = (force = false) => {
+        if (!shouldManageViewport()){
+          lastHeight = 0;
+          document.body.classList.remove('keyboardEditing');
+          lastEditingState = false;
+          return;
+        }
         const viewportHeight = Math.round((window.visualViewport && window.visualViewport.height) || window.innerHeight || document.documentElement.clientHeight || 0);
-        if (!force && lastHeight && Math.abs(viewportHeight - lastHeight) < 4) return;
+        if (!force && lastHeight && Math.abs(viewportHeight - lastHeight) < 16) return;
         lastHeight = viewportHeight;
         document.documentElement.style.setProperty('--app-vh', `${viewportHeight}px`);
-        document.body.classList.toggle('keyboardEditing', isAndroidLike && isEditable());
+        const editing = isAndroidLike && isEditable();
+        if (lastEditingState !== editing){
+          document.body.classList.toggle('keyboardEditing', editing);
+          lastEditingState = editing;
+        }
       };
       const scheduleViewportHeight = (force = false) => {
         clearTimeout(resizeTimer);
-        const delay = isAndroidLike && isEditable() ? 140 : 0;
+        const delay = shouldManageViewport() && isAndroidLike && isEditable() ? 140 : 0;
         resizeTimer = window.setTimeout(() => commitViewportHeight(force), delay);
       };
       commitViewportHeight(true);
@@ -3776,7 +4132,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
     })();
   </script>
 
-<script src="app.js?v=851"></script>
+<script src="app.js?v=859"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -3790,7 +4146,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v847";
+          const CURRENT_CACHE = "aistudio-cache-v859";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -3799,7 +4155,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=851").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=859").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

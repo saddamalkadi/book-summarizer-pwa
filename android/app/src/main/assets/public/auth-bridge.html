@@ -218,6 +218,7 @@
       const params = new URLSearchParams(window.location.search);
       const worker = String(params.get('worker') || '').trim().replace(/\/+$/,'');
       const nativeReturn = String(params.get('native_return') || '').trim() === '1';
+      const targetPage = String(params.get('target_page') || params.get('targetPage') || '').trim();
       const explicitReturn = String(params.get('return_to') || '').trim();
       const webReturn = explicitReturn && !nativeReturn ? explicitReturn : PUBLIC_WEB_HOME;
 
@@ -246,6 +247,7 @@
         q.set('picture', String(payload.picture || ''));
         q.set('plan', String(payload.plan || 'free'));
         q.set('role', String(payload.role || 'user'));
+        if (targetPage) q.set('target_page', targetPage);
         return q.toString();
       };
 
@@ -274,6 +276,17 @@
       const openHref = (href) => {
         const value = String(href || '').trim();
         if (!value) return;
+        const isAppReturn = /^(?:aiworkspace:|intent:)/i.test(value);
+        if (isAppReturn){
+          try{
+            window.location.replace(value);
+            return;
+          }catch(_){}
+          try{
+            window.location.href = value;
+            return;
+          }catch(_){}
+        }
         try{
           const anchor = document.createElement('a');
           anchor.href = value;

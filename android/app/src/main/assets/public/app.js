@@ -1,4 +1,4 @@
-/* AI Workspace Studio v8.52 - strategic platform skeleton (no build step) */
+﻿/* AI Workspace Studio v8.34 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -136,7 +136,7 @@
   };
 
   const DEFAULT_AUTH_CONFIG = {
-    authRequired: true,
+    authRequired: false,
     brandName: 'AI Workspace Studio',
     developerName: 'صدام القاضي',
     upgradeEmail: 'tntntt830@gmail.com',
@@ -233,7 +233,8 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const DEFAULT_POST_LOGIN_PAGE = 'chat';
+  const WEB_RELEASE_LABEL = 'v8.59';
+  const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
     KEYS.authState,
@@ -712,20 +713,54 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   }
 
   function getGatewayWorkerRoot(settings = getSettings()){
-    return normalizeEndpointUrl(settings.gatewayUrl || '').replace(/\/v1\/?$/i, '');
+    if (isManagedHostedRuntime()) return getPlatformServiceRoot();
+    return normalizeManagedGatewayUrl(settings.gatewayUrl || '').replace(/\/v1\/?$/i, '');
   }
 
   function getPlatformServiceRoot(){
     return normalizeEndpointUrl(DEFAULT_SETTINGS.gatewayUrl || '').replace(/\/v1\/?$/i, '');
   }
 
-  function getAuthoritativeServiceRoot(settings = getSettings()){
-    const source = { ...DEFAULT_SETTINGS, ...(settings || {}) };
-    if (String(source.authMode || DEFAULT_SETTINGS.authMode).trim().toLowerCase() === 'gateway'){
-      const resolvedGateway = normalizeUrl(resolveGatewayApiRoot(source)) || getGatewayWorkerRoot(source);
-      if (resolvedGateway) return resolvedGateway.replace(/\/v1\/?$/i, '');
+  function isManagedHostedRuntime(){
+    try{
+      const host = String(window.location.hostname || '').toLowerCase();
+      return (
+        host === 'app.saddamalkadi.com'
+        || host === 'saddamalkadi.com'
+        || /(^|\.)saddamalkadi\.github\.io$/i.test(host)
+      );
+    }catch(_){
+      return false;
     }
-    return getPlatformServiceRoot();
+  }
+
+  function alignManagedRuntimeSettings(){
+    if (!isManagedHostedRuntime()) return getSettings();
+    const current = getSettings();
+    const nextGateway = getPlatformServiceRoot();
+    if (!nextGateway) return current;
+    const nextBase = `${nextGateway}/v1`;
+    const nextDocx = normalizeDocxCloudEndpoint(DEFAULT_SETTINGS.cloudConvertEndpoint);
+    const nextOcr = normalizeOcrCloudEndpoint(DEFAULT_SETTINGS.ocrCloudEndpoint);
+    const needsUpdate = (
+      current.authMode !== 'gateway'
+      || normalizeEndpointUrl(current.gatewayUrl || '') !== nextGateway
+      || normalizeUrl(current.baseUrl || '') !== nextBase
+      || normalizeDocxCloudEndpoint(current.cloudConvertEndpoint || '') !== nextDocx
+      || normalizeOcrCloudEndpoint(current.ocrCloudEndpoint || '') !== nextOcr
+    );
+    if (!needsUpdate) return current;
+    const next = setSettings({
+      authMode: 'gateway',
+      gatewayUrl: nextGateway,
+      baseUrl: nextBase,
+      cloudConvertEndpoint: nextDocx,
+      ocrCloudEndpoint: nextOcr
+    });
+    AUTH_RUNTIME.config = null;
+    AUTH_RUNTIME.configPromise = null;
+    AUTH_RUNTIME.configLoadedAt = 0;
+    return next;
   }
 
   function getLocalAuthConfig(settings = getSettings()){
@@ -844,6 +879,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   }
 
   function resolveGatewayApiRoot(settings){
+    if (isManagedHostedRuntime()) return getPlatformServiceRoot();
     const rawGateway = normalizeEndpointUrl(settings?.gatewayUrl || '');
     if (!rawGateway) return '';
 
@@ -904,8 +940,9 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
 
   function effectiveBaseUrl(settings){
     // Gateway uses a Worker URL and exposes /v1 compatible endpoints.
-    if (settings.authMode === 'gateway' && settings.gatewayUrl){
-      return normalizeUrl(resolveGatewayApiRoot(settings)) + '/v1';
+    if (settings.authMode === 'gateway'){
+      const gatewayRoot = getGatewayWorkerRoot(settings) || normalizeUrl(resolveGatewayApiRoot(settings));
+      if (gatewayRoot) return `${normalizeUrl(gatewayRoot)}/v1`;
     }
     return normalizeUrl(settings.baseUrl || '');
   }
@@ -929,13 +966,13 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   }
 
   function getAuthServiceRoot(settings = getSettings()){
-    return getAuthoritativeServiceRoot(settings);
+    return getGatewayWorkerRoot(settings) || getPlatformServiceRoot();
   }
 
   function getAccountRuntimeState(settings = getSettings()){
     const auth = getAuthState();
     const config = getEffectiveAuthConfig(settings);
-    const authRequired = config.authRequired !== false;
+    const authRequired = config.authRequired === true;
     const signedIn = hasValidAuthSession(auth);
     const premium = signedIn && auth.plan === 'premium';
     return {
@@ -1054,11 +1091,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     AUTH_RUNTIME.configPromise = requestRemoteConfig(settings).catch((err) => {
       const repaired = repairGatewayAfterAccessIssue(err, settings);
       if (repaired){
-        return requestRemoteConfig(repaired);
-      }
-      const cached = loadJSON(KEYS.authConfigCache, null);
-      if (cached && typeof cached === 'object' && Object.keys(cached).length){
-        return setAuthConfigCached({ ...getLocalAuthConfig(settings), ...cached });
+        return requestRemoteConfig(repaired).catch(() => setAuthConfigCached(getLocalAuthConfig(settings)));
       }
       return setAuthConfigCached(getLocalAuthConfig(settings));
     }).finally(() => {
@@ -1293,7 +1326,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       body: JSON.stringify({
         reason,
         state: snapshot,
-        appVersion: '8.33.0'
+        appVersion: '8.44.0'
       })
     }).then((payload) => {
       CLOUD_RUNTIME.lastHash = hash;
@@ -2376,6 +2409,7 @@ function applyUiCollapse(){
 }
 
 let scrollDockFrame = 0;
+let lastStickyShellMetrics = '';
 function scheduleChatScrollDockSync(){
   if (scrollDockFrame) cancelAnimationFrame(scrollDockFrame);
   scrollDockFrame = requestAnimationFrame(() => {
@@ -2395,6 +2429,67 @@ function getChatScrollContainer(){
   return logRange > 0 ? log : page;
 }
 
+function isMobileSidebarViewport(){
+  return window.innerWidth <= 980;
+}
+
+function isSidebarOverlayMode(){
+  return isMobileSidebarViewport() || document.body.classList.contains('sidebarFloating');
+}
+
+function syncSidebarDrawerState(){
+  const side = $('side');
+  const backdrop = $('backdrop');
+  const openBtn = $('openSideBtn');
+  const closeBtn = $('closeSideBtn');
+  const mobile = isMobileSidebarViewport();
+  const overlayMode = isSidebarOverlayMode();
+  const requestedOpen = !!(side && side.classList.contains('show'));
+  const open = !!(requestedOpen && overlayMode);
+  const sidebarMode = mobile ? 'mobile-overlay' : (document.body.classList.contains('sidebarFloating') ? 'desktop-floating' : 'desktop-pinned');
+
+  document.body.classList.toggle('mobileSidebarOpen', mobile && open);
+  if (mobile){
+    document.body.classList.remove('sidebarFloating');
+  }
+  document.body.dataset.sidebarMode = sidebarMode;
+  if (backdrop){
+    backdrop.classList.toggle('show', overlayMode && open);
+    backdrop.hidden = !(overlayMode && open);
+    backdrop.dataset.sidebarMode = sidebarMode;
+  }
+  if (side){
+    side.classList.toggle('show', overlayMode && open);
+    side.dataset.sidebarMode = sidebarMode;
+    side.setAttribute('aria-hidden', open ? 'false' : 'true');
+  }
+  if (openBtn){
+    openBtn.setAttribute('aria-controls', 'side');
+    openBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  if (closeBtn){
+    closeBtn.setAttribute('aria-controls', 'side');
+    closeBtn.setAttribute('aria-label', 'إغلاق القائمة');
+  }
+}
+
+function setSidebarDrawerOpen(open){
+  const side = $('side');
+  if (!side) return;
+  if (open && window.innerWidth > 980 && getSidebarPinned()) return;
+  side.classList.toggle('show', !!open);
+  syncSidebarDrawerState();
+  scheduleChatScrollDockSync();
+}
+
+function openSide(){
+  setSidebarDrawerOpen(true);
+}
+
+function closeSide(){
+  setSidebarDrawerOpen(false);
+}
+
 function syncStickyShellMetrics(){
   const root = document.documentElement;
   const topbar = document.querySelector('.topbar');
@@ -2407,14 +2502,31 @@ function syncStickyShellMetrics(){
   const floatingBottom = window.innerWidth <= 640
     ? Math.max(92, chatbarHeight + 18)
     : Math.max(38, chatbarHeight + 22);
+  const metrics = [
+    Math.max(stickyGap, topbarHeight + stickyGap),
+    Math.max(stickyGap, topbarHeight + subtopbarHeight + (stickyGap * 2)),
+    floatingBottom
+  ].join('|');
+  if (metrics === lastStickyShellMetrics) return;
+  lastStickyShellMetrics = metrics;
   root.style.setProperty('--sticky-subtopbar-top', `${Math.max(stickyGap, topbarHeight + stickyGap)}px`);
   root.style.setProperty('--sticky-toolbar-top', `${Math.max(stickyGap, topbarHeight + subtopbarHeight + (stickyGap * 2))}px`);
   root.style.setProperty('--floating-nav-bottom', `${floatingBottom}px`);
 }
 
+function scrollChatToBottom(){
+  const log = $('chatLog');
+  if (!log) return;
+  if (window.innerWidth <= 640) {
+    window.scrollTo(0, document.documentElement.scrollHeight + 1000);
+  }
+  log.scrollTop = log.scrollHeight + 1000;
+}
+
 function syncChatScrollDock(){
   const dock = $('chatScrollDock');
   const scroller = getChatScrollContainer();
+  const log = $('chatLog');
   if (!dock || !scroller) return;
   const activeChat = !!document.querySelector('#page-chat.page.active');
   const drawer = $('threadDrawer');
@@ -2422,6 +2534,7 @@ function syncChatScrollDock(){
   const drawerOpen = !!(drawer && drawer.classList.contains('show'));
   const sideOpen = !!(side && side.classList.contains('show'));
   const keyboardEditing = document.body.classList.contains('keyboardEditing');
+  const hasMessages = (log?.querySelectorAll('.bubble').length || 0) > 0;
   const canScroll = (scroller.scrollHeight - scroller.clientHeight) > 120;
   const visible = activeChat && canScroll && !keyboardEditing && !drawerOpen && !sideOpen;
   dock.classList.toggle('show', visible);
@@ -2432,20 +2545,24 @@ function syncChatScrollDock(){
   const nearTop = top <= 24;
   const nearBottom = (max - top) <= 24;
 
-  if ($('floatingScrollTopBtn')) $('floatingScrollTopBtn').disabled = !visible || nearTop;
-  if ($('floatingScrollBottomBtn')) $('floatingScrollBottomBtn').disabled = !visible || nearBottom;
+  if ($('floatingScrollTopBtn')) $('floatingScrollTopBtn').disabled = !visible || !hasMessages || nearTop;
+  if ($('floatingScrollBottomBtn')) $('floatingScrollBottomBtn').disabled = !visible || !hasMessages || nearBottom;
 }
 
 function applyShellLayout(){
   const desktop = window.innerWidth > 980;
   const floatingSidebar = desktop && !getSidebarPinned();
-  document.body.classList.toggle('sidebarFloating', floatingSidebar);
+  if (desktop){
+    document.body.classList.toggle('sidebarFloating', floatingSidebar);
+  } else {
+    document.body.classList.remove('sidebarFloating');
+  }
   document.body.classList.toggle('focusMode', getFocusMode());
 
-  if (!desktop || !floatingSidebar){
+  if (desktop && !floatingSidebar){
     $('side')?.classList.remove('show');
-    $('backdrop')?.classList.remove('show');
   }
+  syncSidebarDrawerState();
 
   const pinBtn = $('pinSideBtn');
   if (pinBtn){
@@ -2577,15 +2694,28 @@ function applyShellLayout(){
   function chooseSpeechSynthesisVoice(lang = 'ar-SA'){
     try{
       const voices = window.speechSynthesis?.getVoices?.() || [];
-      const exact = voices.find((voice) => String(voice.lang || '').toLowerCase() === lang.toLowerCase());
-      if (exact) return exact;
-      const family = voices.find((voice) => String(voice.lang || '').toLowerCase().startsWith(lang.split('-')[0].toLowerCase()));
-      if (family) return family;
-      if (String(lang || '').toLowerCase().startsWith('ar')){
-        const namedArabic = voices.find((voice) => /arabic|العربية|ar-/i.test(`${voice?.name || ''} ${voice?.lang || ''}`));
-        if (namedArabic) return namedArabic;
+      if (!voices.length) return null;
+      const isArabic = String(lang || '').toLowerCase().startsWith('ar');
+      if (isArabic){
+        const arabicVoices = voices.filter((v) => /^ar/i.test(v.lang || '') || /arabic|العربية/i.test(v.name || ''));
+        if (arabicVoices.length){
+          const priority = [
+            arabicVoices.find((v) => /google.*arabic|arabic.*google/i.test(v.name)),
+            arabicVoices.find((v) => /microsoft.*arabic|arabic.*microsoft/i.test(v.name)),
+            arabicVoices.find((v) => /naayf|hoda|asma|zariyah|tarik|omar|laila|amira/i.test(v.name)),
+            arabicVoices.find((v) => /ar-SA/i.test(v.lang)),
+            arabicVoices.find((v) => /ar-EG/i.test(v.lang)),
+            arabicVoices[0]
+          ];
+          const chosen = priority.find(Boolean);
+          if (chosen) return chosen;
+        }
       }
-      return voices.find((voice) => voice.default) || voices[0] || null;
+      const exact = voices.find((v) => String(v.lang || '').toLowerCase() === lang.toLowerCase());
+      if (exact) return exact;
+      const family = voices.find((v) => String(v.lang || '').toLowerCase().startsWith(lang.split('-')[0].toLowerCase()));
+      if (family) return family;
+      return voices.find((v) => v.default) || voices[0] || null;
     }catch(_){
       return null;
     }
@@ -2740,9 +2870,77 @@ function applyShellLayout(){
     return transcript;
   }
 
+  function isTtsModelArabicCapable(model){
+    if (!model) return false;
+    const m = String(model).toLowerCase();
+    if (/melotts|melo-tts/i.test(m)) return false;
+    if (/tts-1|tts-1-hd|gpt-4o|eleven|azure|google.*tts|neural|wavenet|polly|edge-tts|openai/i.test(m)) return true;
+    return false;
+  }
+
+  async function speakAssistantReplyByProxyTts(text, lang = 'ar'){
+    if (!String(text || '').trim()) return false;
+    try{
+      const apiRoot = (getAuthServiceRoot() || '').replace(/\/+$/, '');
+      const proxyUrl = apiRoot ? `${apiRoot}/proxy/tts` : '/proxy/tts';
+      const response = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, lang }),
+        signal: AbortSignal.timeout(30000)
+      });
+      if (!response.ok) return false;
+      const audioBlob = await response.blob();
+      if (!audioBlob || !audioBlob.size) return false;
+
+      const audio = new Audio();
+      const objectUrl = URL.createObjectURL(audioBlob);
+      audio.src = objectUrl;
+      audio.__objectUrl = objectUrl;
+      audio.preload = 'auto';
+      VOICE_RUNTIME.audioPlayer = audio;
+
+      return await new Promise((resolve) => {
+        const cleanup = (played) => {
+          VOICE_RUNTIME.speaking = false;
+          if (VOICE_RUNTIME.audioPlayer === audio) VOICE_RUNTIME.audioPlayer = null;
+          try{ if (audio.__objectUrl) URL.revokeObjectURL(audio.__objectUrl); }catch(_){ }
+          if (played) scheduleVoiceConversationRestart(700);
+          resolve(played);
+        };
+        audio.onended = () => cleanup(true);
+        audio.onerror = () => cleanup(false);
+        try{
+          VOICE_RUNTIME.speaking = true;
+          const p = audio.play();
+          if (p && typeof p.then === 'function') p.catch(() => cleanup(false));
+        }catch(_){ cleanup(false); }
+      });
+    }catch(_){
+      return false;
+    }
+  }
+
+  async function waitForSpeechVoices(timeoutMs = 2500){
+    return new Promise((resolve) => {
+      try{
+        const voices = window.speechSynthesis?.getVoices?.() || [];
+        if (voices.length > 0){ resolve(voices); return; }
+        const timer = setTimeout(() => resolve([]), timeoutMs);
+        window.speechSynthesis?.addEventListener?.('voiceschanged', () => {
+          clearTimeout(timer);
+          resolve(window.speechSynthesis?.getVoices?.() || []);
+        }, { once: true });
+      }catch(_){ resolve([]); }
+    });
+  }
+
   async function speakAssistantReplyByCloud(text, settings = getSettings()){
     const voice = getVoiceCloudConfig(settings);
     if (!voice.ttsReady || !String(text || '').trim()) return false;
+    const lang = String(voice.preferredLanguage || getPreferredSpeechLanguage() || '').toLowerCase();
+    const isArabic = lang.startsWith('ar');
+    if (isArabic && !isTtsModelArabicCapable(voice.synthesisModel)) return false;
     const response = await fetchAuthResponse('/voice/speak', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2931,8 +3129,16 @@ function applyShellLayout(){
     const raw = stripFileBlocks(String(content || ''));
     return raw
       .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/`[^`]*`/g, ' ')
       .replace(/\[(?:KB|FILE|IMG):[^\]]+\]/gi, ' ')
       .replace(/https?:\/\/\S+/g, ' ')
+      .replace(/^#{1,6}\s+/gm, '')
+      .replace(/^[\s]*[-*+]\s+/gm, '')
+      .replace(/^\s*\d+\.\s+/gm, '')
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/\*([^*]+)\*/g, '$1')
+      .replace(/__([^_]+)__/g, '$1')
+      .replace(/_([^_]+)_/g, '$1')
       .replace(/\s+/g, ' ')
       .trim();
   }
@@ -3063,6 +3269,17 @@ function applyShellLayout(){
     }
 
     await stopVoicePlayback();
+
+    const preferredLang = String(getPreferredSpeechLanguage() || 'ar-SA');
+    const isArabicSession = /^ar/i.test(preferredLang);
+
+    if (isArabicSession){
+      try{
+        const proxyPlayed = await speakAssistantReplyByProxyTts(text, preferredLang.split('-')[0] || 'ar');
+        if (proxyPlayed) return true;
+      }catch(_){ }
+    }
+
     try{
       const cloudPlayed = await speakAssistantReplyByCloud(text, getSettings());
       if (cloudPlayed) return true;
@@ -3281,7 +3498,7 @@ function applyShellLayout(){
 
     const Ctor = getSpeechRecognitionCtor();
     if (Ctor){
-      const input = chatInput;
+      const input = $('chatInput');
       if (!input) return false;
 
       composerDictationBase = String(input.value || '').trimEnd();
@@ -3295,7 +3512,7 @@ function applyShellLayout(){
       composerRecognition.onstart = () => {
         composerListening = true;
         syncVoiceInputButton();
-        showStatus(`Voice dictation is active in ${composerRecognition.lang || getPreferredSpeechLanguage()}...`, false);
+        showStatus(`الإملاء الصوتي يعمل الآن باللغة ${composerRecognition.lang}...`, false);
       };
 
       composerRecognition.onresult = (event) => {
@@ -3314,7 +3531,7 @@ function applyShellLayout(){
         composerListening = false;
         VOICE_RUNTIME.autoSendArmed = false;
         syncVoiceInputButton();
-        if (event?.error !== 'no-speech') toast(`Voice dictation failed: ${event?.error || 'unknown'}`);
+        if (event?.error !== 'no-speech') toast(`تعذّر الإملاء الصوتي: ${event?.error || 'unknown'}`);
       };
 
       composerRecognition.onend = () => {
@@ -3326,7 +3543,7 @@ function applyShellLayout(){
         showStatus('', false);
         if (shouldAutoSend){
           window.setTimeout(() => {
-            if (String(chatInput?.value || '').trim()) void sendMessage();
+            if (String($('chatInput')?.value || '').trim()) void sendMessage();
           }, 90);
         } else if (shouldKeepContinuousVoiceLoop()){
           scheduleVoiceConversationRestart(550);
@@ -3340,13 +3557,14 @@ function applyShellLayout(){
         composerListening = false;
         composerRecognition = null;
         syncVoiceInputButton();
-        toast(`Voice dictation could not start: ${error?.message || error}`);
+        toast(`تعذّر بدء الإملاء الصوتي: ${error?.message || error}`);
       }
     }
 
-    if (!preferCloudForWeb && await startCloudComposerDictation()) return true;
+    if (await startCloudComposerDictation()) return true;
 
-    if (!voice.sttReady && /^android/i.test(String(navigator.userAgent || ''))){
+    const voiceConfig = getVoiceCloudConfig();
+    if (!voiceConfig.sttReady && /^android/i.test(String(navigator.userAgent || ''))){
       toast('الصوت غير متاح في هذا المتصفح المحمول لأن التعرف المحلي غير مدعوم والصوت السحابي غير مفعّل لهذا الحساب أو على الخادم.');
     } else {
       toast('الإملاء الصوتي غير مدعوم في هذا المتصفح.');
@@ -3361,7 +3579,6 @@ function applyShellLayout(){
   }
 
   async function toggleVoiceMode(){
-    await loadRemoteAuthConfig(true).catch(() => null);
     const next = !getVoiceModeEnabled();
     setVoiceModeEnabled(next);
     VOICE_RUNTIME.continuousConversation = next;
@@ -3490,6 +3707,8 @@ function refreshDeepSearchBtn(){
     const templates = {
       strategy_brief: 'أنشئ brief استراتيجي احترافي لهذا الطلب. المطلوب: 1) الهدف 2) الوضع الحالي 3) الفرص 4) المخاطر 5) خطة التنفيذ 6) المخرجات النهائية.',
       deep_research: 'نفّذ بحثًا عميقًا منظمًا. ابدأ بخطة بحث، ثم أسئلة التحقيق، ثم النتائج، ثم الاستنتاجات، ثم التوصيات العملية.',
+      analysis_ar: 'حلّل هذا الملف أو المحتوى تحليلاً عميقًا. أريد: 1) الملخص التنفيذي 2) النقاط الرئيسية 3) التوصيات الفورية 4) المخاطر أو الفجوات 5) الخطوات التالية المقترحة.',
+      report_ar: 'اكتب تقريرًا احترافيًا جاهزًا للتسليم. يشمل: صفحة العنوان، الملخص التنفيذي، المحتوى التفصيلي، الجداول والإحصائيات إن وجدت، والخلاصة مع التوصيات.',
       system_audit: 'قم بمراجعة تشغيلية للنظام أو التطبيق الحالي. أريد: المشاكل، الأولويات، المخاطر، الإصلاحات السريعة، وخطة تحسين احترافية.',
       build_product: 'ساعدني في بناء منتج احترافي من هذه الفكرة. أريد: التموضع، البنية، تدفقات الاستخدام، خارطة الطريق، ومواصفات الإصدار الأول.',
       exec_summary: 'اكتب ملخصًا تنفيذيًا واضحًا وموجزًا مع النقاط الحاسمة والقرار المقترح.',
@@ -3876,18 +4095,19 @@ function refreshDeepSearchBtn(){
                 <span class="plan-pill" id="authCurrentPlanPill">الخطة المجانية</span>
               </div>
               <div class="auth-status status" id="authGateStatus" data-tone="info">سجّل الدخول ببريدك الشخصي لفتح الخطة المجانية، أو استخدم بريد الإدارة مع كلمة المرور من نفس الشاشة.</div>
-              <div class="auth-config-grid" style="margin-top:12px">
+              <form id="authEntryForm" autocomplete="on" onsubmit="return false" style="margin-top:12px">
+              <div class="auth-config-grid">
                 <div>
-                  <label class="hint">الاسم</label>
-                  <input id="authEntryName" type="text" placeholder="الاسم الظاهر داخل التطبيق" />
+                  <label class="hint" for="authEntryName">الاسم</label>
+                  <input id="authEntryName" name="name" type="text" placeholder="الاسم الظاهر داخل التطبيق" autocomplete="name" />
                 </div>
                 <div>
-                  <label class="hint">البريد الإلكتروني</label>
-                  <input id="authEntryEmail" type="email" placeholder="name@example.com" />
+                  <label class="hint" for="authEntryEmail">البريد الإلكتروني</label>
+                  <input id="authEntryEmail" name="email" type="email" placeholder="name@example.com" autocomplete="email" />
                 </div>
                 <div style="grid-column:1/-1">
-                  <label class="hint" id="authEntryPasswordLabel">كلمة المرور للإدارة فقط</label>
-                  <input id="authEntryPassword" type="password" placeholder="اختيارية للمستخدم العادي، ومطلوبة فقط إذا كان هذا بريد الإدارة" />
+                  <label class="hint" for="authEntryPassword" id="authEntryPasswordLabel">كلمة المرور للإدارة فقط</label>
+                  <input id="authEntryPassword" name="password" type="password" placeholder="اختيارية للمستخدم العادي، ومطلوبة فقط إذا كان هذا بريد الإدارة" autocomplete="current-password" />
                 </div>
               </div>
               <div class="auth-note" id="authEntryModeHint">أي بريد شخصي صالح يفتح لك الخطة المجانية تلقائيًا. إذا أدخلت بريد الإدارة، سيتحول الزر تلقائيًا إلى دخول الإدارة.</div>
@@ -3896,8 +4116,9 @@ function refreshDeepSearchBtn(){
                 <span>يفتح الحساب العادي بالخطة المجانية مع الميزات المسموح بها فقط، ويمكن طلب الترقية لاحقًا من صفحة الإعدادات.</span>
               </div>
               <div class="account-actions" style="margin-top:12px">
-                <button class="btn dark sm with-label" type="button" id="authEntrySubmitBtn"><span class="icon">→</span><span class="label" id="authEntrySubmitLabel">متابعة بالخطة المجانية</span></button>
+                <button class="btn dark sm with-label" type="submit" id="authEntrySubmitBtn"><span class="icon">→</span><span class="label" id="authEntrySubmitLabel">متابعة بالخطة المجانية</span></button>
               </div>
+              </form>
               <div class="divider"></div>
               <div class="auth-google-slot" id="googleSignInSlot"></div>
               <div class="auth-note" id="authGatePlanNote">بعد تسجيل الدخول ستبدأ بالخطة المناسبة للحساب. يمكن الترقية لاحقًا عبر طلب ترقية وكود تفعيل.</div>
@@ -4080,6 +4301,26 @@ function refreshDeepSearchBtn(){
       $('authCurrentPlanPill').classList.toggle('premium', role === 'admin' || plan === 'premium');
     }
 
+    if ($('sideAccountName')) $('sideAccountName').textContent = signedIn ? (role === 'admin' ? `الإدارة` : (auth.name || auth.email || 'الحساب')) : 'تسجيل الدخول';
+    if ($('sideAccountPlan')) $('sideAccountPlan').textContent = signedIn ? (role === 'admin' ? 'صلاحيات كاملة' : planLabel) : 'غير مسجل';
+    if ($('sideAccountAvatar')){
+      const av = $('sideAccountAvatar');
+      const n = signedIn ? (auth.name || auth.email || '') : '';
+      av.textContent = n ? n.charAt(0).toUpperCase() : '؟';
+      if (signedIn && auth.picture){ av.innerHTML = `<img src="${auth.picture}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">`; }
+    }
+    if ($('sideAccountBadge')){
+      const isBadgePremium = role === 'admin' || plan === 'premium';
+      $('sideAccountBadge').textContent = role === 'admin' ? 'مدير' : (plan === 'premium' ? 'مدفوع' : 'مجاني');
+      $('sideAccountBadge').classList.toggle('free', !isBadgePremium);
+      $('sideAccountBadge').classList.toggle('premium', isBadgePremium);
+    }
+    if ($('sideAccountStrip') && !$('sideAccountStrip').dataset.bound){
+      $('sideAccountStrip').dataset.bound = '1';
+      $('sideAccountStrip').addEventListener('click', () => { $('closeSideBtn')?.click(); openAccountCenter(); });
+      $('sideAccountStrip').addEventListener('keydown', e => { if(e.key==='Enter'||e.key===' '){ $('closeSideBtn')?.click(); openAccountCenter(); }});
+    }
+
     renderUsageIndicators(settings);
     const remembered = getRememberedAuthEntry();
     if ($('authRememberToggle')) $('authRememberToggle').checked = remembered.remember;
@@ -4171,14 +4412,19 @@ function syncUnifiedAuthEntry(){
     }
     try{
       if (force) slot.innerHTML = '';
-      window.google.accounts.id.initialize({
-        client_id: clientId,
-        callback: handleGoogleCredentialResponse,
-        auto_select: false,
-        cancel_on_tap_outside: false,
-        context: 'signin',
-        use_fedcm_for_prompt: true
-      });
+      const prevClientId = window._gsiClientId;
+      if (!window._gsiInitialized || prevClientId !== clientId){
+        window.google.accounts.id.initialize({
+          client_id: clientId,
+          callback: handleGoogleCredentialResponse,
+          auto_select: false,
+          cancel_on_tap_outside: false,
+          context: 'signin',
+          use_fedcm_for_prompt: true
+        });
+        window._gsiInitialized = true;
+        window._gsiClientId = clientId;
+      }
       slot.innerHTML = '';
       window.google.accounts.id.renderButton(slot, {
         theme: 'filled_blue',
@@ -4189,6 +4435,14 @@ function syncUnifiedAuthEntry(){
         width: Math.min(360, Math.max(260, slot.clientWidth || 320)),
         use_fedcm_for_button: true
       });
+      setTimeout(() => {
+        if (slot && !slot.querySelector('iframe') && !slot.querySelector('div[data-idom-class]')){
+          slot.innerHTML = `<div class="hint" style="display:flex;align-items:center;gap:8px;padding:8px 0">
+            <span style="font-size:18px">🔒</span>
+            <span>تسجيل الدخول بـ Google متاح على الموقع الرسمي: <a href="https://app.saddamalkadi.com" target="_blank" rel="noopener" style="color:#1b66ff;font-weight:600">app.saddamalkadi.com</a></span>
+          </div>`;
+        }
+      }, 2000);
     }catch(error){
       slot.innerHTML = '<div class="hint">تعذر تهيئة زر تسجيل الدخول حاليًا.</div>';
       setAuthGateStatus(`تعذر تهيئة Google Sign-In: ${error?.message || error}`, 'error');
@@ -4203,28 +4457,6 @@ function syncUnifiedAuthEntry(){
     return getCapacitorPluginProxy('App');
   }
 
-  function normalizeTargetPage(page){
-    const value = String(page || '').trim().toLowerCase();
-    return [
-      'chat',
-      'knowledge',
-      'canvas',
-      'files',
-      'transcription',
-      'workflows',
-      'downloads',
-      'projects',
-      'guide',
-      'settings'
-    ].includes(value) ? value : '';
-  }
-
-  function getCurrentActivePage(){
-    const active = document.querySelector('.page.active');
-    const id = String(active?.id || '').trim();
-    return normalizeTargetPage(id.replace(/^page-/, ''));
-  }
-
   function normalizeAuthPayload(payload){
     const sessionToken = String(payload?.sessionToken || payload?.session_token || '').trim();
     if (!sessionToken) return null;
@@ -4235,8 +4467,7 @@ function syncUnifiedAuthEntry(){
       plan: String(payload?.plan || 'free').trim(),
       role: String(payload?.role || 'user').trim(),
       sessionToken,
-      sessionExp: Number(payload?.sessionExp || payload?.session_exp || 0),
-      targetPage: normalizeTargetPage(payload?.targetPage || payload?.target_page || '')
+      sessionExp: Number(payload?.sessionExp || payload?.session_exp || 0)
     };
   }
 
@@ -4248,8 +4479,7 @@ function syncUnifiedAuthEntry(){
       plan: params.get('plan') || 'free',
       role: params.get('role') || 'user',
       sessionToken: params.get('sessionToken') || params.get('session_token') || '',
-      sessionExp: params.get('sessionExp') || params.get('session_exp') || 0,
-      targetPage: params.get('targetPage') || params.get('target_page') || ''
+      sessionExp: params.get('sessionExp') || params.get('session_exp') || 0
     });
   }
 
@@ -4263,8 +4493,8 @@ function syncUnifiedAuthEntry(){
     renderSettings();
     await hydrateCloudState(true).catch(() => null);
     refreshStrategicWorkspace().catch(() => {});
+    openWorkspacePage(targetPage);
     closeAuthGate(true);
-    if (targetPage) setActiveNav(targetPage);
     setAuthGateStatus('', 'info');
     try{ await getCapacitorBrowserPlugin()?.close?.(); }catch(_){}
     toast('✅ تم تسجيل الدخول عبر Google');
@@ -4308,7 +4538,10 @@ function syncUnifiedAuthEntry(){
   }
 
   async function consumeAuthRedirectParams(params){
-    return consumeAuthPayload(extractAuthPayloadFromParams(params), { upgradeCode: getAuthState().upgradeCode || '' });
+    return consumeAuthPayload(extractAuthPayloadFromParams(params), {
+      upgradeCode: getAuthState().upgradeCode || '',
+      targetPage: normalizeTargetPage(params.get('target_page') || params.get('targetPage') || '')
+    });
   }
 
   async function consumeAuthRedirectFromLocation(){
@@ -4392,17 +4625,16 @@ function syncUnifiedAuthEntry(){
   }
 
   function buildBrowserGoogleAuthUrl(){
-    const settings = getSettings();
-    const workerRoot = getAuthServiceRoot(settings);
+    const workerRoot = getAuthServiceRoot(getSettings());
     if (!workerRoot) throw new Error('رابط البوابة غير مضبوط لتسجيل Google.');
     const base = getPublicWebAppBaseUrl();
     const url = new URL(BROWSER_AUTH_BRIDGE.webPath, base);
     const nativeReturn = isLikelyNativeAppContext();
     const targetPage = DEFAULT_POST_LOGIN_PAGE;
     url.searchParams.set('worker', workerRoot);
-    url.searchParams.set('gateway', getAuthoritativeServiceRoot(settings) || settings.gatewayUrl || '');
     url.searchParams.set('return_to', getBrowserAuthReturnUrl());
     url.searchParams.set('target_page', targetPage);
+    url.searchParams.set('gateway', getSettings().gatewayUrl || '');
     url.searchParams.set('app', 'AI Workspace Studio');
     if (nativeReturn) url.searchParams.set('native_return', '1');
     url.searchParams.set('ts', String(Date.now()));
@@ -4420,27 +4652,37 @@ function syncUnifiedAuthEntry(){
           toolbarColor: '#1f6bff'
         });
       } else {
-        setAuthGateStatus('جارٍ فتح تسجيل Google في نفس الصفحة...', 'busy');
-        window.location.assign(url);
+        setAuthGateStatus('جارٍ فتح تسجيل Google في نافذة منبثقة...', 'busy');
+        const pw = 520, ph = 640;
+        const pl = Math.max(0, Math.round(((screen.width || 1024) - pw) / 2));
+        const pt = Math.max(0, Math.round(((screen.height || 768) - ph) / 2));
+        const popup = window.open(url, 'ai-auth-bridge', `width=${pw},height=${ph},left=${pl},top=${pt},popup=1,resizable=yes,scrollbars=yes`);
+        if (!popup || popup.closed) {
+          setAuthGateStatus('جارٍ فتح تسجيل Google في نفس الصفحة...', 'busy');
+          window.location.assign(url);
+        }
       }
     }catch(error){
       setAuthGateStatus(`تعذّر فتح تسجيل Google في المتصفح: ${error?.message || error}`, 'error');
     }
   }
 
-  function openAuthGate(message = ''){
+  function openAuthGate(message = '', { force = false } = {}){
+    if (!force && getAccountRuntimeState().authRequired !== true) return;
     ensureAccountChrome();
-    authGate?.classList.add('show');
-    if (authCloseBtn) authCloseBtn.style.display = hasValidAuthSession() ? '' : 'none';
-    setAuthGateStatus(message || 'جارٍ تهيئة الدخول الآمن...', 'busy');
-    loadRemoteAuthConfig(true).catch(() => getEffectiveAuthConfig()).then(() => {
+    $('authGate')?.classList.add('show');
+    setAuthGateStatus('جارٍ تحميل خيارات تسجيل الدخول...', 'busy');
+    syncUnifiedAuthEntry();
+    if ($('authCloseBtn')) $('authCloseBtn').style.display = (hasValidAuthSession() || !getAccountRuntimeState().authRequired) ? '' : 'none';
+    loadRemoteAuthConfig(true).then(() => {
       syncUnifiedAuthEntry();
       syncAccountPlanControls();
+      setAuthGateStatus(message || 'سجّل الدخول ببريدك الشخصي لفتح الخطة المجانية، أو استخدم بريد الإدارة مع كلمة المرور من نفس الشاشة.', 'info');
       return renderGoogleButton(true);
     }).catch((error) => {
-      setAuthGateStatus(`Login initialization failed: ${error?.message || error}`, 'error');
-      return null;
-    });
+      setAuthGateStatus(`تعذر تهيئة تسجيل الدخول: ${error?.message || error}`, 'error');
+      return renderGoogleButton(true).catch(() => null);
+    }).catch(() => null);
   }
 
   function closeAuthGate(force = false){
@@ -4598,7 +4840,7 @@ async function submitUnifiedAuthEntry(){
   async function requestUpgradeByEmail(){
     const account = getAuthState();
     if (!hasValidAuthSession(account)){
-      openAuthGate('سجّل الدخول أولاً ثم أرسل طلب الترقية.');
+      openAuthGate('سجّل الدخول أولاً ثم أرسل طلب الترقية.', { force: true });
       return;
     }
     try{
@@ -4617,7 +4859,7 @@ async function submitUnifiedAuthEntry(){
   async function activateUpgradeCodeFromUi(){
     const auth = getAuthState();
     if (!hasValidAuthSession(auth)){
-      openAuthGate('سجّل الدخول أولاً ثم فعّل كود الترقية.');
+      openAuthGate('سجّل الدخول أولاً ثم فعّل كود الترقية.', { force: true });
       return;
     }
     const code = String($('upgradeCodeInput')?.value || '').trim();
@@ -4701,7 +4943,7 @@ async function submitUnifiedAuthEntry(){
     syncAccountUi();
     refreshModeButtons();
     refreshStrategicWorkspace().catch(()=>{});
-    openAuthGate('تم تسجيل الخروج. سجّل الدخول مرة أخرى ببريدك الشخصي للمتابعة.');
+    openAuthGate('تم تسجيل الخروج. سجّل الدخول مرة أخرى ببريدك الشخصي للمتابعة.', { force: true });
   }
 
   let shellResizeTimer = 0;
@@ -4713,18 +4955,16 @@ async function submitUnifiedAuthEntry(){
       resizeComposerInput();
       if (!keyboardEditing){
         applyShellLayout();
-        refreshStrategicWorkspace().catch(()=>{});
       }
     }, keyboardEditing ? 180 : 60);
   }
 
   function openAccountCenter(){
     if (!hasValidAuthSession()){
-      openAuthGate();
+      openAuthGate('', { force: true });
       return;
     }
-    setActiveNav('settings');
-    renderSettings();
+    openWorkspacePage('settings');
     window.setTimeout(() => {
       $('settingsAccountCard')?.scrollIntoView({ behavior:'smooth', block:'start' });
     }, 60);
@@ -4736,8 +4976,8 @@ async function submitUnifiedAuthEntry(){
     if (AUTH_RUNTIME.booting) return;
     AUTH_RUNTIME.booting = true;
     try{
-      await loadRemoteAuthConfig(false);
-      await verifyStoredAuthSession(false);
+      await loadRemoteAuthConfig(true).catch(() => null);
+      await verifyStoredAuthSession(false).catch(() => null);
       syncAccountUi();
       const account = getAccountRuntimeState();
       if (account.authRequired && !hasValidAuthSession()){
@@ -4746,6 +4986,8 @@ async function submitUnifiedAuthEntry(){
         await hydrateCloudState(false).catch(() => null);
         closeAuthGate(true);
       }
+    }catch(_){
+      closeAuthGate(true);
     }finally{
       AUTH_RUNTIME.booting = false;
     }
@@ -4753,6 +4995,8 @@ async function submitUnifiedAuthEntry(){
 
   function ensureStrategicChrome(){
     ensureAccountChrome();
+    renderPrimaryNavigation();
+    ensureHomeWorkspaceLanding();
     const sideCard = document.querySelector('.sidecard');
     if (sideCard) sideCard.remove();
 
@@ -4848,17 +5092,8 @@ async function submitUnifiedAuthEntry(){
     });
     $('agentTaskApplyBtn')?.remove();
     const legacyQuickGroup = $('agentTaskTemplate')?.closest('.tool-group')?.nextElementSibling;
-    if (legacyQuickGroup?.querySelector?.('#scrollTopBtn') == null){
+    if (legacyQuickGroup && legacyQuickGroup.querySelector('#scrollTopBtn') == null){
       legacyQuickGroup.style.display = 'none';
-    }
-
-    const nav = $('nav');
-    if (nav && !nav.querySelector('[data-page="guide"]')){
-      const guideBtn = document.createElement('button');
-      guideBtn.className = 'navbtn';
-      guideBtn.dataset.page = 'guide';
-      guideBtn.innerHTML = '<span>دليل الاستخدام</span><span class="meta" id="navGuideMeta">AR</span>';
-      nav.appendChild(guideBtn);
     }
 
     const contentRoot = document.querySelector('.content');
@@ -4869,7 +5104,7 @@ async function submitUnifiedAuthEntry(){
       page.innerHTML = `
         <div class="toolbar">
           <input id="guideSearch" type="text" placeholder="ابحث داخل دليل الاستخدام..." style="max-width:320px" />
-          <button class="btn ghost sm with-label" id="guideExportBtn" type="button"><span class="icon">⬇️</span><span class="label">تنزيل الدليل</span></button>
+          <button class="btn ghost sm with-label" id="guideExportBtn" type="button"><span class="icon">⬇</span><span class="label">تنزيل الدليل</span></button>
         </div>
         <div class="guide-shell">
           <aside class="guide-index" id="guideIndex"></aside>
@@ -4927,7 +5162,7 @@ async function submitUnifiedAuthEntry(){
         </div>
         <div class="thread-drawer-toolbar">
           <input id="threadSearchInput" type="text" placeholder="ابحث في السجل..." />
-          <button class="btn ghost sm with-label" id="threadExportAllBtn" type="button"><span class="icon">⬇️</span><span class="label">تصدير الكل</span></button>
+          <button class="btn ghost sm with-label" id="threadExportAllBtn" type="button"><span class="icon">⬇</span><span class="label">تصدير الكل</span></button>
         </div>
         <div class="thread-drawer-list" id="threadDrawerList"></div>`;
       chatPage.appendChild(drawer);
@@ -4939,12 +5174,8 @@ async function submitUnifiedAuthEntry(){
     if (chatPage && !$('chatScrollDock')){
       chatPage.insertAdjacentHTML('beforeend', `
         <div class="floating-scroll-nav" id="chatScrollDock" aria-label="التنقل داخل الدردشة" aria-hidden="true">
-          <button class="scroll-fab" id="floatingScrollTopBtn" type="button" title="الانتقال إلى أعلى الدردشة" aria-label="الانتقال إلى أعلى الدردشة">
-            <span class="icon">⬆️</span>
-            <span class="label">للأعلى</span>
-          </button>
           <button class="scroll-fab" id="floatingScrollBottomBtn" type="button" title="الانتقال إلى أحدث رسالة" aria-label="الانتقال إلى أحدث رسالة">
-            <span class="icon">⬇️</span>
+            <span class="icon">⬇</span>
             <span class="label">للأسفل</span>
           </button>
         </div>`);
@@ -4960,7 +5191,7 @@ async function submitUnifiedAuthEntry(){
             <p>راجع حالة الاتصال، الإعدادات الحالية، ومسارات التحويل من مكان واحد.</p>
             <div class="settings-actions">
               <button class="btn dark sm with-label" id="settingsHealthBtn" type="button"><span class="icon">◎</span><span class="label">فحص الصحة</span></button>
-              <button class="btn ghost sm with-label" id="settingsDefaultsBtn" type="button"><span class="icon">⚙️</span><span class="label">تطبيق الإعدادات</span></button>
+              <button class="btn ghost sm with-label" id="settingsDefaultsBtn" type="button"><span class="icon">⚙</span><span class="label">تطبيق الإعدادات</span></button>
               <button class="btn ghost sm with-label" id="settingsRecommendModelBtn" type="button"><span class="icon">✨</span><span class="label">اقتراح نموذج</span></button>
             </div>
             <div class="settings-health-output" id="settingsHealthOutput">شغّل الفحص للتحقق من البوابة والنموذج وخدمات التحويل.</div>
@@ -4980,6 +5211,15 @@ async function submitUnifiedAuthEntry(){
             </div>
           </div>
         </div>`);
+    }
+    const settingsActions = document.querySelector('#page-settings .settings-actions');
+    if (settingsActions && !$('settingsGuideBtn')){
+      const guideBtn = document.createElement('button');
+      guideBtn.type = 'button';
+      guideBtn.id = 'settingsGuideBtn';
+      guideBtn.className = 'btn ghost sm with-label';
+      guideBtn.innerHTML = '<span class="icon">📘</span><span class="label">دليل الاستخدام</span>';
+      settingsActions.appendChild(guideBtn);
     }
 
     const mainToolbar = document.querySelector('#page-chat .mainToolbar');
@@ -5214,8 +5454,8 @@ async function submitUnifiedAuthEntry(){
       $('topRuntimeBadge').textContent = 'جاهز';
     }
     const fixedCopy = [
-      ['workspaceHeadline', 'ابدأ من مساحة عمل عربية للدردشة والملفات والمعرفة.'],
-      ['workspaceSummary', 'اعمل داخل مشروع واحد مع واجهة منظمة وخيارات تشغيل واضحة.'],
+      ['workspaceHeadline', 'مساعدك الذكي للعمل باللغة العربية'],
+      ['workspaceSummary', 'دردش، حلّل ملفاتك، واستخرج النصوص — كل شيء في مكان واحد.'],
       ['signalProviderNote', 'المزوّد الحالي وطريقة المصادقة'],
       ['signalModelNote', 'مسار النموذج الرئيسي'],
       ['signalContextNote', 'الملفات والمعرفة وذاكرة المشروع'],
@@ -5239,13 +5479,13 @@ async function submitUnifiedAuthEntry(){
       files: '📎 الملفات',
       transcription: '🧾 مختبر الوثائق',
       workflows: '⚡ سير العمل',
-      downloads: '⬇️ التحميلات',
-      projects: '🗂️ المشاريع',
-      settings: '⚙️ الإعدادات',
+      downloads: '⬇ التحميلات',
+      projects: '🗂 المشاريع',
+      settings: '⚙ الإعدادات',
       guide: '📘 دليل الاستخدام'
     };
     document.querySelectorAll('.navbtn[data-page]').forEach((btn) => {
-      const label = btn.querySelector('span:not(.meta)');
+      const label = btn.querySelector('.navbtn-label') || btn.querySelector('span:not(.meta):not(.navbtn-icon)');
       if (label && navLabels[btn.dataset.page]) label.textContent = navLabels[btn.dataset.page];
     });
 
@@ -5262,7 +5502,7 @@ async function submitUnifiedAuthEntry(){
         launch_plan: 'خطة إطلاق',
         pm_review: 'مراجعة منتج'
       };
-      if (labels[key]) btn.textContent = labels[key];
+      if (labels[key] && btn.children.length === 0) btn.textContent = labels[key];
     });
   }
 
@@ -5354,7 +5594,7 @@ async function submitUnifiedAuthEntry(){
       lines.push('');
     });
     downloadBlob(`${(thread.title || 'chat').replace(/[^\w\u0600-\u06FF\-]+/g,'_')}.md`, new Blob([lines.join('\n')], { type:'text/markdown;charset=utf-8' }));
-    toast('⬇️ تم تصدير المحادثة');
+    toast('⬇ تم تصدير المحادثة');
   }
 
   function exportAllThreads(){
@@ -5365,7 +5605,7 @@ async function submitUnifiedAuthEntry(){
       threads: loadThreads(pid)
     };
     downloadBlob(`threads-${pid}.json`, new Blob([JSON.stringify(payload, null, 2)], { type:'application/json;charset=utf-8' }));
-    toast('⬇️ تم تصدير سجل المشروع');
+    toast('⬇ تم تصدير سجل المشروع');
   }
 
   function renderThreadHistory(){
@@ -5675,7 +5915,7 @@ async function submitUnifiedAuthEntry(){
       out.push('');
     });
     downloadBlob('دليل-الاستخدام-العربي.md', new Blob([out.join('\n')], { type:'text/markdown;charset=utf-8' }));
-    toast('⬇️ تم تنزيل دليل الاستخدام');
+    toast('⬇ تم تنزيل دليل الاستخدام');
   }
 
   function syncTranscribeControls(){
@@ -5717,7 +5957,8 @@ async function submitUnifiedAuthEntry(){
   }
 
   function syncStrategicLayoutState(hasMessages){
-    $('workspaceDeck')?.classList.toggle('workspace-deck-collapsed', !!hasMessages);
+    const shouldCollapseDeck = !!hasMessages && !$('page-home')?.classList.contains('active');
+    $('workspaceDeck')?.classList.toggle('workspace-deck-collapsed', shouldCollapseDeck);
     $('strategicStrip')?.classList.toggle('strategic-strip-collapsed', !!hasMessages);
   }
 
@@ -5751,14 +5992,10 @@ async function submitUnifiedAuthEntry(){
     if (runtimeBadge) runtimeBadge.textContent = `${settings.provider.toUpperCase()} • ${policy.freeMode ? 'مجاني' : getCostGuardLabel(policy.costGuard)}`;
     if ($('curProjectName')) $('curProjectName').textContent = project.name;
     if ($('workspaceHeadline')){
-      $('workspaceHeadline').textContent = messageCount
-        ? `تابع العمل على ${project.name} من شاشة دردشة واسعة وواضحة.`
-        : 'ابدأ مشروعًا جديدًا أو افتح مشروعًا موجودًا لمتابعة العمل.';
+      $('workspaceHeadline').textContent = 'مساعدك الذكي للعمل باللغة العربية';
     }
     if ($('workspaceSummary')){
-      const briefPart = hasProjectBrief(brief) ? ` • الذاكرة: ${summarizeProjectBrief(brief)}` : '';
-      const policyPart = policy.blockedReason ? ` • تنبيه: ${policy.blockedReason}` : '';
-      $('workspaceSummary').textContent = `التشغيل الفعلي ${policy.modeLabel} • المزوّد ${settings.provider} • النموذج ${getDisplayModelName(settings.model)} • القدرات ${modelCapabilitySummary} • ${files.length} ملفًا • ${chunks} مقطع معرفة • ${downloads} ملفًا مؤرشفًا${briefPart}${policyPart}.`;
+      $('workspaceSummary').textContent = 'دردش، حلّل ملفاتك، واستخرج النصوص — كل شيء في مكان واحد.';
     }
     if ($('signalProvider')) $('signalProvider').textContent = settings.provider.toUpperCase();
     if ($('signalProviderNote')) $('signalProviderNote').textContent = `${readiness} • ${settings.authMode === 'gateway' ? 'اتصال محمي عبر البوابة' : 'اتصال مباشر من المتصفح'}`;
@@ -5789,6 +6026,7 @@ async function submitUnifiedAuthEntry(){
       $('historyDrawerBtn').innerHTML = `<span class="icon">🕘</span><span class="label">السجل (${loadThreads(pid).length})</span>`;
     }
 
+    renderHomeWorkspace().catch(()=>{});
     syncComposerMeta();
     syncWorkspaceSectionSummaries();
     renderTranscribeOperationalState();
@@ -8406,7 +8644,7 @@ ${clip}` });
       mutateThread: message.role === 'user'
     });
     syncComposerMeta();
-    setActiveNav('chat');
+    openWorkspacePage('chat');
     input.focus();
     toast(message.role === 'user'
       ? '✅ عدّل الرسالة ثم أرسلها لإعادة التوليد من نفس النقطة.'
@@ -8489,33 +8727,76 @@ ${clip}` });
     saveCanvas(pid, docs);
     setCurCanvasId(pid, id);
     renderCanvasList();
-    setActiveNav('canvas');
+    openWorkspacePage('canvas');
     openCanvasDoc(id);
     refreshNavMeta();
     toast('✅ تم إرسال الرد إلى اللوحة');
   }
 
+  const PROMPT_CHIPS = [
+    'اشرح لي مفهوم ',
+    'ساعدني في كتابة ',
+    'لخّص هذا النص:\n',
+    'اكتب خطة عمل لـ ',
+    'ترجم هذا النص إلى العربية:\n',
+    'راجع هذا الكود وأصلح الأخطاء:\n',
+  ];
+
+  function fillPromptChip(text){
+    const input = $('chatInput');
+    if (!input) return;
+    input.value = text;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    resizeComposerInput(input);
+    input.focus();
+    const len = text.length;
+    input.setSelectionRange(len, len);
+  }
+
   function renderEmptyChatState(log){
     if (!log) return;
-    log.innerHTML = `
-      <div class="empty-chat-state empty-chat-state--compact">
-        <div class="empty-chat-title">المساحة جاهزة لبحث، منتج، أو خطة تنفيذ.</div>
-        <div class="empty-chat-text">ابدأ من اللوحة العليا أو اكتب الهدف مباشرة. سيستخدم التطبيق الملفات، المعرفة، وملحقات المحادثة لبناء استجابة أوضح وأكثر احترافية.</div>
-        <div class="empty-chat-points">
-          <div class="empty-chat-point">
-            <strong>مخرجات مريحة للقراءة</strong>
-            <span>تقارير، ملخصات، وخطط عمل مكتوبة بطريقة واضحة ومريحة للقراءة الطويلة.</span>
-          </div>
-          <div class="empty-chat-point">
-            <strong>سياق غني</strong>
-            <span>الملفات، قاعدة المعرفة، والمرفقات تندمج داخل نفس سياق التشغيل بدل الدردشة المعزولة.</span>
-          </div>
-          <div class="empty-chat-point">
-            <strong>جاهز للتنفيذ</strong>
-            <span>استخدم القوالب، سير العمل، ونمط الوكيل لتحويل الطلب إلى مخرجات تنفيذية قابلة للاستخدام.</span>
-          </div>
+    const state = document.createElement('div');
+    state.className = 'empty-chat-state empty-chat-state--compact';
+    state.innerHTML = `
+      <div class="empty-chat-title">المساحة جاهزة لبحث، منتج، أو خطة تنفيذ.</div>
+      <div class="empty-chat-text">ابدأ من اللوحة العليا أو اكتب الهدف مباشرة. سيستخدم التطبيق الملفات، المعرفة، وملحقات المحادثة لبناء استجابة أوضح وأكثر احترافية.</div>
+      <div class="empty-chat-points">
+        <div class="empty-chat-point" data-chip="0">
+          <strong>مخرجات مريحة للقراءة</strong>
+          <span>تقارير، ملخصات، وخطط عمل مكتوبة بطريقة واضحة ومريحة للقراءة الطويلة.</span>
         </div>
-      </div>`;
+        <div class="empty-chat-point" data-chip="1">
+          <strong>سياق غني</strong>
+          <span>الملفات، قاعدة المعرفة، والمرفقات تندمج داخل نفس سياق التشغيل بدل الدردشة المعزولة.</span>
+        </div>
+        <div class="empty-chat-point" data-chip="2">
+          <strong>جاهز للتنفيذ</strong>
+          <span>استخدم القوالب، سير العمل، ونمط الوكيل لتحويل الطلب إلى مخرجات تنفيذية قابلة للاستخدام.</span>
+        </div>
+      </div>
+      <div class="prompt-chips" id="emptyChatChips"></div>`;
+    log.innerHTML = '';
+    log.appendChild(state);
+
+    const chipsContainer = state.querySelector('#emptyChatChips');
+    PROMPT_CHIPS.forEach((txt) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'prompt-chip';
+      btn.textContent = txt.trim().replace(/\n$/, '') + '…';
+      btn.addEventListener('click', () => fillPromptChip(txt));
+      chipsContainer.appendChild(btn);
+    });
+
+    state.querySelectorAll('.empty-chat-point[data-chip]').forEach((point) => {
+      const chipIdx = Number(point.dataset.chip);
+      const chipTexts = [
+        'اكتب تقريراً احترافياً عن ',
+        'ساعدني في كتابة ',
+        'اكتب خطة تنفيذية لـ ',
+      ];
+      point.addEventListener('click', () => fillPromptChip(chipTexts[chipIdx] || PROMPT_CHIPS[0]));
+    });
   }
 
   function renderChat(){
@@ -8539,7 +8820,13 @@ ${clip}` });
       b.dataset.mid = m.id || '';
       const meta = document.createElement('div');
       meta.className = 'meta';
-      meta.textContent = formatMessageMetaLine(m);
+      const roleBadge = document.createElement('span');
+      roleBadge.className = 'bubble-role-badge';
+      roleBadge.textContent = m.role === 'user' ? '👤 أنت' : '🤖 المساعد';
+      const metaText = document.createElement('span');
+      metaText.textContent = formatMessageMetaLine(m);
+      meta.appendChild(roleBadge);
+      meta.appendChild(metaText);
 
       const body = document.createElement('div');
       body.className = 'body';
@@ -8590,7 +8877,7 @@ ${clip}` });
       log.appendChild(b);
     });
 
-    log.scrollTop = log.scrollHeight + 1000;
+    scrollChatToBottom();
     refreshNavMeta();
     renderThreadHistory();
     refreshStrategicWorkspace().catch(()=>{});
@@ -8606,7 +8893,7 @@ ${clip}` });
       body.innerHTML = renderAssistantMessageHtml(text || '', downloadState.entries);
       bindAssistantDownloadLinks(body);
     }
-    log.scrollTop = log.scrollHeight + 1000;
+    scrollChatToBottom();
     scheduleChatScrollDockSync();
   }
 
@@ -8702,7 +8989,13 @@ ${clip}` });
 
       const meta = document.createElement('div');
       meta.className = 'meta';
-      meta.textContent = formatMessageMetaLine(m);
+      const roleBadge2 = document.createElement('span');
+      roleBadge2.className = 'bubble-role-badge';
+      roleBadge2.textContent = m.role === 'user' ? '👤 أنت' : '🤖 المساعد';
+      const metaText2 = document.createElement('span');
+      metaText2.textContent = formatMessageMetaLine(m);
+      meta.appendChild(roleBadge2);
+      meta.appendChild(metaText2);
 
       const body = document.createElement('div');
       body.className = 'body';
@@ -8740,10 +9033,17 @@ ${clip}` });
         actions.appendChild(canvasBtn);
 
         const speakBtn = document.createElement('button');
-        speakBtn.className = 'btn ghost sm';
-        speakBtn.textContent = 'استماع';
-        speakBtn.addEventListener('click', () => {
-          const played = speakAssistantReply(m.content || '', { force: true });
+        speakBtn.className = 'speak-btn';
+        speakBtn.innerHTML = '<span class="speak-icon">🔊</span><span>استماع</span>';
+        speakBtn.title = 'استماع للرد بصوت عربي';
+        speakBtn.addEventListener('click', async () => {
+          const wasSpeaking = speakBtn.classList.contains('speaking');
+          if (wasSpeaking){ window._ttsStop?.(); speakBtn.classList.remove('speaking'); return; }
+          speakBtn.classList.add('speaking');
+          speakBtn.querySelector('.speak-icon').textContent = '⏹️';
+          const played = await speakAssistantReply(m.content || '', { force: true });
+          speakBtn.classList.remove('speaking');
+          speakBtn.querySelector('.speak-icon').textContent = '🔊';
           if (!played) toast('⚠️ التشغيل الصوتي غير متاح لهذا الرد.');
         });
         actions.appendChild(speakBtn);
@@ -8753,16 +9053,15 @@ ${clip}` });
           dlBtn.className = 'btn ghost sm';
           dlBtn.textContent = `التحميلات (${downloadState.entries.length})`;
           dlBtn.addEventListener('click', () => {
-            setActiveNav('downloads');
-            renderDownloads();
+            openWorkspacePage('downloads');
           });
           actions.appendChild(dlBtn);
 
           const info = document.createElement('span');
           info.className = 'hint';
           info.textContent = downloadState.newCount
-            ? `⬇️ تمت إضافة ${downloadState.newCount} ملف جديد`
-            : `⬇️ ${downloadState.entries.length} ملف قابل للتنزيل`;
+            ? `⬇ تمت إضافة ${downloadState.newCount} ملف جديد`
+            : `⬇ ${downloadState.entries.length} ملف قابل للتنزيل`;
           actions.appendChild(info);
         }
       }
@@ -8773,7 +9072,7 @@ ${clip}` });
       log.appendChild(bubble);
     });
 
-    log.scrollTop = log.scrollHeight + 1000;
+    scrollChatToBottom();
     refreshNavMeta();
     renderDownloads();
     renderThreadHistory();
@@ -9474,7 +9773,7 @@ async function runResearchAgent(topicOverride){
         html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title></head><body><pre style="white-space:pre-wrap">${escapeHtml(content)}</pre></body></html>`;
       }
       downloadBlob(`${title}.html`, new Blob([html], { type:'text/html;charset=utf-8' }));
-      return toast('⬇️ تم تصدير HTML');
+      return toast('⬇ تم تصدير HTML');
     }
     if (kind === 'docx'){
       const fn = window.htmlToDocx || window.HTMLtoDOCX || null;
@@ -9482,12 +9781,12 @@ async function runResearchAgent(topicOverride){
       const html = `<h1>${escapeHtml(title)}</h1><div>${renderMarkdown(content)}</div>`;
       Promise.resolve(fn(html)).then((blob) => {
         downloadBlob(`${title}.docx`, toDocxBlob(blob));
-        toast('⬇️ تم تصدير DOCX');
+        toast('⬇ تم تصدير DOCX');
       }).catch((e)=> toast('DOCX فشل: ' + (e?.message||e)));
       return;
     }
     downloadBlob(`${title}.txt`, new Blob([content], { type:'text/plain;charset=utf-8' }));
-    toast('⬇️ تم تصدير TXT');
+    toast('⬇ تم تصدير TXT');
   }
 
   // ---------------- Files page ----------------
@@ -9602,7 +9901,7 @@ async function runResearchAgent(topicOverride){
         $('chatInput').value =
           'نفّذ بحثًا تفصيليًا حول: (اكتب موضوعك)\\n\\n'
           + 'المطلوب: خطة → بحث → تقرير نهائي + ملف Markdown باستخدام قالب ```file```.';
-        setActiveNav('chat'); $('chatInput').focus(); toast('✅ تم');
+        openWorkspacePage('chat'); $('chatInput').focus(); toast('✅ تم');
       }},
     ]);
 
@@ -9612,18 +9911,18 @@ async function runResearchAgent(topicOverride){
           'لخّص محتوى قاعدة المعرفة/الملفات المتاحة بوضوح:\\n'
           + '- ملخص تنفيذي\\n- نقاط رئيسية\\n- تفاصيل مهمّة مع اقتباسات [KB:..]\\n- توصيات/خطوات\\n\\n'
           + 'أنشئ ملف:\\n```file name="kb_summary.md" mime="text/markdown"\\n(ضع الملخص)\\n```\\n';
-        setActiveNav('chat'); $('chatInput').focus(); toast('✅ تم');
+        openWorkspacePage('chat'); $('chatInput').focus(); toast('✅ تم');
       }},
       {label:'تشغيل', kind:'btn sm', onClick: () => {
         setRagToggle(true); $('ragToggle').checked = true;
         $('chatInput').value = 'لخّص محتوى قاعدة المعرفة/الملفات المتاحة بوضوح مع اقتباسات [KB:..]، وأنشئ ملف kb_summary.md.';
-        setActiveNav('chat'); sendMessage();
+        openWorkspacePage('chat'); sendMessage();
       }},
     ]);
 
     card('🧩 بناء تطبيق HTML من اللوحة', 'استخدم محتوى اللوحة لإنشاء تطبيق HTML كامل داخل ملف واحد.', [
-      {label:'تشغيل على اللوحة', kind:'btn sm', onClick: () => { setActiveNav('canvas'); canvasAi('build_app_html'); }},
-      {label:'فتح اللوحة', kind:'btn ghost sm', onClick: () => setActiveNav('canvas')},
+      {label:'تشغيل على اللوحة', kind:'btn sm', onClick: () => { openWorkspacePage('canvas'); canvasAi('build_app_html'); }},
+      {label:'فتح اللوحة', kind:'btn ghost sm', onClick: () => openWorkspacePage('canvas')},
     ]);
 
     card('📌 عناصر تنفيذ', 'استخراج مهام من آخر محادثة: المهمة + المالك + الموعد + الأولوية + الحالة.', [
@@ -9632,9 +9931,9 @@ async function runResearchAgent(topicOverride){
           'استخرج من المحادثة مهامًا تنفيذية بصيغة جدول:\\n'
           + '- المهمة\\n- المالك\\n- الموعد\\n- الأولوية\\n- الحالة\\n\\n'
           + 'وأنشئ ملف:\\n```file name="action_items.md" mime="text/markdown"\\n...\\n```\\n';
-        setActiveNav('chat'); $('chatInput').focus();
+        openWorkspacePage('chat'); $('chatInput').focus();
       }},
-      {label:'تشغيل', kind:'btn sm', onClick: () => { setActiveNav('chat'); sendMessage(); }},
+      {label:'تشغيل', kind:'btn sm', onClick: () => { openWorkspacePage('chat'); sendMessage(); }},
     ]);
 
     $('navWorkMeta') && ($('navWorkMeta').textContent = '4');
@@ -9740,11 +10039,11 @@ async function runResearchAgent(topicOverride){
         if (!prompt){ wfLog('⚠️ لا يوجد طلب'); continue; }
         // push prompt to chat and send
         $('chatInput').value = prompt;
-        setActiveNav('chat');
+        openWorkspacePage('chat');
         await sendMessage();
       } else if (st.step === 'canvas_build'){
         wfLog('… بناء تطبيق HTML من اللوحة');
-        setActiveNav('canvas');
+        openWorkspacePage('canvas');
         canvasAi('build_app_html');
       } else {
         wfLog('⚠️ خطوة غير معروفة: ' + st.step);
@@ -9761,22 +10060,39 @@ let pinOnly = false;
     const dl = loadDownloads();
     $('navDlMeta').textContent = String(dl.length);
     if (overview){
-      const webUrl = 'https://app.saddamalkadi.com/';
-      const downloadsBase = 'https://app.saddamalkadi.com/downloads';
-      const apkUrl = `${downloadsBase}/ai-workspace-studio-latest.apk`;
-      const aabUrl = `${downloadsBase}/ai-workspace-studio-latest.aab`;
-      const apkFallbackUrl = 'https://github.com/saddamalkadi/book-summarizer-pwa/blob/main/downloads/ai-workspace-studio-latest.apk?raw=1';
-      const aabFallbackUrl = 'https://github.com/saddamalkadi/book-summarizer-pwa/blob/main/downloads/ai-workspace-studio-latest.aab?raw=1';
+      const REPO = 'saddamalkadi/book-summarizer-pwa';
+      const WEB_URL = 'https://app.saddamalkadi.com/';
+      const DOWNLOADS_URL = `${WEB_URL}downloads/`;
+      const APK_LATEST_URL = `${DOWNLOADS_URL}ai-workspace-studio-latest.apk`;
+      const AAB_LATEST_URL = `${DOWNLOADS_URL}ai-workspace-studio-latest.aab`;
+      const APK_BACKUP_URL = `https://github.com/${REPO}/blob/main/downloads/ai-workspace-studio-latest.apk?raw=1`;
+      const AAB_BACKUP_URL = `https://github.com/${REPO}/blob/main/downloads/ai-workspace-studio-latest.aab?raw=1`;
+
       overview.innerHTML = `
-        <div class="bubble" style="margin:0">
-          <div style="font-weight:1000">تحديث التطبيق والتنزيل المباشر</div>
-          <div class="hint" style="margin-top:6px">الروابط الأساسية تعمل من نفس الموقع مباشرة. إذا تعذر التنزيل من الشبكة الحالية ستجد رابطًا احتياطيًا من GitHub.</div>
-          <div class="actions">
-            <a class="btn sm" href="${apkUrl}" target="_blank" rel="noopener noreferrer">تنزيل APK</a>
-            <a class="btn ghost sm" href="${aabUrl}" target="_blank" rel="noopener noreferrer">تنزيل AAB</a>
-            <a class="btn ghost sm" href="${apkFallbackUrl}" target="_blank" rel="noopener noreferrer">APK احتياطي</a>
-            <a class="btn ghost sm" href="${aabFallbackUrl}" target="_blank" rel="noopener noreferrer">AAB احتياطي</a>
-            <a class="btn ghost sm" href="${webUrl}" target="_blank" rel="noopener noreferrer">فتح نسخة الويب</a>
+        <div class="bubble app-dl-card" style="margin:0;padding:16px">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+            <img src="./logo.svg" style="width:52px;height:52px;border-radius:14px;flex-shrink:0;border:1px solid rgba(10,20,60,.08)" alt="logo" onerror="this.textContent='🤖';this.style.fontSize='32px'"/>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:900;font-size:1.08em;letter-spacing:-.01em">AI Workspace Studio</div>
+              <div class="hint" id="releaseVersionMeta" style="margin-top:2px">روابط تنزيل مباشرة من نفس الموقع مع روابط احتياطية من GitHub.</div>
+            </div>
+            <span style="flex-shrink:0;padding:3px 10px;border-radius:20px;background:var(--accent,#2563eb);color:#fff;font-size:.72em;font-weight:800">● مباشر</span>
+          </div>
+          <div class="actions" style="flex-wrap:wrap;gap:8px">
+            <a class="btn" id="apkMainBtn" href="${APK_LATEST_URL}" download="AI-Workspace-Studio-latest.apk" target="_blank" rel="noopener noreferrer">⬇ تنزيل APK — Android</a>
+            <a class="btn ghost sm" href="${AAB_LATEST_URL}" download="AI-Workspace-Studio-latest.aab" target="_blank" rel="noopener noreferrer">⬇ تنزيل AAB — Google Play</a>
+            <a class="btn ghost sm" href="${WEB_URL}" target="_blank" rel="noopener noreferrer">🌐 تطبيق الويب</a>
+            <a class="btn ghost sm" href="${DOWNLOADS_URL}" target="_blank" rel="noopener noreferrer">📋 صفحة التنزيل</a>
+          </div>
+          <div style="margin-top:10px;font-size:.8em;color:var(--muted,#888)">
+            إذا تعذر التنزيل المباشر من الموقع، استخدم الروابط الاحتياطية التالية:
+          </div>
+          <div class="actions" style="flex-wrap:wrap;gap:8px;margin-top:8px">
+            <a class="btn ghost sm" href="${APK_BACKUP_URL}" target="_blank" rel="noopener noreferrer">رابط APK الاحتياطي</a>
+            <a class="btn ghost sm" href="${AAB_BACKUP_URL}" target="_blank" rel="noopener noreferrer">رابط AAB الاحتياطي</a>
+          </div>
+          <div class="hint" style="margin-top:10px;font-size:.78em">
+            Android 7.0+ • قم بتفعيل "تثبيت من مصادر غير معروفة" في الإعدادات قبل التثبيت
           </div>
         </div>`;
     }
@@ -10108,28 +10424,192 @@ let pinOnly = false;
   }
 
   // ---------------- Navigation ----------------
+  const NAV_STRUCTURE = [
+    { type:'page', page:'home', label:'الرئيسية', icon:'⌂', metaId:'navHomeMeta' },
+    { type:'page', page:'chat', label:'الدردشة', icon:'💬', metaId:'navChatMeta' },
+    { type:'page', page:'projects', label:'المشاريع', icon:'🗂', metaId:'navProjMeta' },
+    { type:'page', page:'files', label:'الملفات', icon:'📁', metaId:'navFilesMeta' },
+    { type:'page', page:'knowledge', label:'المعرفة', icon:'🧠', metaId:'navKbMeta' },
+    { type:'page', page:'transcription', label:'التفريغ والتحويل', icon:'🧾', metaId:'navTransMeta' },
+    {
+      type:'group',
+      id:'toolsGroup',
+      label:'الأدوات',
+      icon:'🛠',
+      ariaLabel:'الأدوات المتقدمة',
+      items: [
+        { type:'page', page:'canvas', label:'اللوحة', icon:'📝', metaId:'navCanvasMeta', sub:true },
+        { type:'page', page:'workflows', label:'سير العمل', icon:'⚡', metaId:'navWorkMeta', sub:true }
+      ]
+    },
+    { type:'page', page:'downloads', label:'التنزيلات', icon:'⬇', metaId:'navDlMeta' },
+    { type:'page', page:'settings', label:'الإعدادات', icon:'⚙', metaId:'navSetMeta' }
+  ];
+
+  const NAV_GROUPS = {
+    tools: ['canvas','workflows']
+  };
+
+  const NAV_TITLES = {
+    home: 'الرئيسية',
+    chat: 'الدردشة',
+    knowledge: 'المعرفة',
+    canvas: 'اللوحة',
+    files: 'الملفات',
+    transcription: 'التفريغ والتحويل',
+    workflows: 'سير العمل',
+    downloads: 'التنزيلات',
+    projects: 'المشاريع',
+    guide: 'دليل الاستخدام',
+    settings: 'الإعدادات'
+  };
+
+  function renderNavNode(item){
+    if (item.type === 'group'){
+      return `
+        <div class="nav-group" id="${item.id}">
+          <button class="navbtn nav-group-toggle" id="${item.id}Toggle" aria-expanded="false" aria-controls="${item.id}Items">
+            <span class="navbtn-icon">${item.icon}</span><span class="navbtn-label">${item.label}</span>
+            <span class="nav-group-arrow" aria-hidden="true">›</span>
+          </button>
+          <div class="nav-group-items" id="${item.id}Items" role="group" aria-label="${item.ariaLabel || item.label}">
+            ${item.items.map(renderNavNode).join('')}
+          </div>
+        </div>`;
+    }
+    const subClass = item.sub ? ' sub' : '';
+    return `<button class="navbtn${subClass}" data-page="${item.page}"><span class="navbtn-icon">${item.icon}</span><span class="navbtn-label">${item.label}</span><span class="meta" id="${item.metaId}">—</span></button>`;
+  }
+
+  function renderPrimaryNavigation(){
+    const nav = $('nav');
+    if (!nav) return;
+    nav.innerHTML = NAV_STRUCTURE.map(renderNavNode).join('');
+    if ($('sideVersionLabel')) $('sideVersionLabel').textContent = WEB_RELEASE_LABEL;
+  }
+
   function setActiveNav(page){
     if (page !== 'chat' && composerListening) stopComposerDictation();
-    document.querySelectorAll('.navbtn').forEach(b => b.classList.toggle('active', b.dataset.page === page));
-    document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === `page-${page}`));
-    const titles = { chat:'الدردشة', knowledge:'المعرفة (KB)', canvas:'اللوحة', files:'الملفات', transcription:'مختبر الوثائق', workflows:'سير العمل', downloads:'التحديث والتنزيل', projects:'المشاريع', guide:'دليل الاستخدام', settings:'الإعدادات' };
-    $('topTitle').textContent = titles[page] || 'استوديو الذكاء';
-    refreshStrategicWorkspace().catch(()=>{});
+    document.querySelectorAll('.navbtn[data-page]').forEach((b) => {
+      const isActive = b.dataset.page === page;
+      b.classList.toggle('active', isActive);
+      b.setAttribute('aria-current', isActive ? 'page' : 'false');
+    });
+    document.querySelectorAll('.page').forEach((p) => p.classList.toggle('active', p.id === `page-${page}`));
+    if ($('topTitle')) $('topTitle').textContent = NAV_TITLES[page] || 'استوديو الذكاء';
+    if (NAV_GROUPS.tools.includes(page)) expandNavGroup('toolsGroup');
     scheduleChatScrollDockSync();
+  }
+
+  function openWorkspacePage(page, options = {}){
+    if (!page) return;
+    setActiveNav(page);
+    if (page === 'home') renderHomeWorkspace().catch(()=>{});
+    if (page === 'downloads') renderDownloads();
+    if (page === 'workflows') renderWorkflows();
+    if (page === 'projects') renderProjects();
+    if (page === 'guide') renderGuidePage();
+    if (page === 'settings') renderSettings();
+    if (page === 'files') renderFiles();
+    if (page === 'canvas') { renderCanvasList(); refreshCanvasPreview(); }
+    if (page === 'knowledge') renderKbUI().catch(()=>{});
+    if (page === 'transcription') renderTranscribeOperationalState();
+    if (page === 'chat') { renderChat(); updateChips(); }
+    if (options.closeSidebar) closeSide();
+  }
+
+  function expandNavGroup(groupId){
+    const group = $(groupId);
+    if (!group) return;
+    group.classList.add('open');
+    const toggle = group.querySelector('.nav-group-toggle');
+    if (toggle) toggle.setAttribute('aria-expanded','true');
+  }
+
+  function toggleNavGroup(groupId){
+    const group = $(groupId);
+    if (!group) return;
+    const isOpen = group.classList.toggle('open');
+    const toggle = group.querySelector('.nav-group-toggle');
+    if (toggle) toggle.setAttribute('aria-expanded', String(isOpen));
+  }
+
+  function ensureHomeWorkspaceLanding(){
+    const homeHost = $('homeHeroHost');
+    const deck = $('workspaceDeck');
+    if (homeHost && deck && deck.parentElement !== homeHost){
+      homeHost.prepend(deck);
+    }
+    if (deck && $('page-home')?.classList.contains('active')){
+      deck.classList.remove('workspace-deck-collapsed');
+    }
+    if ($('wqaChat') && !$('wqaChat').dataset.boundHomeAction){
+      $('wqaChat').dataset.boundHomeAction = '1';
+      $('wqaChat').addEventListener('click', () => {
+        openWorkspacePage('chat');
+        const inp = $('chatInput');
+        if (inp) {
+          inp.focus();
+          inp.scrollIntoView({ behavior:'smooth', block:'end' });
+        }
+      });
+    }
+    if ($('wqaFiles') && !$('wqaFiles').dataset.boundHomeAction){
+      $('wqaFiles').dataset.boundHomeAction = '1';
+      $('wqaFiles').addEventListener('click', () => openWorkspacePage('files'));
+    }
+    document.querySelectorAll('#homeHeroHost [data-quick-prompt]').forEach((btn) => {
+      if (!btn.dataset.openPage) btn.dataset.openPage = 'chat';
+    });
+  }
+
+  async function renderHomeWorkspace(){
+    ensureHomeWorkspaceLanding();
+    const pid = getCurProjectId();
+    const project = getCurProject();
+    const thread = getCurThread();
+    const files = loadFiles(pid);
+    const downloads = loadDownloads();
+    const projects = loadProjects();
+    const canvasDocs = loadCanvas(pid);
+    const messages = thread.messages || [];
+    const chunks = await kbCountProject(pid).catch(() => 0);
+    const messageCount = messages.length;
+    const threadCount = loadThreads(pid).length;
+    const latestUpdate = messageCount ? new Date(thread.updatedAt || nowTs()).toLocaleDateString('ar') : 'لا توجد رسائل بعد';
+    if ($('homeChatMeta')) $('homeChatMeta').textContent = messageCount ? `${messageCount} رسالة • آخر تحديث ${latestUpdate}` : `${threadCount} محادثة محفوظة`;
+    if ($('homeProjectsMeta')) $('homeProjectsMeta').textContent = `${projects.length} مشروع • الحالي: ${project.name}`;
+    if ($('homeFilesMeta')) $('homeFilesMeta').textContent = `${files.length} ملف • ${canvasDocs.length} عناصر في اللوحة`;
+    if ($('homeKnowledgeMeta')) $('homeKnowledgeMeta').textContent = `${chunks} مقطع معرفة • RAG من قسم المعرفة`;
+    if ($('homeTranscriptionMeta')) $('homeTranscriptionMeta').textContent = `${getTranscribeProfileLabel()} • ${getTranscribeDocxModeLabel()}`;
+    if ($('homeDownloadsMeta')) $('homeDownloadsMeta').textContent = `${downloads.length} ملف جاهز للتنزيل`;
+    if ($('homeCurrentThreadState')) $('homeCurrentThreadState').textContent = messageCount ? `${thread.title || 'محادثة جارية'} • ${messageCount} رسالة` : 'ابدأ أول محادثة من الشاشة الرئيسية';
+    if ($('homeCurrentProjectState')) $('homeCurrentProjectState').textContent = `${project.name} • ${projects.length} مشروع متاح`;
+    if ($('homeCurrentFilesState')) $('homeCurrentFilesState').textContent = `${files.length} ملف • ${canvasDocs.length} عناصر قابلة للتحرير`;
+    if ($('homeCurrentKnowledgeState')) $('homeCurrentKnowledgeState').textContent = `${chunks} مقطع معرفة • ${downloads.length} تنزيل`;
   }
 
   function refreshNavMeta(){
     const pid = getCurProjectId();
     const th = getCurThread();
-    $('navChatMeta').textContent = String((th.messages||[]).length);
-    $('navCanvasMeta').textContent = String(loadCanvas(pid).length);
-    $('navFilesMeta').textContent = String(loadFiles(pid).length);
+    $('navHomeMeta') && ($('navHomeMeta').textContent = String(loadThreads(pid).length));
+    $('navChatMeta') && ($('navChatMeta').textContent = String((th.messages||[]).length));
+    $('navCanvasMeta') && ($('navCanvasMeta').textContent = String(loadCanvas(pid).length));
+    $('navFilesMeta') && ($('navFilesMeta').textContent = String(loadFiles(pid).length));
+    if ($('navKbMeta')){
+      $('navKbMeta').textContent = '…';
+      kbCountProject(pid).then((count) => {
+        if ($('navKbMeta')) $('navKbMeta').textContent = String(count);
+      }).catch(() => {
+        if ($('navKbMeta')) $('navKbMeta').textContent = '0';
+      });
+    }
     $('navTransMeta') && ($('navTransMeta').textContent = 'PDF');
-    $('navDlMeta').textContent = String(loadDownloads().length);
-    $('navProjMeta').textContent = String(loadProjects().length);
-    $('navWorkMeta') && ($('navWorkMeta').textContent = '4');
-    $('navSetMeta').textContent = 'OK';
-    $('navGuideMeta') && ($('navGuideMeta').textContent = 'AR');
+    $('navDlMeta') && ($('navDlMeta').textContent = String(loadDownloads().length));
+    $('navProjMeta') && ($('navProjMeta').textContent = String(loadProjects().length));
+    $('navWorkMeta') && ($('navWorkMeta').textContent = 'OK');
+    $('navSetMeta') && ($('navSetMeta').textContent = 'OK');
+    renderHomeWorkspace().catch(()=>{});
     refreshStrategicWorkspace().catch(()=>{});
   }
 
@@ -10265,7 +10745,7 @@ let pinOnly = false;
     const profile = model.capabilities || buildModelCapabilityProfile(model);
     const keys = getEnabledCapabilityKeys(profile);
     if (!keys.length) return 'ط¹ط§ظ…';
-    return keys.slice(0, Math.max(1, limit)).map(getModelCapabilityLabel).join(' â€¢ ');
+    return keys.slice(0, Math.max(1, limit)).map(getModelCapabilityLabel).join(' • ');
   }
   function getModelRoutingNote(model = {}){
     const profile = model.capabilities || buildModelCapabilityProfile(model);
@@ -10568,30 +11048,19 @@ let pinOnly = false;
   // ---------------- Events ----------------
   function bind(){
     // sidebar mobile
-    const side = $('side');
     const back = $('backdrop');
-    const openSide = () => {
-      if (window.innerWidth > 980 && getSidebarPinned()) return;
-      side.classList.add('show');
-      back.classList.add('show');
-      scheduleChatScrollDockSync();
-    };
-    const closeSide = () => {
-      side.classList.remove('show');
-      back.classList.remove('show');
-      scheduleChatScrollDockSync();
-    };
     $('openSideBtn').addEventListener('click', openSide);
     $('closeSideBtn').addEventListener('click', closeSide);
     back.addEventListener('click', closeSide);
     $('accountTriggerBtn')?.addEventListener('click', openAccountCenter);
-    $('accountSignInBtn')?.addEventListener('click', () => openAuthGate());
+    $('accountSignInBtn')?.addEventListener('click', () => openAuthGate('', { force: true }));
     $('accountUpgradeRequestBtn')?.addEventListener('click', requestUpgradeByEmail);
     $('accountLogoutBtn')?.addEventListener('click', logoutCurrentAccount);
     $('activateUpgradeBtn')?.addEventListener('click', activateUpgradeCodeFromUi);
     $('adminGenerateUpgradeBtn')?.addEventListener('click', generateAdminUpgradeCodeFromUi);
     $('adminCopyUpgradeBtn')?.addEventListener('click', copyAdminUpgradeCode);
     $('authEntrySubmitBtn')?.addEventListener('click', submitUnifiedAuthEntry);
+    $('authEntryForm')?.addEventListener('submit', (e) => { e.preventDefault(); submitUnifiedAuthEntry(); });
     $('authRetryBtn')?.addEventListener('click', async () => {
       AUTH_RUNTIME.config = null;
       await loadRemoteAuthConfig(true);
@@ -10631,16 +11100,13 @@ let pinOnly = false;
     $('nav').addEventListener('click', (e) => {
       const btn = e.target.closest('.navbtn');
       if (!btn) return;
-      setActiveNav(btn.dataset.page);
-      closeSide();
-      if (btn.dataset.page === 'downloads') renderDownloads();
-      if (btn.dataset.page === 'workflows') renderWorkflows();
-      if (btn.dataset.page === 'projects') renderProjects();
-      if (btn.dataset.page === 'guide') renderGuidePage();
-      if (btn.dataset.page === 'settings') renderSettings();
-      if (btn.dataset.page === 'files') renderFiles();
-      if (btn.dataset.page === 'canvas') { renderCanvasList(); refreshCanvasPreview(); }
-      if (btn.dataset.page === 'chat') { renderChat(); updateChips(); }
+      if (btn.classList.contains('nav-group-toggle')) {
+        const group = btn.closest('.nav-group');
+        if (group) toggleNavGroup(group.id);
+        return;
+      }
+      if (!btn.dataset.page) return;
+      openWorkspacePage(btn.dataset.page, { closeSidebar: true });
     });
 
     setupCollapsibleToolbars();
@@ -10714,7 +11180,7 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
       toast(getWebToggle() ? '🔎 تم تفعيل الويب' : '🔎 تم إيقاف الويب');
     });
 
-    $('newThreadBtn').addEventListener('click', () => { newThread(); setActiveNav('chat'); });
+    $('newThreadBtn').addEventListener('click', () => { newThread(); openWorkspacePage('chat'); });
 
     document.addEventListener('click', (e) => {
       const quick = e.target.closest('[data-quick-prompt]');
@@ -10725,7 +11191,7 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
     document.addEventListener('click', (e) => {
       const openPageBtn = e.target.closest('[data-open-page]');
       if (openPageBtn){
-        setActiveNav(openPageBtn.dataset.openPage || 'chat');
+        openWorkspacePage(openPageBtn.dataset.openPage || 'chat');
       }
       const guideBtn = e.target.closest('[data-guide-target]');
       if (guideBtn){
@@ -10745,6 +11211,17 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
 
     // chat
     
+    // Workspace quick-action buttons (home screen)
+    $('settingsGuideBtn')?.addEventListener('click', () => openWorkspacePage('guide'));
+
+    // Workspace nav shortcut cards
+    document.querySelectorAll('.wnav-card[data-page]').forEach((card) => {
+      card.addEventListener('click', () => {
+        const page = card.dataset.page;
+        if (page) openWorkspacePage(page);
+      });
+    });
+
     // Chat attachments (inline)
     $('chatAttachBtn') && $('chatAttachBtn').addEventListener('click', openChatAttachmentPicker);
     $('chatAttachFiles') && $('chatAttachFiles').addEventListener('change', (e) => {
@@ -10754,15 +11231,15 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
     });
 
     // New/Clear chat shortcuts in toolbar
-    $('newChatBtn') && $('newChatBtn').addEventListener('click', () => { newThread(); setActiveNav('chat'); });
+    $('newChatBtn') && $('newChatBtn').addEventListener('click', () => { newThread(); openWorkspacePage('chat'); });
     $('clearChatBtn') && $('clearChatBtn').addEventListener('click', clearCurrentChat);
     $('agentTaskApplyBtn') && $('agentTaskApplyBtn').addEventListener('click', applyAgentTaskTemplate);
     $('agentTaskTemplate') && $('agentTaskTemplate').addEventListener('change', applyAgentTaskTemplate);
     $('scrollTopBtn') && $('scrollTopBtn').addEventListener('click', () => scrollChat('top'));
     $('scrollBottomBtn') && $('scrollBottomBtn').addEventListener('click', () => scrollChat('bottom'));
-    $('floatingScrollTopBtn') && $('floatingScrollTopBtn').addEventListener('click', () => scrollChat('top'));
     $('floatingScrollBottomBtn') && $('floatingScrollBottomBtn').addEventListener('click', () => scrollChat('bottom'));
     $('chatLog') && $('chatLog').addEventListener('scroll', scheduleChatScrollDockSync, { passive:true });
+    window.addEventListener('scroll', scheduleChatScrollDockSync, { passive:true });
 
     // Deep Search toggle (send = Research)
     $('deepSearchToggleBtn') && $('deepSearchToggleBtn').addEventListener('click', () => {
@@ -10947,7 +11424,7 @@ $('sendBtn').addEventListener('click', sendMessage);
       const txt = ($('kbResults').textContent || '').trim();
       if (!txt) return;
       $('chatInput').value = `استخدم نتائج KB التالية للإجابة:\n\n${txt}\n\nسؤالي:`;
-      setActiveNav('chat');
+      openWorkspacePage('chat');
       toast('✅ تم إدراج النتائج في الدردشة');
       $('chatInput').focus();
     });
@@ -11168,7 +11645,7 @@ ${e?.message||e}`, false);
       $('chatInput').value = `لخّص النص التالي واذكر النقاط الرئيسية:
 
 ${txt}`;
-      setActiveNav('chat');
+      openWorkspacePage('chat');
       resizeComposerInput($('chatInput'));
       syncComposerMeta();
       $('chatInput').focus();
@@ -11273,7 +11750,7 @@ ${txt}`;
               : 'اكتمل التحويل عبر المسار السحابي الهيكلي. راجع النتيجة إذا كان المستند يحتوي على جداول أو هوامش معقدة.'
           });
         }
-        toast('⬇️ تم تنزيل ملف Word قابل للتعديل');
+        toast('⬇ تم تنزيل ملف Word قابل للتعديل');
       }catch(e){
         const friendly = getFriendlyDocxCloudError(e);
         updateTranscribeLabState({ engine:'فشل التحويل', quality:'توقف', note:friendly });
@@ -11374,6 +11851,11 @@ ${e?.message||e}`, false);
 
   // ---------------- Init ----------------
   function init(){
+    // Clear stale auth config cache so DEFAULT_AUTH_CONFIG.authRequired=false takes effect
+    try{ localStorage.removeItem(KEYS.authConfigCache); }catch(_){}
+    AUTH_RUNTIME.config = null;
+    alignManagedRuntimeSettings();
+
     loadProjects();
     const pid = getCurProjectId();
     loadThreads(pid);
@@ -11414,14 +11896,23 @@ ${e?.message||e}`, false);
     updateChips();
 
     bind();
+    openWorkspacePage(DEFAULT_POST_LOGIN_PAGE);
     syncKeyboardEditingState();
     applyShellLayout();
     initializeAuthExperience().catch(()=>{});
     refreshStrategicWorkspace().catch(()=>{});
+
+    try{
+      if ('speechSynthesis' in window){
+        window.speechSynthesis.getVoices();
+        window.speechSynthesis.addEventListener('voiceschanged', () => {
+          window.speechSynthesis.getVoices();
+        }, { once: true });
+      }
+    }catch(_){}
   }
 
   init();
 })();
-
 
 
