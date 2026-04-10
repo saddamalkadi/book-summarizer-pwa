@@ -233,7 +233,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.55';
+  const WEB_RELEASE_LABEL = 'v8.56';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -2429,6 +2429,67 @@ function getChatScrollContainer(){
   return logRange > 0 ? log : page;
 }
 
+function isMobileSidebarViewport(){
+  return window.innerWidth <= 980;
+}
+
+function isSidebarOverlayMode(){
+  return isMobileSidebarViewport() || document.body.classList.contains('sidebarFloating');
+}
+
+function syncSidebarDrawerState(){
+  const side = $('side');
+  const backdrop = $('backdrop');
+  const openBtn = $('openSideBtn');
+  const closeBtn = $('closeSideBtn');
+  const mobile = isMobileSidebarViewport();
+  const overlayMode = isSidebarOverlayMode();
+  const requestedOpen = !!(side && side.classList.contains('show'));
+  const open = !!(requestedOpen && overlayMode);
+  const sidebarMode = mobile ? 'mobile-overlay' : (document.body.classList.contains('sidebarFloating') ? 'desktop-floating' : 'desktop-pinned');
+
+  document.body.classList.toggle('mobileSidebarOpen', mobile && open);
+  if (mobile){
+    document.body.classList.remove('sidebarFloating');
+  }
+  document.body.dataset.sidebarMode = sidebarMode;
+  if (backdrop){
+    backdrop.classList.toggle('show', overlayMode && open);
+    backdrop.hidden = !(overlayMode && open);
+    backdrop.dataset.sidebarMode = sidebarMode;
+  }
+  if (side){
+    side.classList.toggle('show', overlayMode && open);
+    side.dataset.sidebarMode = sidebarMode;
+    side.setAttribute('aria-hidden', open ? 'false' : 'true');
+  }
+  if (openBtn){
+    openBtn.setAttribute('aria-controls', 'side');
+    openBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  if (closeBtn){
+    closeBtn.setAttribute('aria-controls', 'side');
+    closeBtn.setAttribute('aria-label', 'إغلاق القائمة');
+  }
+}
+
+function setSidebarDrawerOpen(open){
+  const side = $('side');
+  if (!side) return;
+  if (open && window.innerWidth > 980 && getSidebarPinned()) return;
+  side.classList.toggle('show', !!open);
+  syncSidebarDrawerState();
+  scheduleChatScrollDockSync();
+}
+
+function openSide(){
+  setSidebarDrawerOpen(true);
+}
+
+function closeSide(){
+  setSidebarDrawerOpen(false);
+}
+
 function syncStickyShellMetrics(){
   const root = document.documentElement;
   const topbar = document.querySelector('.topbar');
@@ -2491,13 +2552,17 @@ function syncChatScrollDock(){
 function applyShellLayout(){
   const desktop = window.innerWidth > 980;
   const floatingSidebar = desktop && !getSidebarPinned();
-  document.body.classList.toggle('sidebarFloating', floatingSidebar);
+  if (desktop){
+    document.body.classList.toggle('sidebarFloating', floatingSidebar);
+  } else {
+    document.body.classList.remove('sidebarFloating');
+  }
   document.body.classList.toggle('focusMode', getFocusMode());
 
-  if (!desktop || !floatingSidebar){
+  if (desktop && !floatingSidebar){
     $('side')?.classList.remove('show');
-    $('backdrop')?.classList.remove('show');
   }
+  syncSidebarDrawerState();
 
   const pinBtn = $('pinSideBtn');
   if (pinBtn){
@@ -10983,19 +11048,7 @@ let pinOnly = false;
   // ---------------- Events ----------------
   function bind(){
     // sidebar mobile
-    const side = $('side');
     const back = $('backdrop');
-    const openSide = () => {
-      if (window.innerWidth > 980 && getSidebarPinned()) return;
-      side.classList.add('show');
-      back.classList.add('show');
-      scheduleChatScrollDockSync();
-    };
-    const closeSide = () => {
-      side.classList.remove('show');
-      back.classList.remove('show');
-      scheduleChatScrollDockSync();
-    };
     $('openSideBtn').addEventListener('click', openSide);
     $('closeSideBtn').addEventListener('click', closeSide);
     back.addEventListener('click', closeSide);

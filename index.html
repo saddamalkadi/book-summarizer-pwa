@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.55">
+<html lang="ar" dir="rtl" data-appver="8.56">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.55</title>
+    <title>AI Workspace Studio v8.56</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -175,10 +175,6 @@
     /* Mobile */
     @media (max-width:980px){
       .app{grid-template-columns:1fr; padding:10px; min-height:100%;}
-      .side{position:fixed; inset:10px auto 10px 10px; width:min(340px,88vw); max-height:calc(var(--app-vh) - 20px); transform:translateX(-120%); transition:transform .18s ease; z-index:50;}
-      .side.show{transform:translateX(0);}
-      .backdrop2{display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:40;}
-      .backdrop2.show{display:block;}
       .split{grid-template-columns:1fr;}
       .main{max-height:none; min-height:0; overflow:visible;}
       .content{min-height:calc(var(--app-vh) - 96px);}
@@ -217,7 +213,6 @@
       .chatbar input{min-width:0; font-size:16px;}
       .chips{padding:0 8px 8px;}
       .hint{font-size:12px;}
-      .side{inset:0 auto 0 0; width:min(330px,90vw); max-height:100%; border-radius:0 18px 18px 0; padding-top:calc(14px + env(safe-area-inset-top)); padding-top:calc(14px + constant(safe-area-inset-top));}
       .modal .panel{left:2vw; right:2vw; top:4vh; max-height:92vh;}
       .page{overscroll-behavior-y:auto;}
       #page-chat{overflow:auto;}
@@ -1585,33 +1580,35 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       gap: 10px;
       grid-column: 1 / -1;
     }
-    body.sidebarFloating .app{
-      grid-template-columns: 1fr;
-    }
-    body.sidebarFloating .side{
-      position: fixed;
-      top: 12px;
-      bottom: 12px;
-      right: 12px;
-      left: auto;
-      width: min(320px, 28vw);
-      max-height: none;
-      transform: translateX(calc(100% + 24px));
-      transition: transform .2s ease;
-      z-index: 60;
-    }
-    body.sidebarFloating .side.show{
-      transform: translateX(0);
-    }
-    body.sidebarFloating .backdrop2{
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(5,10,25,.38);
-      z-index: 55;
-    }
-    body.sidebarFloating .backdrop2.show{
-      display: block;
+    @media (min-width:981px){
+      body.sidebarFloating .app{
+        grid-template-columns: 1fr;
+      }
+      body.sidebarFloating .side{
+        position: fixed;
+        top: 12px;
+        bottom: 12px;
+        right: 12px;
+        left: auto;
+        width: min(320px, 28vw);
+        max-height: none;
+        transform: translateX(calc(100% + 24px));
+        transition: transform .2s ease;
+        z-index: 60;
+      }
+      body.sidebarFloating .side.show{
+        transform: translateX(0);
+      }
+      body.sidebarFloating .backdrop2{
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(5,10,25,.38);
+        z-index: 55;
+      }
+      body.sidebarFloating .backdrop2.show{
+        display: block;
+      }
     }
     body.focusMode #page-chat > .toolbar.mainToolbar,
     body.focusMode #page-chat > .workspace-deck,
@@ -1637,13 +1634,6 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       .workspace-brief-grid{
         grid-template-columns: 1fr;
       }
-      body.sidebarFloating .side{
-        width: min(360px, 90vw);
-        right: 10px;
-        left: auto;
-        top: 10px;
-        bottom: 10px;
-      }
     }
     @media (max-width:640px){
       .brand-dock-btn .label{
@@ -1651,10 +1641,6 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       }
       .workspace-section-summary{
         white-space: normal;
-      }
-      body.sidebarFloating .side{
-        width: min(92vw, 360px);
-        border-radius: 20px;
       }
     }
 
@@ -1977,7 +1963,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     }
 
 /* ═══════════════════════════════════════════
-   v8.55 — Production Stabilization Pass
+   v8.56 — Mobile Sidebar Stabilization
    ═══════════════════════════════════════════ */
 
 /* — Sidebar account strip — */
@@ -2983,7 +2969,7 @@ body, input, textarea, select, button{
 }
 
 /* ══════════════════════════════════════════════
-   FINAL CLOSURE PASS — v8.55 PRODUCTION STABILIZATION
+   FINAL CLOSURE PASS — v8.56 MOBILE SIDEBAR STABILIZATION
    ══════════════════════════════════════════════ */
 
 /* 1. Chat Toolbar — secondary groups collapsed by default */
@@ -3177,6 +3163,72 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
   font-size: 13px;
   padding: 5px 10px;
 }
+
+/* 12. Mobile sidebar stabilization */
+@media (max-width: 980px) {
+  body.mobileSidebarOpen {
+    overflow: hidden;
+  }
+  body.mobileSidebarOpen .app,
+  body.mobileSidebarOpen .main,
+  body.mobileSidebarOpen .content {
+    overflow: visible !important;
+  }
+  body.mobileSidebarOpen .floating-scroll-nav {
+    opacity: 0 !important;
+    transform: translateY(14px) !important;
+    pointer-events: none !important;
+  }
+  .backdrop2 {
+    display: block;
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 108;
+    transition: opacity .18s ease;
+  }
+  .backdrop2.show {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .side {
+    position: fixed !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: auto !important;
+    width: min(360px, 88vw) !important;
+    max-width: calc(100vw - 22px);
+    max-height: none !important;
+    height: var(--app-vh);
+    border-radius: 0 22px 22px 0 !important;
+    padding-top: calc(14px + env(safe-area-inset-top));
+    padding-top: calc(14px + constant(safe-area-inset-top));
+    padding-bottom: calc(14px + env(safe-area-inset-bottom));
+    padding-bottom: calc(14px + constant(safe-area-inset-bottom));
+    display: flex !important;
+    visibility: hidden;
+    pointer-events: none;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    z-index: 120 !important;
+    box-shadow: 0 28px 60px rgba(5, 10, 25, .34);
+    transform: translate3d(calc(-100% - 18px), 0, 0) !important;
+  }
+  .side.show {
+    visibility: visible;
+    pointer-events: auto;
+    transform: translate3d(0, 0, 0) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .side {
+    width: min(86vw, 350px) !important;
+    border-radius: 0 18px 18px 0 !important;
+  }
+}
 </style>
 </head>
 <body>
@@ -3231,7 +3283,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.55</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.56</div>
       </div>
     </aside>
 
@@ -4072,7 +4124,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
     })();
   </script>
 
-<script src="app.js?v=855"></script>
+<script src="app.js?v=856"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -4086,7 +4138,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v855";
+          const CURRENT_CACHE = "aistudio-cache-v856";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -4095,7 +4147,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=855").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=856").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {
