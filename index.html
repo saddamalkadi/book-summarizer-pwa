@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.56">
+<html lang="ar" dir="rtl" data-appver="8.57">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.56</title>
+    <title>AI Workspace Studio v8.57</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -1963,7 +1963,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     }
 
 /* ═══════════════════════════════════════════
-   v8.56 — Mobile Sidebar Stabilization
+   v8.57 — Mobile Sidebar Stabilization
    ═══════════════════════════════════════════ */
 
 /* — Sidebar account strip — */
@@ -2969,7 +2969,7 @@ body, input, textarea, select, button{
 }
 
 /* ══════════════════════════════════════════════
-   FINAL CLOSURE PASS — v8.56 MOBILE SIDEBAR STABILIZATION
+   FINAL CLOSURE PASS — v8.57 MOBILE SIDEBAR STABILIZATION
    ══════════════════════════════════════════════ */
 
 /* 1. Chat Toolbar — secondary groups collapsed by default */
@@ -3181,6 +3181,9 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
   }
   .backdrop2 {
     display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(5, 10, 25, .38);
     visibility: hidden;
     opacity: 0;
     pointer-events: none;
@@ -3209,16 +3212,21 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
     padding-bottom: calc(14px + constant(safe-area-inset-bottom));
     display: flex !important;
     visibility: hidden;
+    opacity: 0;
     pointer-events: none;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
     z-index: 120 !important;
-    box-shadow: 0 28px 60px rgba(5, 10, 25, .34);
+    box-shadow: none;
+    transition: transform .18s ease, opacity .18s ease, visibility 0s linear .18s;
     transform: translate3d(calc(-100% - 18px), 0, 0) !important;
   }
   .side.show {
     visibility: visible;
+    opacity: 1;
     pointer-events: auto;
+    box-shadow: 0 28px 60px rgba(5, 10, 25, .34);
+    transition-delay: 0s;
     transform: translate3d(0, 0, 0) !important;
   }
 }
@@ -3283,7 +3291,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.56</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.57</div>
       </div>
     </aside>
 
@@ -4124,7 +4132,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
     })();
   </script>
 
-<script src="app.js?v=856"></script>
+<script src="app.js?v=857"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -4138,7 +4146,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v856";
+          const CURRENT_CACHE = "aistudio-cache-v857";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -4147,7 +4155,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=856").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=857").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {
