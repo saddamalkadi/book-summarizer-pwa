@@ -218,13 +218,16 @@
     utterance: null,
     autoSendArmed: false,
     nativeListening: false,
+    nativeStarting: false,
+    nativeSpeechListener: null,
     continuousConversation: false,
     restartTimer: 0,
     cloudRecorder: null,
     cloudStream: null,
     audioPlayer: null,
     cloudCancelRequested: false,
-    ttsInstallPrompted: false
+    ttsInstallPrompted: false,
+    dictationState: 'ready'
   };
 
   const BROWSER_AUTH_BRIDGE = {
@@ -2624,17 +2627,20 @@ function applyShellLayout(){
     return getCapacitorPluginProxy('TextToSpeech', { nativeOnly:true });
   }
 
+  function getNativeSpeechPermissionStatus(state){
+    const raw = String(
+      state?.speechRecognition
+      || state?.permission
+      || state?.microphone
+      || ''
+    ).trim().toLowerCase();
+    if (state?.permission === true) return 'granted';
+    return raw || 'unknown';
+  }
+
   async function ensureNativeSpeechRecognitionPermission(plugin){
     if (!plugin) return false;
-    const isGranted = (state) => {
-      const value = String(
-        state?.speechRecognition
-        || state?.permission
-        || state?.microphone
-        || ''
-      ).trim().toLowerCase();
-      return value === 'granted' || value === 'prompt-with-rationale';
-    };
+    const isGranted = (state) => getNativeSpeechPermissionStatus(state) === 'granted';
 
     let state = null;
     if (plugin.checkPermissions){
@@ -2654,6 +2660,43 @@ function applyShellLayout(){
       if (state?.permission === true || isGranted(state)) return true;
     }
     return false;
+  }
+
+  function setComposerDictationState(state = 'ready'){
+    VOICE_RUNTIME.dictationState = String(state || 'ready').trim() || 'ready';
+    syncVoiceInputButton();
+  }
+
+  async function clearNativeSpeechStateListener(){
+    if (!VOICE_RUNTIME.nativeSpeechListener) return;
+    try{ await VOICE_RUNTIME.nativeSpeechListener.remove?.(); }catch(_){ }
+    VOICE_RUNTIME.nativeSpeechListener = null;
+  }
+
+  async function bindNativeSpeechStateListener(plugin, language){
+    await clearNativeSpeechStateListener();
+    if (!plugin?.addListener) return;
+    VOICE_RUNTIME.nativeSpeechListener = await plugin.addListener('listeningState', (event) => {
+      const status = String(event?.status || '').trim().toLowerCase();
+      if (status === 'started'){
+        composerListening = true;
+        VOICE_RUNTIME.nativeListening = true;
+        setComposerDictationState('listening');
+        showStatus(`الإملاء الصوتي يعمل الآن باللغة ${language}...`, false);
+        return;
+      }
+      if (status === 'stopped'){
+        composerListening = false;
+        VOICE_RUNTIME.nativeListening = false;
+        if (VOICE_RUNTIME.nativeStarting){
+          setComposerDictationState('processing');
+          showStatus('جارٍ معالجة الإملاء الصوتي…', false);
+        } else {
+          setComposerDictationState('ready');
+          showStatus('', false);
+        }
+      }
+    }).catch(() => null);
   }
 
   async function chooseSpeechLanguageForNativeTts(plugin, preferred){
@@ -2782,10 +2825,23 @@ function applyShellLayout(){
     return chooseSpeechLanguageForNativeTts(plugin, preferred || getPreferredSpeechLanguage());
   }
 
+  async function stopNativeSpeechPluginSafely(plugin, timeoutMs = 450){
+    if (!plugin?.stop) return;
+    try{
+      await Promise.race([
+        Promise.resolve(plugin.stop()).catch(() => null),
+        new Promise((resolve) => window.setTimeout(resolve, timeoutMs))
+      ]);
+    }catch(_){}
+  }
+
   async function resetNativeSpeechSession(plugin){
     if (!plugin) return;
-    try{ await plugin.stop?.(); }catch(_){ }
+    await clearNativeSpeechStateListener();
+    await stopNativeSpeechPluginSafely(plugin);
     try{ await plugin.removeAllListeners?.(); }catch(_){ }
+    VOICE_RUNTIME.nativeListening = false;
+    VOICE_RUNTIME.nativeStarting = false;
   }
 
   function clearVoiceRestartTimer(){
@@ -3104,13 +3160,23 @@ function applyShellLayout(){
   function syncVoiceInputButton(){
     const btn = $('voiceInputBtn');
     if (!btn) return;
-    btn.classList.toggle('dark', composerListening);
-    btn.classList.toggle('is-recording', composerListening);
-    btn.title = composerListening ? 'إيقاف الإملاء الصوتي' : 'بدء الإملاء الصوتي';
+    const state = composerListening
+      ? 'listening'
+      : (VOICE_RUNTIME.dictationState || 'ready');
+    btn.dataset.state = state;
+    btn.classList.toggle('dark', state === 'listening' || state === 'processing');
+    btn.classList.toggle('is-recording', state === 'listening');
+    btn.disabled = state === 'processing';
+    btn.setAttribute('aria-busy', state === 'processing' ? 'true' : 'false');
+    btn.title = state === 'listening'
+      ? 'إيقاف الإملاء الصوتي'
+      : (state === 'processing' ? 'جارٍ تجهيز الإملاء الصوتي' : 'بدء الإملاء الصوتي');
     btn.setAttribute('aria-label', btn.title);
-    btn.innerHTML = composerListening
+    btn.innerHTML = state === 'listening'
       ? '<span class="icon">🎙️</span><span class="label">إيقاف الإملاء</span>'
-      : '<span class="icon">🎤</span><span class="label">إملاء صوتي</span>';
+      : (state === 'processing'
+        ? '<span class="icon">⏳</span><span class="label">جارٍ التحضير</span>'
+        : '<span class="icon">🎤</span><span class="label">إملاء صوتي</span>');
   }
 
   function refreshVoiceModeButton(){
@@ -3330,15 +3396,16 @@ function applyShellLayout(){
     } else if (VOICE_RUNTIME.cloudStream){
       cleanupCloudVoiceCapture();
     }
-    if (VOICE_RUNTIME.nativeListening && nativeSpeech?.stop){
-      try{ await nativeSpeech.stop(); }catch(_){ }
-      try{ await nativeSpeech.removeAllListeners?.(); }catch(_){ }
-      VOICE_RUNTIME.nativeListening = false;
+    if (nativeSpeech?.stop){
+      await stopNativeSpeechPluginSafely(nativeSpeech);
     }
+    await clearNativeSpeechStateListener();
+    VOICE_RUNTIME.nativeListening = false;
+    VOICE_RUNTIME.nativeStarting = false;
     try{ composerRecognition?.stop?.(); }catch(_){ }
     composerRecognition = null;
     composerListening = false;
-    syncVoiceInputButton();
+    setComposerDictationState('ready');
     showStatus('', false);
     if (showToast) toast('تم إيقاف الإملاء الصوتي');
   }
@@ -3412,39 +3479,47 @@ function applyShellLayout(){
     const plugin = getNativeSpeechRecognitionPlugin();
     const input = $('chatInput');
     if (!plugin || !input) return { success:false, fallbackAllowed:true, cancelled:false };
+    if (VOICE_RUNTIME.nativeStarting) return { success:false, fallbackAllowed:false, cancelled:true };
 
-    await resetNativeSpeechSession(plugin);
-    const availability = await plugin.available?.().catch(() => ({ available:false }));
-    if (!availability?.available){
-      toast('التعرف الصوتي غير متاح على هذا الجهاز.');
-      return { success:false, fallbackAllowed:true, cancelled:false };
-    }
-
-    const permitted = await ensureNativeSpeechRecognitionPermission(plugin);
-    if (!permitted){
-      toast('يلزم منح إذن الميكروفون لتفعيل الدردشة الصوتية.');
-      return { success:false, fallbackAllowed:true, cancelled:false };
-    }
-
-    const language = await resolveSpeechRecognitionLanguage(plugin);
-    composerDictationBase = String(input.value || '').trimEnd();
-    VOICE_RUNTIME.autoSendArmed = true;
-    composerListening = true;
-    VOICE_RUNTIME.nativeListening = true;
-    VOICE_RUNTIME.continuousConversation = getVoiceModeEnabled();
-    syncVoiceInputButton();
-    showStatus(`الإملاء الصوتي يعمل الآن باللغة ${language}...`, false);
-
-    let transcriptCaptured = false;
-    let cancelled = false;
     try{
-      const result = await plugin.start({
-        language,
-        maxResults: 1,
-        prompt: getVoiceModeEnabled() ? 'ابدأ الحديث الآن' : 'تحدث الآن',
-        partialResults: false,
-        popup: true
-      });
+      VOICE_RUNTIME.nativeStarting = true;
+      setComposerDictationState('processing');
+      showStatus('جارٍ تجهيز الإملاء الصوتي…', false);
+      await stopVoicePlayback();
+      await resetNativeSpeechSession(plugin);
+
+      const availability = await plugin.available?.().catch(() => ({ available:false }));
+      if (!availability?.available){
+        toast('التعرف الصوتي غير متاح على هذا الجهاز.');
+        return { success:false, fallbackAllowed:true, cancelled:false };
+      }
+
+      const permitted = await ensureNativeSpeechRecognitionPermission(plugin);
+      if (!permitted){
+        toast('يلزم منح إذن الميكروفون لتفعيل الدردشة الصوتية.');
+        return { success:false, fallbackAllowed:true, cancelled:false };
+      }
+
+      const language = await resolveSpeechRecognitionLanguage(plugin);
+      await bindNativeSpeechStateListener(plugin, language);
+      composerDictationBase = String(input.value || '').trimEnd();
+      VOICE_RUNTIME.autoSendArmed = true;
+      VOICE_RUNTIME.continuousConversation = getVoiceModeEnabled();
+
+      let transcriptCaptured = false;
+      let cancelled = false;
+      const result = await Promise.race([
+        plugin.start({
+          language,
+          maxResults: 1,
+          prompt: getVoiceModeEnabled() ? 'ابدأ الحديث الآن' : 'تحدث الآن',
+          partialResults: false,
+          popup: false
+        }),
+        new Promise((_, reject) => {
+          window.setTimeout(() => reject(new Error('STT_TIMEOUT')), 18000);
+        })
+      ]);
       const transcript = Array.isArray(result?.matches)
         ? result.matches.map((item) => String(item || '').trim()).filter(Boolean).join(' ')
         : '';
@@ -3454,16 +3529,7 @@ function applyShellLayout(){
         resizeComposerInput(input);
         syncComposerMeta();
       }
-    }catch(error){
-      const message = String(error?.message || error || '').trim();
-      cancelled = /cancel/i.test(message);
-      if (!cancelled) toast(`تعذر الإملاء الصوتي: ${message || 'unknown'}`);
-    }finally{
-      VOICE_RUNTIME.nativeListening = false;
-      composerListening = false;
-      await resetNativeSpeechSession(plugin);
-      syncVoiceInputButton();
-      showStatus('', false);
+
       const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && String(input.value || '').trim();
       VOICE_RUNTIME.autoSendArmed = false;
       if (shouldAutoSend){
@@ -3472,16 +3538,35 @@ function applyShellLayout(){
         }, 90);
       } else if (transcriptCaptured && shouldKeepContinuousVoiceLoop()){
         scheduleVoiceConversationRestart(550);
-      } else if (!cancelled && shouldKeepContinuousVoiceLoop()){
+      } else if (!transcriptCaptured && shouldKeepContinuousVoiceLoop()){
         scheduleVoiceConversationRestart(550);
       }
+      return {
+        success: transcriptCaptured,
+        fallbackAllowed: !transcriptCaptured,
+        cancelled: false
+      };
+    }catch(error){
+      const message = String(error?.message || error || '').trim();
+      const cancelled = /cancel|abort/i.test(message);
+      const timedOut = /STT_TIMEOUT/i.test(message);
+      if (!cancelled){
+        toast(timedOut ? 'انتهت مهلة الإملاء الصوتي بدون نتيجة. حاول مرة أخرى.' : `تعذر الإملاء الصوتي: ${message || 'unknown'}`);
+      }
+      return {
+        success: false,
+        fallbackAllowed: !cancelled,
+        cancelled
+      };
+    }finally{
+      VOICE_RUNTIME.autoSendArmed = false;
+      VOICE_RUNTIME.nativeListening = false;
+      VOICE_RUNTIME.nativeStarting = false;
+      composerListening = false;
+      await resetNativeSpeechSession(plugin);
+      setComposerDictationState('ready');
+      showStatus('', false);
     }
-
-    return {
-      success: transcriptCaptured,
-      fallbackAllowed: !cancelled,
-      cancelled
-    };
   }
 
   async function startComposerDictation(){
