@@ -2,9 +2,9 @@
 
 ### Web source-of-truth proof
 Current live web responded with:
-- `<html ... data-appver="8.59">`
-- `<title>AI Workspace Studio v8.59</title>`
-- `<script src="app.js?v=859"></script>`
+- `<html ... data-appver="8.60">`
+- `<title>AI Workspace Studio v8.60</title>`
+- `<script src="app.js?v=860"></script>`
 
 This was fetched live from:
 - `https://app.saddamalkadi.com/`
@@ -33,8 +33,8 @@ The signed release APK was installed successfully on the Android emulator:
 - output: `Success`
 
 The installed package reports:
-- `versionCode=859`
-- `versionName=8.59.0`
+- `versionCode=860`
+- `versionName=8.60.0`
 
 The app process and activity were confirmed foregrounded:
 - package: `com.saddamalkadi.aiworkspace`
@@ -49,8 +49,8 @@ Artifacts captured during runtime verification:
 
 ### What matches web right now
 - Version line:
-  - web `v8.59`
-  - Android app `versionName=8.59.0`
+  - web `v8.60`
+  - Android app `versionName=8.60.0`
 - Bundled shell files are the same between live web source and Android assets
 - Capacitor Android build uses the same application shell and same API/gateway hosts configured in current web
 

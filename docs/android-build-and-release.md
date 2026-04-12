@@ -74,7 +74,7 @@ $env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'
   - `android/app/build/outputs/bundle/release/app-release-signed.aab`
 
 ### Copied release files in downloads/
-- `downloads/ai-workspace-studio-v8.59-android-release.apk`
-- `downloads/ai-workspace-studio-v8.59-android-release.aab`
+- `downloads/ai-workspace-studio-v8.60-android-release.apk`
+- `downloads/ai-workspace-studio-v8.60-android-release.aab`
 - `downloads/ai-workspace-studio-latest.apk`
 - `downloads/ai-workspace-studio-latest.aab`

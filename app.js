@@ -34,7 +34,7 @@
     transcribeProfile: 'aistudio_transcribe_profile_v1',
     transcribeDocxMode: 'aistudio_transcribe_docx_mode_v1',
     authState: 'aistudio_auth_state_v1',
-    authConfigCache: 'aistudio_auth_config_v1',
+    authConfigCache: 'aistudio_auth_config_v2',
     usageState: 'aistudio_usage_state_v1',
     authRemember: 'aistudio_auth_remember_v1',
     voiceMode: 'aistudio_voice_mode_v1',
@@ -238,7 +238,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.59';
+  const WEB_RELEASE_LABEL = 'v8.60';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -4542,14 +4542,19 @@ function syncUnifiedAuthEntry(){
     const email = String($('authEntryEmail')?.value || '').trim().toLowerCase();
     const isAdminEntry = !!email && email === String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
     const adminPasswordEnabled = config.adminPasswordEnabled === true;
+    const adminLoginMethod = String(config.adminLoginMethod || '').trim().toLowerCase();
     const adminGoogleReady = !!getAuthGoogleClientId();
-    const adminGoogleOnly = isAdminEntry && !adminPasswordEnabled && adminGoogleReady;
+    const showPassword = isAdminEntry && (
+      adminPasswordEnabled
+      || adminLoginMethod === 'password_or_google'
+      || adminLoginMethod === 'password_only'
+    );
+    const adminGoogleOnly = isAdminEntry && !showPassword && adminGoogleReady;
     const label = $('authEntrySubmitLabel');
     const hint = $('authEntryModeHint');
     const passwordLabel = $('authEntryPasswordLabel');
     const passwordInput = $('authEntryPassword');
     const passwordWrap = passwordInput?.closest('div[style*="grid-column"]') || passwordInput?.parentElement;
-    const showPassword = isAdminEntry && adminPasswordEnabled;
     if (label) label.textContent = isAdminEntry
       ? (adminGoogleOnly ? 'متابعة الإدارة عبر Google' : 'دخول الإدارة')
       : 'متابعة بالخطة المجانية';
@@ -4953,10 +4958,14 @@ async function submitUnifiedAuthEntry(){
       const adminEmail = String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
       isAdminEntry = !!email && email === adminEmail;
       const adminPasswordEnabled = config.adminPasswordEnabled === true;
+      const adminLoginMethod = String(config.adminLoginMethod || '').trim().toLowerCase();
+      const adminAllowsPassword = adminPasswordEnabled
+        || adminLoginMethod === 'password_or_google'
+        || adminLoginMethod === 'password_only';
       const adminGoogleReady = !!String(config.googleClientId || '').trim();
       let payload = null;
       if (isAdminEntry){
-        if (!adminPasswordEnabled && adminGoogleReady){
+        if (!adminAllowsPassword && adminGoogleReady){
           setAuthGateStatus('هذا هو بريد الإدارة. جارٍ فتح شاشة Google الوسيطة لهذا الحساب...', 'busy');
           await openGoogleAuthInBrowser();
           return;

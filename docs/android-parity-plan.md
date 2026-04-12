@@ -36,5 +36,5 @@ Make the Android APK track the current live web app as closely as possible witho
 - `auth-bridge.html` was also checked during sync/config inspection
 
 ### Expected result
-- Android APK should ship the same app shell as live web `v8.59`
+- Android APK should ship the same app shell as live web `v8.60`
 - Any remaining difference should be Android runtime specific, not stale asset drift
