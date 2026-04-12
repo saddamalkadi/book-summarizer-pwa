@@ -250,7 +250,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.61';
+  const WEB_RELEASE_LABEL = 'v8.62';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -835,6 +835,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     if (prev.adminPasswordEnabled === true) merged.adminPasswordEnabled = true;
     if (prev.adminEnabled === true) merged.adminEnabled = true;
     if (String(prev.adminLoginMethod || '').trim()) merged.adminLoginMethod = String(prev.adminLoginMethod).trim();
+    else if (prev.adminEnabled === true) merged.adminLoginMethod = 'password_or_google';
     if (String(prev.googleClientId || '').trim()){
       merged.googleClientId = String(prev.googleClientId).trim();
       merged.clientIdConfigured = true;
@@ -12170,8 +12171,9 @@ ${e?.message||e}`, false);
 
   // ---------------- Init ----------------
   function init(){
-    // Clear stale auth config cache so DEFAULT_AUTH_CONFIG.authRequired=false takes effect
-    try{ localStorage.removeItem(KEYS.authConfigCache); }catch(_){}
+    // Never wipe persisted /auth/config snapshot on every boot: if the next fetch fails (token,
+    // network, worker blip), authConfigAfterFetchFailure() had no "prev" and persisted
+    // DEFAULT_AUTH_CONFIG — hiding admin password and clearing googleClientId (regression v8.61).
     AUTH_RUNTIME.config = null;
     alignManagedRuntimeSettings();
 
