@@ -36,9 +36,17 @@ Additional **obvious** changes (same bundle):
 
 ## Repository / `main` confirmation
 
-**Important:** Until this change set is **committed and pushed**, the `docs/final-*.md` files only exist locally and will not appear on GitHub `main` for other clones.
+**Local commit:** `d75e0ca` — `feat(ui): obvious chat-first layout; hide workspace when thread has messages; add final and platform docs`  
+(Includes all `docs/final-*.md`, `docs/android-*.md`, `docs/tts-*.md`, and related docs under `docs/`.)
 
-After push, verify on GitHub:
+**Push:** In this automation environment `git push origin main` failed (`remote-https` helper). On your machine run:
+
+```bash
+git pull --rebase origin main
+git push origin main
+```
+
+After a successful push, verify on GitHub:
 
 - Branch: **`main`**
 - Paths: `docs/final-ui-audit.md`, `docs/final-chat-priority-layout.md`, `docs/final-ui-cleanup-and-reorganization.md`, `docs/final-web-apk-design-sync.md`, `docs/final-professional-ux-proof.md`, **`docs/final-visible-ui-proof.md`**
