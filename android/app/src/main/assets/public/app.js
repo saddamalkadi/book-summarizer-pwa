@@ -38,7 +38,8 @@
     usageState: 'aistudio_usage_state_v1',
     authRemember: 'aistudio_auth_remember_v1',
     voiceMode: 'aistudio_voice_mode_v1',
-    cloudMeta: 'aistudio_cloud_meta_v1'
+    cloudMeta: 'aistudio_cloud_meta_v1',
+    chatReadingMode: 'aistudio_chat_reading_mode_v1'
   };
 
   const nowTs = () => Date.now();
@@ -226,11 +227,22 @@
     cloudStream: null,
     audioPlayer: null,
     cloudCancelRequested: false,
+    cloudSilenceCleanup: null,
     ttsInstallPrompted: false,
     dictationState: 'ready',
     /* Last Capacitor native TTS locale that succeeded isLanguageSupported — avoids N bridge calls per utterance */
     nativeTtsLangCached: ''
   };
+
+  /** Cloud STT segment end: silence hold + max length; post-STT auto-send is separate (see below). */
+  const VOICE_CLOUD_MAX_RECORD_MS_VOICE = 16800;
+  const VOICE_CLOUD_MAX_RECORD_MS_SINGLE = 14800;
+  const VOICE_CLOUD_SILENCE_HOLD_MS = 1500;
+  const VOICE_CLOUD_SILENCE_RMS = 0.011;
+  const VOICE_CLOUD_SILENCE_TICK_MS = 90;
+  const VOICE_CLOUD_MIN_LOUD_MS = 320;
+  const VOICE_AUTOSEND_AFTER_TRANSCRIPT_MS = 480;
+  const VOICE_WEBSPEECH_END_GRACE_MS = 1200;
 
   const BROWSER_AUTH_BRIDGE = {
     webPath: 'auth-bridge.html',
@@ -238,7 +250,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.60';
+  const WEB_RELEASE_LABEL = 'v8.61';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -246,7 +258,8 @@
     KEYS.authConfigCache,
     KEYS.usageState,
     KEYS.modelCache,
-    KEYS.authRemember
+    KEYS.authRemember,
+    KEYS.chatReadingMode
   ]);
 
 // ---------------- KB (IndexedDB + RAG) ----------------
@@ -2653,6 +2666,7 @@ function applyShellLayout(){
   let composerRecognition = null;
   let composerListening = false;
   let composerDictationBase = '';
+  let composerWebVoiceSendTimer = 0;
 
   function getSpeechRecognitionCtor(){
     return window.SpeechRecognition || window.webkitSpeechRecognition || null;
@@ -2923,6 +2937,8 @@ function applyShellLayout(){
 
   function cleanupCloudVoiceCapture(){
     VOICE_RUNTIME.cloudCancelRequested = false;
+    try{ VOICE_RUNTIME.cloudSilenceCleanup?.(); }catch(_){ }
+    VOICE_RUNTIME.cloudSilenceCleanup = null;
     if (VOICE_RUNTIME.cloudRecorder){
       try{
         if (VOICE_RUNTIME.cloudRecorder.state !== 'inactive'){
@@ -2939,6 +2955,84 @@ function applyShellLayout(){
       }catch(_){ }
     }
     VOICE_RUNTIME.cloudStream = null;
+  }
+
+  /**
+   * Stop cloud recording after sustained quiet (post-speech pause) or hard max duration.
+   * Separates "end of capture" from auto-send delay in finish().
+   */
+  function attachCloudSilenceStop(stream, recorder, opts = {}){
+    const maxMs = opts.maxMs ?? VOICE_CLOUD_MAX_RECORD_MS_SINGLE;
+    const silenceHoldMs = opts.silenceHoldMs ?? VOICE_CLOUD_SILENCE_HOLD_MS;
+    const rmsThreshold = opts.rmsThreshold ?? VOICE_CLOUD_SILENCE_RMS;
+    const tickMs = opts.tickMs ?? VOICE_CLOUD_SILENCE_TICK_MS;
+    const minLoudMs = opts.minLoudMs ?? VOICE_CLOUD_MIN_LOUD_MS;
+    let loudMsAccum = 0;
+    let silenceStart = 0;
+    let audioCtx = null;
+    let analyser = null;
+    let dataBuf = null;
+    let intervalId = 0;
+    let maxTimerId = 0;
+
+    const stopMonitoring = () => {
+      if (intervalId) clearInterval(intervalId);
+      intervalId = 0;
+      if (maxTimerId) clearTimeout(maxTimerId);
+      maxTimerId = 0;
+      try{
+        if (audioCtx && audioCtx.state !== 'closed') audioCtx.close();
+      }catch(_){ }
+      audioCtx = null;
+      analyser = null;
+      dataBuf = null;
+    };
+
+    const tick = () => {
+      if (!recorder || recorder.state === 'inactive') return;
+      if (!analyser || !dataBuf) return;
+      analyser.getByteTimeDomainData(dataBuf);
+      let sum = 0;
+      for (let i = 0; i < dataBuf.length; i += 1){
+        const v = (dataBuf[i] - 128) / 128;
+        sum += v * v;
+      }
+      const rms = Math.sqrt(sum / dataBuf.length);
+      const now = Date.now();
+      if (rms >= rmsThreshold){
+        loudMsAccum += tickMs;
+        silenceStart = 0;
+      } else if (loudMsAccum >= minLoudMs){
+        if (!silenceStart) silenceStart = now;
+        else if (now - silenceStart >= silenceHoldMs){
+          try{ if (recorder.state !== 'inactive') recorder.stop(); }catch(_){ }
+          stopMonitoring();
+        }
+      }
+    };
+
+    try{
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx && stream){
+        audioCtx = new Ctx();
+        const source = audioCtx.createMediaStreamSource(stream);
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 512;
+        analyser.smoothingTimeConstant = 0.62;
+        source.connect(analyser);
+        dataBuf = new Uint8Array(analyser.frequencyBinCount);
+        intervalId = window.setInterval(tick, tickMs);
+      }
+    }catch(_){
+      stopMonitoring();
+    }
+
+    maxTimerId = window.setTimeout(() => {
+      try{ if (recorder && recorder.state !== 'inactive') recorder.stop(); }catch(_){ }
+      stopMonitoring();
+    }, maxMs);
+
+    return stopMonitoring;
   }
 
   function pickVoiceRecordingMimeType(){
@@ -3132,11 +3226,11 @@ function applyShellLayout(){
 
     return await new Promise((resolve) => {
       let settled = false;
-      let stopTimer = 0;
       const finish = async ({ transcribe = true } = {}) => {
         if (settled) return;
         settled = true;
-        clearTimeout(stopTimer);
+        try{ VOICE_RUNTIME.cloudSilenceCleanup?.(); }catch(_){ }
+        VOICE_RUNTIME.cloudSilenceCleanup = null;
         const wasCancelled = VOICE_RUNTIME.cloudCancelRequested;
         composerListening = false;
         syncVoiceInputButton();
@@ -3167,7 +3261,7 @@ function applyShellLayout(){
           if (shouldAutoSend){
             window.setTimeout(() => {
               if (String($('chatInput')?.value || '').trim()) void sendMessage();
-            }, 90);
+            }, VOICE_AUTOSEND_AFTER_TRANSCRIPT_MS);
           } else if (shouldKeepContinuousVoiceLoop()){
             scheduleVoiceConversationRestart(650);
           }
@@ -3188,13 +3282,10 @@ function applyShellLayout(){
 
       try{
         recorder.start();
-        stopTimer = window.setTimeout(() => {
-          try{
-            if (recorder.state !== 'inactive') recorder.stop();
-          }catch(_){
-            finish({ transcribe:false }).catch(() => {});
-          }
-        }, getVoiceModeEnabled() ? 6500 : 5200);
+        try{ VOICE_RUNTIME.cloudSilenceCleanup?.(); }catch(_){ }
+        VOICE_RUNTIME.cloudSilenceCleanup = attachCloudSilenceStop(stream, recorder, {
+          maxMs: getVoiceModeEnabled() ? VOICE_CLOUD_MAX_RECORD_MS_VOICE : VOICE_CLOUD_MAX_RECORD_MS_SINGLE
+        });
       }catch(error){
         cleanupCloudVoiceCapture();
         composerListening = false;
@@ -3463,6 +3554,10 @@ function applyShellLayout(){
 
   async function stopComposerDictation(showToast = false){
     clearVoiceRestartTimer();
+    if (composerWebVoiceSendTimer){
+      clearTimeout(composerWebVoiceSendTimer);
+      composerWebVoiceSendTimer = 0;
+    }
     const nativeSpeech = getNativeSpeechRecognitionPlugin();
     VOICE_RUNTIME.autoSendArmed = false;
     VOICE_RUNTIME.continuousConversation = getVoiceModeEnabled();
@@ -3542,7 +3637,7 @@ function applyShellLayout(){
       if (shouldAutoSend){
         window.setTimeout(() => {
           if (String($('chatInput')?.value || '').trim()) void sendMessage();
-        }, 90);
+        }, VOICE_AUTOSEND_AFTER_TRANSCRIPT_MS);
       } else if (shouldKeepContinuousVoiceLoop()){
         scheduleVoiceConversationRestart(550);
       }
@@ -3648,7 +3743,7 @@ function applyShellLayout(){
       if (shouldAutoSend){
         window.setTimeout(() => {
           if (String($('chatInput')?.value || '').trim()) void sendMessage();
-        }, 90);
+        }, VOICE_AUTOSEND_AFTER_TRANSCRIPT_MS);
       } else if (transcriptCaptured && shouldKeepContinuousVoiceLoop()){
         scheduleVoiceConversationRestart(550);
       } else if (!transcriptCaptured && shouldKeepContinuousVoiceLoop()){
@@ -3741,10 +3836,15 @@ function applyShellLayout(){
         composerRecognition = null;
         syncVoiceInputButton();
         showStatus('', false);
+        if (composerWebVoiceSendTimer){
+          clearTimeout(composerWebVoiceSendTimer);
+          composerWebVoiceSendTimer = 0;
+        }
         if (shouldAutoSend){
-          window.setTimeout(() => {
+          composerWebVoiceSendTimer = window.setTimeout(() => {
+            composerWebVoiceSendTimer = 0;
             if (String($('chatInput')?.value || '').trim()) void sendMessage();
-          }, 90);
+          }, VOICE_WEBSPEECH_END_GRACE_MS);
         } else if (shouldKeepContinuousVoiceLoop()){
           scheduleVoiceConversationRestart(550);
         }
@@ -3915,7 +4015,8 @@ function refreshDeepSearchBtn(){
       action_board: 'حوّل هذا السياق إلى لوحة تنفيذ: المهمة، المالك، الأولوية، الموعد، الحالة، والخطوة التالية.',
       kb_orchestrator: 'استخدم الملفات وقاعدة المعرفة لبناء إجابة موثقة باقتباسات واضحة، ثم لخص الفجوات والمعلومات غير المؤكدة.',
       launch_plan: 'أنشئ خطة إطلاق متكاملة: الجاهزية، الأصول المطلوبة، المخاطر، الجدول الزمني، المسؤوليات، ومؤشرات النجاح.',
-      pm_review: 'قم بدور خبير استراتيجية منتج وراجع الفكرة أو التطبيق: القيمة، تجربة الاستخدام، الفجوات، عناصر التميز، ثم توصية تنفيذية.'
+      pm_review: 'قم بدور خبير استراتيجية منتج وراجع الفكرة أو التطبيق: القيمة، تجربة الاستخدام، الفجوات، عناصر التميز، ثم توصية تنفيذية.',
+      task_exec_honest: 'اعمل كمساعد تنفيذ داخل المحادثة فقط (ليس وكيلًا يتحكم بمتصفحي أو جهازي). المطلوب: 1) لخص المهمة في سطر واحد. 2) اذكر صراحة ما يمكن إنجازه هنا الآن (نص، مرفقات، قاعدة المعرفة، توليد ملفات للتنزيل) وما يتطلب خطوة خارجية (تصفح حقيقي، تسجيل دخول خارجي، أتمتة نظام). 3) نفّذ فورًا أول خطوة الممكنة داخل المحادثة وقدّم مخرجات قابلة للنسخ.'
     };
     return templates[kind] || '';
   }
@@ -4263,67 +4364,51 @@ function refreshDeepSearchBtn(){
 
     if (!$('authGate')){
       document.body.insertAdjacentHTML('afterbegin', `
-        <div class="auth-gate" id="authGate">
+        <div class="auth-gate auth-gate--v2" id="authGate">
           <div class="auth-shell">
             <section class="auth-hero">
               <div class="brand-identity">
                 <div class="brand-mark">${getBrandMarkHtml()}</div>
                 <div class="brand-copy">
                   <div class="name">AI Workspace Studio</div>
-                  <div class="sub">دردشة • معرفة • ملفات • مشاريع • تحويلات</div>
+                  <div class="sub">دردشة، ملفات، ومشاريع في مساحة واحدة</div>
                 </div>
               </div>
-              <div class="auth-kicker">بوابة الدخول</div>
-              <h1 class="auth-title">واجهة دخول واحدة، وخطة مناسبة لكل حساب.</h1>
-              <p class="auth-copy">ابدأ بالخطة المجانية من بريدك الشخصي، ثم اطلب الترقية من داخل التطبيق عند الحاجة. إذا كان البريد هو بريد الإدارة فسيُفعّل نفس النموذج دخول الإدارة.</p>
-              <div class="auth-plan-row">
-                <div class="auth-plan-pill"><b>الخطة المجانية</b><span>نماذج مجانية وحدود تكلفة آمنة</span></div>
-                <div class="auth-plan-pill"><b>الخطة المدفوعة</b><span>تُفعّل بعد كود ترقية أو دخول الإدارة</span></div>
-              </div>
-              <div class="auth-feature-grid">
-                <div class="auth-feature"><strong>دخول مباشر</strong><span>Google أو البريد من نفس الشاشة، بدون خطوات منفصلة.</span></div>
-                <div class="auth-feature"><strong>ترقية داخلية</strong><span>طلب الترقية وإدخال الكود يتمان من داخل الحساب نفسه.</span></div>
-                <div class="auth-feature"><strong>سجل مرتبط بالحساب</strong><span>المشاريع والمحادثات والملفات تبقى ضمن جلستك الحالية.</span></div>
-                <div class="auth-feature"><strong>سياسة تكلفة واضحة</strong><span>الخطة المجانية لا تفعّل الموديلات المدفوعة أو المزايا الأعلى تكلفة.</span></div>
-              </div>
-              <div class="auth-developer">تم تطوير التطبيق بواسطة صدام القاضي</div>
+              <h1 class="auth-title">تسجيل الدخول</h1>
+              <p class="auth-copy">البريد الشخصي يفتح الخطة المجانية. بريد الإدارة يتبع مسار الإدارة حسب تهيئة الخادم.</p>
             </section>
             <section class="auth-card">
               <div class="auth-form-head">
                 <div class="auth-form-head-copy">
-                  <h2>تسجيل الدخول إلى المنصة</h2>
-                  <p>استخدم بريدك الشخصي للدخول إلى الخطة المجانية، أو تابع عبر Google إذا كان الربط متاحًا.</p>
+                  <h2>متابعة</h2>
+                  <p>أدخل البريد والاسم. كلمة المرور تُستخدم فقط عندما يكون البريد إداريًا.</p>
                 </div>
                 <span class="plan-pill" id="authCurrentPlanPill">الخطة المجانية</span>
               </div>
-              <div class="auth-status status" id="authGateStatus" data-tone="info">سجّل الدخول ببريدك الشخصي لفتح الخطة المجانية، أو استخدم بريد الإدارة مع كلمة المرور من نفس الشاشة.</div>
+              <div class="auth-status status" id="authGateStatus" data-tone="info">جاهز للدخول.</div>
               <form id="authEntryForm" autocomplete="on" onsubmit="return false" style="margin-top:12px">
               <div class="auth-config-grid">
                 <div>
                   <label class="hint" for="authEntryName">الاسم</label>
-                  <input id="authEntryName" name="name" type="text" placeholder="الاسم الظاهر داخل التطبيق" autocomplete="name" />
+                  <input id="authEntryName" name="name" type="text" placeholder="الاسم الظاهر" autocomplete="name" />
                 </div>
                 <div>
                   <label class="hint" for="authEntryEmail">البريد الإلكتروني</label>
                   <input id="authEntryEmail" name="email" type="email" placeholder="name@example.com" autocomplete="email" />
                 </div>
                 <div style="grid-column:1/-1">
-                  <label class="hint" for="authEntryPassword" id="authEntryPasswordLabel">كلمة المرور للإدارة فقط</label>
-                  <input id="authEntryPassword" name="password" type="password" placeholder="اختيارية للمستخدم العادي، ومطلوبة فقط إذا كان هذا بريد الإدارة" autocomplete="current-password" />
+                  <label class="hint" for="authEntryPassword" id="authEntryPasswordLabel">كلمة المرور (إدارة)</label>
+                  <input id="authEntryPassword" name="password" type="password" placeholder="للبريد الإداري فقط" autocomplete="current-password" />
                 </div>
               </div>
-              <div class="auth-note" id="authEntryModeHint">أي بريد شخصي صالح يفتح لك الخطة المجانية تلقائيًا. إذا أدخلت بريد الإدارة، سيتحول الزر تلقائيًا إلى دخول الإدارة.</div>
-              <div class="auth-access-note">
-                <strong>ماذا يحدث بعد الدخول؟</strong>
-                <span>يفتح الحساب العادي بالخطة المجانية مع الميزات المسموح بها فقط، ويمكن طلب الترقية لاحقًا من صفحة الإعدادات.</span>
-              </div>
+              <div class="auth-note" id="authEntryModeHint">سيتم ضبط نوع الدخول تلقائيًا حسب البريد.</div>
               <div class="account-actions" style="margin-top:12px">
                 <button class="btn dark sm with-label" type="submit" id="authEntrySubmitBtn"><span class="icon">→</span><span class="label" id="authEntrySubmitLabel">متابعة بالخطة المجانية</span></button>
               </div>
               </form>
               <div class="divider"></div>
               <div class="auth-google-slot" id="googleSignInSlot"></div>
-              <div class="auth-note" id="authGatePlanNote">بعد تسجيل الدخول ستبدأ بالخطة المناسبة للحساب. يمكن الترقية لاحقًا عبر طلب ترقية وكود تفعيل.</div>
+              <div class="auth-note" id="authGatePlanNote">بعد الدخول تُربط جلستك بهذا الحساب.</div>
               <div class="account-actions">
                 <button class="btn ghost sm with-label" type="button" id="authRetryBtn"><span class="icon">↻</span><span class="label">إعادة التهيئة</span></button>
                 <button class="btn ghost sm with-label" type="button" id="authCloseBtn"><span class="icon">✕</span><span class="label">إغلاق</span></button>
@@ -4420,14 +4505,18 @@ function refreshDeepSearchBtn(){
     if (!gate || gate.dataset.cleaned === '1') return;
     gate.dataset.cleaned = '1';
     const heroCopy = gate.querySelector('.auth-copy');
-    if (heroCopy) heroCopy.textContent = 'استخدم بريدك للدخول السريع. البريد الإداري يفعّل نفس النموذج بصلاحيات الإدارة وفق تهيئة الخادم.';
+    if (heroCopy) heroCopy.textContent = 'بريدك الشخصي → خطة مجانية. بريد الإدارة → مسار الإدارة حسب الخادم.';
     gate.querySelector('.auth-feature-grid')?.remove();
     gate.querySelector('.auth-plan-row')?.remove();
     gate.querySelector('.auth-access-note')?.remove();
+    gate.querySelector('.auth-kicker')?.remove();
+    gate.querySelector('.auth-developer')?.remove();
     const formCopy = gate.querySelector('.auth-form-head-copy p');
-    if (formCopy) formCopy.textContent = 'الدخول العادي يفتح الخطة المجانية. إذا كان البريد هو بريد الإدارة فسيظهر مسار الإدارة أو Google حسب تهيئة الخادم.';
+    if (formCopy) formCopy.textContent = 'كلمة المرور تظهر كخيار عند بريد الإدارة فقط.';
     const planNote = $('authGatePlanNote');
-    if (planNote) planNote.textContent = 'سيتم ربط جلستك ومشاريعك وملفاتك بهذا الحساب بعد تسجيل الدخول.';
+    if (planNote) planNote.textContent = 'تُحفظ المشاريع والمحادثات مع حسابك.';
+    const modeHint = $('authEntryModeHint');
+    if (modeHint) modeHint.textContent = 'يتم اختيار نوع الدخول تلقائيًا من البريد.';
   }
 
   function syncAccountUi(){
@@ -5301,6 +5390,49 @@ async function submitUnifiedAuthEntry(){
         quickBarActions.appendChild(el);
       }
     });
+    if (quickBarActions && !$('chatReadingModeBtn')){
+      const readBtn = document.createElement('button');
+      readBtn.type = 'button';
+      readBtn.id = 'chatReadingModeBtn';
+      readBtn.className = 'btn ghost sm with-label';
+      readBtn.innerHTML = '<span class="icon">📖</span><span class="label">قراءة</span>';
+      readBtn.title = 'وضع القراءة — إخفاء الأشرطة والمدخل لتوسيع مساحة الدردشة';
+      quickBarActions.appendChild(readBtn);
+    }
+    if (!$('chatReadingModeExitBtn')){
+      const fab = document.createElement('button');
+      fab.type = 'button';
+      fab.id = 'chatReadingModeExitBtn';
+      fab.className = 'reading-mode-exit-fab';
+      fab.hidden = true;
+      fab.setAttribute('aria-label', 'إظهار أشرطة الدردشة والمدخل');
+      fab.textContent = '✕ واجهة';
+      document.body.appendChild(fab);
+    }
+
+    const chatMainToolbar = document.querySelector('#page-chat .toolbar.mainToolbar');
+    if (chatMainToolbar && !$('assistantFoundationBar')){
+      const wrap = document.createElement('div');
+      wrap.id = 'assistantFoundationBar';
+      wrap.className = 'assistant-foundation-bar';
+      wrap.setAttribute('role', 'region');
+      wrap.setAttribute('aria-label', 'تجهيز مهام واقعية داخل المحادثة');
+      wrap.innerHTML = `
+        <div class="assistant-foundation-inner">
+          <span class="assistant-foundation-label">تنفيذ داخل المحادثة</span>
+          <div class="assistant-foundation-actions">
+            <button type="button" class="btn ghost sm" data-foundation-prompt="task_exec_honest" title="حدود صادقة + أول خطوة قابلة للتنفيذ هنا">حدود + خطوة</button>
+            <button type="button" class="btn ghost sm" data-foundation-prompt="action_board" title="لوحة تنفيذ">لوحة مهام</button>
+            <button type="button" class="btn ghost sm" data-foundation-prompt="kb_orchestrator" title="ملفات ومعرفة">ملفات + معرفة</button>
+            <button type="button" class="btn ghost sm" data-foundation-prompt="analysis_ar" title="تحليل مع مخرجات">تحليل</button>
+          </div>
+        </div>`;
+      chatMainToolbar.insertBefore(wrap, chatMainToolbar.firstChild);
+      wrap.querySelectorAll('[data-foundation-prompt]').forEach((btn) => {
+        btn.addEventListener('click', () => applyQuickPrompt(btn.getAttribute('data-foundation-prompt'), false));
+      });
+    }
+
     $('agentTaskApplyBtn')?.remove();
     const legacyQuickGroup = $('agentTaskTemplate')?.closest('.tool-group')?.nextElementSibling;
     if (legacyQuickGroup && legacyQuickGroup.querySelector('#scrollTopBtn') == null){
@@ -10632,6 +10764,37 @@ let pinOnly = false;
     scheduleChatScrollDockSync();
   }
 
+  function isChatReadingModeEnabled(){
+    try{ return localStorage.getItem(KEYS.chatReadingMode) === '1'; }catch(_){ return false; }
+  }
+
+  function setChatReadingMode(on){
+    try{
+      if (on) localStorage.setItem(KEYS.chatReadingMode, '1');
+      else localStorage.removeItem(KEYS.chatReadingMode);
+    }catch(_){ }
+    syncChatReadingModeUi();
+  }
+
+  function syncChatReadingModeUi(){
+    const chatActive = document.body.classList.contains('chat-page-active');
+    const on = chatActive && isChatReadingModeEnabled();
+    document.body.classList.toggle('chat-reading-mode', on);
+    const btn = $('chatReadingModeBtn');
+    if (btn){
+      btn.classList.toggle('dark', !!on);
+      const lab = btn.querySelector('.label');
+      if (lab) lab.textContent = on ? 'قراءة ✓' : 'قراءة';
+      btn.title = on ? 'إيقاف وضع القراءة وإظهار الأشرطة' : 'وضع القراءة — إخفاء الأشرطة والمدخل لتوسيع مساحة الدردشة';
+    }
+    const exitFab = $('chatReadingModeExitBtn');
+    if (exitFab) exitFab.hidden = !on;
+    try{
+      scheduleChatScrollDockSync();
+      syncStickyShellMetrics();
+    }catch(_){ }
+  }
+
   function openWorkspacePage(page, options = {}){
     if (!page) return;
     setActiveNav(page);
@@ -10639,6 +10802,12 @@ let pinOnly = false;
       document.body.classList.toggle('chat-page-active', page === 'chat');
       const na = typeof isNativeAndroidPlatform === 'function' && isNativeAndroidPlatform();
       document.body.classList.toggle('android-chat-focus', na && page === 'chat');
+      if (page !== 'chat'){
+        document.body.classList.remove('chat-reading-mode');
+        if ($('chatReadingModeExitBtn')) $('chatReadingModeExitBtn').hidden = true;
+      } else {
+        syncChatReadingModeUi();
+      }
     }catch(_){}
     if (page === 'home') renderHomeWorkspace().catch(()=>{});
     if (page === 'downloads') renderDownloads();
@@ -11373,6 +11542,20 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
     $('agentTaskTemplate') && $('agentTaskTemplate').addEventListener('change', applyAgentTaskTemplate);
     $('scrollTopBtn') && $('scrollTopBtn').addEventListener('click', () => scrollChat('top'));
     $('scrollBottomBtn') && $('scrollBottomBtn').addEventListener('click', () => scrollChat('bottom'));
+    $('chatReadingModeBtn')?.addEventListener('click', () => {
+      const next = !isChatReadingModeEnabled();
+      setChatReadingMode(next);
+      toast(next ? '📖 وضع القراءة — مساحة أوضح للنص' : '✅ عادت أشرطة الدردشة');
+    });
+    $('chatReadingModeExitBtn')?.addEventListener('click', () => {
+      setChatReadingMode(false);
+      toast('✅ عادت أشرطة الدردشة');
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      if (!document.body.classList.contains('chat-reading-mode')) return;
+      setChatReadingMode(false);
+    });
     $('floatingScrollBottomBtn') && $('floatingScrollBottomBtn').addEventListener('click', () => scrollChat('bottom'));
     $('chatLog') && $('chatLog').addEventListener('scroll', scheduleChatScrollDockSync, { passive:true });
     window.addEventListener('scroll', scheduleChatScrollDockSync, { passive:true });
@@ -12043,6 +12226,7 @@ ${e?.message||e}`, false);
 
     bind();
     openWorkspacePage(DEFAULT_POST_LOGIN_PAGE);
+    syncChatReadingModeUi();
     syncKeyboardEditingState();
     applyShellLayout();
     initializeAuthExperience().catch(()=>{});

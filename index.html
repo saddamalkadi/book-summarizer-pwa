@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.60">
+<html lang="ar" dir="rtl" data-appver="8.61">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.60</title>
+    <title>AI Workspace Studio v8.61</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -418,6 +418,9 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       padding:24px; overflow:auto;
     }
     .auth-gate.show{display:grid; place-items:center;}
+    .auth-gate--v2 .auth-title{font-size: clamp(22px, 3.6vw, 34px); line-height: 1.18;}
+    .auth-gate--v2 .auth-hero{padding: 26px; gap: 14px;}
+    .auth-gate--v2 .auth-card h2{font-size: 20px;}
     .auth-shell{
       width:min(1120px,100%);
       display:grid; grid-template-columns:minmax(320px,1.1fr) minmax(320px,.9fr);
@@ -950,6 +953,40 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       color: #1f4fbf;
       font-size: 12px;
       font-weight: 800;
+    }
+    .home-quick-grid{
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+    }
+    .home-quick-tile{
+      border-radius: 16px;
+      border: 1px solid rgba(10,20,60,.1);
+      background: rgba(255,255,255,.94);
+      padding: 14px 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 1000;
+      color: #0f1e39;
+      transition: transform .12s ease, border-color .15s ease, box-shadow .15s ease;
+    }
+    .home-quick-tile:hover{
+      transform: translateY(-2px);
+      border-color: rgba(27,102,255,.28);
+      box-shadow: 0 12px 26px rgba(15,23,42,.08);
+    }
+    .home-quick-tile .hq-ico{ font-size: 22px; line-height: 1; }
+    .home-quick-tile .hq-label{ font-size: 13px; }
+    .home-quick-tile .hq-sub{
+      font-size: 11px;
+      font-weight: 800;
+      color: #5a6988;
+      text-align: center;
+      line-height: 1.45;
     }
     .home-panel{
       padding: 18px;
@@ -1990,6 +2027,75 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       font-size: 11px;
     }
 
+    /* Reading mode — hide chrome; same bundle for web + Capacitor APK */
+    body.chat-page-active.chat-reading-mode .topbar,
+    body.chat-page-active.chat-reading-mode #chatQuickActionBar,
+    body.chat-page-active.chat-reading-mode #page-chat > .toolbar.mainToolbar,
+    body.chat-page-active.chat-reading-mode #chatMiniToolbar,
+    body.chat-page-active.chat-reading-mode #page-chat > .chatbar,
+    body.chat-page-active.chat-reading-mode #page-chat > .composer-meta,
+    body.chat-page-active.chat-reading-mode #page-chat > .chips{
+      display: none !important;
+    }
+    body.chat-page-active.chat-reading-mode #statusBox:empty{
+      display: none !important;
+    }
+    body.chat-page-active.chat-reading-mode #page-chat .chatlog{
+      padding-bottom: calc(var(--floating-nav-bottom, 72px) + env(safe-area-inset-bottom, 0px) + 58px);
+    }
+    .reading-mode-exit-fab{
+      position: fixed;
+      inset-inline-end: max(12px, env(safe-area-inset-right));
+      bottom: calc(var(--floating-nav-bottom, 72px) + max(12px, env(safe-area-inset-bottom)));
+      z-index: 120;
+      padding: 10px 18px;
+      border-radius: 999px;
+      border: 1px solid rgba(10,20,60,.12);
+      background: rgba(255,255,255,.95);
+      box-shadow: 0 12px 30px rgba(15,23,42,.18);
+      font-size: 13px;
+      font-weight: 1000;
+      cursor: pointer;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      color: #0f172a;
+    }
+    body.dark .reading-mode-exit-fab{
+      background: rgba(20,24,40,.92);
+      border-color: rgba(255,255,255,.12);
+      color: #e8ecff;
+    }
+    .assistant-foundation-bar{
+      grid-column: 1 / -1;
+      margin: 0 0 8px;
+      padding: 8px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(27,102,255,.14);
+      background: linear-gradient(95deg, rgba(27,102,255,.07), rgba(20,184,166,.06));
+    }
+    .assistant-foundation-inner{
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: space-between;
+    }
+    .assistant-foundation-label{
+      font-size: 11px;
+      font-weight: 1000;
+      color: #3d4e6b;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    .assistant-foundation-actions{
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      flex: 1;
+      min-width: 0;
+      justify-content: flex-end;
+    }
+
     /* Floating workspace shell + collapsible AI-platform layout */
     #page-chat > .toolbar.mainToolbar{
       grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -2462,7 +2568,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     }
 
 /* ═══════════════════════════════════════════
-   v8.60 — Auth cache + admin password visibility
+   v8.61 — Voice pause tuning, reading mode, dashboard quick picks, login cleanup, task foundation strip
    ═══════════════════════════════════════════ */
 
 /* — Sidebar account strip — */
@@ -3468,7 +3574,7 @@ body, input, textarea, select, button{
 }
 
 /* ══════════════════════════════════════════════
-   RELEASE — v8.60 admin auth + cache bust
+   RELEASE — v8.61 consolidated product pass + cache bust
    ══════════════════════════════════════════════ */
 
 /* 1. Chat Toolbar — secondary groups collapsed by default */
@@ -3804,7 +3910,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.60</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.61</div>
       </div>
     </aside>
 
@@ -3882,6 +3988,47 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
                   <h3>التنزيلات</h3>
                   <p>كل الملفات المولدة والمخرجات النهائية تبقى في مكان واحد يسهل الرجوع إليه.</p>
                   <span class="home-card-meta" id="homeDownloadsMeta">—</span>
+                </button>
+              </div>
+            </section>
+
+            <section class="home-section">
+              <div class="home-section-head">
+                <div>
+                  <h2>انتقال سريع</h2>
+                  <p>اختر وجهتك مباشرة — دون كتابة أوامر نصية.</p>
+                </div>
+              </div>
+              <div class="home-quick-grid" role="group" aria-label="انتقال سريع من الرئيسية">
+                <button class="home-quick-tile" type="button" data-open-page="chat">
+                  <span class="hq-ico" aria-hidden="true">💬</span>
+                  <span class="hq-label">دردشة</span>
+                  <span class="hq-sub">متابعة المحادثة</span>
+                </button>
+                <button class="home-quick-tile" type="button" data-open-page="files">
+                  <span class="hq-ico" aria-hidden="true">📎</span>
+                  <span class="hq-label">ملفات</span>
+                  <span class="hq-sub">مرفقات المشروع</span>
+                </button>
+                <button class="home-quick-tile" type="button" data-open-page="canvas">
+                  <span class="hq-ico" aria-hidden="true">📝</span>
+                  <span class="hq-label">لوحة</span>
+                  <span class="hq-sub">تحرير ومخرجات</span>
+                </button>
+                <button class="home-quick-tile" type="button" data-open-page="knowledge">
+                  <span class="hq-ico" aria-hidden="true">🧠</span>
+                  <span class="hq-label">معرفة</span>
+                  <span class="hq-sub">RAG للمشروع</span>
+                </button>
+                <button class="home-quick-tile" type="button" data-open-page="transcription">
+                  <span class="hq-ico" aria-hidden="true">🧾</span>
+                  <span class="hq-label">تفريغ</span>
+                  <span class="hq-sub">OCR وتحويل</span>
+                </button>
+                <button class="home-quick-tile" type="button" data-open-page="settings">
+                  <span class="hq-ico" aria-hidden="true">⚙</span>
+                  <span class="hq-label">إعدادات</span>
+                  <span class="hq-sub">الحساب والصوت</span>
                 </button>
               </div>
             </section>
@@ -4645,7 +4792,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
     })();
   </script>
 
-<script src="app.js?v=860"></script>
+<script src="app.js?v=861"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -4659,7 +4806,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v860";
+          const CURRENT_CACHE = "aistudio-cache-v861";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -4668,7 +4815,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=860").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=861").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {
