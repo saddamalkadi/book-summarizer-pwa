@@ -809,6 +809,27 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     return AUTH_RUNTIME.config;
   }
 
+  /**
+   * When /auth/config fails (network, 401 token, transient worker), do not persist a "blank"
+   * auth profile: that overwrote previously-good localStorage and hid admin password + Google IDs.
+   */
+  function authConfigAfterFetchFailure(settings = getSettings()){
+    const local = getLocalAuthConfig(settings);
+    let prev = null;
+    try{ prev = loadJSON(KEYS.authConfigCache, null); }catch(_){ prev = null; }
+    if (!prev || typeof prev !== 'object') return local;
+    const merged = { ...local, ...prev };
+    if (prev.adminPasswordEnabled === true) merged.adminPasswordEnabled = true;
+    if (prev.adminEnabled === true) merged.adminEnabled = true;
+    if (String(prev.adminLoginMethod || '').trim()) merged.adminLoginMethod = String(prev.adminLoginMethod).trim();
+    if (String(prev.googleClientId || '').trim()){
+      merged.googleClientId = String(prev.googleClientId).trim();
+      merged.clientIdConfigured = true;
+    }
+    if (String(prev.adminEmail || '').trim()) merged.adminEmail = String(prev.adminEmail).trim();
+    return merged;
+  }
+
   function getEffectiveAuthConfig(settings = getSettings()){
     return { ...getLocalAuthConfig(settings), ...getAuthConfigCached() };
   }
@@ -1059,7 +1080,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     const requestRemoteConfig = async (activeSettings) => {
       const root = getAuthServiceRoot(activeSettings);
       if (!root){
-        return setAuthConfigCached(getLocalAuthConfig(activeSettings));
+        return setAuthConfigCached(authConfigAfterFetchFailure(activeSettings));
       }
       const response = await fetch(`${root}/auth/config`, {
         headers: activeSettings.gatewayToken ? { 'X-Client-Token': activeSettings.gatewayToken } : {}
@@ -1078,7 +1099,9 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
         upgradeEmail: String(remote.upgradeEmail || local.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail).trim(),
         adminEmail: String(remote.adminEmail || local.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim(),
         adminEnabled: !!remote.adminEnabled,
-        adminPasswordEnabled: !!(remote.adminPasswordEnabled ?? remote.adminEnabled),
+        adminPasswordEnabled: typeof remote.adminPasswordEnabled === 'boolean'
+          ? remote.adminPasswordEnabled
+          : !!(remote.adminPasswordEnabled ?? remote.adminEnabled),
         adminLoginMethod: String(remote.adminLoginMethod || (remote.adminEnabled ? 'password_or_google' : 'google_only')).trim(),
         clientIdConfigured: !!String(remote.googleClientId || '').trim(),
         voiceCloudReady: !!remote.voiceCloudReady,
@@ -1096,9 +1119,9 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     AUTH_RUNTIME.configPromise = requestRemoteConfig(settings).catch((err) => {
       const repaired = repairGatewayAfterAccessIssue(err, settings);
       if (repaired){
-        return requestRemoteConfig(repaired).catch(() => setAuthConfigCached(getLocalAuthConfig(settings)));
+        return requestRemoteConfig(repaired).catch(() => setAuthConfigCached(authConfigAfterFetchFailure(repaired)));
       }
-      return setAuthConfigCached(getLocalAuthConfig(settings));
+      return setAuthConfigCached(authConfigAfterFetchFailure(settings));
     }).finally(() => {
       AUTH_RUNTIME.configPromise = null;
     });
@@ -2503,13 +2526,22 @@ function syncStickyShellMetrics(){
   const topbar = document.querySelector('.topbar');
   const subtopbar = document.querySelector('.subtopbar');
   const chatbar = document.querySelector('#page-chat .chatbar');
+  const composerMeta = document.querySelector('#page-chat > .composer-meta');
+  const attachChips = $('chatAttachChips');
   const topbarHeight = topbar ? Math.ceil(topbar.getBoundingClientRect().height || topbar.offsetHeight || 0) : 0;
   const subtopbarHeight = subtopbar ? Math.ceil(subtopbar.getBoundingClientRect().height || subtopbar.offsetHeight || 0) : 0;
   const chatbarHeight = chatbar ? Math.ceil(chatbar.getBoundingClientRect().height || chatbar.offsetHeight || 0) : 0;
+  const metaH = (composerMeta && composerMeta.classList && !composerMeta.classList.contains('composer-meta--idle'))
+    ? Math.ceil(composerMeta.getBoundingClientRect().height || composerMeta.offsetHeight || 0)
+    : 0;
+  const chipsH = (attachChips && !attachChips.classList.contains('chips-empty'))
+    ? Math.ceil(attachChips.getBoundingClientRect().height || attachChips.offsetHeight || 0)
+    : 0;
+  const bottomStack = chatbarHeight + metaH + chipsH;
   const stickyGap = window.innerWidth <= 640 ? 8 : 12;
   const floatingBottom = window.innerWidth <= 640
-    ? Math.max(92, chatbarHeight + 18)
-    : Math.max(38, chatbarHeight + 22);
+    ? Math.max(76, bottomStack + 12)
+    : Math.max(28, bottomStack + 14);
   const metrics = [
     Math.max(stickyGap, topbarHeight + stickyGap),
     Math.max(stickyGap, topbarHeight + subtopbarHeight + (stickyGap * 2)),
@@ -3906,8 +3938,8 @@ function refreshDeepSearchBtn(){
     if (input.tagName === 'TEXTAREA'){
       input.style.height = 'auto';
       const compact = typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 980px)').matches;
-      const minH = compact ? 50 : 58;
-      input.style.height = `${Math.min(220, Math.max(minH, input.scrollHeight))}px`;
+      const minH = compact ? 40 : 46;
+      input.style.height = `${Math.min(200, Math.max(minH, input.scrollHeight))}px`;
     }
     scheduleShellLayoutRefresh();
   }
@@ -5290,6 +5322,7 @@ async function submitUnifiedAuthEntry(){
       area.dir = input.getAttribute('dir') || 'auto';
       area.rows = 2;
       area.placeholder = 'اكتب طلبك… Enter للإرسال، Shift+Enter لسطر جديد';
+      area.title = 'Enter للإرسال، Shift+Enter لسطر جديد';
       area.value = input.value || '';
       input.replaceWith(area);
       resizeComposerInput(area);
@@ -5308,8 +5341,8 @@ async function submitUnifiedAuthEntry(){
     }
     if (chatbar && !$('composerContextMeta')){
       chatbar.insertAdjacentHTML('afterend', `
-        <div class="composer-meta">
-          <span id="composerHint">Enter إرسال · Shift+Enter سطر جديد</span>
+        <div class="composer-meta composer-meta--idle">
+          <span id="composerHint"></span>
           <span class="composer-status" id="composerContextMeta">—</span>
           <button class="btn ghost sm" id="composerEditCancelBtn" type="button" style="display:none">إلغاء التعديل</button>
         </div>`);
@@ -5630,7 +5663,7 @@ async function submitUnifiedAuthEntry(){
       ['signalModelNote', 'مسار النموذج الرئيسي'],
       ['signalContextNote', 'الملفات والمعرفة وذاكرة المشروع'],
       ['signalModesNote', 'البث والأدوات والويب وأنماط التشغيل'],
-      ['composerHint', 'Enter للإرسال • Shift+Enter لسطر جديد • تُضاف المرفقات والذاكرة إلى السياق تلقائيًا.']
+      ['composerHint', '']
     ];
     fixedCopy.forEach(([id, text]) => {
       const el = $(id);
@@ -9160,12 +9193,14 @@ ${clip}` });
       chip.appendChild(x);
       box.appendChild(chip);
     });
+    box.classList.toggle('chips-empty', !pendingChatAttachments.length);
     syncComposerMeta();
   }
 
   function syncComposerMeta(){
     const meta = $('composerContextMeta');
     if (!meta) return;
+    const wrap = meta.closest('.composer-meta');
     const pid = getCurProjectId();
     const files = loadFiles(pid);
     const thread = getCurThread();
@@ -9178,6 +9213,14 @@ ${clip}` });
     const visibleImages = pendingChatAttachments.filter((a) => a.kind === 'image' && a.dataUrl).length;
     const attachmentChars = pendingChatAttachments.reduce((sum, a) => sum + Number(a.chars || 0), 0);
     const chatUi = !!$('page-chat')?.classList.contains('active');
+    const showComposerDetails = pendingChatAttachments.length > 0 || composerEditState.active;
+    if (wrap) wrap.classList.toggle('composer-meta--idle', chatUi && !showComposerDetails);
+    if (chatUi && !showComposerDetails){
+      meta.textContent = '';
+      resizeComposerInput();
+      scheduleShellLayoutRefresh();
+      return;
+    }
     const parts = [];
     if (chatUi){
       parts.push(`${files.length} ملف · ${msgCount} رسالة`);

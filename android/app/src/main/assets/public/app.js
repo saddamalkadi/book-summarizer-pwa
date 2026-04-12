@@ -227,7 +227,9 @@
     audioPlayer: null,
     cloudCancelRequested: false,
     ttsInstallPrompted: false,
-    dictationState: 'ready'
+    dictationState: 'ready',
+    /* Last Capacitor native TTS locale that succeeded isLanguageSupported — avoids N bridge calls per utterance */
+    nativeTtsLangCached: ''
   };
 
   const BROWSER_AUTH_BRIDGE = {
@@ -807,6 +809,27 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     return AUTH_RUNTIME.config;
   }
 
+  /**
+   * When /auth/config fails (network, 401 token, transient worker), do not persist a "blank"
+   * auth profile: that overwrote previously-good localStorage and hid admin password + Google IDs.
+   */
+  function authConfigAfterFetchFailure(settings = getSettings()){
+    const local = getLocalAuthConfig(settings);
+    let prev = null;
+    try{ prev = loadJSON(KEYS.authConfigCache, null); }catch(_){ prev = null; }
+    if (!prev || typeof prev !== 'object') return local;
+    const merged = { ...local, ...prev };
+    if (prev.adminPasswordEnabled === true) merged.adminPasswordEnabled = true;
+    if (prev.adminEnabled === true) merged.adminEnabled = true;
+    if (String(prev.adminLoginMethod || '').trim()) merged.adminLoginMethod = String(prev.adminLoginMethod).trim();
+    if (String(prev.googleClientId || '').trim()){
+      merged.googleClientId = String(prev.googleClientId).trim();
+      merged.clientIdConfigured = true;
+    }
+    if (String(prev.adminEmail || '').trim()) merged.adminEmail = String(prev.adminEmail).trim();
+    return merged;
+  }
+
   function getEffectiveAuthConfig(settings = getSettings()){
     return { ...getLocalAuthConfig(settings), ...getAuthConfigCached() };
   }
@@ -1057,7 +1080,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     const requestRemoteConfig = async (activeSettings) => {
       const root = getAuthServiceRoot(activeSettings);
       if (!root){
-        return setAuthConfigCached(getLocalAuthConfig(activeSettings));
+        return setAuthConfigCached(authConfigAfterFetchFailure(activeSettings));
       }
       const response = await fetch(`${root}/auth/config`, {
         headers: activeSettings.gatewayToken ? { 'X-Client-Token': activeSettings.gatewayToken } : {}
@@ -1076,7 +1099,9 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
         upgradeEmail: String(remote.upgradeEmail || local.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail).trim(),
         adminEmail: String(remote.adminEmail || local.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim(),
         adminEnabled: !!remote.adminEnabled,
-        adminPasswordEnabled: !!(remote.adminPasswordEnabled ?? remote.adminEnabled),
+        adminPasswordEnabled: typeof remote.adminPasswordEnabled === 'boolean'
+          ? remote.adminPasswordEnabled
+          : !!(remote.adminPasswordEnabled ?? remote.adminEnabled),
         adminLoginMethod: String(remote.adminLoginMethod || (remote.adminEnabled ? 'password_or_google' : 'google_only')).trim(),
         clientIdConfigured: !!String(remote.googleClientId || '').trim(),
         voiceCloudReady: !!remote.voiceCloudReady,
@@ -1094,9 +1119,9 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     AUTH_RUNTIME.configPromise = requestRemoteConfig(settings).catch((err) => {
       const repaired = repairGatewayAfterAccessIssue(err, settings);
       if (repaired){
-        return requestRemoteConfig(repaired).catch(() => setAuthConfigCached(getLocalAuthConfig(settings)));
+        return requestRemoteConfig(repaired).catch(() => setAuthConfigCached(authConfigAfterFetchFailure(repaired)));
       }
-      return setAuthConfigCached(getLocalAuthConfig(settings));
+      return setAuthConfigCached(authConfigAfterFetchFailure(settings));
     }).finally(() => {
       AUTH_RUNTIME.configPromise = null;
     });
@@ -2426,6 +2451,9 @@ function getChatScrollContainer(){
   const log = $('chatLog');
   if (!page) return log;
   if (!log) return page;
+  if (window.innerWidth <= 980 && page.classList.contains('active')){
+    return log;
+  }
   const pageRange = Math.max(0, Number(page.scrollHeight - page.clientHeight || 0));
   const logRange = Math.max(0, Number(log.scrollHeight - log.clientHeight || 0));
   if (window.innerWidth <= 980 && pageRange > 120 && pageRange >= logRange) return page;
@@ -2498,13 +2526,22 @@ function syncStickyShellMetrics(){
   const topbar = document.querySelector('.topbar');
   const subtopbar = document.querySelector('.subtopbar');
   const chatbar = document.querySelector('#page-chat .chatbar');
+  const composerMeta = document.querySelector('#page-chat > .composer-meta');
+  const attachChips = $('chatAttachChips');
   const topbarHeight = topbar ? Math.ceil(topbar.getBoundingClientRect().height || topbar.offsetHeight || 0) : 0;
   const subtopbarHeight = subtopbar ? Math.ceil(subtopbar.getBoundingClientRect().height || subtopbar.offsetHeight || 0) : 0;
   const chatbarHeight = chatbar ? Math.ceil(chatbar.getBoundingClientRect().height || chatbar.offsetHeight || 0) : 0;
+  const metaH = (composerMeta && composerMeta.classList && !composerMeta.classList.contains('composer-meta--idle'))
+    ? Math.ceil(composerMeta.getBoundingClientRect().height || composerMeta.offsetHeight || 0)
+    : 0;
+  const chipsH = (attachChips && !attachChips.classList.contains('chips-empty'))
+    ? Math.ceil(attachChips.getBoundingClientRect().height || attachChips.offsetHeight || 0)
+    : 0;
+  const bottomStack = chatbarHeight + metaH + chipsH;
   const stickyGap = window.innerWidth <= 640 ? 8 : 12;
   const floatingBottom = window.innerWidth <= 640
-    ? Math.max(92, chatbarHeight + 18)
-    : Math.max(38, chatbarHeight + 22);
+    ? Math.max(76, bottomStack + 12)
+    : Math.max(28, bottomStack + 14);
   const metrics = [
     Math.max(stickyGap, topbarHeight + stickyGap),
     Math.max(stickyGap, topbarHeight + subtopbarHeight + (stickyGap * 2)),
@@ -2520,7 +2557,9 @@ function syncStickyShellMetrics(){
 function scrollChatToBottom(){
   const log = $('chatLog');
   if (!log) return;
-  if (window.innerWidth <= 640) {
+  const page = $('page-chat');
+  const mobileChatShell = window.innerWidth <= 980 && page?.classList.contains('active');
+  if (!mobileChatShell && window.innerWidth <= 640){
     window.scrollTo(0, document.documentElement.scrollHeight + 1000);
   }
   log.scrollTop = log.scrollHeight + 1000;
@@ -2638,6 +2677,14 @@ function applyShellLayout(){
     return raw || 'unknown';
   }
 
+  function formatNativeSpeechPermissionState(state){
+    try{
+      return JSON.stringify(state || {});
+    }catch(_){
+      return String(state);
+    }
+  }
+
   async function ensureNativeSpeechRecognitionPermission(plugin){
     if (!plugin) return false;
     const isGranted = (state) => getNativeSpeechPermissionStatus(state) === 'granted';
@@ -2702,34 +2749,25 @@ function applyShellLayout(){
   async function chooseSpeechLanguageForNativeTts(plugin, preferred){
     if (!plugin?.isLanguageSupported) return preferred;
     const rawPreferred = String(preferred || '').trim() || 'ar-SA';
+    const cached = String(VOICE_RUNTIME.nativeTtsLangCached || '').trim();
+    if (cached){
+      const again = await plugin.isLanguageSupported({ lang: cached }).catch(() => null);
+      if (again?.supported) return cached;
+      VOICE_RUNTIME.nativeTtsLangCached = '';
+    }
     const wantsArabic = /^ar(?:-|$)/i.test(rawPreferred);
+    /* Few candidates + one bridge round-trip each — was ~15 sequential calls before every speak() */
     const candidates = wantsArabic
-      ? [
-          rawPreferred,
-          rawPreferred.split('-')[0],
-          'ar-SA',
-          'ar-EG',
-          'ar-AE',
-          'ar-JO',
-          'ar-KW',
-          'ar-QA',
-          'ar-BH',
-          'ar-OM',
-          'ar-IQ',
-          'ar-LB',
-          'ar-LY',
-          'ar-DZ',
-          'ar-MA',
-          'ar-001',
-          'ar-XA',
-          'ar'
-        ]
-      : [rawPreferred, rawPreferred.split('-')[0], 'ar-SA', 'ar'];
+      ? [rawPreferred, rawPreferred.split('-')[0], 'ar-SA', 'ar']
+      : [rawPreferred, rawPreferred.split('-')[0], 'en-US', 'en'];
     for (const lang of candidates){
       const code = String(lang || '').trim();
       if (!code) continue;
       const result = await plugin.isLanguageSupported({ lang: code }).catch(() => null);
-      if (result?.supported) return code;
+      if (result?.supported){
+        VOICE_RUNTIME.nativeTtsLangCached = code;
+        return code;
+      }
     }
     return preferred;
   }
@@ -2792,9 +2830,19 @@ function applyShellLayout(){
 
   async function resolveSpeechRecognitionLanguage(plugin){
     const candidates = buildSpeechLanguageCandidates(getPreferredSpeechLanguage());
-    if (!plugin?.getSupportedLanguages) return candidates[0] || 'ar-SA';
+    const fallback = candidates[0] || 'ar-SA';
+    if (!plugin?.getSupportedLanguages) return fallback;
+    /* Android: getSupportedLanguages() can hang (broadcast / OS quirks); use preferred locale and skip the call. */
+    if (typeof isNativeAndroidPlatform === 'function' && isNativeAndroidPlatform()){
+      return fallback;
+    }
     try{
-      const result = await plugin.getSupportedLanguages();
+      const result = await Promise.race([
+        plugin.getSupportedLanguages(),
+        new Promise((_, reject) => {
+          window.setTimeout(() => reject(Object.assign(new Error('SPEECH_LANG_LIST_TIMEOUT'), { code: 'SPEECH_LANG_LIST_TIMEOUT' })), 2400);
+        })
+      ]);
       const supported = Array.isArray(result?.languages)
         ? result.languages
         : (Array.isArray(result) ? result : []);
@@ -2809,7 +2857,7 @@ function applyShellLayout(){
         }
       }
     }catch(_){}
-    return candidates[0] || 'ar-SA';
+    return fallback;
   }
 
   async function resolveSpeechSynthesisLanguage(plugin){
@@ -2955,6 +3003,7 @@ function applyShellLayout(){
       audio.__objectUrl = objectUrl;
       audio.preload = 'auto';
       VOICE_RUNTIME.audioPlayer = audio;
+      try{ audio.load(); }catch(_){}
 
       return await new Promise((resolve) => {
         const cleanup = (played) => {
@@ -3016,6 +3065,7 @@ function applyShellLayout(){
     audio.__objectUrl = objectUrl;
     audio.preload = 'auto';
     VOICE_RUNTIME.audioPlayer = audio;
+    try{ audio.load(); }catch(_){}
 
     return await new Promise((resolve) => {
       const cleanup = (played) => {
@@ -3262,7 +3312,12 @@ function applyShellLayout(){
   }
 
   async function speakWithBrowserSpeechSynthesis(text, preferredLang){
-    const parts = splitTextForSpeech(text);
+    try{
+      if (window.speechSynthesis && !window.speechSynthesis.getVoices?.()?.length){
+        await waitForSpeechVoices(400);
+      }
+    }catch(_){}
+    const parts = splitTextForSpeech(text, 280);
     if (!parts.length) return false;
     return await new Promise((resolve) => {
       let index = 0;
@@ -3306,11 +3361,21 @@ function applyShellLayout(){
     });
   }
 
-  async function stopVoicePlayback(){
+  async function stopVoicePlayback({ awaitNativeStopMaxMs = null } = {}){
     clearVoiceRestartTimer();
     const nativeTts = getNativeTextToSpeechPlugin();
     if (nativeTts?.stop){
-      try{ await nativeTts.stop(); }catch(_){ }
+      try{
+        const stopP = Promise.resolve(nativeTts.stop()).catch(() => null);
+        if (awaitNativeStopMaxMs != null && awaitNativeStopMaxMs > 0){
+          await Promise.race([
+            stopP,
+            new Promise((r) => window.setTimeout(r, awaitNativeStopMaxMs))
+          ]);
+        }else{
+          await stopP;
+        }
+      }catch(_){ }
     }
     if (VOICE_RUNTIME.audioPlayer){
       try{ VOICE_RUNTIME.audioPlayer.pause?.(); }catch(_){ }
@@ -3334,30 +3399,17 @@ function applyShellLayout(){
       return false;
     }
 
-    await stopVoicePlayback();
+    /* Cap short wait so prior stop() does not block time-to-first-audio (native stop can be slow). */
+    await stopVoicePlayback({ awaitNativeStopMaxMs: 160 });
 
     const preferredLang = String(getPreferredSpeechLanguage() || 'ar-SA');
     const isArabicSession = /^ar/i.test(preferredLang);
-
-    if (isArabicSession){
-      try{
-        const proxyPlayed = await speakAssistantReplyByProxyTts(text, preferredLang.split('-')[0] || 'ar');
-        if (proxyPlayed) return true;
-      }catch(_){ }
-    }
-
-    try{
-      const cloudPlayed = await speakAssistantReplyByCloud(text, getSettings());
-      if (cloudPlayed) return true;
-    }catch(error){
-      if (force) toast(`تعذّر تشغيل الرد صوتيًا عبر السحابة: ${error?.message || error}`);
-    }
-
     const nativeTts = getNativeTextToSpeechPlugin();
-    const lang = getSpeechLanguageForText(text, await resolveSpeechSynthesisLanguage(nativeTts));
-    const nativeLang = await ensureNativeArabicTtsLanguage(nativeTts, lang);
+    const langForUtterance = getSpeechLanguageForText(text, preferredLang);
 
+    /* Capacitor: native plugin first — avoids proxy+cloud network before local synthesis (major APK / iOS win). */
     if (nativeTts?.speak){
+      const nativeLang = await chooseSpeechLanguageForNativeTts(nativeTts, langForUtterance);
       try{
         VOICE_RUNTIME.speaking = true;
         await nativeTts.speak({
@@ -3378,12 +3430,35 @@ function applyShellLayout(){
       }
     }
 
+    /* Web read-aloud (force): browser engine first — no network wait for first sound. Voice-mode auto: keep cloud/proxy first for quality. */
+    const tryBrowserFirst = force && !nativeTts?.speak;
+    if (tryBrowserFirst && 'speechSynthesis' in window && typeof window.SpeechSynthesisUtterance !== 'undefined'){
+      try{
+        const ok = await speakWithBrowserSpeechSynthesis(text, langForUtterance);
+        if (ok) return true;
+      }catch(_){}
+    }
+
+    if (isArabicSession){
+      try{
+        const proxyPlayed = await speakAssistantReplyByProxyTts(text, preferredLang.split('-')[0] || 'ar');
+        if (proxyPlayed) return true;
+      }catch(_){ }
+    }
+
+    try{
+      const cloudPlayed = await speakAssistantReplyByCloud(text, getSettings());
+      if (cloudPlayed) return true;
+    }catch(error){
+      if (force) toast(`تعذّر تشغيل الرد صوتيًا عبر السحابة: ${error?.message || error}`);
+    }
+
     if (!('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance === 'undefined'){
       if (force) toast('التشغيل الصوتي غير مدعوم في هذا المتصفح.');
       return false;
     }
 
-    return await speakWithBrowserSpeechSynthesis(text, lang);
+    return await speakWithBrowserSpeechSynthesis(text, langForUtterance);
   }
 
   async function stopComposerDictation(showToast = false){
@@ -3475,11 +3550,28 @@ function applyShellLayout(){
     return true;
   }
 
+  function translateNativeSttError(message = ''){
+    const m = String(message || '').trim();
+    if (!m) return 'خطأ غير معروف في التعرف الصوتي.';
+    if (/^0$/.test(m)) return 'تم إلغاء نافذة التعرف الصوتي.';
+    if (/^1$/.test(m)) return 'لم يُكمل الجهاز التعرف الصوتي (رمز 1).';
+    if (/No speech input/i.test(m)) return 'لم يُلتقط صوت. حاول مجددًا بميكروفون أوضح.';
+    if (/No match/i.test(m)) return 'لم يُتعرّف على الكلام. جرّب جملة أقصر أو أبطأ.';
+    if (/Client side error/i.test(m)) return 'تعذّر تشغيل المحرك المحلي للتعرف (خطأ عميل). جرّب إعادة التشغيل أو تحديث تطبيق Google.';
+    if (/RecognitionService busy/i.test(m)) return 'خدمة التعرف مشغولة. انتظر ثانية ثم أعد المحاولة.';
+    if (/Insufficient permissions|MISSING_PERMISSION/i.test(m)) return 'إذن الميكروفون غير مفعّل لهذا التطبيق.';
+    if (/Network error|Network timeout/i.test(m)) return 'مشكلة شبكة أثناء التعرف الصوتي.';
+    if (/Audio recording error/i.test(m)) return 'تعذّر تسجيل الصوت من الميكروفون.';
+    return m;
+  }
+
   async function startNativeComposerDictationSafe(){
     const plugin = getNativeSpeechRecognitionPlugin();
     const input = $('chatInput');
     if (!plugin || !input) return { success:false, fallbackAllowed:true, cancelled:false };
     if (VOICE_RUNTIME.nativeStarting) return { success:false, fallbackAllowed:false, cancelled:true };
+
+    const useAndroidIntentUi = typeof isNativeAndroidPlatform === 'function' && isNativeAndroidPlatform();
 
     try{
       VOICE_RUNTIME.nativeStarting = true;
@@ -3490,36 +3582,57 @@ function applyShellLayout(){
 
       const availability = await plugin.available?.().catch(() => ({ available:false }));
       if (!availability?.available){
-        toast('التعرف الصوتي غير متاح على هذا الجهاز.');
+        toast('التعرف الصوتي غير متاح على هذا الجهاز (لا يوجد محرك تعرف مثبت).');
         return { success:false, fallbackAllowed:true, cancelled:false };
       }
 
       const permitted = await ensureNativeSpeechRecognitionPermission(plugin);
       if (!permitted){
-        toast('يلزم منح إذن الميكروفون لتفعيل الدردشة الصوتية.');
+        let permSnap = null;
+        try{ permSnap = await plugin.checkPermissions?.().catch(() => null); }catch(_){ permSnap = null; }
+        toast(`يلزم منح إذن الميكروفون. حالة الصلاحيات: ${formatNativeSpeechPermissionState(permSnap)}`);
         return { success:false, fallbackAllowed:true, cancelled:false };
       }
 
       const language = await resolveSpeechRecognitionLanguage(plugin);
-      await bindNativeSpeechStateListener(plugin, language);
       composerDictationBase = String(input.value || '').trimEnd();
       VOICE_RUNTIME.autoSendArmed = true;
       VOICE_RUNTIME.continuousConversation = getVoiceModeEnabled();
 
       let transcriptCaptured = false;
-      let cancelled = false;
-      const result = await Promise.race([
-        plugin.start({
+      let result = null;
+
+      if (useAndroidIntentUi){
+        /* In-WebView SpeechRecognizer often never reaches onResults; Intent UI is reliable on real devices. */
+        await clearNativeSpeechStateListener();
+        composerListening = true;
+        VOICE_RUNTIME.nativeListening = true;
+        setComposerDictationState('listening');
+        syncVoiceInputButton();
+        showStatus('سيُفتح ميكروفون النظام — تحدّث بعد ظهور النافذة.', false);
+        result = await plugin.start({
           language,
           maxResults: 1,
           prompt: getVoiceModeEnabled() ? 'ابدأ الحديث الآن' : 'تحدث الآن',
           partialResults: false,
-          popup: false
-        }),
-        new Promise((_, reject) => {
-          window.setTimeout(() => reject(new Error('STT_TIMEOUT')), 18000);
-        })
-      ]);
+          popup: true
+        });
+      }else{
+        await bindNativeSpeechStateListener(plugin, language);
+        result = await Promise.race([
+          plugin.start({
+            language,
+            maxResults: 1,
+            prompt: getVoiceModeEnabled() ? 'ابدأ الحديث الآن' : 'تحدث الآن',
+            partialResults: false,
+            popup: false
+          }),
+          new Promise((_, reject) => {
+            window.setTimeout(() => reject(new Error('STT_TIMEOUT')), 18000);
+          })
+        ]);
+      }
+
       const transcript = Array.isArray(result?.matches)
         ? result.matches.map((item) => String(item || '').trim()).filter(Boolean).join(' ')
         : '';
@@ -3548,10 +3661,11 @@ function applyShellLayout(){
       };
     }catch(error){
       const message = String(error?.message || error || '').trim();
-      const cancelled = /cancel|abort/i.test(message);
+      const cancelled = /cancel|abort|^0$/i.test(message);
       const timedOut = /STT_TIMEOUT/i.test(message);
       if (!cancelled){
-        toast(timedOut ? 'انتهت مهلة الإملاء الصوتي بدون نتيجة. حاول مرة أخرى.' : `تعذر الإملاء الصوتي: ${message || 'unknown'}`);
+        const human = translateNativeSttError(message);
+        toast(timedOut ? 'انتهت مهلة الإملاء دون نتيجة. حاول مرة أخرى.' : `تعذّر الإملاء: ${human}`);
       }
       return {
         success: false,
@@ -3566,6 +3680,7 @@ function applyShellLayout(){
       await resetNativeSpeechSession(plugin);
       setComposerDictationState('ready');
       showStatus('', false);
+      syncVoiceInputButton();
     }
   }
 
@@ -3822,7 +3937,9 @@ function refreshDeepSearchBtn(){
     if (!input) return;
     if (input.tagName === 'TEXTAREA'){
       input.style.height = 'auto';
-      input.style.height = `${Math.min(220, Math.max(58, input.scrollHeight))}px`;
+      const compact = typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 980px)').matches;
+      const minH = compact ? 40 : 46;
+      input.style.height = `${Math.min(200, Math.max(minH, input.scrollHeight))}px`;
     }
     scheduleShellLayoutRefresh();
   }
@@ -5164,8 +5281,8 @@ async function submitUnifiedAuthEntry(){
       quickBar.className = 'subtopbar';
       quickBar.id = 'chatQuickActionBar';
       quickBar.innerHTML = `
-        <span class="subtopbar-label">إجراءات الدردشة</span>
-        <div class="subtopbar-actions" id="chatQuickActionBarActions"></div>`;
+        <span class="subtopbar-label" id="chatQuickActionBarLabel">إجراءات</span>
+        <div class="subtopbar-actions" id="chatQuickActionBarActions" role="toolbar" aria-label="إجراءات الدردشة"></div>`;
       topbar.insertAdjacentElement('afterend', quickBar);
     }
     const quickBarActions = $('chatQuickActionBarActions');
@@ -5204,7 +5321,8 @@ async function submitUnifiedAuthEntry(){
       area.id = input.id;
       area.dir = input.getAttribute('dir') || 'auto';
       area.rows = 2;
-      area.placeholder = 'اكتب طلبك بوضوح: الهدف، النتيجة المطلوبة، وأي مرفقات أو قيود. Shift+Enter لسطر جديد.';
+      area.placeholder = 'اكتب طلبك… Enter للإرسال، Shift+Enter لسطر جديد';
+      area.title = 'Enter للإرسال، Shift+Enter لسطر جديد';
       area.value = input.value || '';
       input.replaceWith(area);
       resizeComposerInput(area);
@@ -5223,9 +5341,9 @@ async function submitUnifiedAuthEntry(){
     }
     if (chatbar && !$('composerContextMeta')){
       chatbar.insertAdjacentHTML('afterend', `
-        <div class="composer-meta">
-          <span id="composerHint">Enter للإرسال • Shift+Enter لسطر جديد • تُضاف المرفقات إلى السياق تلقائيًا.</span>
-          <span class="composer-status" id="composerContextMeta">سياق مساحة العمل —</span>
+        <div class="composer-meta composer-meta--idle">
+          <span id="composerHint"></span>
+          <span class="composer-status" id="composerContextMeta">—</span>
           <button class="btn ghost sm" id="composerEditCancelBtn" type="button" style="display:none">إلغاء التعديل</button>
         </div>`);
     }
@@ -5239,7 +5357,7 @@ async function submitUnifiedAuthEntry(){
         <div class="thread-drawer-head">
           <div>
             <div class="thread-drawer-title">سجل الدردشات</div>
-            <div class="thread-drawer-sub" id="threadDrawerSub">المحادثات المحفوظة داخل المشروع الحالي</div>
+            <div class="thread-drawer-sub" id="threadDrawerSub">ضمن المشروع الحالي</div>
           </div>
           <div class="row" style="margin:0; gap:6px">
             <button class="btn ghost sm icon" id="threadDrawerCloseBtn" type="button" title="إغلاق" aria-label="إغلاق">✕</button>
@@ -5545,7 +5663,7 @@ async function submitUnifiedAuthEntry(){
       ['signalModelNote', 'مسار النموذج الرئيسي'],
       ['signalContextNote', 'الملفات والمعرفة وذاكرة المشروع'],
       ['signalModesNote', 'البث والأدوات والويب وأنماط التشغيل'],
-      ['composerHint', 'Enter للإرسال • Shift+Enter لسطر جديد • تُضاف المرفقات والذاكرة إلى السياق تلقائيًا.']
+      ['composerHint', '']
     ];
     fixedCopy.forEach(([id, text]) => {
       const el = $(id);
@@ -6028,23 +6146,14 @@ async function submitUnifiedAuthEntry(){
     if ($('transcribeLabNote') && Object.prototype.hasOwnProperty.call(partial, 'note')) $('transcribeLabNote').textContent = partial.note;
   }
 
-  function syncComposerMeta(){
-    const meta = $('composerContextMeta');
-    if (!meta) return;
-    const pid = getCurProjectId();
-    const files = loadFiles(pid);
-    const thread = getCurThread();
-    const flags = [];
-    if (hasProjectBrief(getProjectBrief(pid))) flags.push('ذاكرة المشروع مفعّلة');
-    if (getStudyMode()) flags.push('وضع دراسي');
-    meta.textContent = `الملفات ${files.length} • الرسائل ${(thread.messages || []).length} • المرفقات ${pendingChatAttachments.length}${flags.length ? ` • ${flags.join(' • ')}` : ''}`;
-    resizeComposerInput();
-  }
-
   function syncStrategicLayoutState(hasMessages){
-    const shouldCollapseDeck = !!hasMessages && !$('page-home')?.classList.contains('active');
+    const chatActive = !!$('page-chat')?.classList.contains('active');
+    /* Chat-first: on any platform, collapse workspace chrome while chat is open to privilege the transcript. */
+    const collapseForChatFocus = chatActive;
+    const shouldCollapseDeck = collapseForChatFocus
+      || (!!hasMessages && !$('page-home')?.classList.contains('active'));
     $('workspaceDeck')?.classList.toggle('workspace-deck-collapsed', shouldCollapseDeck);
-    $('strategicStrip')?.classList.toggle('strategic-strip-collapsed', !!hasMessages);
+    $('strategicStrip')?.classList.toggle('strategic-strip-collapsed', collapseForChatFocus || !!hasMessages);
   }
 
   async function refreshStrategicWorkspace(){
@@ -8509,6 +8618,27 @@ async function maybeUpdateThreadSummary(pid, tid){
     return explicit.trim() ? explicit : '';
   }
 
+  const MAX_CHAT_INLINE_MEDIA_BYTES = 4 * 1024 * 1024;
+
+  function snapshotAttachmentsForMessage(list){
+    const arr = Array.isArray(list) ? list : [];
+    return arr.map((a) => {
+      const kind = String(a?.kind || '').toLowerCase();
+      let dataUrl = String(a?.dataUrl || '').trim();
+      if (dataUrl && (kind === 'image' || kind === 'video' || kind === 'audio')){
+        const approxBytes = Math.floor(dataUrl.length * 0.75);
+        if (approxBytes > MAX_CHAT_INLINE_MEDIA_BYTES) dataUrl = '';
+      }
+      return {
+        name: String(a?.name || 'مرفق'),
+        kind,
+        type: String(a?.type || ''),
+        size: Number(a?.size || 0),
+        dataUrl
+      };
+    });
+  }
+
   function buildAttachmentsBlock(settings){
     if (!pendingChatAttachments.length) return '';
     const totalLimit = clamp(Math.max(Number(settings.fileClip || 12000), 18000), 18000, 42000);
@@ -8763,6 +8893,28 @@ ${clip}` });
       </div>`;
   }
 
+  function renderUserAttachmentPreviewsHtml(previews){
+    const list = Array.isArray(previews) ? previews : [];
+    if (!list.length) return '';
+    const blocks = list.map((p) => {
+      const name = escapeHtml(p.name || 'مرفق');
+      const kind = String(p.kind || '').toLowerCase();
+      const src = String(p.dataUrl || '').trim();
+      if (kind === 'image' && src){
+        return `<div class="chat-inline-media chat-inline-media--dark"><img class="chat-inline-media-el" loading="lazy" alt="${name}" src="${escapeHtml(src)}" /></div>`;
+      }
+      if (kind === 'video' && src){
+        return `<div class="chat-inline-media chat-inline-media--dark"><video class="chat-inline-media-el" controls playsinline preload="metadata" src="${escapeHtml(src)}"></video></div>`;
+      }
+      if (kind === 'audio' && src){
+        return `<div class="chat-inline-media chat-inline-media--audio"><audio controls preload="metadata" src="${escapeHtml(src)}"></audio></div>`;
+      }
+      const meta = `${escapeHtml(formatAttachmentKindLabel(p))}${p.size ? ` • ${escapeHtml(formatCompactBytes(p.size))}` : ''}`;
+      return `<div class="chat-inline-file-card"><span class="chat-inline-file-name">${name}</span><span class="chat-inline-file-meta">${meta}</span></div>`;
+    });
+    return `<div class="chat-user-attachments">${blocks.join('')}</div>`;
+  }
+
   function renderAssistantMessageHtml(text, downloads=[]){
     const visibleText = stripFileBlocks(text);
     const main = visibleText
@@ -8884,90 +9036,6 @@ ${clip}` });
     });
   }
 
-  function renderChat(){
-    const log = $('chatLog');
-    if (!log) return;
-    const thread = getCurThread();
-    const msgs = thread.messages || [];
-    log.innerHTML = '';
-
-    if (!msgs.length){
-      renderEmptyChatState(log);
-      log.scrollTop = 0;
-      refreshNavMeta();
-      refreshStrategicWorkspace().catch(()=>{});
-      return;
-    }
-
-    msgs.forEach((m) => {
-      const b = document.createElement('div');
-      b.className = 'bubble ' + (m.role === 'user' ? 'user' : 'assistant');
-      b.dataset.mid = m.id || '';
-      const meta = document.createElement('div');
-      meta.className = 'meta';
-      const roleBadge = document.createElement('span');
-      roleBadge.className = 'bubble-role-badge';
-      roleBadge.textContent = m.role === 'user' ? '👤 أنت' : '🤖 المساعد';
-      const metaText = document.createElement('span');
-      metaText.textContent = formatMessageMetaLine(m);
-      meta.appendChild(roleBadge);
-      meta.appendChild(metaText);
-
-      const body = document.createElement('div');
-      body.className = 'body';
-      const downloadState = m.role === 'assistant' ? ensureDownloadsFromText(m.content || '', m.id || '') : { entries: [], newCount: 0 };
-      body.innerHTML = (m.role === 'assistant')
-        ? renderAssistantMessageHtml(m.content || '', downloadState.entries)
-        : `<pre style="margin:0; white-space:pre-wrap">${escapeHtml(m.content||'')}</pre>`;
-      if (m.role === 'assistant') bindAssistantDownloadLinks(body);
-
-      const actions = document.createElement('div');
-      actions.className = 'actions';
-
-      const copyBtn = document.createElement('button');
-      copyBtn.className = 'btn ghost sm';
-      copyBtn.textContent = 'نسخ';
-      copyBtn.addEventListener('click', async () => {
-        const ok = await copyToClipboard(m.content || '');
-        toast(ok ? '✅ تم النسخ' : '⚠️ تعذر النسخ');
-      });
-      actions.appendChild(copyBtn);
-
-      const editBtn = document.createElement('button');
-      editBtn.className = 'btn ghost sm';
-      editBtn.textContent = m.role === 'user' ? 'تعديل' : 'إعادة استخدام';
-      editBtn.addEventListener('click', () => loadMessageIntoComposer(m));
-      actions.appendChild(editBtn);
-
-      if (m.role === 'assistant'){
-        const canvasBtn = document.createElement('button');
-        canvasBtn.className = 'btn ghost sm';
-        canvasBtn.textContent = 'إلى اللوحة';
-        canvasBtn.addEventListener('click', () => sendMessageToCanvas(m));
-        actions.appendChild(canvasBtn);
-
-        const dlCount = ingestDownloadsFromText(m.content || '');
-        if (dlCount){
-          const info = document.createElement('span');
-          info.className = 'hint';
-          info.textContent = `📄 تم اكتشاف ${dlCount} ملفًا — راجع التحميلات`;
-          actions.appendChild(info);
-          refreshNavMeta();
-        }
-      }
-
-      b.appendChild(meta);
-      b.appendChild(body);
-      b.appendChild(actions);
-      log.appendChild(b);
-    });
-
-    scrollChatToBottom();
-    refreshNavMeta();
-    renderThreadHistory();
-    refreshStrategicWorkspace().catch(()=>{});
-  }
-
   function updateStreamingAssistant(mid, text){
     const log = $('chatLog');
     const b = log?.querySelector(`.bubble.assistant[data-mid="${CSS.escape(mid)}"]`);
@@ -8982,72 +9050,10 @@ ${clip}` });
     scheduleChatScrollDockSync();
   }
 
-  
-  function updateChatAttachChips(){
-    const box = $('chatAttachChips');
-    if (!box) return;
-    box.innerHTML = '';
-    pendingChatAttachments.forEach((a, idx) => {
-      const chip = document.createElement('span');
-      chip.className = 'chip';
-      chip.innerHTML = `<span>${escapeHtml(a.name)}</span><span class="meta">${escapeHtml(a.kind)}</span>`;
-      const x = document.createElement('button');
-      x.className = 'x';
-      x.textContent = '✕';
-      x.addEventListener('click', () => {
-        pendingChatAttachments.splice(idx, 1);
-        updateChatAttachChips();
-      });
-      chip.appendChild(x);
-      box.appendChild(chip);
-    });
-    syncComposerMeta();
-  }
-
   function clipText(t, limit){
     const s = String(t || '');
     if (s.length <= limit) return s;
     return s.slice(0, Math.floor(limit*0.55)) + "\n...\n" + s.slice(-Math.floor(limit*0.45));
-  }
-
-  async function addChatAttachments(fileList){
-    const settings = getSettings();
-    const maxPer = 4500; // per attachment
-    const files = Array.from(fileList || []);
-    if (!files.length) return;
-    showStatus('إرفاق الملفات…', true);
-    for (const file of files){
-      const name = file.name || 'file';
-      const type = file.type || '';
-      const isImg = type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(name);
-      let kind = isImg ? 'image' : 'file';
-      let text = '';
-      let dataUrl = '';
-      try{
-        if (isImg){
-          dataUrl = await fileToDataUrl(file);
-          // OCR by default for images (so model can see content)
-          try{
-            text = await ocrDataUrl(dataUrl, 'ara+eng');
-          }catch(_){ text = ''; }
-        }else{
-          text = await fileToTextSmart(file);
-        }
-      }catch(_){ text = ''; }
-      pendingChatAttachments.push({
-        id: makeId('att'),
-        name,
-        kind,
-        type,
-        size: file.size || 0,
-        dataUrl,
-        text: clipText(text, maxPer),
-        hasText: !!(text && text.trim())
-      });
-    }
-    showStatus('', false);
-    updateChatAttachChips();
-    toast('✅ تم إرفاق الملفات');
   }
 
   function renderChat(){
@@ -9058,6 +9064,7 @@ ${clip}` });
     log.innerHTML = '';
 
     if (!msgs.length){
+      try{ document.body.classList.remove('chat-has-messages'); }catch(_){}
       renderEmptyChatState(log);
       log.scrollTop = 0;
       refreshNavMeta();
@@ -9066,6 +9073,8 @@ ${clip}` });
       scheduleChatScrollDockSync();
       return;
     }
+
+    try{ document.body.classList.add('chat-has-messages'); }catch(_){}
 
     msgs.forEach((m) => {
       const bubble = document.createElement('div');
@@ -9089,7 +9098,7 @@ ${clip}` });
         : { entries: [], newCount: 0 };
       body.innerHTML = m.role === 'assistant'
         ? renderAssistantMessageHtml(m.content || '', downloadState.entries)
-        : `<pre style="margin:0; white-space:pre-wrap">${escapeHtml(m.content || '')}</pre>`;
+        : `${renderUserAttachmentPreviewsHtml(m.attachmentPreviews)}${m.content ? `<pre class="chat-user-text">${escapeHtml(m.content || '')}</pre>` : ''}` || '<pre class="chat-user-text"></pre>';
       if (m.role === 'assistant') bindAssistantDownloadLinks(body);
 
       const actions = document.createElement('div');
@@ -9184,37 +9193,56 @@ ${clip}` });
       chip.appendChild(x);
       box.appendChild(chip);
     });
+    box.classList.toggle('chips-empty', !pendingChatAttachments.length);
     syncComposerMeta();
   }
 
   function syncComposerMeta(){
     const meta = $('composerContextMeta');
     if (!meta) return;
+    const wrap = meta.closest('.composer-meta');
     const pid = getCurProjectId();
     const files = loadFiles(pid);
     const thread = getCurThread();
+    const msgCount = (thread.messages || []).length;
     const flags = [];
-    if (hasProjectBrief(getProjectBrief(pid))) flags.push('ذاكرة المشروع مفعّلة');
-    if (getStudyMode()) flags.push('وضع دراسي');
+    if (hasProjectBrief(getProjectBrief(pid))) flags.push('ذاكرة المشروع');
+    if (getStudyMode()) flags.push('دراسي');
 
     const recognized = pendingChatAttachments.filter((a) => a.hasText).length;
     const visibleImages = pendingChatAttachments.filter((a) => a.kind === 'image' && a.dataUrl).length;
     const attachmentChars = pendingChatAttachments.reduce((sum, a) => sum + Number(a.chars || 0), 0);
-    const parts = [
-      `الملفات ${files.length}`,
-      `الرسائل ${(thread.messages || []).length}`,
-      `المرفقات ${pendingChatAttachments.length}`
-    ];
-    if (pendingChatAttachments.length){
-      parts.push(`مقروء ${recognized}/${pendingChatAttachments.length}`);
-      if (attachmentChars) parts.push(`نص مرفق ${formatCompactChars(attachmentChars)} حرف`);
-      if (visibleImages) parts.push(`صور ${visibleImages}`);
+    const chatUi = !!$('page-chat')?.classList.contains('active');
+    const showComposerDetails = pendingChatAttachments.length > 0 || composerEditState.active;
+    if (wrap) wrap.classList.toggle('composer-meta--idle', chatUi && !showComposerDetails);
+    if (chatUi && !showComposerDetails){
+      meta.textContent = '';
+      resizeComposerInput();
+      scheduleShellLayoutRefresh();
+      return;
+    }
+    const parts = [];
+    if (chatUi){
+      parts.push(`${files.length} ملف · ${msgCount} رسالة`);
+      if (pendingChatAttachments.length){
+        parts.push(`مرفقات ${pendingChatAttachments.length}`);
+        if (recognized < pendingChatAttachments.length) parts.push(`مقروء ${recognized}/${pendingChatAttachments.length}`);
+        if (attachmentChars) parts.push(`${formatCompactChars(attachmentChars)} حرف`);
+        if (visibleImages) parts.push(`${visibleImages} صورة`);
+      }
+    }else{
+      parts.push(`الملفات ${files.length}`, `الرسائل ${msgCount}`, `المرفقات ${pendingChatAttachments.length}`);
+      if (pendingChatAttachments.length){
+        parts.push(`مقروء ${recognized}/${pendingChatAttachments.length}`);
+        if (attachmentChars) parts.push(`نص مرفق ${formatCompactChars(attachmentChars)} حرف`);
+        if (visibleImages) parts.push(`صور ${visibleImages}`);
+      }
     }
     if (composerEditState.active){
-      parts.push(composerEditState.sourceRole === 'user' ? 'تعديل رسالة سابقة' : 'إعادة استخدام رسالة من السجل');
+      parts.push(composerEditState.sourceRole === 'user' ? 'تعديل' : 'إعادة استخدام');
     }
     if (flags.length) parts.push(...flags);
-    meta.textContent = parts.join(' • ');
+    meta.textContent = parts.join(' · ');
     resizeComposerInput();
   }
 
@@ -9258,6 +9286,13 @@ ${clip}` });
           }catch(_){
             textFull = '';
           }
+        } else if ((kind === 'video' || kind === 'audio') && file.size <= MAX_CHAT_INLINE_MEDIA_BYTES){
+          try{
+            dataUrl = await fileToDataUrl(file);
+          }catch(_){
+            dataUrl = '';
+          }
+          extractionMode = kind === 'video' ? 'فيديو معاينة' : 'صوت معاينة';
         } else if (kind === 'pdf'){
           extractionMode = `PDF ${getTranscribeProfileLabel()}`;
           textFull = await fileToTextSmart(file, {
@@ -9339,6 +9374,7 @@ function updateChips(){
     let historySnapshot = thread.messages.slice();
     let threadSummary = String(thread.summary || '');
     let uMsg = null;
+    const attachmentsForRequest = pendingChatAttachments.slice();
 
     if (composerEditState.active && composerEditState.mutateThread && composerEditState.sourceRole === 'user'){
       const editIndex = thread.messages.findIndex((message) => message.id === composerEditState.sourceMessageId);
@@ -9361,6 +9397,9 @@ function updateChips(){
       thread.messages.push(uMsg);
       ensureThreadTitleFromMessage(thread, text);
     }
+    if (attachmentsForRequest.length){
+      uMsg.attachmentPreviews = snapshotAttachmentsForMessage(attachmentsForRequest);
+    }
     thread.updatedAt = nowTs();
     threads[idx] = thread;
     saveThreads(pid, threads);
@@ -9372,8 +9411,6 @@ function updateChips(){
     renderChat();
 
     const filesText = buildAutoFilesContext(settings);
-    const attachmentsForRequest = pendingChatAttachments.slice();
-    
     const rag = await buildRagContextIfEnabled(text, rawSettings);
     const messages = buildMessagesForChat({
       userText: text,
@@ -10589,6 +10626,11 @@ let pinOnly = false;
   function openWorkspacePage(page, options = {}){
     if (!page) return;
     setActiveNav(page);
+    try{
+      document.body.classList.toggle('chat-page-active', page === 'chat');
+      const na = typeof isNativeAndroidPlatform === 'function' && isNativeAndroidPlatform();
+      document.body.classList.toggle('android-chat-focus', na && page === 'chat');
+    }catch(_){}
     if (page === 'home') renderHomeWorkspace().catch(()=>{});
     if (page === 'downloads') renderDownloads();
     if (page === 'workflows') renderWorkflows();
@@ -10599,7 +10641,7 @@ let pinOnly = false;
     if (page === 'canvas') { renderCanvasList(); refreshCanvasPreview(); }
     if (page === 'knowledge') renderKbUI().catch(()=>{});
     if (page === 'transcription') renderTranscribeOperationalState();
-    if (page === 'chat') { renderChat(); updateChips(); }
+    if (page === 'chat') { renderChat(); updateChips(); refreshStrategicWorkspace().catch(()=>{}); }
     if (options.closeSidebar) closeSide();
   }
 
@@ -11941,6 +11983,13 @@ ${e?.message||e}`, false);
     AUTH_RUNTIME.config = null;
     alignManagedRuntimeSettings();
 
+    try{
+      if (typeof isNativeAndroidPlatform === 'function' && isNativeAndroidPlatform()){
+        document.body.classList.add('native-android');
+        if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
+      }
+    }catch(_){}
+
     loadProjects();
     const pid = getCurProjectId();
     loadThreads(pid);
@@ -11956,7 +12005,10 @@ ${e?.message||e}`, false);
       if (localStorage.getItem(KEYS.webToggle) === null) setWebToggle(true);
       const cur = getSettings();
       if (!cur.webMode || cur.webMode === 'off') setSettings({ webMode: 'openrouter_online' });
-      if (window.innerWidth < 980){
+      const narrowUi = typeof window.matchMedia === 'function'
+        ? window.matchMedia('(max-width: 1200px)').matches
+        : window.innerWidth < 1200;
+      if (narrowUi){
         if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
         if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
       }
@@ -11993,7 +12045,11 @@ ${e?.message||e}`, false);
         window.speechSynthesis.addEventListener('voiceschanged', () => {
           window.speechSynthesis.getVoices();
         }, { once: true });
+        void waitForSpeechVoices(500);
       }
+    }catch(_){}
+    try{
+      window._ttsStop = () => { void stopVoicePlayback(); };
     }catch(_){}
   }
 

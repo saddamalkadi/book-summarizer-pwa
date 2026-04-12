@@ -1929,8 +1929,9 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       box-shadow: 0 10px 22px rgba(15,23,42,.05);
     }
     body.chat-page-active #page-chat .chatlog{
-      padding-top: max(6px, 0.8vw);
-      padding-bottom: max(12px, 1.2vw);
+      padding-top: max(4px, 0.6vw);
+      padding-bottom: calc(var(--floating-nav-bottom, 72px) + 6px);
+      scroll-padding-bottom: calc(var(--floating-nav-bottom, 72px) + 4px);
     }
     body.chat-page-active #page-chat .bubble{
       margin-bottom: 12px;
@@ -1939,19 +1940,47 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       margin-bottom: 8px;
     }
     body.chat-page-active #page-chat > .chatbar{
-      padding-top: 8px;
+      padding: 6px var(--page-gutter, 14px) max(4px, env(safe-area-inset-bottom)) !important;
+      gap: 6px !important;
+      border-top-width: 1px;
     }
     body.chat-page-active .composer-meta{
-      gap: 8px;
+      gap: 4px;
       align-items: center;
+      padding: 2px var(--page-gutter, 14px) max(2px, env(safe-area-inset-bottom)) !important;
     }
-    body.chat-page-active #page-chat .chatbar:not(:focus-within) ~ .composer-meta #composerHint{
-      display: none;
+    body.chat-page-active #page-chat > .composer-meta.composer-meta--idle{
+      display: none !important;
     }
-    body.chat-page-active #page-chat .chatbar:focus-within ~ .composer-meta #composerHint{
-      display: inline;
-      font-size: 11px;
-      opacity: 0.85;
+    body.chat-page-active #composerHint,
+    body.chat-page-active #page-chat .composer-meta #composerHint{
+      display: none !important;
+    }
+    body.chat-page-active #page-chat .chatbar textarea,
+    body.chat-page-active #page-chat .chatbar input[type="text"]{
+      padding: 8px 12px !important;
+      line-height: 1.45 !important;
+      min-height: 40px !important;
+      border-radius: 14px !important;
+    }
+    body.chat-page-active #page-chat > .chips.chips-empty{
+      display: none !important;
+      min-height: 0 !important;
+      padding: 0 !important;
+      margin: 0 !important;
+    }
+    body.chat-page-active #page-chat > .chips:not(.chips-empty){
+      padding: 4px var(--page-gutter, 14px) 6px !important;
+      gap: 6px !important;
+    }
+    body.chat-page-active #sendBtn{
+      min-width: 44px !important;
+      min-height: 44px !important;
+      border-radius: 14px !important;
+    }
+    body.chat-page-active #voiceInputBtn{
+      min-width: 42px !important;
+      min-height: 42px !important;
     }
     body.chat-page-active .bubble .actions .hint{
       max-width: min(100%, 220px);
@@ -4084,7 +4113,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
             <button class="btn dark icon" id="sendBtn" type="button" title="إرسال الرسالة" aria-label="إرسال">▶</button>
           </div>
 
-          <div class="chips" id="chatAttachChips"></div>
+          <div class="chips chips-empty" id="chatAttachChips"></div>
         </div>
 
 
