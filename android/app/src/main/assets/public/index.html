@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.64">
+<html lang="ar" dir="rtl" data-appver="8.65">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.64</title>
+    <title>AI Workspace Studio v8.65</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -2619,7 +2619,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     }
 
 /* ═══════════════════════════════════════════
-   v8.64 — Structured controls + professional login pass
+   v8.65 — Prompt Engineering + premium refinement pass
    ═══════════════════════════════════════════ */
 
 /* — Sidebar account strip — */
@@ -3625,7 +3625,7 @@ body, input, textarea, select, button{
 }
 
 /* ══════════════════════════════════════════════
-   RELEASE — v8.64 structured usability pass + cache bust
+   RELEASE — v8.65 premium refinement + prompt engineering + cache bust
    ══════════════════════════════════════════════ */
 
 /* 1. Chat Toolbar — secondary groups collapsed by default */
@@ -3825,7 +3825,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
   font-weight: 900;
 }
 
-/* 8.1 Composer RTL-first refinement (v8.64) */
+/* 8.1 Composer RTL-first refinement (v8.65) */
 body.chat-page-active #page-chat > .chatbar{
   direction: rtl;
   gap: 6px !important;
@@ -3839,16 +3839,23 @@ body.chat-page-active #page-chat > .chatbar > .btn{
   border-radius: 13px;
 }
 body.chat-page-active #page-chat #voiceInputBtn{
-  order: 1;
-  min-width: 44px;
-  min-height: 44px;
-  font-size: 18px;
-}
-body.chat-page-active #page-chat #sendBtn,
-body.chat-page-active #page-chat #stopBtn{
   order: 2;
   min-width: 44px;
   min-height: 44px;
+  width: 44px;
+  font-size: 18px;
+  padding: 0 !important;
+}
+body.chat-page-active #page-chat #sendBtn,
+body.chat-page-active #page-chat #stopBtn{
+  order: 1;
+  min-width: 54px;
+  min-height: 46px;
+  padding: 0 16px;
+  border-radius: 14px;
+  font-size: 18px;
+  font-weight: 1000;
+  box-shadow: 0 8px 20px rgba(27,102,255,.28);
 }
 body.chat-page-active #page-chat #chatComposerCluster{
   order: 3;
@@ -3896,6 +3903,12 @@ body.chat-page-active #page-chat #regenBtn{
     min-width: 40px;
     min-height: 40px;
   }
+  body.chat-page-active #page-chat #sendBtn,
+  body.chat-page-active #page-chat #stopBtn{
+    min-width: 48px;
+    min-height: 42px;
+    padding: 0 12px;
+  }
   body.chat-page-active #page-chat #chatComposerCluster{
     padding: 2px 6px;
     gap: 3px;
@@ -3904,6 +3917,34 @@ body.chat-page-active #page-chat #regenBtn{
     padding: 7px 6px !important;
     min-height: 34px !important;
   }
+}
+
+/* 8.2 Premium refinement — topbar/login/dashboard/settings */
+.topbar{
+  background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(246,249,255,.94));
+  border-bottom: 1px solid rgba(10,20,60,.08);
+  box-shadow: 0 8px 24px rgba(8,15,35,.06);
+}
+.workspace-deck,
+.settings-overview-card,
+.panel{
+  border-radius: 16px;
+}
+.settings-overview-card,
+.panel .head{
+  border-color: rgba(15,23,42,.1);
+}
+.auth-hero,
+.auth-card{
+  border-radius: 24px;
+}
+.auth-copy,
+.auth-note{
+  line-height: 1.75;
+}
+body.promptEngineeringMode .topbar .topbar-actions #focusModeBtn{
+  border-color: rgba(27,102,255,.4);
+  box-shadow: 0 0 0 2px rgba(27,102,255,.12);
 }
 
 /* 9. Workspace quick actions — bigger on mobile */
@@ -4051,7 +4092,7 @@ body.chat-page-active #page-chat #regenBtn{
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.64</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.65</div>
       </div>
     </aside>
 
@@ -4435,7 +4476,14 @@ body.chat-page-active #page-chat #regenBtn{
                 <div class="row">
                   <div class="col">
                     <label class="hint">نموذج التضمين</label>
-                    <input id="embedModel" type="text" placeholder="مثال: openai/text-embedding-3-small" />
+                    <select id="embedModelPreset" aria-label="نموذج التضمين">
+                      <option value="openai/text-embedding-3-small" selected>OpenAI - text-embedding-3-small</option>
+                      <option value="openai/text-embedding-3-large">OpenAI - text-embedding-3-large</option>
+                      <option value="cohere/embed-multilingual-v3.0">Cohere - embed-multilingual-v3.0</option>
+                      <option value="custom">مخصص (إدخال يدوي)</option>
+                    </select>
+                    <input id="embedModelCustom" type="text" placeholder="موديل مخصص للتضمين" style="display:none; margin-top:8px" aria-hidden="true" />
+                    <input id="embedModel" type="text" placeholder="مثال: openai/text-embedding-3-small" style="display:none" aria-hidden="true" />
                     <div class="hint" style="margin-top:6px">مع OpenRouter غالبًا تحتاج prefix مثل <span class="kbd">openai/…</span>.</div>
                   </div>
                   <div class="col">
@@ -4974,7 +5022,7 @@ body.chat-page-active #page-chat #regenBtn{
     })();
   </script>
 
-<script src="app.js?v=864"></script>
+<script src="app.js?v=865"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -4988,7 +5036,7 @@ body.chat-page-active #page-chat #regenBtn{
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v864";
+          const CURRENT_CACHE = "aistudio-cache-v865";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -4997,7 +5045,7 @@ body.chat-page-active #page-chat #regenBtn{
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=864").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=865").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

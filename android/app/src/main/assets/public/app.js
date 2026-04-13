@@ -266,7 +266,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.64';
+  const WEB_RELEASE_LABEL = 'v8.65';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -504,12 +504,33 @@ function formatKbResults(results){
 async function renderKbUI(){
   const pid = getCurProjectId();
   const kb = getKbSettings(pid);
-  if ($('embedModel')) $('embedModel').value = kb.embedModel || '';
+  if ($('embedModelPreset')){
+    ensureSelectHasValue($('embedModelPreset'), kb.embedModel || 'openai/text-embedding-3-small');
+    const custom = $('embedModelCustom');
+    if (custom){
+      custom.value = kb.embedModel || '';
+      custom.style.display = $('embedModelPreset').value === 'custom' ? '' : 'none';
+      custom.setAttribute('aria-hidden', custom.style.display === 'none' ? 'true' : 'false');
+    }
+  } else if ($('embedModel')){
+    $('embedModel').value = kb.embedModel || '';
+  }
   if ($('kbTopK')) ensureSelectHasValue($('kbTopK'), String(kb.topK || 6));
   if ($('kbChunkSize')) ensureSelectHasValue($('kbChunkSize'), String(kb.chunkSize || 900));
   if ($('kbOverlap')) ensureSelectHasValue($('kbOverlap'), String(kb.overlap || 120));
   if ($('kbRagHint')) $('kbRagHint').value = kb.ragHint || DEFAULT_KB.ragHint;
   await ensureKbStats();
+}
+
+function getKbEmbedModelFromUi(){
+  if ($('embedModelPreset')){
+    const preset = String($('embedModelPreset').value || '').trim();
+    if (preset === 'custom'){
+      return String($('embedModelCustom')?.value || '').trim();
+    }
+    return preset;
+  }
+  return String($('embedModel')?.value || '').trim();
 }
 
 async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
@@ -1270,7 +1291,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
         chatToolbarCollapsed: getChatToolbarCollapsed(),
         chatToolbarPinned: getChatToolbarPinned(),
         sidebarPinned: getSidebarPinned(),
-        focusMode: getFocusMode(),
+        focusMode: getPromptEngineeringMode(),
         studyMode: getStudyMode(),
         transcribeProfile: getTranscribeProfile(),
         transcribeDocxMode: getTranscribeDocxMode(),
@@ -2300,8 +2321,8 @@ const getChatToolbarPinned = () => (localStorage.getItem(KEYS.chatToolbarPinned)
 const setChatToolbarPinned = (v) => localStorage.setItem(KEYS.chatToolbarPinned, v ? 'true' : 'false');
 const getSidebarPinned = () => (localStorage.getItem(KEYS.sidebarPinned) || 'false') === 'true';
 const setSidebarPinned = (v) => localStorage.setItem(KEYS.sidebarPinned, v ? 'true' : 'false');
-const getFocusMode = () => (localStorage.getItem(KEYS.focusMode) || 'false') === 'true';
-const setFocusMode = (v) => localStorage.setItem(KEYS.focusMode, v ? 'true' : 'false');
+const getPromptEngineeringMode = () => (localStorage.getItem(KEYS.focusMode) || 'false') === 'true';
+const setPromptEngineeringMode = (v) => localStorage.setItem(KEYS.focusMode, v ? 'true' : 'false');
 const getStudyMode = () => (localStorage.getItem(KEYS.studyMode) || 'false') === 'true';
 const setStudyMode = (v) => localStorage.setItem(KEYS.studyMode, v ? 'true' : 'false');
 const getTranscribeProfile = () => localStorage.getItem(KEYS.transcribeProfile) || 'balanced';
@@ -2629,7 +2650,8 @@ function applyShellLayout(){
   } else {
     document.body.classList.remove('sidebarFloating');
   }
-  document.body.classList.toggle('focusMode', getFocusMode());
+  document.body.classList.remove('focusMode');
+  document.body.classList.toggle('promptEngineeringMode', getPromptEngineeringMode());
 
   if (desktop && !floatingSidebar){
     $('side')?.classList.remove('show');
@@ -2656,13 +2678,13 @@ function applyShellLayout(){
 
   const focusBtn = $('focusModeBtn');
   if (focusBtn){
-    const focus = getFocusMode();
-    focusBtn.classList.toggle('dark', focus);
-    focusBtn.title = focus ? 'الخروج من وضع التركيز' : 'الدخول إلى وضع التركيز';
+    const promptEngineering = getPromptEngineeringMode();
+    focusBtn.classList.toggle('dark', promptEngineering);
+    focusBtn.title = promptEngineering ? 'إيقاف هندسة البرومبت' : 'تفعيل هندسة البرومبت';
     focusBtn.setAttribute('aria-label', focusBtn.title);
-    focusBtn.innerHTML = focus
-      ? '<span class="icon">▣</span><span class="label">تركيز</span>'
-      : '<span class="icon">▢</span><span class="label">تركيز</span>';
+    focusBtn.innerHTML = promptEngineering
+      ? '<span class="icon">🧩</span><span class="label">Prompt Engineering</span>'
+      : '<span class="icon">✍️</span><span class="label">Prompt Engineering</span>';
   }
 
   const studyBtn = $('studyModeBtn');
@@ -4051,6 +4073,32 @@ function refreshDeepSearchBtn(){
     else toast('✅ تم تجهيز طلب احترافي');
   }
 
+  function buildPromptEngineeringInput(originalText){
+    const raw = String(originalText || '').trim();
+    if (!raw) return { text: raw, transformed: false };
+    if (!getPromptEngineeringMode()) return { text: raw, transformed: false };
+    const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const objective = lines[0] || raw;
+    const context = lines.slice(1, 3);
+    const constraints = lines.filter((line) => /(?:يجب|بدون|لا |ممنوع|within|deadline|حد|قيود)/i.test(line)).slice(0, 4);
+    const deliverable = lines.find((line) => /(?:مطلوب|deliver|output|نتيجة|صيغة|format)/i.test(line)) || '';
+    const engineered = [
+      'مهمة المستخدم (محسّنة للصياغة):',
+      `- الهدف الأساسي: ${objective}`,
+      context.length ? `- سياق إضافي: ${context.join(' | ')}` : '',
+      constraints.length ? `- قيود يجب الالتزام بها: ${constraints.join(' | ')}` : '',
+      deliverable ? `- المخرج المتوقع: ${deliverable}` : '',
+      '',
+      'تعليمات التنفيذ:',
+      '1) افهم المقصود دون تغيير النية الأصلية.',
+      '2) نفّذ المطلوب بصياغة واضحة ومهنية.',
+      '3) رتّب الإجابة بعناوين وخطوات عملية مختصرة.',
+      '',
+      `النص الأصلي للمستخدم:\n${raw}`
+    ].filter(Boolean).join('\n');
+    return { text: engineered, transformed: true };
+  }
+
   function resizeComposerInput(input = $('chatInput')){
     if (!input) return;
     if (input.tagName === 'TEXTAREA'){
@@ -4078,11 +4126,13 @@ function refreshDeepSearchBtn(){
     if (input.parentElement !== cluster) cluster.appendChild(input);
     if (cluster.parentElement !== chatbar) chatbar.prepend(cluster);
 
-    /* RTL visual order from right: voice -> send/stop -> input cluster -> regenerate. */
+    /* RTL visual order from right: send/stop -> voice -> input cluster -> regenerate. */
     if (voiceBtn && voiceBtn.parentElement !== chatbar) chatbar.appendChild(voiceBtn);
-    if (voiceBtn) chatbar.prepend(voiceBtn);
-    if (stopBtn && stopBtn.parentElement === chatbar) chatbar.insertBefore(stopBtn, cluster);
-    else if (sendBtn && sendBtn.parentElement === chatbar) chatbar.insertBefore(sendBtn, cluster);
+    if (sendBtn && sendBtn.parentElement !== chatbar) chatbar.appendChild(sendBtn);
+    if (sendBtn) chatbar.prepend(sendBtn);
+    if (stopBtn && stopBtn.parentElement !== chatbar) chatbar.appendChild(stopBtn);
+    if (stopBtn && sendBtn && sendBtn.parentElement === chatbar) chatbar.insertBefore(stopBtn, sendBtn.nextSibling);
+    if (voiceBtn && voiceBtn.parentElement === chatbar) chatbar.insertBefore(voiceBtn, cluster);
     if (regenBtn && regenBtn.parentElement !== chatbar) chatbar.appendChild(regenBtn);
     if (regenBtn) chatbar.appendChild(regenBtn);
   }
@@ -9542,8 +9592,10 @@ function updateChips(){
     if (composerListening) await stopComposerDictation();
     stopVoicePlayback();
     const input = $('chatInput');
-    const text = (input.value || '').trim();
-    if (!text) return;
+    const originalText = (input.value || '').trim();
+    if (!originalText) return;
+    const promptEngineering = buildPromptEngineeringInput(originalText);
+    const modelInputText = promptEngineering.text || originalText;
 
     const rawSettings = getSettings();
     const policy = getAppRuntimePolicy(rawSettings);
@@ -9570,21 +9622,24 @@ function updateChips(){
       if (editIndex >= 0){
         historySnapshot = thread.messages.slice(0, editIndex);
         uMsg = thread.messages[editIndex];
-        uMsg.content = text;
+        uMsg.content = originalText;
+        if (promptEngineering.transformed) uMsg.engineeredPrompt = modelInputText;
+        else delete uMsg.engineeredPrompt;
         uMsg.ts = nowTs();
         uMsg.editedAt = nowTs();
         uMsg.requestModelId = settings.model;
         thread.messages = thread.messages.slice(0, editIndex + 1);
         thread.summary = '';
         threadSummary = '';
-        if (editIndex === 0) ensureThreadTitleFromMessage(thread, text);
+        if (editIndex === 0) ensureThreadTitleFromMessage(thread, originalText);
       }
     }
     if (!uMsg){
       historySnapshot = thread.messages.slice();
-      uMsg = { id: makeId('m'), role:'user', content: text, ts: nowTs(), requestModelId: settings.model };
+      uMsg = { id: makeId('m'), role:'user', content: originalText, ts: nowTs(), requestModelId: settings.model };
+      if (promptEngineering.transformed) uMsg.engineeredPrompt = modelInputText;
       thread.messages.push(uMsg);
-      ensureThreadTitleFromMessage(thread, text);
+      ensureThreadTitleFromMessage(thread, originalText);
     }
     if (attachmentsForRequest.length){
       uMsg.attachmentPreviews = snapshotAttachmentsForMessage(attachmentsForRequest);
@@ -9600,9 +9655,9 @@ function updateChips(){
     renderChat();
 
     const filesText = buildAutoFilesContext(settings);
-    const rag = await buildRagContextIfEnabled(text, rawSettings);
+    const rag = await buildRagContextIfEnabled(originalText, rawSettings);
     const messages = buildMessagesForChat({
-      userText: text,
+      userText: modelInputText,
       settings,
       filesText,
       ragCtx: rag.ctx,
@@ -9616,6 +9671,9 @@ function updateChips(){
     updateChatAttachChips();
 
     showStatus('جاري التوليد…', true);
+    if (promptEngineering.transformed){
+      toast('✨ Prompt Engineering: تم تحسين صياغة الطلب قبل الإرسال');
+    }
     $('stopBtn').style.display = 'inline-flex';
     abortCtl?.abort?.();
     abortCtl = new AbortController();
@@ -11628,7 +11686,7 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
     });
 
     $('focusModeBtn')?.addEventListener('click', () => {
-      setFocusMode(!getFocusMode());
+      setPromptEngineeringMode(!getPromptEngineeringMode());
       applyShellLayout();
       refreshStrategicWorkspace().catch(()=>{});
     });
@@ -11820,16 +11878,24 @@ $('sendBtn').addEventListener('click', sendMessage);
     const kbSave = () => {
       const pid = getCurProjectId();
       setKbSettings(pid, {
-        embedModel: $('embedModel')?.value?.trim() || '',
+        embedModel: getKbEmbedModelFromUi(),
         topK: Number($('kbTopK')?.value || 6),
         chunkSize: Number($('kbChunkSize')?.value || 900),
         overlap: Number($('kbOverlap')?.value || 120),
         ragHint: $('kbRagHint')?.value || DEFAULT_KB.ragHint
       });
     };
-    ['embedModel','kbTopK','kbChunkSize','kbOverlap','kbRagHint'].forEach(id => {
+    ['embedModel','embedModelPreset','embedModelCustom','kbTopK','kbChunkSize','kbOverlap','kbRagHint'].forEach(id => {
       const el = $(id);
       if (el) el.addEventListener('change', () => { kbSave(); toast('✅ تم حفظ إعدادات KB'); });
+    });
+    $('embedModelPreset')?.addEventListener('change', () => {
+      const custom = $('embedModelCustom');
+      if (!custom) return;
+      const isCustom = $('embedModelPreset')?.value === 'custom';
+      custom.style.display = isCustom ? '' : 'none';
+      custom.setAttribute('aria-hidden', isCustom ? 'false' : 'true');
+      if (!isCustom) custom.value = '';
     });
 
     // canvas
