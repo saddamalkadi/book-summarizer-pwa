@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.63">
+<html lang="ar" dir="rtl" data-appver="8.64">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.63</title>
+    <title>AI Workspace Studio v8.64</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -459,6 +459,17 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     .auth-form-head{display:flex; align-items:flex-start; justify-content:space-between; gap:14px; flex-wrap:wrap;}
     .auth-form-head-copy{display:grid; gap:6px;}
     .auth-form-head-copy p{margin:0; color:#5a6988; line-height:1.8; font-size:13px;}
+    .auth-path-pills{
+      display:flex; flex-wrap:wrap; gap:8px;
+      margin-top:2px;
+    }
+    .auth-path-pill{
+      display:inline-flex; align-items:center; justify-content:center;
+      padding:7px 12px; border-radius:999px;
+      border:1px solid rgba(10,20,60,.1);
+      background:#f8fbff; color:#334155;
+      font-size:12px; font-weight:900;
+    }
     .auth-access-note{
       border-radius:16px; border:1px solid rgba(10,20,60,.08); background:#f8fbff;
       padding:12px 14px; display:grid; gap:8px;
@@ -2608,7 +2619,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     }
 
 /* ═══════════════════════════════════════════
-   v8.63 — Composer RTL-first order + premium polish pass
+   v8.64 — Structured controls + professional login pass
    ═══════════════════════════════════════════ */
 
 /* — Sidebar account strip — */
@@ -3614,7 +3625,7 @@ body, input, textarea, select, button{
 }
 
 /* ══════════════════════════════════════════════
-   RELEASE — v8.63 composer RTL refinement + cache bust
+   RELEASE — v8.64 structured usability pass + cache bust
    ══════════════════════════════════════════════ */
 
 /* 1. Chat Toolbar — secondary groups collapsed by default */
@@ -3814,7 +3825,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
   font-weight: 900;
 }
 
-/* 8.1 Composer RTL-first refinement (v8.63) */
+/* 8.1 Composer RTL-first refinement (v8.64) */
 body.chat-page-active #page-chat > .chatbar{
   direction: rtl;
   gap: 6px !important;
@@ -4040,7 +4051,7 @@ body.chat-page-active #page-chat #regenBtn{
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.63</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.64</div>
       </div>
     </aside>
 
@@ -4429,18 +4440,34 @@ body.chat-page-active #page-chat #regenBtn{
                   </div>
                   <div class="col">
                     <label class="hint">أعلى النتائج Top‑K</label>
-                    <input id="kbTopK" type="text" value="6" />
+                    <select id="kbTopK" aria-label="أعلى النتائج">
+                      <option value="4">4</option>
+                      <option value="6" selected>6 (افتراضي)</option>
+                      <option value="8">8</option>
+                      <option value="10">10</option>
+                      <option value="12">12</option>
+                    </select>
                   </div>
                 </div>
 
                 <div class="row" style="margin-top:10px">
                   <div class="col">
                     <label class="hint">Chunk Size (chars)</label>
-                    <input id="kbChunkSize" type="text" value="900" />
+                    <select id="kbChunkSize" aria-label="حجم المقطع">
+                      <option value="700">700</option>
+                      <option value="900" selected>900 (افتراضي)</option>
+                      <option value="1100">1100</option>
+                      <option value="1300">1300</option>
+                    </select>
                   </div>
                   <div class="col">
                     <label class="hint">Chunk Overlap</label>
-                    <input id="kbOverlap" type="text" value="120" />
+                    <select id="kbOverlap" aria-label="تداخل المقاطع">
+                      <option value="80">80</option>
+                      <option value="120" selected>120 (افتراضي)</option>
+                      <option value="160">160</option>
+                      <option value="220">220</option>
+                    </select>
                   </div>
                 </div>
 
@@ -4664,6 +4691,13 @@ body.chat-page-active #page-chat #regenBtn{
                   </select>
                 </div>
                 <div class="col">
+                  <label class="hint">وجهة البوابة</label>
+                  <select id="gatewayPreset">
+                    <option value="managed" selected>الرسمية (api.saddamalkadi.com)</option>
+                    <option value="custom">مخصصة (يدوي)</option>
+                  </select>
+                </div>
+                <div class="col">
                   <label class="hint">رابط البوابة</label>
                   <input id="gatewayUrl" type="text" placeholder="مثال: https://api.saddamalkadi.com" />
                 </div>
@@ -4698,7 +4732,13 @@ body.chat-page-active #page-chat #regenBtn{
                 </div>
                 <div class="col">
                   <label class="hint">الحد الأقصى للإخراج</label>
-                  <input id="maxOut" type="text" value="2000" />
+                  <select id="maxOut" aria-label="الحد الأقصى للإخراج">
+                    <option value="800">800 (خفيف)</option>
+                    <option value="1200">1200</option>
+                    <option value="2000" selected>2000 (متوازن)</option>
+                    <option value="3000">3000</option>
+                    <option value="4000">4000 (مطوّل)</option>
+                  </select>
                 </div>
               </div>
               <div class="row" style="margin-top:10px">
@@ -4772,7 +4812,12 @@ body.chat-page-active #page-chat #regenBtn{
                   <div class="row" style="margin-top:8px">
                     <div class="col">
                       <label class="hint">لغات OCR (Tesseract)</label>
-                      <input id="ocrLang" type="text" placeholder="ara+eng" />
+                      <select id="ocrLang" aria-label="لغات OCR Tesseract">
+                        <option value="ara+eng" selected>ara+eng (عربي + إنجليزي)</option>
+                        <option value="ara">ara (عربي فقط)</option>
+                        <option value="eng">eng (إنجليزي فقط)</option>
+                        <option value="ara+eng+fra">ara+eng+fra (عربي + إنجليزي + فرنسي)</option>
+                      </select>
                     </div>
                     <div class="col">
                       <label class="hint">لغات OCR</label>
@@ -4813,7 +4858,12 @@ body.chat-page-active #page-chat #regenBtn{
                   <div class="row" style="margin-top:6px">
                     <div class="col">
                       <label class="hint">حد نص الملف (أحرف)</label>
-                      <input id="fileClip" type="text" value="12000" />
+                      <select id="fileClip" aria-label="حد نص الملف">
+                        <option value="6000">6000 (أسرع)</option>
+                        <option value="12000" selected>12000 (متوازن)</option>
+                        <option value="18000">18000</option>
+                        <option value="24000">24000 (سياق أكبر)</option>
+                      </select>
                     </div>
                     <div class="col">
                       <label class="hint">نمط بحث الويب</label>
@@ -4924,7 +4974,7 @@ body.chat-page-active #page-chat #regenBtn{
     })();
   </script>
 
-<script src="app.js?v=863"></script>
+<script src="app.js?v=864"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -4938,7 +4988,7 @@ body.chat-page-active #page-chat #regenBtn{
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v863";
+          const CURRENT_CACHE = "aistudio-cache-v864";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -4947,7 +4997,7 @@ body.chat-page-active #page-chat #regenBtn{
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=863").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=864").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

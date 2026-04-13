@@ -45,6 +45,22 @@
   const nowTs = () => Date.now();
   const makeId = (p='id') => `${p}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
   const clamp = (n, min, max) => Math.min(max, Math.max(min, Number.isFinite(n) ? n : min));
+  const ensureSelectHasValue = (el, value) => {
+    if (!el) return;
+    const str = String(value ?? '').trim();
+    if (!str){
+      el.value = '';
+      return;
+    }
+    if (!Array.from(el.options || []).some((opt) => String(opt.value) === str)){
+      const dynamic = document.createElement('option');
+      dynamic.value = str;
+      dynamic.textContent = `${str} (مخصص)`;
+      dynamic.dataset.dynamic = '1';
+      el.appendChild(dynamic);
+    }
+    el.value = str;
+  };
   const toFiniteNumber = (value, fallback = null) => {
     const n = Number(value);
     return Number.isFinite(n) ? n : fallback;
@@ -250,7 +266,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.63';
+  const WEB_RELEASE_LABEL = 'v8.64';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -489,9 +505,9 @@ async function renderKbUI(){
   const pid = getCurProjectId();
   const kb = getKbSettings(pid);
   if ($('embedModel')) $('embedModel').value = kb.embedModel || '';
-  if ($('kbTopK')) $('kbTopK').value = String(kb.topK || 6);
-  if ($('kbChunkSize')) $('kbChunkSize').value = String(kb.chunkSize || 900);
-  if ($('kbOverlap')) $('kbOverlap').value = String(kb.overlap || 120);
+  if ($('kbTopK')) ensureSelectHasValue($('kbTopK'), String(kb.topK || 6));
+  if ($('kbChunkSize')) ensureSelectHasValue($('kbChunkSize'), String(kb.chunkSize || 900));
+  if ($('kbOverlap')) ensureSelectHasValue($('kbOverlap'), String(kb.overlap || 120));
   if ($('kbRagHint')) $('kbRagHint').value = kb.ragHint || DEFAULT_KB.ragHint;
   await ensureKbStats();
 }
@@ -4401,15 +4417,20 @@ function refreshDeepSearchBtn(){
                 </div>
               </div>
               <h1 class="auth-title">تسجيل الدخول</h1>
-              <p class="auth-copy">البريد الشخصي يفتح الخطة المجانية. بريد الإدارة يتبع مسار الإدارة حسب تهيئة الخادم.</p>
+              <p class="auth-copy">واجهة دخول موحّدة: حساب عادي أو إدارة من نفس الشاشة.</p>
             </section>
             <section class="auth-card">
               <div class="auth-form-head">
                 <div class="auth-form-head-copy">
-                  <h2>متابعة</h2>
-                  <p>أدخل البريد والاسم. كلمة المرور تُستخدم فقط عندما يكون البريد إداريًا.</p>
+                  <h2>متابعة الحساب</h2>
+                  <p>أدخل البريد والاسم، وسيتم اختيار المسار الصحيح تلقائيًا.</p>
                 </div>
                 <span class="plan-pill" id="authCurrentPlanPill">الخطة المجانية</span>
+              </div>
+              <div class="auth-path-pills" aria-label="مسارات الدخول">
+                <span class="auth-path-pill">حساب عادي</span>
+                <span class="auth-path-pill">Google</span>
+                <span class="auth-path-pill">إدارة (عند الحاجة)</span>
               </div>
               <div class="auth-status status" id="authGateStatus" data-tone="info">جاهز للدخول.</div>
               <form id="authEntryForm" autocomplete="on" onsubmit="return false" style="margin-top:12px">
@@ -4427,14 +4448,14 @@ function refreshDeepSearchBtn(){
                   <input id="authEntryPassword" name="password" type="password" placeholder="للبريد الإداري فقط" autocomplete="current-password" />
                 </div>
               </div>
-              <div class="auth-note" id="authEntryModeHint">سيتم ضبط نوع الدخول تلقائيًا حسب البريد.</div>
+              <div class="auth-note" id="authEntryModeHint">يتم تحديد نوع الدخول تلقائيًا من البريد.</div>
               <div class="account-actions" style="margin-top:12px">
                 <button class="btn dark sm with-label" type="submit" id="authEntrySubmitBtn"><span class="icon">→</span><span class="label" id="authEntrySubmitLabel">متابعة بالخطة المجانية</span></button>
               </div>
               </form>
               <div class="divider"></div>
               <div class="auth-google-slot" id="googleSignInSlot"></div>
-              <div class="auth-note" id="authGatePlanNote">بعد الدخول تُربط جلستك بهذا الحساب.</div>
+              <div class="auth-note" id="authGatePlanNote">ستُربط جلستك ومشاريعك بهذا الحساب بعد الدخول.</div>
               <div class="account-actions">
                 <button class="btn ghost sm with-label" type="button" id="authRetryBtn"><span class="icon">↻</span><span class="label">إعادة التهيئة</span></button>
                 <button class="btn ghost sm with-label" type="button" id="authCloseBtn"><span class="icon">✕</span><span class="label">إغلاق</span></button>
@@ -4531,16 +4552,16 @@ function refreshDeepSearchBtn(){
     if (!gate || gate.dataset.cleaned === '1') return;
     gate.dataset.cleaned = '1';
     const heroCopy = gate.querySelector('.auth-copy');
-    if (heroCopy) heroCopy.textContent = 'بريدك الشخصي → خطة مجانية. بريد الإدارة → مسار الإدارة حسب الخادم.';
+    if (heroCopy) heroCopy.textContent = 'دخول موحد للحساب العادي والإدارة من نفس الشاشة.';
     gate.querySelector('.auth-feature-grid')?.remove();
     gate.querySelector('.auth-plan-row')?.remove();
     gate.querySelector('.auth-access-note')?.remove();
     gate.querySelector('.auth-kicker')?.remove();
     gate.querySelector('.auth-developer')?.remove();
     const formCopy = gate.querySelector('.auth-form-head-copy p');
-    if (formCopy) formCopy.textContent = 'كلمة المرور تظهر كخيار عند بريد الإدارة فقط.';
+    if (formCopy) formCopy.textContent = 'يتم اختيار مسار الدخول تلقائيًا حسب البريد.';
     const planNote = $('authGatePlanNote');
-    if (planNote) planNote.textContent = 'تُحفظ المشاريع والمحادثات مع حسابك.';
+    if (planNote) planNote.textContent = 'تُربط المشاريع والمحادثات بالحساب بعد الدخول.';
     const modeHint = $('authEntryModeHint');
     if (modeHint) modeHint.textContent = 'يتم اختيار نوع الدخول تلقائيًا من البريد.';
   }
@@ -10560,8 +10581,8 @@ let pinOnly = false;
     $('geminiKey').value = s.geminiKey || '';
     $('systemPrompt').value = s.systemPrompt || '';
 
-    $('maxOut').value = String(s.maxOut || 2000);
-    $('fileClip').value = String(s.fileClip || 12000);
+    ensureSelectHasValue($('maxOut'), String(s.maxOut || 2000));
+    ensureSelectHasValue($('fileClip'), String(s.fileClip || 12000));
     $('webMode').value = s.webMode || 'off';
 
     $('orReferer').value = s.orReferer || '';
@@ -10570,11 +10591,17 @@ let pinOnly = false;
     // v6 secure gateway + tools
     if ($('authMode')) $('authMode').value = s.authMode || 'browser';
     if ($('gatewayUrl')) $('gatewayUrl').value = s.gatewayUrl || '';
+    if ($('gatewayPreset')){
+      const managedRoot = normalizeManagedGatewayUrl(DEFAULT_SETTINGS.gatewayUrl || getPlatformServiceRoot());
+      const currentRoot = normalizeManagedGatewayUrl(s.gatewayUrl || '');
+      $('gatewayPreset').value = (!currentRoot || currentRoot === managedRoot) ? 'managed' : 'custom';
+      if ($('gatewayUrl')) $('gatewayUrl').disabled = $('gatewayPreset').value !== 'custom';
+    }
     if ($('gatewayToken')) $('gatewayToken').value = s.gatewayToken || '';
     if ($('cloudConvertEndpoint')) $('cloudConvertEndpoint').value = s.cloudConvertEndpoint || '';
     if ($('cloudConvertFallbackEndpoint')) $('cloudConvertFallbackEndpoint').value = s.cloudConvertFallbackEndpoint || '';
     if ($('ocrCloudEndpoint')) $('ocrCloudEndpoint').value = s.ocrCloudEndpoint || '';
-    if ($('ocrLang')) $('ocrLang').value = s.ocrLang || 'ara+eng';
+    if ($('ocrLang')) ensureSelectHasValue($('ocrLang'), s.ocrLang || 'ara+eng');
     if ($('cloudRetryMax')) $('cloudRetryMax').value = String(s.cloudRetryMax || 2);
     if ($('freeMode')) $('freeMode').checked = !!s.freeMode;
     if ($('costGuard')) $('costGuard').value = s.costGuard || 'balanced';
@@ -10601,7 +10628,11 @@ let pinOnly = false;
 
   function saveSettingsFromUI(){
     const authMode = $('authMode') ? $('authMode').value : 'browser';
-    const gatewayInput = $('gatewayUrl') ? normalizeEndpointUrl($('gatewayUrl').value) : '';
+    const gatewayPreset = $('gatewayPreset') ? $('gatewayPreset').value : 'managed';
+    const gatewayTyped = $('gatewayUrl') ? normalizeEndpointUrl($('gatewayUrl').value) : '';
+    const gatewayInput = gatewayPreset === 'custom'
+      ? gatewayTyped
+      : normalizeManagedGatewayUrl(DEFAULT_SETTINGS.gatewayUrl || getPlatformServiceRoot());
     const gatewayToken = $('gatewayToken') ? $('gatewayToken').value.trim() : '';
     const cloudConvertEndpoint = $('cloudConvertEndpoint') ? normalizeDocxCloudEndpoint($('cloudConvertEndpoint').value) : '';
     const cloudConvertFallbackEndpoint = $('cloudConvertFallbackEndpoint') ? normalizeDocxCloudEndpoint($('cloudConvertFallbackEndpoint').value) : '';
@@ -11715,6 +11746,18 @@ $('sendBtn').addEventListener('click', sendMessage);
     });
 
     $('authMode') && $('authMode').addEventListener('change', () => {
+      saveSettingsFromUI();
+    });
+    $('gatewayPreset') && $('gatewayPreset').addEventListener('change', () => {
+      const preset = $('gatewayPreset')?.value || 'managed';
+      if ($('gatewayUrl')){
+        $('gatewayUrl').disabled = preset !== 'custom';
+        if (preset !== 'custom'){
+          $('gatewayUrl').value = normalizeManagedGatewayUrl(DEFAULT_SETTINGS.gatewayUrl || getPlatformServiceRoot());
+        } else if (!String($('gatewayUrl').value || '').trim()){
+          $('gatewayUrl').value = normalizeManagedGatewayUrl(DEFAULT_SETTINGS.gatewayUrl || getPlatformServiceRoot());
+        }
+      }
       saveSettingsFromUI();
     });
     $('gatewayUrl') && $('gatewayUrl').addEventListener('change', () => {
