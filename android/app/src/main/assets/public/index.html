@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.61">
+<html lang="ar" dir="rtl" data-appver="8.63">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.61</title>
+    <title>AI Workspace Studio v8.63</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -1923,9 +1923,6 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       white-space: nowrap;
       border: 0;
     }
-    body.chat-page-active #chatQuickActionBar{
-      padding-block: 6px;
-    }
     body.chat-page-active #page-chat .workspace-deck.workspace-deck-collapsed .workspace-use-cases,
     body.chat-page-active #page-chat .workspace-deck.workspace-deck-collapsed .workspace-nav-shortcuts{
       display: none !important;
@@ -1955,15 +1952,18 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       display: none !important;
     }
     body.chat-page-active .topbar{
-      padding-block: 8px;
+      padding-block: 6px;
       padding-inline: clamp(8px, 1.2vw, 14px);
     }
+    body.chat-page-active #chatQuickActionBar{
+      padding-block: 4px;
+    }
     body.chat-page-active #page-chat > .toolbar.mainToolbar{
-      padding: 8px 12px 8px;
-      margin-top: 4px;
-      margin-bottom: 6px;
-      border-radius: 16px;
-      box-shadow: 0 10px 22px rgba(15,23,42,.05);
+      padding: 6px 10px 6px;
+      margin-top: 2px;
+      margin-bottom: 4px;
+      border-radius: 14px;
+      box-shadow: 0 8px 18px rgba(15,23,42,.045);
     }
     body.chat-page-active #page-chat .chatlog{
       padding-top: max(4px, 0.6vw);
@@ -1971,15 +1971,50 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       scroll-padding-bottom: calc(var(--floating-nav-bottom, 72px) + 4px);
     }
     body.chat-page-active #page-chat .bubble{
-      margin-bottom: 12px;
+      margin-bottom: 10px;
     }
     body.chat-page-active #page-chat .bubble .meta{
       margin-bottom: 8px;
     }
     body.chat-page-active #page-chat > .chatbar{
-      padding: 6px var(--page-gutter, 14px) max(4px, env(safe-area-inset-bottom)) !important;
-      gap: 6px !important;
+      padding: 4px var(--page-gutter, 12px) max(2px, env(safe-area-inset-bottom)) !important;
+      gap: 5px !important;
       border-top-width: 1px;
+      flex-wrap: nowrap;
+      align-items: stretch;
+    }
+    body.chat-page-active #page-chat .chatbar-composer-cluster{
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: stretch;
+      gap: 4px;
+      padding: 2px 6px;
+      border-radius: 14px;
+      border: 1px solid rgba(10,20,60,.1);
+      background: rgba(255,255,255,.92);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.65);
+    }
+    body.dark.chat-page-active #page-chat .chatbar-composer-cluster{
+      border-color: rgba(255,255,255,.12);
+      background: rgba(18,22,36,.88);
+      box-shadow: none;
+    }
+    body.chat-page-active #page-chat .chatbar-composer-cluster #chatAttachBtn{
+      align-self: center;
+      flex-shrink: 0;
+      min-width: 40px;
+      min-height: 40px;
+    }
+    body.chat-page-active #page-chat .chatbar-composer-cluster #chatInput,
+    body.chat-page-active #page-chat .chatbar-composer-cluster textarea{
+      flex: 1;
+      min-width: 0;
+      border: none !important;
+      background: transparent !important;
+      box-shadow: none !important;
+      min-height: 36px !important;
+      padding-inline: 4px !important;
     }
     body.chat-page-active .composer-meta{
       gap: 4px;
@@ -1993,12 +2028,17 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     body.chat-page-active #page-chat .composer-meta #composerHint{
       display: none !important;
     }
-    body.chat-page-active #page-chat .chatbar textarea,
-    body.chat-page-active #page-chat .chatbar input[type="text"]{
+    body.chat-page-active #page-chat > .chatbar > textarea,
+    body.chat-page-active #page-chat > .chatbar > input[type="text"]{
       padding: 8px 12px !important;
       line-height: 1.45 !important;
       min-height: 40px !important;
       border-radius: 14px !important;
+    }
+    body.chat-page-active #page-chat .chatbar-composer-cluster textarea,
+    body.chat-page-active #page-chat .chatbar-composer-cluster input[type="text"]{
+      line-height: 1.45 !important;
+      border-radius: 10px !important;
     }
     body.chat-page-active #page-chat > .chips.chips-empty{
       display: none !important;
@@ -2007,8 +2047,8 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       margin: 0 !important;
     }
     body.chat-page-active #page-chat > .chips:not(.chips-empty){
-      padding: 4px var(--page-gutter, 14px) 6px !important;
-      gap: 6px !important;
+      padding: 3px var(--page-gutter, 12px) 4px !important;
+      gap: 5px !important;
     }
     body.chat-page-active #sendBtn{
       min-width: 44px !important;
@@ -2067,9 +2107,9 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     }
     .assistant-foundation-bar{
       grid-column: 1 / -1;
-      margin: 0 0 8px;
-      padding: 8px 12px;
-      border-radius: 14px;
+      margin: 0 0 5px;
+      padding: 6px 10px;
+      border-radius: 12px;
       border: 1px solid rgba(27,102,255,.14);
       background: linear-gradient(95deg, rgba(27,102,255,.07), rgba(20,184,166,.06));
     }
@@ -2568,7 +2608,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     }
 
 /* ═══════════════════════════════════════════
-   v8.61 — Voice pause tuning, reading mode, dashboard quick picks, login cleanup, task foundation strip
+   v8.63 — Composer RTL-first order + premium polish pass
    ═══════════════════════════════════════════ */
 
 /* — Sidebar account strip — */
@@ -3574,7 +3614,7 @@ body, input, textarea, select, button{
 }
 
 /* ══════════════════════════════════════════════
-   RELEASE — v8.61 consolidated product pass + cache bust
+   RELEASE — v8.63 composer RTL refinement + cache bust
    ══════════════════════════════════════════════ */
 
 /* 1. Chat Toolbar — secondary groups collapsed by default */
@@ -3764,6 +3804,96 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
   min-height: 36px;
   padding: 0 10px;
 }
+.topbar .left .title{
+  letter-spacing: -.01em;
+}
+.topbar .left .runtime-badge,
+.topbar .left #topRuntimeBadge,
+.topbar .left #topUsageBadge{
+  border-radius: 999px;
+  font-weight: 900;
+}
+
+/* 8.1 Composer RTL-first refinement (v8.63) */
+body.chat-page-active #page-chat > .chatbar{
+  direction: rtl;
+  gap: 6px !important;
+  padding: 4px var(--page-gutter, 12px) max(2px, env(safe-area-inset-bottom)) !important;
+  border-top-color: rgba(10,20,60,.08);
+}
+body.chat-page-active #page-chat > .chatbar > .btn{
+  flex: 0 0 auto;
+  min-width: 42px;
+  min-height: 42px;
+  border-radius: 13px;
+}
+body.chat-page-active #page-chat #voiceInputBtn{
+  order: 1;
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 18px;
+}
+body.chat-page-active #page-chat #sendBtn,
+body.chat-page-active #page-chat #stopBtn{
+  order: 2;
+  min-width: 44px;
+  min-height: 44px;
+}
+body.chat-page-active #page-chat #chatComposerCluster{
+  order: 3;
+  direction: ltr;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 14px;
+  border: 1px solid rgba(27,102,255,.16);
+  background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(245,248,255,.94));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.75), 0 3px 9px rgba(15,23,42,.04);
+  padding: 2px 8px;
+}
+body.dark.chat-page-active #page-chat #chatComposerCluster{
+  background: linear-gradient(180deg, rgba(22,28,44,.94), rgba(16,22,38,.9));
+  border-color: rgba(255,255,255,.12);
+  box-shadow: none;
+}
+body.chat-page-active #page-chat #chatComposerCluster #chatAttachBtn{
+  order: 1;
+  min-width: 38px;
+  min-height: 38px;
+  border-radius: 11px;
+  font-size: 17px;
+}
+body.chat-page-active #page-chat #chatComposerCluster #chatInput{
+  order: 2;
+  flex: 1;
+  min-width: 0;
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  border-radius: 10px !important;
+  min-height: 36px !important;
+  padding: 8px 8px !important;
+}
+body.chat-page-active #page-chat #regenBtn{
+  order: 4;
+  opacity: .9;
+}
+@media (max-width: 640px){
+  body.chat-page-active #page-chat > .chatbar > .btn{
+    min-width: 40px;
+    min-height: 40px;
+  }
+  body.chat-page-active #page-chat #chatComposerCluster{
+    padding: 2px 6px;
+    gap: 3px;
+  }
+  body.chat-page-active #page-chat #chatComposerCluster #chatInput{
+    padding: 7px 6px !important;
+    min-height: 34px !important;
+  }
+}
 
 /* 9. Workspace quick actions — bigger on mobile */
 @media (max-width: 600px) {
@@ -3910,7 +4040,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.61</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.63</div>
       </div>
     </aside>
 
@@ -4253,8 +4383,10 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
 
           <div class="chatbar">
             <input id="chatAttachFiles" type="file" multiple hidden accept="*/*" aria-label="اختيار ملفات للإرفاق" />
-            <button class="btn ghost" id="chatAttachBtn" type="button" title="إرفاق ملف أو صورة" aria-label="إرفاق ملف أو صورة">📎</button>
-            <input id="chatInput" dir="auto" placeholder="رسالتك أو سؤالك…" aria-label="حقل إدخال الرسالة" />
+            <div class="chatbar-composer-cluster" id="chatComposerCluster" aria-label="حقل الرسالة والمرفقات">
+              <button class="btn ghost" id="chatAttachBtn" type="button" title="إرفاق ملف أو صورة" aria-label="إرفاق ملف أو صورة">📎</button>
+              <input id="chatInput" dir="auto" placeholder="رسالتك أو سؤالك…" aria-label="حقل إدخال الرسالة" />
+            </div>
             <button class="btn ghost" id="regenBtn" type="button" title="إعادة توليد الإجابة" aria-label="إعادة توليد">↺</button>
             <button class="btn danger icon" id="stopBtn" type="button" style="display:none" title="إيقاف التوليد" aria-label="إيقاف التوليد">⏹</button>
             <button class="btn dark icon" id="sendBtn" type="button" title="إرسال الرسالة" aria-label="إرسال">▶</button>
@@ -4792,7 +4924,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
     })();
   </script>
 
-<script src="app.js?v=861"></script>
+<script src="app.js?v=863"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -4806,7 +4938,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v861";
+          const CURRENT_CACHE = "aistudio-cache-v863";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -4815,7 +4947,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=861").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=863").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

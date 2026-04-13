@@ -250,7 +250,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.62';
+  const WEB_RELEASE_LABEL = 'v8.63';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -4046,6 +4046,31 @@ function refreshDeepSearchBtn(){
     scheduleShellLayoutRefresh();
   }
 
+  function syncComposerRtlOrder(){
+    const chatbar = document.querySelector('#page-chat .chatbar');
+    if (!chatbar) return;
+    const voiceBtn = $('voiceInputBtn');
+    const sendBtn = $('sendBtn');
+    const stopBtn = $('stopBtn');
+    const regenBtn = $('regenBtn');
+    const cluster = $('chatComposerCluster');
+    const attachBtn = $('chatAttachBtn');
+    const input = $('chatInput');
+    if (!cluster || !attachBtn || !input) return;
+
+    if (attachBtn.parentElement !== cluster) cluster.prepend(attachBtn);
+    if (input.parentElement !== cluster) cluster.appendChild(input);
+    if (cluster.parentElement !== chatbar) chatbar.prepend(cluster);
+
+    /* RTL visual order from right: voice -> send/stop -> input cluster -> regenerate. */
+    if (voiceBtn && voiceBtn.parentElement !== chatbar) chatbar.appendChild(voiceBtn);
+    if (voiceBtn) chatbar.prepend(voiceBtn);
+    if (stopBtn && stopBtn.parentElement === chatbar) chatbar.insertBefore(stopBtn, cluster);
+    else if (sendBtn && sendBtn.parentElement === chatbar) chatbar.insertBefore(sendBtn, cluster);
+    if (regenBtn && regenBtn.parentElement !== chatbar) chatbar.appendChild(regenBtn);
+    if (regenBtn) chatbar.appendChild(regenBtn);
+  }
+
   function getBrandMarkHtml(){
     return `<img src="logo.svg" alt="شعار AI Workspace Studio" />`;
   }
@@ -5481,6 +5506,7 @@ async function submitUnifiedAuthEntry(){
       voiceBtn.textContent = '🎤';
       chatbar.insertBefore(voiceBtn, $('regenBtn') || $('stopBtn') || $('sendBtn'));
     }
+    syncComposerRtlOrder();
     if (chatbar && !$('composerContextMeta')){
       chatbar.insertAdjacentHTML('afterend', `
         <div class="composer-meta composer-meta--idle">
