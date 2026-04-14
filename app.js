@@ -200,6 +200,7 @@
     config: null,
     configLoadedAt: 0,
     configPromise: null,
+    authHealth: null,
     booting: false
   };
 
@@ -267,7 +268,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.68';
+  const WEB_RELEASE_LABEL = 'v8.69';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -1172,8 +1173,11 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
         }
       });
       const raw = await response.text();
-      return raw ? JSON.parse(raw) : null;
+      const parsed = raw ? JSON.parse(raw) : null;
+      AUTH_RUNTIME.authHealth = parsed && typeof parsed === 'object' ? parsed : null;
+      return AUTH_RUNTIME.authHealth;
     }catch(_){
+      AUTH_RUNTIME.authHealth = null;
       return null;
     }
   }
@@ -4814,11 +4818,13 @@ function syncUnifiedAuthEntry(){
     const isAdminEntry = !!email && email === String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
     const adminPasswordEnabled = config.adminPasswordEnabled === true;
     const adminLoginMethod = String(config.adminLoginMethod || '').trim().toLowerCase();
+    const healthPasswordReady = AUTH_RUNTIME.authHealth?.admin_password_ready === true;
     const adminGoogleReady = !!getAuthGoogleClientId();
     const showPassword = isAdminEntry && (
       adminPasswordEnabled
       || adminLoginMethod === 'password_or_google'
       || adminLoginMethod === 'password_only'
+      || healthPasswordReady
     );
     const adminGoogleOnly = isAdminEntry && !showPassword && adminGoogleReady;
     const label = $('authEntrySubmitLabel');
