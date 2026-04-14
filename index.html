@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.65">
+<html lang="ar" dir="rtl" data-appver="8.66">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.65</title>
+    <title>AI Workspace Studio v8.66</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -2619,7 +2619,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     }
 
 /* ═══════════════════════════════════════════
-   v8.65 — Prompt Engineering + premium refinement pass
+   v8.66 — Production-grade audit + prompt engineering fix pass
    ═══════════════════════════════════════════ */
 
 /* — Sidebar account strip — */
@@ -3625,7 +3625,7 @@ body, input, textarea, select, button{
 }
 
 /* ══════════════════════════════════════════════
-   RELEASE — v8.65 premium refinement + prompt engineering + cache bust
+   RELEASE — v8.66 production audit + prompt engineering + cache bust
    ══════════════════════════════════════════════ */
 
 /* 1. Chat Toolbar — secondary groups collapsed by default */
@@ -3825,7 +3825,7 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
   font-weight: 900;
 }
 
-/* 8.1 Composer RTL-first refinement (v8.65) */
+/* 8.1 Composer RTL-first refinement (v8.66) */
 body.chat-page-active #page-chat > .chatbar{
   direction: rtl;
   gap: 6px !important;
@@ -4092,7 +4092,7 @@ body.promptEngineeringMode .topbar .topbar-actions #focusModeBtn{
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.65</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.66</div>
       </div>
     </aside>
 
@@ -4878,11 +4878,23 @@ body.promptEngineeringMode .topbar .topbar-actions #focusModeBtn{
                   <div class="row" style="margin-top:6px">
                     <div class="col">
                       <label class="hint">حد صفحات PDF</label>
-                      <input id="maxCloudPdfPages" type="number" min="1" max="400" placeholder="25" />
+                      <select id="maxCloudPdfPages" aria-label="حد صفحات PDF">
+                        <option value="15">15 (مقيد)</option>
+                        <option value="25" selected>25 (افتراضي)</option>
+                        <option value="40">40</option>
+                        <option value="60">60</option>
+                        <option value="100">100</option>
+                      </select>
                     </div>
                     <div class="col">
                       <label class="hint">حد حجم الملف (MB)</label>
-                      <input id="maxCloudFileMB" type="number" min="1" max="200" step="0.5" placeholder="12" />
+                      <select id="maxCloudFileMB" aria-label="حد حجم الملف">
+                        <option value="8">8 MB</option>
+                        <option value="12" selected>12 MB (افتراضي)</option>
+                        <option value="15">15 MB</option>
+                        <option value="25">25 MB</option>
+                        <option value="50">50 MB</option>
+                      </select>
                     </div>
                     <div class="col">
                       <label class="hint">محاولات السحابة</label>
@@ -5022,7 +5034,7 @@ body.promptEngineeringMode .topbar .topbar-actions #focusModeBtn{
     })();
   </script>
 
-<script src="app.js?v=865"></script>
+<script src="app.js?v=866"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -5036,7 +5048,7 @@ body.promptEngineeringMode .topbar .topbar-actions #focusModeBtn{
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v865";
+          const CURRENT_CACHE = "aistudio-cache-v866";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -5045,7 +5057,7 @@ body.promptEngineeringMode .topbar .topbar-actions #focusModeBtn{
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=865").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=866").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

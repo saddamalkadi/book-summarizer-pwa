@@ -30,6 +30,7 @@
     projectBrief: (pid) => `aistudio_project_brief_${pid}_v1`,
     sidebarPinned: 'aistudio_sidebar_pinned_v1',
     focusMode: 'aistudio_focus_mode_v1',
+    promptEngineeringMode: 'aistudio_prompt_engineering_mode_v1',
     studyMode: 'aistudio_study_mode_v1',
     transcribeProfile: 'aistudio_transcribe_profile_v1',
     transcribeDocxMode: 'aistudio_transcribe_docx_mode_v1',
@@ -266,7 +267,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.65';
+  const WEB_RELEASE_LABEL = 'v8.66';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -1292,6 +1293,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
         chatToolbarPinned: getChatToolbarPinned(),
         sidebarPinned: getSidebarPinned(),
         focusMode: getPromptEngineeringMode(),
+        promptEngineeringMode: getPromptEngineeringMode(),
         studyMode: getStudyMode(),
         transcribeProfile: getTranscribeProfile(),
         transcribeDocxMode: getTranscribeDocxMode(),
@@ -1340,7 +1342,9 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       localStorage.setItem(KEYS.chatToolbarCollapsed, snapshot.ui?.chatToolbarCollapsed ? 'true' : 'false');
       localStorage.setItem(KEYS.chatToolbarPinned, snapshot.ui?.chatToolbarPinned !== false ? 'true' : 'false');
       localStorage.setItem(KEYS.sidebarPinned, snapshot.ui?.sidebarPinned ? 'true' : 'false');
-      localStorage.setItem(KEYS.focusMode, snapshot.ui?.focusMode ? 'true' : 'false');
+      const promptEngineeringMode = snapshot.ui?.promptEngineeringMode ?? snapshot.ui?.focusMode;
+      localStorage.setItem(KEYS.focusMode, promptEngineeringMode ? 'true' : 'false');
+      localStorage.setItem(KEYS.promptEngineeringMode, promptEngineeringMode ? 'true' : 'false');
       localStorage.setItem(KEYS.studyMode, snapshot.ui?.studyMode ? 'true' : 'false');
       localStorage.setItem(KEYS.transcribeProfile, snapshot.ui?.transcribeProfile || 'balanced');
       localStorage.setItem(KEYS.transcribeDocxMode, snapshot.ui?.transcribeDocxMode || 'auto');
@@ -2321,8 +2325,17 @@ const getChatToolbarPinned = () => (localStorage.getItem(KEYS.chatToolbarPinned)
 const setChatToolbarPinned = (v) => localStorage.setItem(KEYS.chatToolbarPinned, v ? 'true' : 'false');
 const getSidebarPinned = () => (localStorage.getItem(KEYS.sidebarPinned) || 'false') === 'true';
 const setSidebarPinned = (v) => localStorage.setItem(KEYS.sidebarPinned, v ? 'true' : 'false');
-const getPromptEngineeringMode = () => (localStorage.getItem(KEYS.focusMode) || 'false') === 'true';
-const setPromptEngineeringMode = (v) => localStorage.setItem(KEYS.focusMode, v ? 'true' : 'false');
+const getPromptEngineeringMode = () => {
+  const explicit = localStorage.getItem(KEYS.promptEngineeringMode);
+  if (explicit !== null) return explicit === 'true';
+  return (localStorage.getItem(KEYS.focusMode) || 'false') === 'true';
+};
+const setPromptEngineeringMode = (v) => {
+  const next = v ? 'true' : 'false';
+  localStorage.setItem(KEYS.promptEngineeringMode, next);
+  // Backward compatibility for older snapshots/clients.
+  localStorage.setItem(KEYS.focusMode, next);
+};
 const getStudyMode = () => (localStorage.getItem(KEYS.studyMode) || 'false') === 'true';
 const setStudyMode = (v) => localStorage.setItem(KEYS.studyMode, v ? 'true' : 'false');
 const getTranscribeProfile = () => localStorage.getItem(KEYS.transcribeProfile) || 'balanced';
@@ -4077,6 +4090,7 @@ function refreshDeepSearchBtn(){
     const raw = String(originalText || '').trim();
     if (!raw) return { text: raw, transformed: false };
     if (!getPromptEngineeringMode()) return { text: raw, transformed: false };
+    if (raw.length < 8) return { text: raw, transformed: false };
     const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     const objective = lines[0] || raw;
     const context = lines.slice(1, 3);
@@ -4096,7 +4110,7 @@ function refreshDeepSearchBtn(){
       '',
       `النص الأصلي للمستخدم:\n${raw}`
     ].filter(Boolean).join('\n');
-    return { text: engineered, transformed: true };
+    return { text: engineered, transformed: engineered !== raw };
   }
 
   function resizeComposerInput(input = $('chatInput')){
@@ -9064,6 +9078,9 @@ ${clip}` });
       const requestLabel = String(requestDescriptor.name || requestDescriptor.id || message.requestModelId || '').trim();
       if (requestLabel) parts.push(`الإرسال عبر: ${requestLabel}`);
     }
+    if (message.role === 'user' && message.engineeredPrompt){
+      parts.push('Prompt Engineering');
+    }
     if (message.editedAt) parts.push('معدلة');
     return parts.join(' • ');
   }
@@ -9337,7 +9354,7 @@ ${clip}` });
         : { entries: [], newCount: 0 };
       body.innerHTML = m.role === 'assistant'
         ? renderAssistantMessageHtml(m.content || '', downloadState.entries)
-        : `${renderUserAttachmentPreviewsHtml(m.attachmentPreviews)}${m.content ? `<pre class="chat-user-text">${escapeHtml(m.content || '')}</pre>` : ''}` || '<pre class="chat-user-text"></pre>';
+        : `${m.engineeredPrompt ? '<div class="tag" style="margin-bottom:6px">🧩 Prompt Engineering مفعّل</div>' : ''}${renderUserAttachmentPreviewsHtml(m.attachmentPreviews)}${m.content ? `<pre class="chat-user-text">${escapeHtml(m.content || '')}</pre>` : ''}` || '<pre class="chat-user-text"></pre>';
       if (m.role === 'assistant') bindAssistantDownloadLinks(body);
 
       const actions = document.createElement('div');
@@ -9357,6 +9374,17 @@ ${clip}` });
       editBtn.textContent = m.role === 'user' ? 'تعديل' : 'إعادة استخدام';
       editBtn.addEventListener('click', () => loadMessageIntoComposer(m));
       actions.appendChild(editBtn);
+
+      if (m.role === 'user' && m.engineeredPrompt){
+        const peBtn = document.createElement('button');
+        peBtn.className = 'btn ghost sm';
+        peBtn.textContent = 'عرض البرومبت المحسّن';
+        peBtn.addEventListener('click', async () => {
+          const ok = await copyToClipboard(String(m.engineeredPrompt || ''));
+          toast(ok ? '✅ تم نسخ البرومبت المحسّن' : '⚠️ تعذر نسخ البرومبت المحسّن');
+        });
+        actions.appendChild(peBtn);
+      }
 
       if (m.role === 'assistant'){
         const canvasBtn = document.createElement('button');
@@ -9452,7 +9480,8 @@ ${clip}` });
     const visibleImages = pendingChatAttachments.filter((a) => a.kind === 'image' && a.dataUrl).length;
     const attachmentChars = pendingChatAttachments.reduce((sum, a) => sum + Number(a.chars || 0), 0);
     const chatUi = !!$('page-chat')?.classList.contains('active');
-    const showComposerDetails = pendingChatAttachments.length > 0 || composerEditState.active;
+    const promptEngineeringOn = getPromptEngineeringMode();
+    const showComposerDetails = pendingChatAttachments.length > 0 || composerEditState.active || promptEngineeringOn;
     if (wrap) wrap.classList.toggle('composer-meta--idle', chatUi && !showComposerDetails);
     if (chatUi && !showComposerDetails){
       meta.textContent = '';
@@ -9479,6 +9508,9 @@ ${clip}` });
     }
     if (composerEditState.active){
       parts.push(composerEditState.sourceRole === 'user' ? 'تعديل' : 'إعادة استخدام');
+    }
+    if (promptEngineeringOn){
+      parts.push('🧩 Prompt Engineering ON');
     }
     if (flags.length) parts.push(...flags);
     meta.textContent = parts.join(' · ');
@@ -10664,8 +10696,8 @@ let pinOnly = false;
     if ($('freeMode')) $('freeMode').checked = !!s.freeMode;
     if ($('costGuard')) $('costGuard').value = s.costGuard || 'balanced';
     if ($('upgradeEmail')) $('upgradeEmail').value = s.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail;
-    if ($('maxCloudPdfPages')) $('maxCloudPdfPages').value = String(s.maxCloudPdfPages || DEFAULT_SETTINGS.maxCloudPdfPages);
-    if ($('maxCloudFileMB')) $('maxCloudFileMB').value = String(s.maxCloudFileMB || DEFAULT_SETTINGS.maxCloudFileMB);
+    if ($('maxCloudPdfPages')) ensureSelectHasValue($('maxCloudPdfPages'), String(s.maxCloudPdfPages || DEFAULT_SETTINGS.maxCloudPdfPages));
+    if ($('maxCloudFileMB')) ensureSelectHasValue($('maxCloudFileMB'), String(s.maxCloudFileMB || DEFAULT_SETTINGS.maxCloudFileMB));
     if ($('allowCloudOcr')) $('allowCloudOcr').checked = !!s.allowCloudOcr;
     if ($('allowCloudPolish')) $('allowCloudPolish').checked = !!s.allowCloudPolish;
     if ($('toolsDefault')) $('toolsDefault').checked = !!s.toolsEnabled;
@@ -11688,6 +11720,7 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
     $('focusModeBtn')?.addEventListener('click', () => {
       setPromptEngineeringMode(!getPromptEngineeringMode());
       applyShellLayout();
+      syncComposerMeta();
       refreshStrategicWorkspace().catch(()=>{});
     });
     $('historyDrawerBtn')?.addEventListener('click', openThreadDrawer);
@@ -12310,6 +12343,11 @@ ${e?.message||e}`, false);
     // network, worker blip), authConfigAfterFetchFailure() had no "prev" and persisted
     // DEFAULT_AUTH_CONFIG — hiding admin password and clearing googleClientId (regression v8.61).
     AUTH_RUNTIME.config = null;
+    // Migrate legacy focus-mode persistence to dedicated prompt-engineering key.
+    if (localStorage.getItem(KEYS.promptEngineeringMode) === null){
+      const legacy = localStorage.getItem(KEYS.focusMode);
+      if (legacy !== null) localStorage.setItem(KEYS.promptEngineeringMode, legacy);
+    }
     alignManagedRuntimeSettings();
 
     try{
