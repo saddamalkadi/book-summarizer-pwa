@@ -267,7 +267,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.67';
+  const WEB_RELEASE_LABEL = 'v8.68';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -1161,6 +1161,23 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     }
   }
 
+  async function fetchAuthHealthSnapshot(root){
+    if (!root) return null;
+    try{
+      const response = await fetch(`${root}/health`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, max-age=0',
+          Pragma: 'no-cache'
+        }
+      });
+      const raw = await response.text();
+      return raw ? JSON.parse(raw) : null;
+    }catch(_){
+      return null;
+    }
+  }
+
   async function loadRemoteAuthConfig(force = false){
     if (!force && AUTH_RUNTIME.config && (Date.now() - AUTH_RUNTIME.configLoadedAt) < 5 * 60 * 1000){
       return AUTH_RUNTIME.config;
@@ -1188,14 +1205,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       if (!response.ok){
         throw new Error(payload?.error || raw || `HTTP ${response.status}`);
       }
-      let healthPayload = null;
-      try{
-        const healthResponse = await fetch(`${root}/health`, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache, no-store, max-age=0', Pragma: 'no-cache' } });
-        const healthRaw = await healthResponse.text();
-        healthPayload = healthRaw ? JSON.parse(healthRaw) : null;
-      }catch(_){
-        healthPayload = null;
-      }
+      const healthPayload = await fetchAuthHealthSnapshot(root);
       const local = getLocalAuthConfig(activeSettings);
       const remote = payload || {};
       const normalized = {
@@ -1223,12 +1233,18 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       return setAuthConfigCached(stabilized);
     };
 
-    AUTH_RUNTIME.configPromise = requestRemoteConfig(settings).catch((err) => {
+    AUTH_RUNTIME.configPromise = requestRemoteConfig(settings).catch(async (err) => {
       const repaired = repairGatewayAfterAccessIssue(err, settings);
       if (repaired){
-        return requestRemoteConfig(repaired).catch(() => setAuthConfigCached(authConfigAfterFetchFailure(repaired)));
+        return requestRemoteConfig(repaired).catch(async () => {
+          const fallback = authConfigAfterFetchFailure(repaired);
+          const healthPayload = await fetchAuthHealthSnapshot(getAuthServiceRoot(repaired));
+          return setAuthConfigCached(preserveAdminPasswordCapability(fallback, fallback, healthPayload));
+        });
       }
-      return setAuthConfigCached(authConfigAfterFetchFailure(settings));
+      const fallback = authConfigAfterFetchFailure(settings);
+      const healthPayload = await fetchAuthHealthSnapshot(getAuthServiceRoot(settings));
+      return setAuthConfigCached(preserveAdminPasswordCapability(fallback, fallback, healthPayload));
     }).finally(() => {
       AUTH_RUNTIME.configPromise = null;
     });
