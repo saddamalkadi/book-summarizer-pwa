@@ -268,7 +268,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.70';
+  const WEB_RELEASE_LABEL = 'v8.71';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -4818,8 +4818,12 @@ function syncUnifiedAuthEntry(){
     const adminLoginMethod = String(config.adminLoginMethod || '').trim().toLowerCase();
     const healthPasswordReady = AUTH_RUNTIME.authHealth?.admin_password_ready === true;
     const adminGoogleReady = !!getAuthGoogleClientId();
+    // Web regression guard: the admin password input must remain visible on the official web app
+    // even when admin is currently "google_only" (so admins can see the option/state clearly).
+    const webForceAdminPasswordVisible = isAdminEntry && !isNativePlatform() && isManagedHostedRuntime();
     const showPassword = isAdminEntry && (
-      adminPasswordEnabled
+      webForceAdminPasswordVisible
+      || adminPasswordEnabled
       || adminLoginMethod === 'password_or_google'
       || adminLoginMethod === 'password_only'
       || healthPasswordReady
