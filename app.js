@@ -9378,7 +9378,7 @@ ${clip}` });
       if (m.role === 'user' && m.engineeredPrompt){
         const peBtn = document.createElement('button');
         peBtn.className = 'btn ghost sm';
-        peBtn.textContent = 'عرض البرومبت المحسّن';
+        peBtn.textContent = 'نسخ البرومبت المحسّن';
         peBtn.addEventListener('click', async () => {
           const ok = await copyToClipboard(String(m.engineeredPrompt || ''));
           toast(ok ? '✅ تم نسخ البرومبت المحسّن' : '⚠️ تعذر نسخ البرومبت المحسّن');
