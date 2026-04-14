@@ -45,7 +45,8 @@ async function autoFixWorker() {
   if (!CF_TOKEN || !OR_KEY) { console.log('[worker-fix] Skipped: missing env vars'); return; }
 
   const CF_ACCOUNT  = 'ea4e90ec8fbd70faefdddd2153064d6f';
-  const WORKER_NAME = 'book-summarizer-pwa-convert';
+  // Must match production worker serving api.saddamalkadi.com.
+  const WORKER_NAME = 'sadam-key';
   const KV_NS       = '49d87e2d4989452fb3c680ad024ae5b7';
   const ADMIN_PASS  = process.env.ADMIN_PASSWORD_REAL || 'Saddam@Admin2026!';
 
