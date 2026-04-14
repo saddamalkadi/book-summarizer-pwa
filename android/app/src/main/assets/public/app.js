@@ -200,6 +200,7 @@
     config: null,
     configLoadedAt: 0,
     configPromise: null,
+    authHealth: null,
     booting: false
   };
 
@@ -267,7 +268,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.66';
+  const WEB_RELEASE_LABEL = 'v8.70';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -882,6 +883,42 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     return merged;
   }
 
+  function authConfigSupportsAdminPassword(config){
+    const adminPasswordEnabled = config?.adminPasswordEnabled === true;
+    const adminLoginMethod = String(config?.adminLoginMethod || '').trim().toLowerCase();
+    return (
+      adminPasswordEnabled
+      || adminLoginMethod === 'password_or_google'
+      || adminLoginMethod === 'password_only'
+    );
+  }
+
+  function preserveAdminPasswordCapability(nextConfig, previousConfig, healthPayload = null){
+    const next = { ...(nextConfig || {}) };
+    const prev = previousConfig && typeof previousConfig === 'object' ? previousConfig : null;
+    if (healthPayload && healthPayload.admin_password_ready === true){
+      next.adminPasswordEnabled = true;
+      next.adminEnabled = true;
+      if (!String(next.adminLoginMethod || '').trim() || String(next.adminLoginMethod || '').trim().toLowerCase() === 'google_only'){
+        next.adminLoginMethod = 'password_or_google';
+      }
+      return next;
+    }
+    if (!prev) return next;
+    if (authConfigSupportsAdminPassword(next)) return next;
+    if (!authConfigSupportsAdminPassword(prev)) return next;
+
+    // If health confirms password readiness, treat google_only from config as stale and keep last known-good capability.
+    // During transient mismatch/failure, never collapse a previously password-capable admin state.
+    next.adminPasswordEnabled = true;
+    next.adminEnabled = true;
+    next.adminLoginMethod = String(prev.adminLoginMethod || 'password_or_google').trim() || 'password_or_google';
+    if (!String(next.adminEmail || '').trim() && String(prev.adminEmail || '').trim()){
+      next.adminEmail = String(prev.adminEmail).trim();
+    }
+    return next;
+  }
+
   function getEffectiveAuthConfig(settings = getSettings()){
     return { ...getLocalAuthConfig(settings), ...getAuthConfigCached() };
   }
@@ -1123,6 +1160,26 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     }
   }
 
+  async function fetchAuthHealthSnapshot(root){
+    if (!root) return null;
+    try{
+      const response = await fetch(`${root}/health`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, max-age=0',
+          Pragma: 'no-cache'
+        }
+      });
+      const raw = await response.text();
+      const parsed = raw ? JSON.parse(raw) : null;
+      AUTH_RUNTIME.authHealth = parsed && typeof parsed === 'object' ? parsed : null;
+      return AUTH_RUNTIME.authHealth;
+    }catch(_){
+      AUTH_RUNTIME.authHealth = null;
+      return null;
+    }
+  }
+
   async function loadRemoteAuthConfig(force = false){
     if (!force && AUTH_RUNTIME.config && (Date.now() - AUTH_RUNTIME.configLoadedAt) < 5 * 60 * 1000){
       return AUTH_RUNTIME.config;
@@ -1134,8 +1191,15 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       if (!root){
         return setAuthConfigCached(authConfigAfterFetchFailure(activeSettings));
       }
+      let previous = null;
+      try{ previous = loadJSON(KEYS.authConfigCache, null); }catch(_){ previous = null; }
       const response = await fetch(`${root}/auth/config`, {
-        headers: activeSettings.gatewayToken ? { 'X-Client-Token': activeSettings.gatewayToken } : {}
+        cache: 'no-store',
+        headers: {
+          ...(activeSettings.gatewayToken ? { 'X-Client-Token': activeSettings.gatewayToken } : {}),
+          'Cache-Control': 'no-cache, no-store, max-age=0',
+          Pragma: 'no-cache'
+        }
       });
       const raw = await response.text();
       let payload = null;
@@ -1143,9 +1207,10 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       if (!response.ok){
         throw new Error(payload?.error || raw || `HTTP ${response.status}`);
       }
+      const healthPayload = await fetchAuthHealthSnapshot(root);
       const local = getLocalAuthConfig(activeSettings);
       const remote = payload || {};
-      return setAuthConfigCached({
+      const normalized = {
         ...remote,
         googleClientId: String(remote.googleClientId || '').trim(),
         upgradeEmail: String(remote.upgradeEmail || local.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail).trim(),
@@ -1165,15 +1230,23 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
         voiceSynthesisVoice: String(remote.voiceSynthesisVoice || local.voiceSynthesisVoice || DEFAULT_AUTH_CONFIG.voiceSynthesisVoice).trim(),
         voicePreferredLanguage: String(remote.voicePreferredLanguage || local.voicePreferredLanguage || DEFAULT_AUTH_CONFIG.voicePreferredLanguage).trim(),
         voicePremiumOnly: remote.voicePremiumOnly !== false
-      });
+      };
+      const stabilized = preserveAdminPasswordCapability(normalized, previous, healthPayload);
+      return setAuthConfigCached(stabilized);
     };
 
-    AUTH_RUNTIME.configPromise = requestRemoteConfig(settings).catch((err) => {
+    AUTH_RUNTIME.configPromise = requestRemoteConfig(settings).catch(async (err) => {
       const repaired = repairGatewayAfterAccessIssue(err, settings);
       if (repaired){
-        return requestRemoteConfig(repaired).catch(() => setAuthConfigCached(authConfigAfterFetchFailure(repaired)));
+        return requestRemoteConfig(repaired).catch(async () => {
+          const fallback = authConfigAfterFetchFailure(repaired);
+          const healthPayload = await fetchAuthHealthSnapshot(getAuthServiceRoot(repaired));
+          return setAuthConfigCached(preserveAdminPasswordCapability(fallback, fallback, healthPayload));
+        });
       }
-      return setAuthConfigCached(authConfigAfterFetchFailure(settings));
+      const fallback = authConfigAfterFetchFailure(settings);
+      const healthPayload = await fetchAuthHealthSnapshot(getAuthServiceRoot(settings));
+      return setAuthConfigCached(preserveAdminPasswordCapability(fallback, fallback, healthPayload));
     }).finally(() => {
       AUTH_RUNTIME.configPromise = null;
     });
@@ -4743,11 +4816,13 @@ function syncUnifiedAuthEntry(){
     const isAdminEntry = !!email && email === String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
     const adminPasswordEnabled = config.adminPasswordEnabled === true;
     const adminLoginMethod = String(config.adminLoginMethod || '').trim().toLowerCase();
+    const healthPasswordReady = AUTH_RUNTIME.authHealth?.admin_password_ready === true;
     const adminGoogleReady = !!getAuthGoogleClientId();
     const showPassword = isAdminEntry && (
       adminPasswordEnabled
       || adminLoginMethod === 'password_or_google'
       || adminLoginMethod === 'password_only'
+      || healthPasswordReady
     );
     const adminGoogleOnly = isAdminEntry && !showPassword && adminGoogleReady;
     const label = $('authEntrySubmitLabel');
@@ -9378,7 +9453,7 @@ ${clip}` });
       if (m.role === 'user' && m.engineeredPrompt){
         const peBtn = document.createElement('button');
         peBtn.className = 'btn ghost sm';
-        peBtn.textContent = 'عرض البرومبت المحسّن';
+        peBtn.textContent = 'نسخ البرومبت المحسّن';
         peBtn.addEventListener('click', async () => {
           const ok = await copyToClipboard(String(m.engineeredPrompt || ''));
           toast(ok ? '✅ تم نسخ البرومبت المحسّن' : '⚠️ تعذر نسخ البرومبت المحسّن');

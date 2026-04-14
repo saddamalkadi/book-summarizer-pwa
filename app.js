@@ -268,7 +268,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.69';
+  const WEB_RELEASE_LABEL = 'v8.70';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -896,21 +896,19 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   function preserveAdminPasswordCapability(nextConfig, previousConfig, healthPayload = null){
     const next = { ...(nextConfig || {}) };
     const prev = previousConfig && typeof previousConfig === 'object' ? previousConfig : null;
+    if (healthPayload && healthPayload.admin_password_ready === true){
+      next.adminPasswordEnabled = true;
+      next.adminEnabled = true;
+      if (!String(next.adminLoginMethod || '').trim() || String(next.adminLoginMethod || '').trim().toLowerCase() === 'google_only'){
+        next.adminLoginMethod = 'password_or_google';
+      }
+      return next;
+    }
     if (!prev) return next;
     if (authConfigSupportsAdminPassword(next)) return next;
     if (!authConfigSupportsAdminPassword(prev)) return next;
 
     // If health confirms password readiness, treat google_only from config as stale and keep last known-good capability.
-    if (healthPayload && healthPayload.admin_password_ready === true){
-      next.adminPasswordEnabled = true;
-      next.adminEnabled = true;
-      next.adminLoginMethod = String(prev.adminLoginMethod || 'password_or_google').trim() || 'password_or_google';
-      if (!String(next.adminEmail || '').trim() && String(prev.adminEmail || '').trim()){
-        next.adminEmail = String(prev.adminEmail).trim();
-      }
-      return next;
-    }
-
     // During transient mismatch/failure, never collapse a previously password-capable admin state.
     next.adminPasswordEnabled = true;
     next.adminEnabled = true;
