@@ -267,7 +267,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.66';
+  const WEB_RELEASE_LABEL = 'v8.67';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -882,6 +882,44 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     return merged;
   }
 
+  function authConfigSupportsAdminPassword(config){
+    const adminPasswordEnabled = config?.adminPasswordEnabled === true;
+    const adminLoginMethod = String(config?.adminLoginMethod || '').trim().toLowerCase();
+    return (
+      adminPasswordEnabled
+      || adminLoginMethod === 'password_or_google'
+      || adminLoginMethod === 'password_only'
+    );
+  }
+
+  function preserveAdminPasswordCapability(nextConfig, previousConfig, healthPayload = null){
+    const next = { ...(nextConfig || {}) };
+    const prev = previousConfig && typeof previousConfig === 'object' ? previousConfig : null;
+    if (!prev) return next;
+    if (authConfigSupportsAdminPassword(next)) return next;
+    if (!authConfigSupportsAdminPassword(prev)) return next;
+
+    // If health confirms password readiness, treat google_only from config as stale and keep last known-good capability.
+    if (healthPayload && healthPayload.admin_password_ready === true){
+      next.adminPasswordEnabled = true;
+      next.adminEnabled = true;
+      next.adminLoginMethod = String(prev.adminLoginMethod || 'password_or_google').trim() || 'password_or_google';
+      if (!String(next.adminEmail || '').trim() && String(prev.adminEmail || '').trim()){
+        next.adminEmail = String(prev.adminEmail).trim();
+      }
+      return next;
+    }
+
+    // During transient mismatch/failure, never collapse a previously password-capable admin state.
+    next.adminPasswordEnabled = true;
+    next.adminEnabled = true;
+    next.adminLoginMethod = String(prev.adminLoginMethod || 'password_or_google').trim() || 'password_or_google';
+    if (!String(next.adminEmail || '').trim() && String(prev.adminEmail || '').trim()){
+      next.adminEmail = String(prev.adminEmail).trim();
+    }
+    return next;
+  }
+
   function getEffectiveAuthConfig(settings = getSettings()){
     return { ...getLocalAuthConfig(settings), ...getAuthConfigCached() };
   }
@@ -1134,8 +1172,15 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       if (!root){
         return setAuthConfigCached(authConfigAfterFetchFailure(activeSettings));
       }
+      let previous = null;
+      try{ previous = loadJSON(KEYS.authConfigCache, null); }catch(_){ previous = null; }
       const response = await fetch(`${root}/auth/config`, {
-        headers: activeSettings.gatewayToken ? { 'X-Client-Token': activeSettings.gatewayToken } : {}
+        cache: 'no-store',
+        headers: {
+          ...(activeSettings.gatewayToken ? { 'X-Client-Token': activeSettings.gatewayToken } : {}),
+          'Cache-Control': 'no-cache, no-store, max-age=0',
+          Pragma: 'no-cache'
+        }
       });
       const raw = await response.text();
       let payload = null;
@@ -1143,9 +1188,17 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       if (!response.ok){
         throw new Error(payload?.error || raw || `HTTP ${response.status}`);
       }
+      let healthPayload = null;
+      try{
+        const healthResponse = await fetch(`${root}/health`, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache, no-store, max-age=0', Pragma: 'no-cache' } });
+        const healthRaw = await healthResponse.text();
+        healthPayload = healthRaw ? JSON.parse(healthRaw) : null;
+      }catch(_){
+        healthPayload = null;
+      }
       const local = getLocalAuthConfig(activeSettings);
       const remote = payload || {};
-      return setAuthConfigCached({
+      const normalized = {
         ...remote,
         googleClientId: String(remote.googleClientId || '').trim(),
         upgradeEmail: String(remote.upgradeEmail || local.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail).trim(),
@@ -1165,7 +1218,9 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
         voiceSynthesisVoice: String(remote.voiceSynthesisVoice || local.voiceSynthesisVoice || DEFAULT_AUTH_CONFIG.voiceSynthesisVoice).trim(),
         voicePreferredLanguage: String(remote.voicePreferredLanguage || local.voicePreferredLanguage || DEFAULT_AUTH_CONFIG.voicePreferredLanguage).trim(),
         voicePremiumOnly: remote.voicePremiumOnly !== false
-      });
+      };
+      const stabilized = preserveAdminPasswordCapability(normalized, previous, healthPayload);
+      return setAuthConfigCached(stabilized);
     };
 
     AUTH_RUNTIME.configPromise = requestRemoteConfig(settings).catch((err) => {
