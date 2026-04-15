@@ -268,7 +268,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.72';
+  const WEB_RELEASE_LABEL = 'v8.73';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -4195,6 +4195,35 @@ function refreshDeepSearchBtn(){
       input.style.height = `${Math.min(200, Math.max(minH, input.scrollHeight))}px`;
     }
     scheduleShellLayoutRefresh();
+  }
+
+  function setComposerMode(mode){
+    const input = $('chatInput');
+    if (!input) return;
+    const next = mode === 'multi' ? 'multi' : 'single';
+    try{ localStorage.setItem('aistudio_composer_mode_v1', next); }catch(_){}
+    document.body.classList.toggle('composer-multi', next === 'multi');
+    input.dataset.mode = next;
+    input.setAttribute('rows', next === 'multi' ? '3' : '1');
+    input.setAttribute('placeholder',
+      next === 'multi'
+        ? 'اكتب رسالتك… (Ctrl+Enter للإرسال)'
+        : 'رسالتك أو سؤالك… (Enter للإرسال، Shift+Enter لسطر جديد)'
+    );
+    resizeComposerInput(input);
+    syncComposerMeta();
+    try{
+      $('chatInputSingleBtn')?.classList.toggle('active', next === 'single');
+      $('chatInputMultiBtn')?.classList.toggle('active', next === 'multi');
+    }catch(_){}
+  }
+
+  function getComposerMode(){
+    try{
+      const v = String(localStorage.getItem('aistudio_composer_mode_v1') || '').trim();
+      if (v === 'multi' || v === 'single') return v;
+    }catch(_){}
+    return 'single';
   }
 
   function syncComposerRtlOrder(){
@@ -11841,7 +11870,7 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
       updateTranscribeLabState({ note:'تم تحديث مسار التحويل. استخدم الوضع السحابي عند البحث عن أفضل تطابق ممكن.' });
     });
 
-$('sendBtn').addEventListener('click', sendMessage);
+    $('sendBtn').addEventListener('click', sendMessage);
     $('stopBtn').addEventListener('click', stopGeneration);
     $('regenBtn').addEventListener('click', regenLast);
     $('composerEditCancelBtn')?.addEventListener('click', () => {
@@ -11860,8 +11889,27 @@ $('sendBtn').addEventListener('click', sendMessage);
         scheduleShellLayoutRefresh();
       }, 120);
     }, true);
+    $('chatInputSingleBtn')?.addEventListener('click', () => setComposerMode('single'));
+    $('chatInputMultiBtn')?.addEventListener('click', () => setComposerMode('multi'));
+    setComposerMode(getComposerMode());
+
     $('chatInput').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey){
+      const input = $('chatInput');
+      if (!input) return;
+      const mode = input.dataset.mode || getComposerMode();
+      if (e.key !== 'Enter') return;
+
+      // Multi-line mode: send with Ctrl/Cmd+Enter only
+      if (mode === 'multi'){
+        if (e.ctrlKey || e.metaKey){
+          e.preventDefault();
+          sendMessage();
+        }
+        return;
+      }
+
+      // Single-line mode: Enter sends; Shift+Enter inserts newline
+      if (!e.shiftKey){
         e.preventDefault();
         sendMessage();
       }
