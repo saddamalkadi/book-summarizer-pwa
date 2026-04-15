@@ -268,7 +268,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.74';
+  const WEB_RELEASE_LABEL = 'v8.75';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -10554,12 +10554,11 @@ async function runResearchAgent(topicOverride){
     });
     modal.classList.add('show');
     modal.setAttribute('aria-hidden', 'false');
-  }
     modal.querySelector('[data-close-canvas-version="1"]')?.addEventListener('click', () => {
       modal.classList.remove('show');
       modal.setAttribute('aria-hidden', 'true');
     }, { once: true });
-
+  }
 
   function exportCanvasWithKind(kind){
     const title = ($('canvasTitle').value || 'canvas').trim() || 'canvas';
