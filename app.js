@@ -268,7 +268,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.75';
+  const WEB_RELEASE_LABEL = 'v8.76';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -5597,8 +5597,16 @@ async function submitUnifiedAuthEntry(){
       scroll.className = 'topbar-scroll';
       scroll.setAttribute('role', 'toolbar');
       scroll.setAttribute('aria-label', 'أدوات سريعة');
-      while (topActions.firstChild){
-        scroll.appendChild(topActions.firstChild);
+      // Keep #headerCollapseBtn OUTSIDE the scroll wrapper. If it sits inside #topbarScroll,
+      // `body.headerCollapsed .topbar .row > :not(#headerCollapseBtn){display:none}` hides the
+      // entire scroll region — including every other control — with no way to expand again.
+      const collapseBtn = $('headerCollapseBtn');
+      const movable = Array.from(topActions.children).filter((el) => el !== collapseBtn);
+      movable.forEach((el) => scroll.appendChild(el));
+      if (collapseBtn && collapseBtn.parentNode === topActions){
+        collapseBtn.insertAdjacentElement('afterend', scroll);
+      } else {
+        topActions.prepend(scroll);
       }
       const moreBtn = document.createElement('button');
       moreBtn.type = 'button';
@@ -5607,7 +5615,6 @@ async function submitUnifiedAuthEntry(){
       moreBtn.title = 'المزيد';
       moreBtn.setAttribute('aria-expanded', 'false');
       moreBtn.innerHTML = '<span class="icon">⋯</span><span class="label">المزيد</span>';
-      topActions.appendChild(scroll);
       topActions.appendChild(moreBtn);
       let panel = $('topbarOverflowPanel');
       if (!panel){
@@ -5627,7 +5634,9 @@ async function submitUnifiedAuthEntry(){
         panel.innerHTML = '';
         mirrorIds.forEach((id) => {
           const src = $(id);
-          if (!src || src.offsetParent === null) return;
+          // Do not skip when offsetParent is null (e.g. parent hidden during header collapse);
+          // the overflow menu is how users reach actions in that state.
+          if (!src) return;
           const row = document.createElement('button');
           row.type = 'button';
           row.className = 'btn ghost sm with-label';

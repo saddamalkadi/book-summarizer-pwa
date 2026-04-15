@@ -268,7 +268,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.73';
+  const WEB_RELEASE_LABEL = 'v8.76';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -4746,15 +4746,15 @@ function refreshDeepSearchBtn(){
     const avatar = signedIn && auth.picture ? auth.picture : 'logo.svg';
 
     if ($('accountTriggerAvatar')) $('accountTriggerAvatar').src = avatar;
-    if ($('accountTriggerName')) $('accountTriggerName').textContent = signedIn && role === 'admin' ? `الإدارة • ${displayName}` : displayName;
+    if ($('accountTriggerName')) $('accountTriggerName').textContent = displayName;
     if ($('accountTriggerPlan')) $('accountTriggerPlan').textContent = planLabel;
 
     if ($('settingsAccountAvatar')) $('settingsAccountAvatar').src = avatar;
-    if ($('settingsAccountName')) $('settingsAccountName').textContent = signedIn ? (role === 'admin' ? `حساب الإدارة • ${displayName}` : displayName) : 'الحساب غير مسجل';
+    if ($('settingsAccountName')) $('settingsAccountName').textContent = signedIn ? displayName : 'الحساب غير مسجل';
     if ($('settingsAccountEmail')) $('settingsAccountEmail').textContent = displayEmail;
     if ($('settingsAccountHint')) $('settingsAccountHint').textContent = signedIn
       ? (role === 'admin'
-        ? 'أنت داخل حساب الإدارة. جميع المزايا المدفوعة وطبقات التحكم متاحة لهذا الحساب.'
+        ? 'هذا الحساب يملك صلاحيات كاملة للمزايا المدفوعة وأدوات الإدارة عند الحاجة.'
         : plan === 'premium'
         ? 'الحساب يعمل الآن على الخطة المدفوعة. يمكنك استخدام المزايا المدفوعة أو تشغيل الوضع المجاني يدويًا لتقليل التكلفة.'
         : 'الحساب يعمل الآن على الخطة المجانية. الترقية متاحة عبر طلب بريدي ثم كود تفعيل.')
@@ -4766,7 +4766,7 @@ function refreshDeepSearchBtn(){
     if ($('settingsPlanBanner')){
       $('settingsPlanBanner').dataset.tone = role === 'admin' || plan === 'premium' ? 'success' : 'info';
       $('settingsPlanBanner').textContent = role === 'admin'
-        ? 'حساب الإدارة يعمل بصلاحيات كاملة ويمكنه إدارة الأكواد والمزايا المدفوعة من نفس الواجهة.'
+        ? 'صلاحيات كاملة مفعّلة. يمكنك إدارة أكواد الترقية والمزايا المدفوعة من نفس الواجهة عند الحاجة.'
         : plan === 'premium'
         ? 'الخطة المدفوعة نشطة. يمكنك استخدام جميع الموديلات والميزات حسب إعدادات التكلفة.'
         : 'الخطة المجانية تفرض OpenRouter Free فقط وتمنع تفعيل الموديلات المدفوعة والميزات الأعلى تكلفة.';
@@ -4792,20 +4792,20 @@ function refreshDeepSearchBtn(){
     if ($('authEntryName') && !$('authEntryName').value && signedIn) $('authEntryName').value = auth.name || '';
     if ($('authEntryEmail') && !$('authEntryEmail').value && signedIn) $('authEntryEmail').value = auth.email || '';
     if ($('authGatePlanNote')) $('authGatePlanNote').textContent = role === 'admin'
-      ? 'الحساب الإداري يفتح التطبيق مباشرة مع الصلاحيات الكاملة والمزايا المدفوعة.'
+      ? 'تم تفعيل الصلاحيات الكاملة والمزايا المدفوعة لهذا الحساب.'
       : plan === 'premium'
       ? 'الحساب الحالي مدفوع. يمكنك إغلاق هذه الشاشة أو إعادة المصادقة إذا لزم.'
       : 'بعد تسجيل الدخول ستبدأ بالخطة المجانية. للترقية اطلب كودًا ثم فعّله من صفحة الإعدادات.';
     if ($('authCurrentPlanPill')){
       $('authCurrentPlanPill').textContent = role === 'admin'
-        ? 'الإدارة'
+        ? 'صلاحيات كاملة'
         : plan === 'premium'
         ? 'الخطة المدفوعة'
         : 'الخطة المجانية';
       $('authCurrentPlanPill').classList.toggle('premium', role === 'admin' || plan === 'premium');
     }
 
-    if ($('sideAccountName')) $('sideAccountName').textContent = signedIn ? (role === 'admin' ? `الإدارة` : (auth.name || auth.email || 'الحساب')) : 'تسجيل الدخول';
+    if ($('sideAccountName')) $('sideAccountName').textContent = signedIn ? (auth.name || auth.email || 'الحساب') : 'تسجيل الدخول';
     if ($('sideAccountPlan')) $('sideAccountPlan').textContent = signedIn ? (role === 'admin' ? 'صلاحيات كاملة' : planLabel) : 'غير مسجل';
     if ($('sideAccountAvatar')){
       const av = $('sideAccountAvatar');
@@ -5589,6 +5589,98 @@ async function submitUnifiedAuthEntry(){
       voice.className = 'btn ghost sm with-label';
       voice.innerHTML = '<span class="icon">🎙️</span><span class="label">صوت</span>';
       topActions.insertBefore(voice, $('modeOffBtn') || $('newThreadBtn') || null);
+    }
+
+    if (topActions && !$('topbarScroll')){
+      const scroll = document.createElement('div');
+      scroll.id = 'topbarScroll';
+      scroll.className = 'topbar-scroll';
+      scroll.setAttribute('role', 'toolbar');
+      scroll.setAttribute('aria-label', 'أدوات سريعة');
+      // Keep #headerCollapseBtn OUTSIDE the scroll wrapper. If it sits inside #topbarScroll,
+      // `body.headerCollapsed .topbar .row > :not(#headerCollapseBtn){display:none}` hides the
+      // entire scroll region — including every other control — with no way to expand again.
+      const collapseBtn = $('headerCollapseBtn');
+      const movable = Array.from(topActions.children).filter((el) => el !== collapseBtn);
+      movable.forEach((el) => scroll.appendChild(el));
+      if (collapseBtn && collapseBtn.parentNode === topActions){
+        collapseBtn.insertAdjacentElement('afterend', scroll);
+      } else {
+        topActions.prepend(scroll);
+      }
+      const moreBtn = document.createElement('button');
+      moreBtn.type = 'button';
+      moreBtn.id = 'topbarOverflowMenuBtn';
+      moreBtn.className = 'btn ghost sm with-label';
+      moreBtn.title = 'المزيد';
+      moreBtn.setAttribute('aria-expanded', 'false');
+      moreBtn.innerHTML = '<span class="icon">⋯</span><span class="label">المزيد</span>';
+      topActions.appendChild(moreBtn);
+      let panel = $('topbarOverflowPanel');
+      if (!panel){
+        panel = document.createElement('div');
+        panel.id = 'topbarOverflowPanel';
+        panel.className = 'topbar-overflow-panel';
+        panel.setAttribute('role', 'menu');
+        panel.hidden = true;
+        document.body.appendChild(panel);
+      }
+      const mirrorIds = ['historyDrawerBtn','studyModeBtn','focusModeBtn','voiceModeBtn','headerCollapseBtn','modeDeepBtn','modeAgentBtn','webToggleBtn','modeOffBtn','newThreadBtn'];
+      const closePanel = () => {
+        panel.hidden = true;
+        moreBtn.setAttribute('aria-expanded', 'false');
+      };
+      const openPanel = () => {
+        panel.innerHTML = '';
+        mirrorIds.forEach((id) => {
+          const src = $(id);
+          // Do not skip when offsetParent is null (e.g. parent hidden during header collapse);
+          // the overflow menu is how users reach actions in that state.
+          if (!src) return;
+          const row = document.createElement('button');
+          row.type = 'button';
+          row.className = 'btn ghost sm with-label';
+          row.style.width = '100%';
+          row.style.justifyContent = 'flex-start';
+          row.innerHTML = src.innerHTML;
+          row.addEventListener('click', () => {
+            closePanel();
+            src.click();
+          });
+          panel.appendChild(row);
+        });
+        if (!panel.childElementCount){
+          const hint = document.createElement('div');
+          hint.className = 'hint';
+          hint.style.padding = '10px';
+          hint.textContent = 'لا توجد أدوات إضافية حاليًا.';
+          panel.appendChild(hint);
+        }
+        panel.style.position = 'fixed';
+        const rect = moreBtn.getBoundingClientRect();
+        const panelWidth = Math.min(320, Math.max(240, window.innerWidth - 16));
+        const rtl = document.documentElement.getAttribute('dir') === 'rtl';
+        let left = rtl ? Math.max(8, window.innerWidth - rect.right) : Math.max(8, rect.left);
+        left = Math.min(left, Math.max(8, window.innerWidth - panelWidth - 8));
+        panel.style.top = `${Math.round(rect.bottom + 6)}px`;
+        panel.style.left = `${Math.round(left)}px`;
+        panel.style.right = 'auto';
+        panel.style.width = `${panelWidth}px`;
+        panel.hidden = false;
+        moreBtn.setAttribute('aria-expanded', 'true');
+      };
+      moreBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!panel.hidden) closePanel();
+        else openPanel();
+      });
+      document.addEventListener('click', (e) => {
+        if (panel.hidden) return;
+        if (e.target === moreBtn || moreBtn.contains(e.target) || panel.contains(e.target)) return;
+        closePanel();
+      });
+      window.addEventListener('resize', () => { if (!panel.hidden) closePanel(); });
     }
 
     const topbar = document.querySelector('.topbar');
@@ -6379,6 +6471,79 @@ async function submitUnifiedAuthEntry(){
         tips: ['المشروع هو طبقة التنظيم الأساسية في المنصة.', 'سجل الدردشات والذاكرة محفوظان على مستوى المشروع.']
       },
       {
+        id: 'account_auth',
+        page: 'settings',
+        title: 'الحساب والدخول والخطط',
+        body: 'التطبيق يدعم دخولًا عبر Google مع ربط المشاريع بالحساب، وخطة مجانية مقيدة، وخطة مدفوعة عبر كود ترقية. بعض الحسابات تمتلك صلاحيات إدارية لإصدار أكواد الترقية.',
+        steps: [
+          'افتح تسجيل الدخول من الشريط الجانبي أو عندما يطلب التطبيق المصادقة.',
+          'استخدم بريدك الشخصي للخطة المجانية، واتبع تعليمات الشاشة إذا كنت تمتلك صلاحيات أعلى.',
+          'للترقية: اطلب الترقية أو أدخل كود الترقية من صفحة الإعدادات حسب ما وصلك.',
+          'للخروج: استخدم تسجيل الخروج من مركز الحساب عند الحاجة.'
+        ],
+        tips: ['إذا ظهرت رسائل عن البوابة أو المفتاح فغالبًا الإعدادات تحتاج ضبط Worker/Gateway.', 'الخطة المجانية قد تفرض قيودًا على الموديلات والميزات حسب سياسة التطبيق.']
+      },
+      {
+        id: 'chat_toolbar_overflow',
+        page: 'chat',
+        title: 'شريط الدردشة: التمرير وقائمة المزيد',
+        body: 'على الشاشات الضيقة قد لا تتسع كل الأزرار في سطر واحد. لذلك يوفّر الشريط العلوي تمريرًا أفقيًا وزر «المزيد» يعيد إظهار الأدوات دون إخفاء صامت.',
+        steps: [
+          'مرّر أفقيًا داخل منطقة الأزرار العلوية إذا لم تظهر كل الأدوات.',
+          'اضغط «المزيد» لفتح قائمة تعيد تنفيذ نفس الأزرار الموجودة في الشريط.',
+          'زر «سجل الدردشات» يفتح درج المحادثات داخل المشروع الحالي.'
+        ],
+        tips: ['زر «محادثة جديدة» يبقى ضمن نفس الشريط أو ضمن «المزيد» حسب العرض.', 'لا يزال بإمكانك فتح الدردشة من الصفحة الرئيسية أيضًا.']
+      },
+      {
+        id: 'prompt_engineering',
+        page: 'chat',
+        title: 'هندسة البرومبت والأوضاع',
+        body: 'يمكنك تفعيل أوضاع مثل الويب والوكيل والتفكير العميق من شريط الدردشة. هذه الأوضاع تغيّر سلوك الطلبات (مثلاً إضافة بحث ويب أو تنسيق مهام). كما يوجد قسم «Prompt Engineering» عند تفعيله من الواجهة.',
+        steps: [
+          ' راقب شارات التشغيل أعلى الشاشة لمعرفة المزود والوضع الحالي.',
+          ' استخدم «إيقاف الأوضاع» للعودة لتشغيل افتراضي أنظف.',
+          ' راجع إعدادات التكلفة في الإعدادات إذا كنت تستخدم ميزات أعلى تكلفة.'
+        ],
+        tips: ['الوضع المجاني قد يمنع بعض الأوضاع تلقائيًا.', 'استخدم ذاكرة المشروع لتقليل تكرار التعليمات في كل رسالة.']
+      },
+      {
+        id: 'dashboard_canvas_exports',
+        page: 'canvas',
+        title: 'اللوحة: الذكاء الاصطناعي والتصدير',
+        body: 'اللوحة هي محرر نصوص/Markdown/HTML داخل المشروع. زر الذكاء يفتح قائمة اختيار (إعادة صياغة/تلخيص/تحسين/بناء تطبيق HTML) بدل كتابة أوامر يدويًا. التصدير يدعم TXT وHTML وDOCX عبر اختيار صريح.',
+        steps: [
+          'احفظ المستند ثم استخدم زر الذكاء واختر المهمة المناسبة.',
+          'استخدم زر التصدير واختر الصيغة ثم نفّذ التنزيل.',
+          'إصدارات المستند متاحة من زر الإصدارات عبر قائمة اختيار وليس عبر نافذة كتابة.'
+        ],
+        tips: ['DOCX يعتمد على محرك تحويل HTML→Word المحمّل مع الصفحة.', 'إن فشل DOCX تحقق من اتصال الشبكة لتحميل المكتبة أو جرّب HTML/TXT.']
+      },
+      {
+        id: 'document_lab_docx',
+        page: 'transcription',
+        title: 'مختبر الوثائق: DOCX ومسارات التحويل',
+        body: 'يمكن استخراج النص من PDF/صورة، تحسينه سحابيًا عند السماح، ثم التصدير إلى TXT/JSON/DOCX. تحويل PDF→DOCX قد يكون محليًا (هيكلي) أو سحابيًا حسب الإعدادات والخطة وحدود الملف.',
+        steps: [
+          'اختر ملفًا ثم «استخراج النص» وراجع الناتج.',
+          'للتصدير: اختر الصيغة من القائمة ثم «تصدير».',
+          'لـ PDF→DOCX: استخدم الزر المخصص وراقب رسالة المسار في بطاقة المختبر.'
+        ],
+        tips: ['PDFs الرقمية تعطي نتائج أسرع وأدق من الممسوح ضوئيًا.', 'إذا تعذر المسار السحابي سيعود التطبيق للمسار المحلي عندما يسمح الإعداد.']
+      },
+      {
+        id: 'downloads_android',
+        page: 'settings',
+        title: 'تنزيل تطبيق Android والويب التقدمي',
+        body: 'يوجد قسم تنزيلات داخل الإعدادات يشير إلى ملفات APK/AAB المستضافة. يمكن تثبيت التطبيق كـ PWA من المتصفح أيضًا.',
+        steps: [
+          'افتح صفحة التنزيلات من الروابط داخل الإعدادات عند الحاجة.',
+          'على Android: ثبّت APK عند السماح بالمصادر غير المعروفة وفق سياسة جهازك.',
+          'على المتصفح: أضف إلى الشاشة الرئيسية للحصول على تجربة قريبة من التطبيق.'
+        ],
+        tips: ['تأكد أنك على نفس إصدار الموقع الظاهر في العنوان/الشريط الجانبي.', 'إذا بدا المحتوى قديمًا، حدّث الصفحة أو امسح كاش PWA حسب تعليمات المتصفح.']
+      },
+      {
         id: 'settings',
         page: 'settings',
         title: 'الإعدادات',
@@ -7070,6 +7235,25 @@ async function fileToText(file){
     throw new Error('صيغة DOCX غير مدعومة');
   }
 
+  function getHtmlToDocxFn(){
+    if (typeof window === 'undefined') return null;
+    const candidates = [
+      window.htmlToDocx,
+      window.HTMLtoDOCX,
+      window.HTMLToDOCX,
+      window.HTMLToDOCX && window.HTMLToDOCX.default,
+      window.html_to_docx,
+      window['html-to-docx']
+    ].filter(Boolean);
+    for (const c of candidates){
+      if (typeof c === 'function') return c;
+    }
+    for (const c of candidates){
+      if (c && typeof c.default === 'function') return c.default;
+    }
+    return null;
+  }
+
   function getOcrLang(){
     const s = getSettings();
     return (s.ocrLang || 'ara+eng').trim() || 'ara+eng';
@@ -7456,7 +7640,7 @@ async function fileToText(file){
       .block.left{text-align:left}
     </style></head><body>${sections}</body></html>`;
 
-    const fn = window.htmlToDocx || window.HTMLtoDOCX || null;
+    const fn = getHtmlToDocxFn();
     if (!fn) throw new Error('محول DOCX غير متاح');
     const blob = toDocxBlob(await Promise.resolve(fn(html)));
     return { text: structured.text, structured, blob, fileName: `${title || 'converted'}.docx` };
@@ -7626,19 +7810,21 @@ async function fileToText(file){
 
     if (format === 'txt'){
       const out = cleanText || String(structured?.pages?.map(p => p?.text || '').join('\n\n') || '').trim();
-      return downloadBlob(`${safeBase}.txt`, new Blob([out], { type:'text/plain;charset=utf-8' }));
+      downloadBlob(`${safeBase}.txt`, new Blob([out], { type:'text/plain;charset=utf-8' }));
+      return;
     }
 
     if (format === 'json'){
       const payload = structured || { text: cleanText };
-      return downloadBlob(`${safeBase}.json`, new Blob([JSON.stringify(payload, null, 2)], { type:'application/json;charset=utf-8' }));
+      downloadBlob(`${safeBase}.json`, new Blob([JSON.stringify(payload, null, 2)], { type:'application/json;charset=utf-8' }));
+      return;
     }
 
     const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;line-height:1.9;white-space:pre-wrap}</style></head><body>${escapeHtml(cleanText)}</body></html>`;
-    const fn = window.htmlToDocx || window.HTMLtoDOCX;
+    const fn = getHtmlToDocxFn();
     if (!fn) throw new Error('محول DOCX غير متاح');
     const blob = toDocxBlob(await Promise.resolve(fn(html)));
-    return downloadBlob(`${safeBase}.docx`, blob);
+    downloadBlob(`${safeBase}.docx`, blob);
   }
 
   // ---------------- Downloads (```file blocks) ----------------
@@ -8161,15 +8347,42 @@ async function fileToText(file){
   }
 
   function downloadBlob(filename, blob){
-    const url = URL.createObjectURL(blob);
+    const safeName = String(filename || 'download').trim() || 'download';
+    const safeBlob = (blob instanceof Blob) ? blob : new Blob([blob], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(safeBlob);
+    const isCoarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+    const isNarrow = typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 980px)').matches;
+    const isMobileLike = isCoarse || isNarrow;
+
     const a = document.createElement('a');
     a.href = url;
-    a.download = filename;
+    a.download = safeName;
     a.rel = 'noopener';
+    a.target = '_blank';
+    a.style.position = 'fixed';
+    a.style.left = '-9999px';
+    a.style.top = '-9999px';
     document.body.appendChild(a);
-    a.click();
+
+    let clicked = false;
+    try{
+      a.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      clicked = true;
+    }catch(_){
+      try{
+        a.click();
+        clicked = true;
+      }catch(__){
+        clicked = false;
+      }
+    }
+
+    if (!clicked){
+      try{ window.open(url, '_blank', 'noopener'); }catch(_){}
+    }
+
     a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 8000);
+    setTimeout(() => { try{ URL.revokeObjectURL(url); }catch(_){ } }, isMobileLike ? 120000 : 12000);
   }
 
   function parseFileBlocks(text){
@@ -10211,6 +10424,61 @@ async function runResearchAgent(topicOverride){
     setTimeout(() => { try{ URL.revokeObjectURL(url); }catch(_){ } }, 8000);
   }
 
+
+  function getCanvasAiActionLabel(value){
+    const map = {
+      rewrite: 'إعادة صياغة احترافية',
+      summarize: 'تلخيص بنقاط',
+      improve: 'تحسين وإثراء بدون اختلاق',
+      build_app_html: 'بناء تطبيق ويب HTML كامل (ملف واحد)'
+    };
+    return map[String(value || '').trim()] || String(value || '');
+  }
+  function getCanvasExportKindLabel(value){
+    const map = { txt: 'نص TXT', html: 'صفحة HTML', docx: 'مستند Word (DOCX)' };
+    return map[String(value || '').trim().toLowerCase()] || String(value || '');
+  }
+  function syncCanvasAiModalSummary(){
+    const sel = $('canvasAiAction');
+    const summary = $('canvasAiModalSummary');
+    if (summary && sel){
+      summary.textContent = `المهمة المختارة: ${getCanvasAiActionLabel(sel.value)}`;
+    }
+  }
+  function syncCanvasExportModalSummary(){
+    const sel = $('canvasExportKind');
+    const summary = $('canvasExportModalSummary');
+    if (summary && sel){
+      summary.textContent = `صيغة التصدير: ${getCanvasExportKindLabel(sel.value)}`;
+    }
+  }
+  function openCanvasAiModal(){
+    const modal = $('canvasAiModal');
+    if (!modal) return toast('⚠️ واجهة اختيار غير جاهزة');
+    syncCanvasAiModalSummary();
+    modal.classList.add('show');
+    modal.setAttribute('aria-hidden', 'false');
+  }
+  function closeCanvasAiModal(){
+    const modal = $('canvasAiModal');
+    if (!modal) return;
+    modal.classList.remove('show');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+  function openCanvasExportModal(){
+    const modal = $('canvasExportModal');
+    if (!modal) return exportCanvas();
+    syncCanvasExportModalSummary();
+    modal.classList.add('show');
+    modal.setAttribute('aria-hidden', 'false');
+  }
+  function closeCanvasExportModal(){
+    const modal = $('canvasExportModal');
+    if (!modal) return;
+    modal.classList.remove('show');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+
   async function canvasAi(action){
     const rawSettings = getSettings();
     const policy = getAppRuntimePolicy(rawSettings);
@@ -10262,30 +10530,60 @@ async function runResearchAgent(topicOverride){
     const doc = loadCanvas(pid).find(d => d.id === id);
     const vers = (doc?.versions || []).slice(0, 10);
     if (!vers.length) return toast('لا توجد إصدارات.');
-    const pick = prompt('اختر رقم الإصدار لاستعادته:\n' + vers.map((v,i)=>`${i+1}) ${new Date(v.ts).toLocaleString('ar')} — ${v.title}`).join('\n'), '1');
-    const n = Number(pick||'');
-    if (!n || n<1 || n>vers.length) return;
-    const v = vers[n-1];
-    $('canvasTitle').value = v.title || '';
-    $('canvasEditor').value = v.content || '';
-    toast('✅ تم استعادة الإصدار');
-    refreshCanvasPreview();
+    const modal = $('canvasVersionModal');
+    const list = $('canvasVersionList');
+    if (!modal || !list){
+      const pick = prompt('اختر رقم الإصدار لاستعادته:\n' + vers.map((v,i)=>`${i+1}) ${new Date(v.ts).toLocaleString('ar')} — ${v.title}`).join('\n'), '1');
+      const n = Number(pick||'');
+      if (!n || n<1 || n>vers.length) return;
+      const v = vers[n-1];
+      $('canvasTitle').value = v.title || '';
+      $('canvasEditor').value = v.content || '';
+      toast('✅ تم استعادة الإصدار');
+      refreshCanvasPreview();
+      return;
+    }
+    list.innerHTML = '';
+    vers.forEach((v, i) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn ghost sm with-label';
+      btn.style.width = '100%';
+      btn.style.justifyContent = 'flex-start';
+      btn.innerHTML = `<span class="icon">🕘</span><span class="label" style="text-align:start">${escapeHtml(String(i+1))}) ${escapeHtml(new Date(v.ts).toLocaleString('ar'))} — ${escapeHtml(v.title || '')}</span>`;
+      btn.addEventListener('click', () => {
+        $('canvasTitle').value = v.title || '';
+        $('canvasEditor').value = v.content || '';
+        modal.classList.remove('show');
+        modal.setAttribute('aria-hidden', 'true');
+        toast('✅ تم استعادة الإصدار');
+        refreshCanvasPreview();
+      });
+      list.appendChild(btn);
+    });
+    modal.classList.add('show');
+    modal.setAttribute('aria-hidden', 'false');
+    modal.querySelector('[data-close-canvas-version="1"]')?.addEventListener('click', () => {
+      modal.classList.remove('show');
+      modal.setAttribute('aria-hidden', 'true');
+    }, { once: true });
   }
 
-  function exportCanvas(){
+  function exportCanvasWithKind(kind){
     const title = ($('canvasTitle').value || 'canvas').trim() || 'canvas';
     const content = $('canvasEditor').value || '';
-    const kind = (prompt('اختر التصدير: txt / html / docx', 'txt') || 'txt').trim().toLowerCase();
-    if (kind === 'html'){
+    const k = String(kind || 'txt').trim().toLowerCase();
+    if (k === 'html'){
       let html = content;
       if (!isProbablyHtml(content)){
         html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title></head><body><pre style="white-space:pre-wrap">${escapeHtml(content)}</pre></body></html>`;
       }
       downloadBlob(`${title}.html`, new Blob([html], { type:'text/html;charset=utf-8' }));
-      return toast('⬇ تم تصدير HTML');
+      toast('⬇ تم تصدير HTML');
+      return;
     }
-    if (kind === 'docx'){
-      const fn = window.htmlToDocx || window.HTMLtoDOCX || null;
+    if (k === 'docx'){
+      const fn = getHtmlToDocxFn();
       if (!fn) return toast('⚠️ DOCX غير متاح');
       const html = `<h1>${escapeHtml(title)}</h1><div>${renderMarkdown(content)}</div>`;
       Promise.resolve(fn(html)).then((blob) => {
@@ -10296,6 +10594,12 @@ async function runResearchAgent(topicOverride){
     }
     downloadBlob(`${title}.txt`, new Blob([content], { type:'text/plain;charset=utf-8' }));
     toast('⬇ تم تصدير TXT');
+  }
+
+  function exportCanvas(){
+    const sel = $('canvasExportKind');
+    const kind = String(sel?.value || 'txt').trim().toLowerCase();
+    exportCanvasWithKind(kind);
   }
 
   // ---------------- Files page ----------------
@@ -12065,12 +12369,40 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
     $('canvasVersionsBtn').addEventListener('click', showCanvasVersions);
     $('canvasPreviewToggle').addEventListener('change', refreshCanvasPreview);
     $('canvasRefreshPreviewBtn').addEventListener('click', refreshCanvasPreview);
-    $('canvasAiBtn').addEventListener('click', () => {
-      const action = prompt('اختر: rewrite / summarize / improve / build_app_html', 'rewrite');
-      if (!action) return;
-      canvasAi(action.trim());
+    $('canvasAiBtn').addEventListener('click', () => openCanvasAiModal());
+    $('canvasExportBtn').addEventListener('click', () => openCanvasExportModal());
+    $('canvasAiAction')?.addEventListener('change', () => syncCanvasAiModalSummary());
+    $('canvasExportKind')?.addEventListener('change', () => syncCanvasExportModalSummary());
+    $('canvasAiRunBtn')?.addEventListener('click', () => {
+      const sel = $('canvasAiAction');
+      const action = String(sel?.value || 'rewrite').trim();
+      closeCanvasAiModal();
+      canvasAi(action);
     });
-    $('canvasExportBtn').addEventListener('click', exportCanvas);
+    $('canvasAiCancelBtn')?.addEventListener('click', () => closeCanvasAiModal());
+    $('canvasAiDismissBtn')?.addEventListener('click', () => closeCanvasAiModal());
+    $('canvasAiModal')?.querySelector('[data-close-canvas-ai="1"]')?.addEventListener('click', () => closeCanvasAiModal());
+    $('canvasExportRunBtn')?.addEventListener('click', () => {
+      const sel = $('canvasExportKind');
+      const kind = String(sel?.value || 'txt').trim().toLowerCase();
+      closeCanvasExportModal();
+      exportCanvasWithKind(kind);
+    });
+    $('canvasExportCancelBtn')?.addEventListener('click', () => closeCanvasExportModal());
+    $('canvasExportDismissBtn')?.addEventListener('click', () => closeCanvasExportModal());
+    $('canvasExportModal')?.querySelector('[data-close-canvas-export="1"]')?.addEventListener('click', () => closeCanvasExportModal());
+    $('canvasVersionCloseBtn')?.addEventListener('click', () => {
+      const modal = $('canvasVersionModal');
+      if (!modal) return;
+      modal.classList.remove('show');
+      modal.setAttribute('aria-hidden', 'true');
+    });
+    $('canvasVersionModal')?.querySelector('[data-close-canvas-version="1"]')?.addEventListener('click', () => {
+      const modal = $('canvasVersionModal');
+      if (!modal) return;
+      modal.classList.remove('show');
+      modal.setAttribute('aria-hidden', 'true');
+    });
 
     // files
     $('addFilesBtn').addEventListener('click', () => $('filePicker').click());
@@ -12379,6 +12711,7 @@ ${friendly}`, false);
       try{
         const format = String($('transcribeExportFormat')?.value || 'docx').toLowerCase();
         const base = String(transcribeSelectedFile?.name || 'ocr-export').replace(/\.pdf$/i, '-extracted');
+        // Important: keep the download inside the same user gesture chain (mobile browsers block async downloads).
         await exportTranscriptionResult({ format, text: txt, structured: transcribeLastStructured, fileBaseName: base });
         toast(`✅ تم تصدير ${format.toUpperCase()}`);
       }catch(e){
