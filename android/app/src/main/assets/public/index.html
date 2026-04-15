@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.72">
+<html lang="ar" dir="rtl" data-appver="8.73">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.72</title>
+    <title>AI Workspace Studio v8.73</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -235,6 +235,193 @@
       .modal .panel{left:2vw; right:2vw; top:4vh; max-height:92vh;}
       .page{overscroll-behavior-y:auto;}
       #page-chat.page.active{overflow:hidden;}
+    }
+
+    /* ──────────────────────────────────────────────
+       POLISH PASS (v8.73) — premium rhythm & clarity
+       ────────────────────────────────────────────── */
+    :root{
+      --bg: #f7f8fc;
+      --card: rgba(255,255,255,.92);
+      --card-solid: #ffffff;
+      --text: #0b1220;
+      --muted: #56607a;
+      --pri: #2563eb;
+      --pri2:#0b1020;
+      --line: rgba(12,18,32,.10);
+      --shadow: 0 18px 55px rgba(15,23,42,.10);
+      --shadow-soft: 0 10px 26px rgba(15,23,42,.08);
+      --r: 22px;
+      --gutter: clamp(10px, 1vw, 16px);
+      --focus: rgba(37,99,235,.28);
+    }
+    body{
+      background:
+        radial-gradient(circle at 18% 8%, rgba(37,99,235,.10), transparent 40%),
+        radial-gradient(circle at 82% 10%, rgba(94,234,212,.10), transparent 38%),
+        var(--bg);
+      color: var(--text);
+    }
+    a{ text-decoration-thickness: 2px; text-underline-offset: 3px; }
+    .app{ gap: var(--gutter); padding: var(--gutter); }
+    .content{ background: var(--card-solid); box-shadow: var(--shadow); }
+    .topbar{
+      background: rgba(255,255,255,.86);
+      border: 1px solid rgba(12,18,32,.08);
+      box-shadow: var(--shadow-soft);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+    }
+    .title{ letter-spacing: .01em; }
+    .hint{ color: var(--muted); }
+
+    /* Buttons — consistent sizing + hover states */
+    .btn, .pill{
+      border-radius: 14px;
+      transition: transform .12s ease, box-shadow .12s ease, background .12s ease, border-color .12s ease, opacity .12s ease;
+    }
+    .btn{
+      box-shadow: 0 1px 0 rgba(255,255,255,.65) inset;
+    }
+    .btn:hover{ transform: translateY(-1px); }
+    .btn:active{ transform: translateY(0); }
+    .btn:focus-visible, .pill:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible{
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+    .btn.ghost{
+      background: rgba(37,99,235,.08);
+      border: 1px solid rgba(37,99,235,.14);
+      color: #1d4ed8;
+    }
+    .btn.dark{
+      background: linear-gradient(180deg, #0b1220, #0b1020);
+      box-shadow: 0 16px 36px rgba(11,16,32,.16);
+    }
+    .btn.danger{
+      background: linear-gradient(180deg, #ff4d4d, #ff2f2f);
+      box-shadow: 0 16px 36px rgba(255,59,48,.18);
+    }
+
+    /* Chat reading comfort — calmer background, better spacing */
+    #page-chat{
+      background: linear-gradient(180deg, rgba(248,251,255,.96), rgba(255,255,255,1));
+    }
+    .chatlog{
+      background: transparent;
+      padding: 16px 16px 12px;
+    }
+    .bubble{
+      max-width: min(980px, 100%);
+      margin-inline: auto;
+    }
+    .bubble .meta{ opacity: .92; }
+    .bubble.assistant{
+      background: #ffffff;
+      border: 1px solid rgba(12,18,32,.08);
+    }
+    .bubble.user{
+      background: linear-gradient(145deg, #0f1e3d, #173d78 55%, #1e4a9e);
+    }
+    .bubble .actions{
+      border-top: 1px solid rgba(12,18,32,.06);
+      padding-top: 10px;
+    }
+
+    /* Composer — clearer cluster + touch targets */
+    .chatbar{
+      border-top: 1px solid rgba(12,18,32,.08);
+      background: rgba(255,255,255,.92);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      gap: 10px;
+    }
+    .chatbar-composer-cluster{
+      background: rgba(12,18,32,.03);
+      border: 1px solid rgba(12,18,32,.08);
+      border-radius: 18px;
+      padding: 6px;
+      display:flex;
+      align-items:center;
+      gap: 6px;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .chatbar-mode{
+      display:flex;
+      gap:6px;
+      padding: 2px;
+      border-radius: 14px;
+      border: 1px solid rgba(12,18,32,.08);
+      background: rgba(255,255,255,.8);
+      flex: 0 0 auto;
+    }
+    .chatbar-mode .btn.sm{
+      min-height: 32px;
+      height: 32px;
+      padding: 0 10px;
+      font-weight: 1000;
+    }
+    .chatbar-mode .btn.active{
+      background: rgba(37,99,235,.14);
+      border: 1px solid rgba(37,99,235,.22);
+      color: #1d4ed8;
+    }
+    body:not(.composer-multi) #chatInputMultiBtn{ opacity: .9; }
+    body.composer-multi #chatInputSingleBtn{ opacity: .9; }
+    #chatInput{
+      border: 0 !important;
+      background: transparent !important;
+      padding: 10px 10px !important;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    body.composer-multi #chatInput{
+      background: rgba(255,255,255,.75) !important;
+      border-radius: 14px;
+      border: 1px solid rgba(12,18,32,.08) !important;
+      padding: 10px 12px !important;
+    }
+    #chatAttachBtn, #regenBtn, #sendBtn, #stopBtn{
+      border-radius: 14px;
+    }
+    #sendBtn{
+      min-width: 48px;
+      box-shadow: 0 14px 30px rgba(11,16,32,.18);
+    }
+
+    /* Topbar actions: reduce clutter by showing labels only on wide screens */
+    .topbar-actions .btn.with-label .label{ display:none; }
+    .topbar-actions .btn.with-label{ padding: 8px 10px; }
+    @media (min-width: 1100px){
+      .topbar-actions .btn.with-label .label{ display:inline; }
+      .topbar-actions .btn.with-label{ padding: 8px 12px; }
+    }
+
+    /* Settings — clearer section rhythm */
+    #page-settings .settings-overview{
+      gap: 14px;
+    }
+    .settings-overview-card{
+      border: 1px solid rgba(12,18,32,.08);
+      box-shadow: 0 16px 40px rgba(15,23,42,.08);
+    }
+
+    /* RTL polish: avoid “crowded” feel with better line-height and spacing */
+    body, .bubble .body{
+      line-height: 1.95;
+    }
+    .bubble .body{
+      font-size: 15.75px;
+      letter-spacing: .005em;
+    }
+
+    @media (max-width: 640px){
+      .chatlog{ padding: 12px 10px 10px; }
+      .bubble{ padding: 14px 14px; border-radius: 18px; }
+      .chatbar{ padding: 10px 10px; }
+      #sendBtn{ min-width: 54px; }
+      .topbar{ background: rgba(255,255,255,.92); }
     }
   
     /* v4 Scroll fixes (mobile/PWA) */
@@ -4444,8 +4631,12 @@ body.promptEngineeringMode .topbar .topbar-actions #focusModeBtn{
           <div class="chatbar">
             <input id="chatAttachFiles" type="file" multiple hidden accept="*/*" aria-label="اختيار ملفات للإرفاق" />
             <div class="chatbar-composer-cluster" id="chatComposerCluster" aria-label="حقل الرسالة والمرفقات">
+              <div class="chatbar-mode" aria-label="وضع الكتابة">
+                <button class="btn ghost sm" id="chatInputSingleBtn" type="button" aria-label="وضع سطر واحد" title="سطر واحد">سطر</button>
+                <button class="btn ghost sm" id="chatInputMultiBtn" type="button" aria-label="وضع متعدد الأسطر" title="متعدد الأسطر">فقرة</button>
+              </div>
               <button class="btn ghost" id="chatAttachBtn" type="button" title="إرفاق ملف أو صورة" aria-label="إرفاق ملف أو صورة">📎</button>
-              <input id="chatInput" dir="auto" placeholder="رسالتك أو سؤالك…" aria-label="حقل إدخال الرسالة" />
+              <textarea id="chatInput" dir="auto" rows="1" placeholder="رسالتك أو سؤالك… (Enter للإرسال، Shift+Enter لسطر جديد)" aria-label="حقل إدخال الرسالة"></textarea>
             </div>
             <button class="btn ghost" id="regenBtn" type="button" title="إعادة توليد الإجابة" aria-label="إعادة توليد">↺</button>
             <button class="btn danger icon" id="stopBtn" type="button" style="display:none" title="إيقاف التوليد" aria-label="إيقاف التوليد">⏹</button>
@@ -5042,7 +5233,7 @@ body.promptEngineeringMode .topbar .topbar-actions #focusModeBtn{
     })();
   </script>
 
-<script src="app.js?v=872"></script>
+<script src="app.js?v=873"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -5056,7 +5247,7 @@ body.promptEngineeringMode .topbar .topbar-actions #focusModeBtn{
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v872";
+          const CURRENT_CACHE = "aistudio-cache-v873";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -5065,7 +5256,7 @@ body.promptEngineeringMode .topbar .topbar-actions #focusModeBtn{
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=872").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=873").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

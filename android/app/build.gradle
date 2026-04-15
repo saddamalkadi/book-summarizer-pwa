@@ -20,8 +20,8 @@ android {
         applicationId "com.saddamalkadi.aiworkspace"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 873
-        versionName "8.73.0"
+        versionCode 874
+        versionName "8.74.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
