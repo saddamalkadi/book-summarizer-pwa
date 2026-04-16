@@ -301,8 +301,29 @@ function getWorkerHealth(env) {
   };
 }
 
+const ALLOWED_CORS_ORIGINS = new Set([
+  'https://app.saddamalkadi.com',
+  'https://api.saddamalkadi.com',
+  'https://saddamalkadi.github.io',
+  'https://book-summarizer-pwa.pages.dev',
+  'capacitor://localhost',
+  'ionic://localhost',
+  'http://localhost:8080',
+  'http://127.0.0.1:8080'
+]);
+
+function resolveAllowedOrigin(request) {
+  const origin = String(request.headers.get('Origin') || '').trim();
+  if (!origin) return '*';
+  if (ALLOWED_CORS_ORIGINS.has(origin)) return origin;
+  if (/^https:\/\/[a-z0-9-]+\.saddamalkadi\.com$/i.test(origin)) return origin;
+  if (/^https:\/\/[a-z0-9-]+\.pages\.dev$/i.test(origin)) return origin;
+  if (/^https:\/\/[a-z0-9-]+\.github\.io$/i.test(origin)) return origin;
+  return 'null';
+}
+
 function withCors(response, request) {
-  const origin = request.headers.get('Origin') || '*';
+  const origin = resolveAllowedOrigin(request);
   const h = new Headers(response.headers || {});
   h.set('Access-Control-Allow-Origin', origin);
   h.set('Vary', 'Origin');
@@ -970,7 +991,11 @@ async function requireSession(request, env) {
   if (!token) {
     throw new Error('Missing signed session. Please log in with Google first.');
   }
-  const payload = await verifySignedToken(token, getSessionSecret(env), 'session');
+  const secret = getSessionSecret(env);
+  if (!secret) {
+    throw new Error('Authentication is temporarily unavailable.');
+  }
+  const payload = await verifySignedToken(token, secret, 'session');
   if (!payload?.email) {
     throw new Error('Invalid or expired session.');
   }
@@ -998,7 +1023,11 @@ async function issueSessionToken(profile, env) {
     iat: Math.floor(now / 1000),
     exp: Math.floor((now + SESSION_TTL_MS) / 1000)
   };
-  const sessionToken = await signCompactToken(payload, getSessionSecret(env), 'session');
+  const secret = getSessionSecret(env);
+  if (!secret) {
+    throw new Error('Authentication is temporarily unavailable.');
+  }
+  const sessionToken = await signCompactToken(payload, secret, 'session');
   return {
     ok: true,
     email: payload.email,

@@ -212,7 +212,7 @@ async function handleGoogleTtsProxy(request){
 
     if (patched) {
       code = '// autofix-' + Date.now() + '\n' + code;
-      console.log('[worker-fix] Patched code size:', code.length, '| has-injection:', code.includes('/*aistudio-key-injected*/'), '| has-key:', code.includes(OR_KEY.substring(0,12)));
+      console.log('[worker-fix] Patched code size:', code.length, '| has-injection:', code.includes('/*aistudio-key-injected*/'));
     } else {
       console.log('[worker-fix] Code already fully patched — just redeploying');
       console.log('[worker-fix] Code size:', code.length, '| has-injection:', code.includes('/*aistudio-key-injected*/'));
@@ -220,22 +220,30 @@ async function handleGoogleTtsProxy(request){
 
     // 5) Redeploy Worker — add OR key as plain_text binding (most reliable; no secrets API needed)
     const boundary = 'fix-' + Date.now();
+    const APP_ADMIN_EMAIL      = (process.env.APP_ADMIN_EMAIL || '').trim();
+    const APP_UPGRADE_EMAIL    = (process.env.APP_UPGRADE_EMAIL || APP_ADMIN_EMAIL).trim();
+    const GOOGLE_CLIENT_ID_WEB = (process.env.GOOGLE_CLIENT_ID_WEB || '').trim();
+    const APP_BRAND_NAME       = (process.env.APP_BRAND_NAME || 'AI Workspace Studio').trim();
+    const APP_DEVELOPER_NAME   = (process.env.APP_DEVELOPER_NAME || '').trim();
+    const OPENROUTER_REFERER   = (process.env.OPENROUTER_REFERER || 'https://app.saddamalkadi.com/').trim();
+    const OPENROUTER_TITLE     = (process.env.OPENROUTER_TITLE || 'AI Workspace Studio').trim();
+    const CONVERT_SERVICE      = (process.env.CF_CONVERT_SERVICE || 'sadam-convert').trim();
     const workerBindings = [
       {type:'ai',name:'AI'},
       {type:'kv_namespace',name:'USER_DATA',namespace_id:KV_NS},
-      {type:'service',name:'CONVERT',service:'sadam-convert',environment:'production'},
-      {type:'plain_text',name:'APP_ADMIN_EMAIL',text:'tntntt830@gmail.com'},
-      {type:'plain_text',name:'APP_BRAND_NAME',text:'AI Workspace Studio'},
-      {type:'plain_text',name:'APP_DEVELOPER_NAME',text:'صدام القاضي'},
-      {type:'plain_text',name:'APP_UPGRADE_EMAIL',text:'tntntt830@gmail.com'},
+      {type:'service',name:'CONVERT',service:CONVERT_SERVICE,environment:'production'},
+      {type:'plain_text',name:'APP_BRAND_NAME',text:APP_BRAND_NAME},
       {type:'plain_text',name:'AUTH_REQUIRE_LOGIN',text:'true'},
-      {type:'plain_text',name:'GOOGLE_CLIENT_ID_WEB',text:'320883717933-d8p8877if6u4udo9tfvhbq1en2ps486m.apps.googleusercontent.com'},
-      {type:'plain_text',name:'OPENROUTER_REFERER',text:'https://app.saddamalkadi.com/'},
-      {type:'plain_text',name:'OPENROUTER_TITLE',text:'AI Workspace Studio'},
+      {type:'plain_text',name:'OPENROUTER_REFERER',text:OPENROUTER_REFERER},
+      {type:'plain_text',name:'OPENROUTER_TITLE',text:OPENROUTER_TITLE},
       {type:'plain_text',name:'OPENROUTER_API_KEY',text:OR_KEY}
     ];
+    if (APP_DEVELOPER_NAME)   workerBindings.push({type:'plain_text',name:'APP_DEVELOPER_NAME',text:APP_DEVELOPER_NAME});
+    if (APP_ADMIN_EMAIL)      workerBindings.push({type:'plain_text',name:'APP_ADMIN_EMAIL',text:APP_ADMIN_EMAIL});
+    if (APP_UPGRADE_EMAIL)    workerBindings.push({type:'plain_text',name:'APP_UPGRADE_EMAIL',text:APP_UPGRADE_EMAIL});
+    if (GOOGLE_CLIENT_ID_WEB) workerBindings.push({type:'plain_text',name:'GOOGLE_CLIENT_ID_WEB',text:GOOGLE_CLIENT_ID_WEB});
     if (ADMIN_PASS) {
-      workerBindings.push({ type:'plain_text', name:'APP_ADMIN_PASSWORD', text: ADMIN_PASS });
+      workerBindings.push({type:'plain_text', name:'APP_ADMIN_PASSWORD', text: ADMIN_PASS});
     } else {
       console.log('[worker-fix] Omitting APP_ADMIN_PASSWORD binding: set ADMIN_PASSWORD_REAL to rotate admin password via deploy');
     }

@@ -367,7 +367,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.91';
+  const WEB_RELEASE_LABEL = 'v8.92';
   const RELEASE_CHANNEL = 'rc';
   const HIDE_PUBLIC_AAB = true;
   const DISABLE_RUNTIME_ENDPOINT_EDITING_FOR_MANAGED = true;
@@ -4474,6 +4474,17 @@ function refreshDeepSearchBtn(){
     }
     if (/AUTH_ADMIN_PASSWORD_NOT_CONFIGURED|Admin password login is not configured/i.test(raw)){
       return 'دخول الإدارة بكلمة المرور غير مفعل حاليًا. استخدم تسجيل Google ببريد الإدارة المعتمد.';
+    }
+    if (/Authentication is temporarily unavailable/i.test(raw)){
+      return 'تسجيل الدخول غير متاح مؤقتًا. يرجى المحاولة بعد قليل.';
+    }
+    if (/Invalid or expired session|Missing signed session/i.test(raw)){
+      return 'انتهت صلاحية الجلسة. يرجى إعادة تسجيل الدخول.';
+    }
+    // Do not leak raw backend/runtime errors to end users.
+    if (/^\s*(Error|TypeError|SyntaxError|ReferenceError|RangeError)[:\s]/i.test(raw) ||
+        /\bworker\b|\bcloudflare\b|\bKV\b|\bbinding\b|\bCORS\b|\bNetworkError\b|Failed to fetch/i.test(raw)){
+      return 'تعذر إكمال تسجيل الدخول. يرجى المحاولة مرة أخرى.';
     }
     return raw;
   }
