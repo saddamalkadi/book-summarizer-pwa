@@ -320,16 +320,6 @@ const ALLOWED_CORS_ORIGINS = new Set([
   'http://127.0.0.1:8080'
 ]);
 
-function resolveAllowedOrigin(request) {
-  const origin = String(request.headers.get('Origin') || '').trim();
-  if (!origin) return '*';
-  if (ALLOWED_CORS_ORIGINS.has(origin)) return origin;
-  if (/^https:\/\/[a-z0-9-]+\.saddamalkadi\.com$/i.test(origin)) return origin;
-  if (/^https:\/\/[a-z0-9-]+\.pages\.dev$/i.test(origin)) return origin;
-  if (/^https:\/\/[a-z0-9-]+\.github\.io$/i.test(origin)) return origin;
-  return 'null';
-}
-
 function withCors(response, request) {
   const origin = String(request.headers.get('Origin') || '').trim();
   const h = new Headers(response.headers || {});
