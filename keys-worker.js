@@ -196,19 +196,27 @@ function decodeBase64ToBytes(value) {
 }
 
 function getSessionSecret(env) {
-  return String(
+  const explicit = String(
     env.APP_SESSION_SECRET ||
     env.AUTH_SESSION_SECRET ||
     ''
   ).trim();
+  if (explicit) return explicit;
+  const derived = getServerKey(env);
+  if (derived) return derived;
+  throw new Error('APP_SESSION_SECRET or AUTH_SESSION_SECRET must be configured on the worker.');
 }
 
 function getUpgradeSecret(env) {
-  return String(
+  const explicit = String(
     env.UPGRADE_CODE_SECRET ||
     env.APP_UPGRADE_SECRET ||
     ''
   ).trim();
+  if (explicit) return explicit;
+  const derived = getServerKey(env);
+  if (derived) return derived;
+  throw new Error('UPGRADE_CODE_SECRET or APP_UPGRADE_SECRET must be configured on the worker.');
 }
 
 function getUpgradeAdminToken(env) {
@@ -323,10 +331,18 @@ function resolveAllowedOrigin(request) {
 }
 
 function withCors(response, request) {
-  const origin = resolveAllowedOrigin(request);
+  const origin = String(request.headers.get('Origin') || '').trim();
   const h = new Headers(response.headers || {});
-  h.set('Access-Control-Allow-Origin', origin);
-  h.set('Vary', 'Origin');
+  const allowedOrigin = resolveAllowedOrigin(origin);
+  if (allowedOrigin) {
+    h.set('Access-Control-Allow-Origin', allowedOrigin);
+    if (allowedOrigin !== '*') h.set('Vary', 'Origin');
+  } else if (!origin) {
+    h.set('Access-Control-Allow-Origin', '*');
+  } else {
+    h.set('Access-Control-Allow-Origin', 'null');
+    h.set('Vary', 'Origin');
+  }
   h.set('Access-Control-Allow-Methods', 'GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS');
   h.set('Access-Control-Allow-Headers', [
     'Authorization',
@@ -343,6 +359,31 @@ function withCors(response, request) {
   h.delete('alt-svc');
   h.set('Alt-Svc', 'clear');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers: h });
+}
+
+function resolveAllowedOrigin(origin = '') {
+  const value = String(origin || '').trim();
+  if (!value) return '*';
+  try {
+    const parsed = new URL(value);
+    const host = String(parsed.hostname || '').toLowerCase();
+    if (
+      host === 'app.saddamalkadi.com'
+      || host === 'api.saddamalkadi.com'
+      || host === 'saddamalkadi.com'
+      || host.endsWith('.saddamalkadi.com')
+      || host === 'saddamalkadi.github.io'
+      || host.endsWith('.github.io')
+      || host.endsWith('.pages.dev')
+      || host === 'localhost'
+      || host === '127.0.0.1'
+    ) {
+      return parsed.origin;
+    }
+    return '';
+  } catch (_) {
+    return '';
+  }
 }
 
 async function handleGoogleAuth(request, env) {
