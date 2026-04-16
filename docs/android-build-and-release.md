@@ -1,34 +1,59 @@
 ## Android Build and Release
 
-### 1. Sync web into Capacitor
+### Prerequisites
+
+- JDK 17 or 21 (Temurin recommended)
+- Android SDK with platform and build-tools (see `.github/workflows/build-apk.yml`)
+- Node.js 20+ for Capacitor sync
+
+### 1. Sync web assets into `www/`
+
+```bash
+npm run sync:web
+```
+
+### 2. Sync Capacitor Android project
 
 ```bash
 npm run cap:sync
 ```
 
-### 2. Build (local)
+### 3. Build for local testing (debug)
 
 ```bash
 cd android
-./gradlew assembleRelease bundleRelease
+./gradlew assembleDebug --no-daemon
+```
+
+Output: `android/app/build/outputs/apk/debug/app-debug.apk`
+
+### 4. Build release APK / AAB
+
+```bash
+cd android
+./gradlew assembleRelease bundleRelease --no-daemon
 ```
 
 Outputs:
 
-- APK: `android/app/build/outputs/apk/release/app-release.apk`
-- AAB: `android/app/build/outputs/bundle/release/app-release.aab`
+- `android/app/build/outputs/apk/release/app-release.apk` (or `app-release-unsigned.apk` depending on AGP/signing)
+- `android/app/build/outputs/bundle/release/app-release.aab`
 
-### 3. Release signing
+### 5. Signing (release)
 
-Create `android/keystore.properties` (never commit; paths are gitignored) with:
+Create `android/keystore.properties` (not committed; path is gitignored) with:
 
-- `storeFile` — path to the keystore file
+- `storeFile` — path to your keystore file
 - `storePassword`, `keyAlias`, `keyPassword`
 
-When this file is present, `assembleRelease` / `bundleRelease` use the release signing config. Otherwise Gradle falls back to the debug keystore so CI can still produce an installable APK.
+When this file is valid, `android/app/build.gradle` applies `signingConfigs.release` to the `release` build type.
 
-Sign or verify with Android SDK `apksigner` / `jarsigner` as needed for your keystore.
+If no keystore is configured, release builds fall back to the debug keystore so CI can produce an installable APK for pre-store testing. **Do not use debug-signed builds for Play Store submission.**
 
-### 4. Publishing APK for testers
+### 6. Verify an APK
 
-After a release build, copy the APK to `downloads/` with a stable name (for example `ai-workspace-studio-latest.apk`) and update `downloads/index.html` if the marketed version string changes. GitHub Actions builds `assembleRelease` on each push to `main` and attaches artifacts to the matching GitHub Release.
+Use `apksigner verify` from Android build-tools on the release APK you intend to distribute.
+
+### 7. Public download page (`downloads/`)
+
+The hosted trial page ships **APK** as the primary user-facing artifact (`ai-workspace-studio-latest.apk`). The AAB is produced in CI for Play Console uploads and synced under `downloads/` for maintainers; it is not promoted on the public downloads page.
