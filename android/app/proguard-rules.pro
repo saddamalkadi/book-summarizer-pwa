@@ -19,3 +19,11 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Keep WebView bridge/plugin entry points used by Capacitor.
+-keep class com.getcapacitor.** { *; }
+-keep class capacitor.plugin.** { *; }
+-keep class com.capacitorjs.plugins.** { *; }
+
+# Preserve runtime annotations referenced by AndroidX / Capacitor plugins.
+-keepattributes *Annotation*

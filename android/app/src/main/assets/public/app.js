@@ -22,13 +22,13 @@
     kbSettings: (pid) => `aistudio_kb_settings_${pid}_v3`,
     ragToggle: 'aistudio_rag_toggle_v3',
     deepSearch: 'aistudio_mode_deepsearch_v6',
-    headerCollapsed: 'aistudio_header_collapsed_v5',
-    chatToolbarCollapsed: 'aistudio_chat_toolbar_collapsed_v5',
-    chatToolbarPinned: 'aistudio_chat_toolbar_pinned_v1',
+    headerCollapsed: 'aistudio_header_collapsed_v6',
+    chatToolbarCollapsed: 'aistudio_chat_toolbar_collapsed_v6',
+    chatToolbarPinned: 'aistudio_chat_toolbar_pinned_v2',
     toolbarCollapsedMap: 'aistudio_toolbar_collapsed_map_v1',
     workspaceSectionMap: 'aistudio_workspace_sections_v1',
     projectBrief: (pid) => `aistudio_project_brief_${pid}_v1`,
-    sidebarPinned: 'aistudio_sidebar_pinned_v1',
+    sidebarPinned: 'aistudio_sidebar_pinned_v2',
     focusMode: 'aistudio_focus_mode_v1',
     promptEngineeringMode: 'aistudio_prompt_engineering_mode_v1',
     studyMode: 'aistudio_study_mode_v1',
@@ -366,8 +366,45 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.81';
+  const WEB_RELEASE_LABEL = 'v8.84';
+  const RELEASE_CHANNEL = 'rc';
+  const HIDE_PUBLIC_AAB = true;
+  const DISABLE_RUNTIME_ENDPOINT_EDITING_FOR_MANAGED = true;
+  const SHOW_UPGRADE_EMAIL_FIELD = false;
+  const EXPOSE_BRAND_DEVELOPER_CREDIT = false;
   const DEFAULT_POST_LOGIN_PAGE = 'home';
+
+  function isManagedLockedRuntime(){
+    return isManagedHostedRuntime() || (typeof isNativePlatform === 'function' && isNativePlatform());
+  }
+
+  function sanitizePublicAuthConfig(config = {}){
+    const next = { ...(config || {}) };
+    if (DISABLE_RUNTIME_ENDPOINT_EDITING_FOR_MANAGED && isManagedLockedRuntime()){
+      next.upgradeEmail = '';
+      next.developerName = '';
+    }
+    return next;
+  }
+
+  function sanitizeAuthErrorMessage(message = ''){
+    const raw = String(message || '').trim();
+    if (!raw) return 'تعذر إتمام تسجيل الدخول الآن. حاول مرة أخرى.';
+    if (/AUTH_ADMIN_PASSWORD_NOT_CONFIGURED|Admin password login is not configured/i.test(raw)) return 'تسجيل الدخول الإداري بكلمة المرور غير متاح الآن. استخدم Google للحساب الإداري.';
+    if (/AUTH_INVALID_ADMIN_CREDENTIALS|Invalid admin credentials/i.test(raw)) return 'تعذر تسجيل الدخول بهذه البيانات.';
+    if (/configured as the admin account/i.test(raw)) return 'هذا الحساب يحتاج مسار دخول الإدارة المناسب.';
+    return raw;
+  }
+
+  function buildSafeUpgradeRequestPayload(account = getAuthState()){
+    return {
+      email: String(account.email || '').trim().toLowerCase(),
+      name: String(account.name || '').trim(),
+      plan: account.plan || 'free',
+      role: account.role || 'user',
+      appVersion: WEB_RELEASE_LABEL
+    };
+  }
 
   const UNSYNCED_STORAGE_KEYS = new Set([
     KEYS.authState,
@@ -1282,13 +1319,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   async function fetchAuthHealthSnapshot(root){
     if (!root) return null;
     try{
-      const response = await fetch(`${root}/health`, {
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache, no-store, max-age=0',
-          Pragma: 'no-cache'
-        }
-      });
+      const response = await fetch(`${root}/health`, { cache: 'no-store' });
       const raw = await response.text();
       const parsed = raw ? JSON.parse(raw) : null;
       AUTH_RUNTIME.authHealth = parsed && typeof parsed === 'object' ? parsed : null;
@@ -1315,9 +1346,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       const response = await fetch(`${root}/auth/config`, {
         cache: 'no-store',
         headers: {
-          ...(activeSettings.gatewayToken ? { 'X-Client-Token': activeSettings.gatewayToken } : {}),
-          'Cache-Control': 'no-cache, no-store, max-age=0',
-          Pragma: 'no-cache'
+          ...(activeSettings.gatewayToken ? { 'X-Client-Token': activeSettings.gatewayToken } : {})
         }
       });
       const raw = await response.text();
@@ -1329,7 +1358,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       const healthPayload = await fetchAuthHealthSnapshot(root);
       const local = getLocalAuthConfig(activeSettings);
       const remote = payload || {};
-      const normalized = {
+      const normalized = sanitizePublicAuthConfig({
         ...remote,
         googleClientId: String(remote.googleClientId || '').trim(),
         upgradeEmail: String(remote.upgradeEmail || local.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail).trim(),
@@ -1349,7 +1378,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
         voiceSynthesisVoice: String(remote.voiceSynthesisVoice || local.voiceSynthesisVoice || DEFAULT_AUTH_CONFIG.voiceSynthesisVoice).trim(),
         voicePreferredLanguage: String(remote.voicePreferredLanguage || local.voicePreferredLanguage || DEFAULT_AUTH_CONFIG.voicePreferredLanguage).trim(),
         voicePremiumOnly: remote.voicePremiumOnly !== false
-      };
+      });
       const stabilized = preserveAdminPasswordCapability(normalized, previous, healthPayload);
       return setAuthConfigCached(stabilized);
     };
@@ -2525,7 +2554,12 @@ const getChatToolbarCollapsed = () => (localStorage.getItem(KEYS.chatToolbarColl
 const setChatToolbarCollapsed = (v) => localStorage.setItem(KEYS.chatToolbarCollapsed, v ? 'true' : 'false');
 const getChatToolbarPinned = () => (localStorage.getItem(KEYS.chatToolbarPinned) || 'true') === 'true';
 const setChatToolbarPinned = (v) => localStorage.setItem(KEYS.chatToolbarPinned, v ? 'true' : 'false');
-const getSidebarPinned = () => (localStorage.getItem(KEYS.sidebarPinned) || 'false') === 'true';
+// Default to pinned on fresh installs to keep navigation discoverable.
+const getSidebarPinned = () => {
+  const raw = localStorage.getItem(KEYS.sidebarPinned);
+  if (raw == null) return true;
+  return String(raw) === 'true';
+};
 const setSidebarPinned = (v) => localStorage.setItem(KEYS.sidebarPinned, v ? 'true' : 'false');
 const getPromptEngineeringMode = () => {
   const explicit = localStorage.getItem(KEYS.promptEngineeringMode);
@@ -4685,7 +4719,7 @@ function refreshDeepSearchBtn(){
           <div class="brand-copy">
             <div class="name">AI Workspace Studio</div>
             <div class="sub">منصة عربية للدردشة والبحث والملفات وسير العمل</div>
-            <span class="developer-credit">تم تطوير التطبيق بواسطة صدام القاضي</span>
+            ${EXPOSE_BRAND_DEVELOPER_CREDIT ? '<span class=\"developer-credit\">تم تطوير التطبيق بواسطة صدام القاضي</span>' : ''}
           </div>
         </div>
         <button class="iconbtn" id="closeSideBtn" title="إغلاق">✕</button>`;
@@ -4802,7 +4836,7 @@ function refreshDeepSearchBtn(){
           <div class="status" id="settingsPlanBanner" data-tone="info">الخطة المجانية تفعّل نموذجًا مجانيًا فقط وتوقف الميزات الأعلى تكلفة تلقائيًا.</div>
           <div class="account-actions">
             <button class="btn sm with-label" type="button" id="accountSignInBtn"><span class="icon">🔐</span><span class="label">تسجيل الدخول</span></button>
-            <button class="btn ghost sm with-label" type="button" id="accountUpgradeRequestBtn"><span class="icon">✉️</span><span class="label">طلب ترقية</span></button>
+            <button class="btn ghost sm with-label" type="button" id="accountUpgradeRequestBtn"><span class="icon">✉️</span><span class="label">طلب تفعيل مدفوع</span></button>
             <button class="btn ghost sm with-label" type="button" id="accountLogoutBtn"><span class="icon">↩</span><span class="label">تسجيل الخروج</span></button>
           </div>
           <div class="upgrade-inline" id="upgradeRedeemRow">
@@ -4840,8 +4874,8 @@ function refreshDeepSearchBtn(){
           </details>
           <div class="row" style="margin-top:10px">
             <div class="col" style="grid-column:1/-1">
-              <label class="hint">بريد طلب الترقية</label>
-              <input id="upgradeEmail" type="email" placeholder="tntntt830@gmail.com" />
+              <label class="hint">قناة التفعيل</label>
+              <input id="upgradeEmail" type="email" placeholder="تُدار من الخادم" />
             </div>
           </div>
         </div>`);
@@ -4918,6 +4952,7 @@ function refreshDeepSearchBtn(){
     if ($('upgradeCodeInput') && auth.upgradeCode && !$('upgradeCodeInput').value) $('upgradeCodeInput').value = auth.upgradeCode;
 
     if ($('upgradeEmail')) $('upgradeEmail').value = settings.upgradeEmail || config.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail;
+    if ($('upgradeEmail')) $('upgradeEmail').closest('.row')?.style.setProperty('display', SHOW_UPGRADE_EMAIL_FIELD ? '' : 'none');
     if ($('adminUpgradePanel')) $('adminUpgradePanel').style.display = signedIn && role === 'admin' ? '' : 'none';
     if ($('adminUpgradeEmail') && signedIn && role === 'admin' && !$('adminUpgradeEmail').value) $('adminUpgradeEmail').value = '';
     if ($('adminGenerateUpgradeBtn')) $('adminGenerateUpgradeBtn').disabled = !(signedIn && role === 'admin');
@@ -4976,7 +5011,7 @@ function refreshDeepSearchBtn(){
   }
 
 function syncUnifiedAuthEntry(){
-    const config = getEffectiveAuthConfig();
+    const config = sanitizePublicAuthConfig(getEffectiveAuthConfig());
     const email = String($('authEntryEmail')?.value || '').trim().toLowerCase();
     const isAdminEntry = !!email && email === String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
     const adminPasswordEnabled = config.adminPasswordEnabled === true;
@@ -5004,9 +5039,9 @@ function syncUnifiedAuthEntry(){
       : 'متابعة بالخطة المجانية';
     if (hint) hint.textContent = isAdminEntry
       ? (adminGoogleOnly
-        ? 'تم التعرف على بريد الإدارة. يمكنك المتابعة عبر Google، أو تجربة كلمة المرور إذا تم تفعيلها على الخادم.'
-        : 'تم التعرف على بريد الإدارة. أدخل كلمة المرور لفتح الحساب الإداري، ويمكنك أيضًا استخدام Google بنفس البريد.')
-      : 'أي بريد شخصي صالح يفتح لك الخطة المجانية فورًا، ويمكنك طلب الترقية لاحقًا من داخل التطبيق.';
+        ? 'هذا الحساب يحتاج دخول الإدارة عبر Google أو كلمة المرور عندما تكون متاحة.'
+        : 'هذا الحساب يحتاج كلمة مرور الإدارة أو Google عندما تكون متاحة.')
+      : 'أي بريد شخصي صالح يفتح لك الخطة المجانية فورًا، ويمكنك الترقية لاحقًا داخل التطبيق.';
     if ($('authCurrentPlanPill')){
       $('authCurrentPlanPill').textContent = isAdminEntry ? 'الإدارة' : 'الخطة المجانية';
       $('authCurrentPlanPill').classList.toggle('premium', isAdminEntry);
@@ -5398,7 +5433,7 @@ async function submitUnifiedAuthEntry(){
       return;
     }
     try{
-      const config = await loadRemoteAuthConfig(true).catch(() => getEffectiveAuthConfig());
+      const config = sanitizePublicAuthConfig(await loadRemoteAuthConfig(true).catch(() => getEffectiveAuthConfig()));
       const adminEmail = String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
       isAdminEntry = !!email && email === adminEmail;
       const adminPasswordEnabled = config.adminPasswordEnabled === true;
@@ -5410,15 +5445,15 @@ async function submitUnifiedAuthEntry(){
       let payload = null;
       if (isAdminEntry){
         if (!adminAllowsPassword && adminGoogleReady){
-          setAuthGateStatus('هذا هو بريد الإدارة. جارٍ فتح شاشة Google الوسيطة لهذا الحساب...', 'busy');
+          setAuthGateStatus('هذا الحساب يحتاج مسار دخول الإدارة المناسب. جارٍ فتح Google...', 'busy');
           await openGoogleAuthInBrowser();
           return;
         }
         if (!password){
           if (adminGoogleReady){
-            setAuthGateStatus('هذا هو بريد الإدارة. أدخل كلمة المرور أو استخدم Google من نفس الشاشة.', 'error');
+            setAuthGateStatus('هذا الحساب يحتاج كلمة المرور أو Google حسب إعدادات الإدارة.', 'error');
           } else {
-            setAuthGateStatus('هذا هو بريد الإدارة. أدخل كلمة المرور للمتابعة.', 'error');
+            setAuthGateStatus('هذا الحساب يحتاج كلمة مرور الإدارة للمتابعة.', 'error');
           }
           return;
         }
@@ -5429,7 +5464,7 @@ async function submitUnifiedAuthEntry(){
             body: JSON.stringify({ email, password })
           });
         }catch(error){
-          const message = String(error?.message || error || '').trim();
+          const message = sanitizeAuthErrorMessage(error?.message || error || '');
           if (/AUTH_ADMIN_PASSWORD_NOT_CONFIGURED|Admin password login is not configured/i.test(message) && adminGoogleReady){
             setAuthGateStatus('الخادم يطلب استخدام Google لهذا الحساب الإداري حاليًا. جارٍ فتح الشاشة الوسيطة...', 'busy');
             await openGoogleAuthInBrowser();
@@ -5469,7 +5504,7 @@ async function submitUnifiedAuthEntry(){
       if ($('authEntryPassword')) $('authEntryPassword').value = '';
       toast(isAdminEntry ? '✅ تم تسجيل الدخول الإداري' : '✅ تم فتح الخطة المجانية بنجاح');
     }catch(error){
-      const message = explainAuthError(error, { nativeGoogle: false });
+      const message = sanitizeAuthErrorMessage(explainAuthError(error, { nativeGoogle: false }));
       setAuthGateStatus(`${isAdminEntry ? 'فشل دخول الإدارة' : 'فشل تسجيل الدخول'}: ${message}`, 'error');
       toast(`⚠️ ${message}`);
     }
@@ -5501,9 +5536,9 @@ async function submitUnifiedAuthEntry(){
     try{
       const payload = await fetchAuthJson('/auth/upgrade/request', {
         method: 'POST',
-        body: JSON.stringify({ appVersion: '8.0' })
+        body: JSON.stringify(buildSafeUpgradeRequestPayload(account))
       }).catch(() => null);
-      const mailto = payload?.mailto || buildUpgradeMailto(account, getEffectiveAuthConfig());
+      const mailto = payload?.mailto || buildUpgradeMailto(account, sanitizePublicAuthConfig(getEffectiveAuthConfig()));
       window.location.href = mailto;
       toast('✉️ تم تجهيز رسالة طلب الترقية');
     }catch(error){
@@ -5697,26 +5732,27 @@ async function submitUnifiedAuthEntry(){
     }
 
     const topActions = document.querySelector('.topbar .topbar-actions');
+    if (topActions){ topActions.classList.toggle('topbar-actions--compact', window.innerWidth <= 640); }
     if (topActions && !$('historyDrawerBtn')){
       const historyBtn = document.createElement('button');
       historyBtn.type = 'button';
       historyBtn.id = 'historyDrawerBtn';
       historyBtn.className = 'btn ghost sm with-label';
-      topActions.insertBefore(historyBtn, $('focusModeBtn') || $('headerCollapseBtn'));
+      topActions.insertBefore(historyBtn, $('headerCollapseBtn') || null);
     }
     if (topActions && !$('studyModeBtn')){
       const study = document.createElement('button');
       study.type = 'button';
       study.id = 'studyModeBtn';
       study.className = 'btn ghost sm with-label';
-      topActions.insertBefore(study, $('focusModeBtn') || $('headerCollapseBtn'));
+      topActions.insertBefore(study, $('headerCollapseBtn') || null);
     }
     if (topActions && !$('focusModeBtn')){
       const focus = document.createElement('button');
       focus.type = 'button';
       focus.id = 'focusModeBtn';
       focus.className = 'btn ghost sm with-label';
-      topActions.insertBefore(focus, $('headerCollapseBtn'));
+      topActions.insertBefore(focus, $('headerCollapseBtn') || null);
     }
     if (topActions && !$('voiceModeBtn')){
       const voice = document.createElement('button');
@@ -5724,7 +5760,7 @@ async function submitUnifiedAuthEntry(){
       voice.id = 'voiceModeBtn';
       voice.className = 'btn ghost sm with-label';
       voice.innerHTML = '<span class="icon">🎙️</span><span class="label">صوت</span>';
-      topActions.insertBefore(voice, $('modeOffBtn') || $('newThreadBtn') || null);
+      topActions.insertBefore(voice, $('zoomOutBtn') || $('newThreadBtn') || null);
     }
     if (topActions && !$('zoomOutBtn')){
       const zoomOut = document.createElement('button');
@@ -5732,7 +5768,7 @@ async function submitUnifiedAuthEntry(){
       zoomOut.id = 'zoomOutBtn';
       zoomOut.className = 'btn ghost sm with-label';
       zoomOut.innerHTML = '<span class="icon">➖</span><span class="label">تصغير</span>';
-      topActions.insertBefore(zoomOut, $('newThreadBtn') || null);
+      topActions.insertBefore(zoomOut, $('darkModeBtn') || $('newThreadBtn') || null);
     }
     if (topActions && !$('zoomLevelBadge')){
       const badge = document.createElement('span');
@@ -5756,7 +5792,7 @@ async function submitUnifiedAuthEntry(){
       dark.className = 'btn ghost sm with-label';
       dark.setAttribute('aria-pressed', 'false');
       dark.innerHTML = '<span class="icon">🌙</span><span class="label">داكن</span>';
-      topActions.insertBefore(dark, $('newThreadBtn') || null);
+      topActions.insertBefore(dark, $('zoomOutBtn') || $('newThreadBtn') || null);
     }
 
     const moreGroupItems = $('moreGroupItems');
@@ -8282,26 +8318,27 @@ async function fileToText(file){
       anchor.remove();
       return true;
     }
+    // Important: keep the download inside the same user gesture chain.
+    // Many mobile browsers/WebViews block async fetch->download flows.
     try{
-      const response = await fetch(normalized.url, { method:'GET' });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const blob = await response.blob();
-      downloadBlob(normalized.name, new Blob([blob], { type: blob.type || normalized.mime }));
+      const href = normalized.url;
+      const sameOrigin = (() => {
+        try{ return new URL(href, location.href).origin === location.origin; }catch(_){ return false; }
+      })();
+      const anchor = document.createElement('a');
+      anchor.href = href;
+      if (sameOrigin) anchor.download = normalized.name;
+      anchor.target = '_blank';
+      anchor.rel = 'noopener noreferrer';
+      anchor.style.position = 'fixed';
+      anchor.style.left = '-9999px';
+      anchor.style.top = '-9999px';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
       return true;
     }catch(_){
-      try{
-        const anchor = document.createElement('a');
-        anchor.href = normalized.url;
-        anchor.download = normalized.name;
-        anchor.target = '_blank';
-        anchor.rel = 'noopener noreferrer';
-        document.body.appendChild(anchor);
-        anchor.click();
-        anchor.remove();
-        return true;
-      }catch(__){
-        return false;
-      }
+      return false;
     }
   }
   async function downloadStoredItem(downloadId){
@@ -8312,6 +8349,36 @@ async function fileToText(file){
     }
     downloadBlob(entry.name, buildBlobFromDownload(entry));
     return true;
+  }
+
+  function downloadStoredItemInGesture(downloadId){
+    const entry = resolveDownloadEntry(downloadId);
+    if (!entry) return false;
+    // Keep downloads inside a direct user gesture chain (Android/desktop mobile browsers block async downloads).
+    if (entry.encoding === 'url' && entry.url){
+      const normalized = normalizeDownloadEntry(entry);
+      try{
+        const anchor = document.createElement('a');
+        anchor.href = normalized.url;
+        anchor.rel = 'noopener noreferrer';
+        anchor.target = '_blank';
+        // Only set download attribute for same-origin / data URLs (cross-origin often ignores it).
+        if (/^data:/i.test(normalized.url)) anchor.download = normalized.name;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        return true;
+      }catch(_){
+        try{ window.open(normalized.url, '_blank', 'noopener'); }catch(__){}
+        return true;
+      }
+    }
+    try{
+      downloadBlob(entry.name, buildBlobFromDownload(entry));
+      return true;
+    }catch(_){
+      return false;
+    }
   }
   function estimateDownloadBytes(entry){
     const normalized = normalizeDownloadEntry(entry);
@@ -9594,13 +9661,286 @@ ${clip}` });
     scope?.querySelectorAll?.('[data-download-id]')?.forEach((el) => {
       if (el.dataset.bound === 'true') return;
       el.dataset.bound = 'true';
-      el.addEventListener('click', async (ev) => {
+      el.addEventListener('click', (ev) => {
         ev.preventDefault();
-        const ok = await downloadStoredItem(el.dataset.downloadId);
+        const ok = downloadStoredItemInGesture(el.dataset.downloadId);
         if (!ok) toast('⚠️ تعذر العثور على الملف المطلوب');
       });
     });
     bindAssistantDocxPreviews(scope).catch(() => {});
+  }
+
+  // ---------------- Assistant artifacts (download-as) ----------------
+  const ARTIFACT_LIBS = {
+    jszip: { url: 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js', check: () => !!window.JSZip },
+    xlsx: { url: 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js', check: () => !!window.XLSX },
+    pptx: { url: 'https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js', check: () => !!window.PptxGenJS },
+    jspdf: { url: 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js', check: () => !!(window.jspdf && window.jspdf.jsPDF) }
+  };
+  const ARTIFACT_FORMATS = [
+    { id:'txt', label:'TXT' },
+    { id:'md', label:'Markdown' },
+    { id:'html', label:'HTML' },
+    { id:'json', label:'JSON' },
+    { id:'csv', label:'CSV' },
+    { id:'docx', label:'DOCX' },
+    { id:'pdf', label:'PDF' },
+    { id:'xlsx', label:'XLSX' },
+    { id:'pptx', label:'PPTX' },
+    { id:'zip', label:'ZIP (جمع الملفات)' },
+  ];
+
+  function loadScriptOnce(url){
+    const href = String(url || '').trim();
+    if (!href) return Promise.reject(new Error('missing_script_url'));
+    if (!window.__aistudioScripts) window.__aistudioScripts = new Map();
+    const cache = window.__aistudioScripts;
+    if (cache.has(href)) return cache.get(href);
+    const p = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = href;
+      s.async = true;
+      s.onload = () => resolve(true);
+      s.onerror = () => reject(new Error(`script_load_failed ${href}`));
+      document.head.appendChild(s);
+    });
+    cache.set(href, p);
+    return p;
+  }
+  async function ensureArtifactLib(kind){
+    const spec = ARTIFACT_LIBS[kind];
+    if (!spec) return true;
+    if (spec.check()) return true;
+    await loadScriptOnce(spec.url);
+    return !!spec.check();
+  }
+
+  function ensureArtifactModal(){
+    if ($('artifactModal')) return;
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'artifactModal';
+    modal.innerHTML = `
+      <div class="backdrop" data-artifact-close="1"></div>
+      <div class="panel" role="dialog" aria-modal="true" aria-label="تنزيل الرد كملف">
+        <div class="head">
+          <div class="title">تنزيل الرد كملف</div>
+          <button class="btn ghost sm" data-artifact-close="1">إغلاق</button>
+        </div>
+        <div class="body">
+          <div class="row">
+            <div class="col">
+              <div class="hint">الصيغة</div>
+              <select id="artifactFormat"></select>
+            </div>
+            <div class="col">
+              <div class="hint">اسم الملف</div>
+              <input id="artifactFilename" type="text" placeholder="output.txt" />
+            </div>
+          </div>
+          <div class="hint" style="margin-top:10px">سيتم تنزيل محتوى الرد الحالي. في ZIP سيتم جمع الملفات المُستخرجة من الرسالة (إن وجدت).</div>
+          <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+            <button class="btn" id="artifactDownloadBtn">⬇ تنزيل</button>
+            <span class="hint" id="artifactStatus"></span>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+
+    const sel = $('artifactFormat');
+    if (sel){
+      sel.innerHTML = ARTIFACT_FORMATS.map((f) => `<option value="${escapeHtml(f.id)}">${escapeHtml(f.label)}</option>`).join('');
+    }
+    modal.querySelectorAll('[data-artifact-close="1"]').forEach((el) => {
+      el.addEventListener('click', () => closeArtifactModal());
+    });
+  }
+  function openArtifactModal(payload){
+    ensureArtifactModal();
+    const modal = $('artifactModal');
+    if (!modal) return;
+    modal.dataset.mid = String(payload?.mid || '');
+    modal.dataset.title = String(payload?.title || '');
+    modal.dataset.text = String(payload?.text || '');
+    modal.dataset.downloadCount = String(payload?.downloads?.length || 0);
+
+    const fmt = $('artifactFormat');
+    const name = $('artifactFilename');
+    const status = $('artifactStatus');
+    if (status) status.textContent = '';
+    if (fmt) fmt.value = 'md';
+    if (name){
+      const base = sanitizeBlockAttrValue(payload?.title || 'assistant') || 'assistant';
+      name.value = `${base}.md`;
+    }
+    if (fmt && name){
+      fmt.addEventListener('change', () => {
+        const base = (name.value || 'assistant').replace(/\.[a-z0-9]+$/i,'') || 'assistant';
+        name.value = `${base}.${fmt.value}`;
+      }, { once: true });
+    }
+    const btn = $('artifactDownloadBtn');
+    if (btn && btn.dataset.bound !== 'true'){
+      btn.dataset.bound = 'true';
+      btn.addEventListener('click', () => runArtifactDownload().catch(() => {}));
+    }
+    modal.classList.add('show');
+  }
+  function closeArtifactModal(){
+    const modal = $('artifactModal');
+    if (!modal) return;
+    modal.classList.remove('show');
+  }
+
+  function pickMessageDownloads(mid){
+    const b = $('chatLog')?.querySelector?.(`.bubble.assistant[data-mid="${CSS.escape(String(mid||''))}"]`);
+    if (!b) return [];
+    // downloads are already stored in localStorage; we only need the IDs.
+    const ids = Array.from(b.querySelectorAll('[data-download-id]')).map((el) => el.dataset.downloadId).filter(Boolean);
+    return ids.map((id) => resolveDownloadEntry(id)).filter(Boolean);
+  }
+
+  function extractLikelyJson(text){
+    const s = String(text || '').trim();
+    if (!s) return null;
+    // Try direct JSON, or first fenced code block.
+    try{ return JSON.parse(s); }catch(_){}
+    const m = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (m){
+      try{ return JSON.parse(String(m[1] || '').trim()); }catch(_){}
+    }
+    return null;
+  }
+  function extractLikelyCsv(text){
+    const s = String(text || '').trim();
+    if (!s) return '';
+    const m = s.match(/```(?:csv)?\s*([\s\S]*?)```/i);
+    return String((m ? m[1] : s) || '').trim();
+  }
+
+  async function buildArtifactBlob({ format, filename, text, downloads }){
+    const fmt = String(format || 'txt').toLowerCase();
+    const name = String(filename || 'download').trim() || 'download';
+    const rawText = String(text || '');
+
+    if (fmt === 'zip'){
+      await ensureArtifactLib('jszip');
+      if (!window.JSZip) throw new Error('ZIP_LIB_MISSING');
+      const zip = new window.JSZip();
+      const list = Array.isArray(downloads) ? downloads.filter(Boolean) : [];
+      if (list.length){
+        for (const entry of list){
+          const n = sanitizeBlockAttrValue(entry.name || '') || 'download.bin';
+          const blob = entry.encoding === 'url' && entry.url ? null : buildBlobFromDownload(entry);
+          if (blob){
+            zip.file(n, blob);
+          }else if (entry.url){
+            zip.file(`${n}.url.txt`, String(entry.url || '').trim());
+          }
+        }
+      }else{
+        zip.file(name.replace(/\.zip$/i,'') + '.md', rawText || '');
+      }
+      const out = await zip.generateAsync({ type:'blob' });
+      return { blob: out, mime:'application/zip', filename: name.endsWith('.zip') ? name : `${name}.zip` };
+    }
+
+    if (fmt === 'json'){
+      const payload = extractLikelyJson(rawText);
+      if (!payload) throw new Error('INVALID_JSON');
+      const normalized = JSON.stringify(payload, null, 2);
+      return { blob: new Blob([normalized], { type:'application/json;charset=utf-8' }), mime:'application/json', filename: name.endsWith('.json') ? name : `${name}.json` };
+    }
+
+    if (fmt === 'csv'){
+      const csv = extractLikelyCsv(rawText);
+      return { blob: new Blob([csv], { type:'text/csv;charset=utf-8' }), mime:'text/csv', filename: name.endsWith('.csv') ? name : `${name}.csv` };
+    }
+
+    if (fmt === 'md'){
+      return { blob: new Blob([rawText], { type:'text/markdown;charset=utf-8' }), mime:'text/markdown', filename: name.endsWith('.md') ? name : `${name}.md` };
+    }
+    if (fmt === 'html'){
+      const html = (window.marked ? sanitizeRenderedHtml(window.marked.parse(String(rawText || ''))) : `<pre>${escapeHtml(rawText)}</pre>`);
+      const doc = `<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><title>${escapeHtml(name)}</title><body>${html}</body></html>`;
+      return { blob: new Blob([doc], { type:'text/html;charset=utf-8' }), mime:'text/html', filename: name.endsWith('.html') ? name : `${name}.html` };
+    }
+    if (fmt === 'docx'){
+      const toDocx = getHtmlToDocxFn?.() || null;
+      if (!toDocx) throw new Error('DOCX_CONVERTER_MISSING');
+      const html = (window.marked ? sanitizeRenderedHtml(window.marked.parse(String(rawText || ''))) : `<pre>${escapeHtml(rawText)}</pre>`);
+      const bin = await toDocx(html, { orientation:'portrait' });
+      return { blob: new Blob([bin], { type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), mime:'application/vnd.openxmlformats-officedocument.wordprocessingml.document', filename: name.endsWith('.docx') ? name : `${name}.docx` };
+    }
+    if (fmt === 'pdf'){
+      await ensureArtifactLib('jspdf');
+      const jsPDF = window.jspdf?.jsPDF;
+      if (!jsPDF) throw new Error('PDF_LIB_MISSING');
+      const doc = new jsPDF({ unit:'pt', format:'a4' });
+      const margin = 48;
+      const maxW = doc.internal.pageSize.getWidth() - margin * 2;
+      const lines = doc.splitTextToSize(String(rawText || ''), maxW);
+      doc.text(lines, margin, margin);
+      const blob = doc.output('blob');
+      return { blob, mime:'application/pdf', filename: name.endsWith('.pdf') ? name : `${name}.pdf` };
+    }
+    if (fmt === 'xlsx'){
+      await ensureArtifactLib('xlsx');
+      if (!window.XLSX) throw new Error('XLSX_LIB_MISSING');
+      const payload = extractLikelyJson(rawText);
+      let ws;
+      if (Array.isArray(payload)){
+        ws = window.XLSX.utils.json_to_sheet(payload);
+      }else{
+        const csv = extractLikelyCsv(rawText);
+        ws = window.XLSX.utils.aoa_to_sheet(csv.split(/\r?\n/).filter(Boolean).map((line) => line.split(',')));
+      }
+      const wb = window.XLSX.utils.book_new();
+      window.XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+      const out = window.XLSX.write(wb, { bookType:'xlsx', type:'array' });
+      return { blob: new Blob([out], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), mime:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', filename: name.endsWith('.xlsx') ? name : `${name}.xlsx` };
+    }
+    if (fmt === 'pptx'){
+      await ensureArtifactLib('pptx');
+      if (!window.PptxGenJS) throw new Error('PPTX_LIB_MISSING');
+      const pptx = new window.PptxGenJS();
+      pptx.layout = 'LAYOUT_WIDE';
+      const slide = pptx.addSlide();
+      const content = String(rawText || '').trim() || ' ';
+      slide.addText(content.slice(0, 5000), { x:0.6, y:0.6, w:12.0, h:6.2, fontSize:18, color:'2b2b2b', rtl:true });
+      const buf = await pptx.write('arraybuffer');
+      return { blob: new Blob([buf], { type:'application/vnd.openxmlformats-officedocument.presentationml.presentation' }), mime:'application/vnd.openxmlformats-officedocument.presentationml.presentation', filename: name.endsWith('.pptx') ? name : `${name}.pptx` };
+    }
+
+    return { blob: new Blob([rawText], { type:'text/plain;charset=utf-8' }), mime:'text/plain', filename: name.endsWith('.txt') ? name : `${name}.txt` };
+  }
+
+  async function runArtifactDownload(){
+    const modal = $('artifactModal');
+    if (!modal) return;
+    const fmt = $('artifactFormat')?.value || 'txt';
+    const filename = $('artifactFilename')?.value || 'download.txt';
+    const status = $('artifactStatus');
+    if (status) status.textContent = '...';
+    const mid = modal.dataset.mid || '';
+    const title = modal.dataset.title || '';
+    const text = modal.dataset.text || '';
+    const downloads = pickMessageDownloads(mid);
+    try{
+      const out = await buildArtifactBlob({ format: fmt, filename, text, downloads, title });
+      downloadBlob(out.filename || filename, out.blob);
+      if (status) status.textContent = '✅ تم تجهيز التنزيل';
+    }catch(err){
+      const msg = String(err?.message || err || '').toUpperCase();
+      if (msg.includes('INVALID_JSON')) toast('⚠️ لا يوجد JSON صالح في هذا الرد.');
+      else if (msg.includes('DOCX_CONVERTER_MISSING')) toast('⚠️ محول DOCX غير متاح في هذه الجلسة.');
+      else if (msg.includes('ZIP_LIB_MISSING')) toast('⚠️ تعذر تحميل مكتبة ZIP.');
+      else if (msg.includes('PDF_LIB_MISSING')) toast('⚠️ تعذر تحميل مكتبة PDF.');
+      else if (msg.includes('XLSX_LIB_MISSING')) toast('⚠️ تعذر تحميل مكتبة Excel.');
+      else if (msg.includes('PPTX_LIB_MISSING')) toast('⚠️ تعذر تحميل مكتبة PowerPoint.');
+      else toast('⚠️ تعذر تجهيز الملف للتنزيل.');
+      if (status) status.textContent = '';
+    }
   }
 
   function describeAttachmentChip(a){
@@ -9796,6 +10136,19 @@ ${clip}` });
       }
 
       if (m.role === 'assistant'){
+        const artifactBtn = document.createElement('button');
+        artifactBtn.className = 'btn ghost sm';
+        artifactBtn.textContent = '⬇ تنزيل الرد';
+        artifactBtn.addEventListener('click', () => {
+          openArtifactModal({
+            mid: m.id || '',
+            title: titleFromMessage(m.content || '', 'assistant'),
+            text: String(m.content || ''),
+            downloads: []
+          });
+        });
+        actions.appendChild(artifactBtn);
+
         const canvasBtn = document.createElement('button');
         canvasBtn.className = 'btn ghost sm';
         canvasBtn.textContent = 'إلى اللوحة';
@@ -10966,9 +11319,7 @@ let pinOnly = false;
       const WEB_URL = 'https://app.saddamalkadi.com/';
       const DOWNLOADS_URL = `${WEB_URL}downloads/`;
       const APK_LATEST_URL = `${DOWNLOADS_URL}ai-workspace-studio-latest.apk`;
-      const AAB_LATEST_URL = `${DOWNLOADS_URL}ai-workspace-studio-latest.aab`;
       const APK_BACKUP_URL = `https://github.com/${REPO}/blob/main/downloads/ai-workspace-studio-latest.apk?raw=1`;
-      const AAB_BACKUP_URL = `https://github.com/${REPO}/blob/main/downloads/ai-workspace-studio-latest.aab?raw=1`;
 
       overview.innerHTML = `
         <div class="bubble app-dl-card" style="margin:0;padding:16px">
@@ -10976,25 +11327,20 @@ let pinOnly = false;
             <img src="./logo.svg" style="width:52px;height:52px;border-radius:14px;flex-shrink:0;border:1px solid rgba(10,20,60,.08)" alt="logo" onerror="this.textContent='🤖';this.style.fontSize='32px'"/>
             <div style="flex:1;min-width:0">
               <div style="font-weight:900;font-size:1.08em;letter-spacing:-.01em">AI Workspace Studio</div>
-              <div class="hint" id="releaseVersionMeta" style="margin-top:2px">روابط تنزيل مباشرة من نفس الموقع مع روابط احتياطية من GitHub.</div>
+              <div class="hint" id="releaseVersionMeta" style="margin-top:2px">نسخة تجريبية نهائية للتثبيت المباشر من نفس الإصدار الحي على الويب.</div>
             </div>
-            <span style="flex-shrink:0;padding:3px 10px;border-radius:20px;background:var(--accent,#2563eb);color:#fff;font-size:.72em;font-weight:800">● مباشر</span>
+            <span style="flex-shrink:0;padding:3px 10px;border-radius:20px;background:var(--accent,#2563eb);color:#fff;font-size:.72em;font-weight:800">RC ${WEB_RELEASE_LABEL}</span>
           </div>
           <div class="actions" style="flex-wrap:wrap;gap:8px">
             <a class="btn" id="apkMainBtn" href="${APK_LATEST_URL}" download="AI-Workspace-Studio-latest.apk" target="_blank" rel="noopener noreferrer">⬇ تنزيل APK — Android</a>
-            <a class="btn ghost sm" href="${AAB_LATEST_URL}" download="AI-Workspace-Studio-latest.aab" target="_blank" rel="noopener noreferrer">⬇ تنزيل AAB — Google Play</a>
             <a class="btn ghost sm" href="${WEB_URL}" target="_blank" rel="noopener noreferrer">🌐 تطبيق الويب</a>
             <a class="btn ghost sm" href="${DOWNLOADS_URL}" target="_blank" rel="noopener noreferrer">📋 صفحة التنزيل</a>
           </div>
-          <div style="margin-top:10px;font-size:.8em;color:var(--muted,#888)">
-            إذا تعذر التنزيل المباشر من الموقع، استخدم الروابط الاحتياطية التالية:
-          </div>
           <div class="actions" style="flex-wrap:wrap;gap:8px;margin-top:8px">
             <a class="btn ghost sm" href="${APK_BACKUP_URL}" target="_blank" rel="noopener noreferrer">رابط APK الاحتياطي</a>
-            <a class="btn ghost sm" href="${AAB_BACKUP_URL}" target="_blank" rel="noopener noreferrer">رابط AAB الاحتياطي</a>
           </div>
           <div class="hint" style="margin-top:10px;font-size:.78em">
-            Android 7.0+ • قم بتفعيل "تثبيت من مصادر غير معروفة" في الإعدادات قبل التثبيت
+            Android 7.0+ • ملف تثبيت مباشر للمستخدمين التجريبيين • قنوات النشر الداخلية فقط
           </div>
         </div>`;
     }
@@ -11181,17 +11527,19 @@ let pinOnly = false;
 
     // v6 secure gateway + tools
     if ($('authMode')) $('authMode').value = s.authMode || 'browser';
+    const lockManagedRuntime = DISABLE_RUNTIME_ENDPOINT_EDITING_FOR_MANAGED && isManagedLockedRuntime();
     if ($('gatewayUrl')) $('gatewayUrl').value = s.gatewayUrl || '';
     if ($('gatewayPreset')){
       const managedRoot = normalizeManagedGatewayUrl(DEFAULT_SETTINGS.gatewayUrl || getPlatformServiceRoot());
       const currentRoot = normalizeManagedGatewayUrl(s.gatewayUrl || '');
-      $('gatewayPreset').value = (!currentRoot || currentRoot === managedRoot) ? 'managed' : 'custom';
-      if ($('gatewayUrl')) $('gatewayUrl').disabled = $('gatewayPreset').value !== 'custom';
+      $('gatewayPreset').value = lockManagedRuntime ? 'managed' : ((!currentRoot || currentRoot === managedRoot) ? 'managed' : 'custom');
+      $('gatewayPreset').disabled = lockManagedRuntime;
+      if ($('gatewayUrl')) $('gatewayUrl').disabled = lockManagedRuntime || $('gatewayPreset').value !== 'custom';
     }
-    if ($('gatewayToken')) $('gatewayToken').value = s.gatewayToken || '';
-    if ($('cloudConvertEndpoint')) $('cloudConvertEndpoint').value = s.cloudConvertEndpoint || '';
-    if ($('cloudConvertFallbackEndpoint')) $('cloudConvertFallbackEndpoint').value = s.cloudConvertFallbackEndpoint || '';
-    if ($('ocrCloudEndpoint')) $('ocrCloudEndpoint').value = s.ocrCloudEndpoint || '';
+    if ($('gatewayToken')) { $('gatewayToken').value = lockManagedRuntime ? '' : (s.gatewayToken || ''); $('gatewayToken').disabled = lockManagedRuntime; $('gatewayToken').closest('.col')?.style.setProperty('display', lockManagedRuntime ? 'none' : ''); }
+    if ($('cloudConvertEndpoint')) { $('cloudConvertEndpoint').value = s.cloudConvertEndpoint || ''; $('cloudConvertEndpoint').disabled = lockManagedRuntime; $('cloudConvertEndpoint').closest('.col')?.style.setProperty('display', lockManagedRuntime ? 'none' : ''); }
+    if ($('cloudConvertFallbackEndpoint')) { $('cloudConvertFallbackEndpoint').value = s.cloudConvertFallbackEndpoint || ''; $('cloudConvertFallbackEndpoint').disabled = lockManagedRuntime; $('cloudConvertFallbackEndpoint').closest('.col')?.style.setProperty('display', lockManagedRuntime ? 'none' : ''); }
+    if ($('ocrCloudEndpoint')) { $('ocrCloudEndpoint').value = s.ocrCloudEndpoint || ''; $('ocrCloudEndpoint').disabled = lockManagedRuntime; $('ocrCloudEndpoint').closest('.col')?.style.setProperty('display', lockManagedRuntime ? 'none' : ''); }
     if ($('ocrLang')) ensureSelectHasValue($('ocrLang'), s.ocrLang || 'ara+eng');
     if ($('cloudRetryMax')) $('cloudRetryMax').value = String(s.cloudRetryMax || 2);
     if ($('freeMode')) $('freeMode').checked = !!s.freeMode;
@@ -11219,15 +11567,16 @@ let pinOnly = false;
 
   function saveSettingsFromUI(){
     const authMode = $('authMode') ? $('authMode').value : 'browser';
-    const gatewayPreset = $('gatewayPreset') ? $('gatewayPreset').value : 'managed';
+    const lockManagedRuntime = DISABLE_RUNTIME_ENDPOINT_EDITING_FOR_MANAGED && isManagedLockedRuntime();
+    const gatewayPreset = lockManagedRuntime ? 'managed' : ($('gatewayPreset') ? $('gatewayPreset').value : 'managed');
     const gatewayTyped = $('gatewayUrl') ? normalizeEndpointUrl($('gatewayUrl').value) : '';
     const gatewayInput = gatewayPreset === 'custom'
       ? gatewayTyped
       : normalizeManagedGatewayUrl(DEFAULT_SETTINGS.gatewayUrl || getPlatformServiceRoot());
-    const gatewayToken = $('gatewayToken') ? $('gatewayToken').value.trim() : '';
-    const cloudConvertEndpoint = $('cloudConvertEndpoint') ? normalizeDocxCloudEndpoint($('cloudConvertEndpoint').value) : '';
-    const cloudConvertFallbackEndpoint = $('cloudConvertFallbackEndpoint') ? normalizeDocxCloudEndpoint($('cloudConvertFallbackEndpoint').value) : '';
-    const ocrCloudEndpoint = $('ocrCloudEndpoint') ? normalizeOcrCloudEndpoint($('ocrCloudEndpoint').value) : '';
+    const gatewayToken = lockManagedRuntime ? '' : ($('gatewayToken') ? $('gatewayToken').value.trim() : '');
+    const cloudConvertEndpoint = lockManagedRuntime ? normalizeDocxCloudEndpoint(DEFAULT_SETTINGS.cloudConvertEndpoint) : ($('cloudConvertEndpoint') ? normalizeDocxCloudEndpoint($('cloudConvertEndpoint').value) : '');
+    const cloudConvertFallbackEndpoint = lockManagedRuntime ? '' : ($('cloudConvertFallbackEndpoint') ? normalizeDocxCloudEndpoint($('cloudConvertFallbackEndpoint').value) : '');
+    const ocrCloudEndpoint = lockManagedRuntime ? normalizeOcrCloudEndpoint(DEFAULT_SETTINGS.ocrCloudEndpoint) : ($('ocrCloudEndpoint') ? normalizeOcrCloudEndpoint($('ocrCloudEndpoint').value) : '');
     const ocrLang = $('ocrLang') ? $('ocrLang').value.trim() : 'ara+eng';
     const cloudRetryMax = $('cloudRetryMax') ? clamp(Number($('cloudRetryMax').value || 2), 1, 5) : 2;
     const freeMode = $('freeMode') ? !!$('freeMode').checked : false;
@@ -11341,15 +11690,16 @@ let pinOnly = false;
     { type:'page', page:'chat', label:'الدردشة', icon:'💬', metaId:'navChatMeta' },
     { type:'page', page:'projects', label:'المشاريع', icon:'🗂', metaId:'navProjMeta' },
     { type:'page', page:'files', label:'الملفات', icon:'📁', metaId:'navFilesMeta' },
-    { type:'page', page:'knowledge', label:'المعرفة', icon:'🧠', metaId:'navKbMeta' },
-    { type:'page', page:'transcription', label:'التفريغ والتحويل', icon:'🧾', metaId:'navTransMeta' },
     {
       type:'group',
       id:'toolsGroup',
       label:'الأدوات',
       icon:'🛠',
       ariaLabel:'الأدوات المتقدمة',
+      defaultOpen: true,
       items: [
+        { type:'page', page:'knowledge', label:'المعرفة', icon:'🧠', metaId:'navKbMeta', sub:true },
+        { type:'page', page:'transcription', label:'التفريغ والتحويل', icon:'🧾', metaId:'navTransMeta', sub:true },
         { type:'page', page:'canvas', label:'اللوحة', icon:'📝', metaId:'navCanvasMeta', sub:true },
         { type:'page', page:'workflows', label:'سير العمل', icon:'⚡', metaId:'navWorkMeta', sub:true }
       ]
@@ -11359,7 +11709,7 @@ let pinOnly = false;
   ];
 
   const NAV_GROUPS = {
-    tools: ['canvas','workflows']
+    tools: ['knowledge','transcription','canvas','workflows']
   };
 
   const NAV_TITLES = {
@@ -11379,7 +11729,7 @@ let pinOnly = false;
   function renderNavNode(item){
     if (item.type === 'group'){
       return `
-        <div class="nav-group" id="${item.id}">
+        <div class="nav-group ${item.defaultOpen ? 'open' : ''}" id="${item.id}">
           <button class="navbtn nav-group-toggle" id="${item.id}Toggle" aria-expanded="false" aria-controls="${item.id}Items">
             <span class="navbtn-icon">${item.icon}</span><span class="navbtn-label">${item.label}</span>
             <span class="nav-group-arrow" aria-hidden="true">›</span>
@@ -11398,6 +11748,17 @@ let pinOnly = false;
     if (!nav) return;
     nav.innerHTML = NAV_STRUCTURE.map(renderNavNode).join('');
     if ($('sideVersionLabel')) $('sideVersionLabel').textContent = WEB_RELEASE_LABEL;
+    syncSidebarFooterClearance();
+  }
+
+  function syncSidebarFooterClearance(){
+    const nav = $('nav');
+    const footer = $('sideFooter');
+    if (!nav || !footer) return;
+    try{
+      const h = Math.max(96, Math.ceil(footer.getBoundingClientRect().height || footer.offsetHeight || 0) + 16);
+      nav.style.paddingBottom = `${h}px`;
+    }catch(_){}
   }
 
   function setActiveNav(page){
@@ -11409,7 +11770,7 @@ let pinOnly = false;
     });
     document.querySelectorAll('.page').forEach((p) => p.classList.toggle('active', p.id === `page-${page}`));
     if ($('topTitle')) $('topTitle').textContent = NAV_TITLES[page] || 'استوديو الذكاء';
-    if (NAV_GROUPS.tools.includes(page)) expandNavGroup('toolsGroup');
+    if (NAV_GROUPS.tools.includes(page)) expandNavGroup('toolsGroup'); else collapseNavGroup('toolsGroup');
     scheduleChatScrollDockSync();
   }
 
@@ -11478,6 +11839,14 @@ let pinOnly = false;
     group.classList.add('open');
     const toggle = group.querySelector('.nav-group-toggle');
     if (toggle) toggle.setAttribute('aria-expanded','true');
+  }
+
+  function collapseNavGroup(groupId){
+    const group = $(groupId);
+    if (!group) return;
+    group.classList.remove('open');
+    const toggle = group.querySelector('.nav-group-toggle');
+    if (toggle) toggle.setAttribute('aria-expanded','false');
   }
 
   function toggleNavGroup(groupId){
@@ -12379,6 +12748,7 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
       saveSettingsFromUI();
     });
     $('gatewayPreset') && $('gatewayPreset').addEventListener('change', () => {
+      if (DISABLE_RUNTIME_ENDPOINT_EDITING_FOR_MANAGED && isManagedLockedRuntime()) return;
       const preset = $('gatewayPreset')?.value || 'managed';
       if ($('gatewayUrl')){
         $('gatewayUrl').disabled = preset !== 'custom';
@@ -12391,6 +12761,7 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
       saveSettingsFromUI();
     });
     $('gatewayUrl') && $('gatewayUrl').addEventListener('change', () => {
+      if (DISABLE_RUNTIME_ENDPOINT_EDITING_FOR_MANAGED && isManagedLockedRuntime()) return;
       saveSettingsFromUI();
     });
     $('researchBtn') && $('researchBtn').addEventListener('click', runResearchAgent);
@@ -12921,7 +13292,8 @@ ${e?.message||e}`, false);
     try{
       if (typeof isNativeAndroidPlatform === 'function' && isNativeAndroidPlatform()){
         document.body.classList.add('native-android');
-        if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
+        if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(false);
+        if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
       }
     }catch(_){}
 
@@ -12944,7 +13316,7 @@ ${e?.message||e}`, false);
         ? window.matchMedia('(max-width: 1200px)').matches
         : window.innerWidth < 1200;
       if (narrowUi){
-        if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(true);
+        if (localStorage.getItem(KEYS.chatToolbarCollapsed) === null) setChatToolbarCollapsed(false);
         if (localStorage.getItem(KEYS.headerCollapsed) === null) setHeaderCollapsed(false);
       }
     }catch(_){ }

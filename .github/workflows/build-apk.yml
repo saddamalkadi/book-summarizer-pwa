@@ -21,15 +21,10 @@ jobs:
           node-version: '20'
 
       - name: Install npm dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Prepare www directory for Capacitor
-        run: |
-          mkdir -p www/icons
-          cp index.html app.js sw.js manifest.webmanifest logo.svg www/ 2>/dev/null || true
-          cp auth-bridge.html www/ 2>/dev/null || true
-          cp icons/*.webp www/icons/ 2>/dev/null || true
-          echo "www/ contents:"; ls www/
+      - name: Sync web assets for Capacitor
+        run: npm run sync:web
 
       - name: Sync Capacitor (generates capacitor-cordova-android-plugins)
         run: npx cap sync android
@@ -56,27 +51,30 @@ jobs:
       - name: Extract version from build.gradle
         id: version
         run: |
-          VERSION_NAME=$(grep 'versionName' android/app/build.gradle | grep -oP '"\K[^"]+')
-          VERSION_CODE=$(grep 'versionCode' android/app/build.gradle | grep -oP '\d+')
+          VERSION_NAME=$(rg 'versionName' android/app/build.gradle -o -r '$1' -N --replace '\"([^\"]+)\"' | tail -n 1)
+          VERSION_CODE=$(rg 'versionCode\\s+([0-9]+)' android/app/build.gradle -o -r '$1' -N | tail -n 1)
           echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
           echo "Version: $VERSION_NAME ($VERSION_CODE)"
 
-      - name: Build debug APK
+      - name: Build release APK and AAB
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: ./gradlew clean assembleRelease bundleRelease --no-daemon --stacktrace
 
-      - name: Rename APK for release
+      - name: Rename release artifacts
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk \
-             AI-Workspace-Studio-latest.apk
+          cp android/app/build/outputs/apk/release/app-release.apk AI-Workspace-Studio-latest.apk
+          cp android/app/build/outputs/bundle/release/app-release.aab AI-Workspace-Studio-latest.aab
           echo "APK size: $(du -sh AI-Workspace-Studio-latest.apk)"
+          echo "AAB size: $(du -sh AI-Workspace-Studio-latest.aab)"
 
-      - name: Upload APK artifact (GitHub Actions)
+      - name: Upload Android artifacts (GitHub Actions)
         uses: actions/upload-artifact@v4
         with:
           name: AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}
-          path: AI-Workspace-Studio-latest.apk
+          path: |
+            AI-Workspace-Studio-latest.apk
+            AI-Workspace-Studio-latest.aab
           retention-days: 30
 
       - name: Create or update GitHub Release
@@ -91,7 +89,7 @@ jobs:
 
             - **Build**: ${{ steps.version.outputs.version_code }}
             - **Platform**: Android 7.0+ (API ${{ steps.version.outputs.version_code >= '851' && '24' || '24' }}+)
-            - **Type**: Debug APK (تثبيت مباشر — ليس عبر متجر Google Play)
+            - **Type**: Release build (APK للتجربة المباشرة + AAB للتوزيع الداخلي فقط)
 
             ### التثبيت
             1. حمّل ملف `AI-Workspace-Studio-latest.apk`
@@ -103,7 +101,9 @@ jobs:
             - محادثة عربية مع TTS/STT
             - تحليل الملفات والمستندات
             - دعم Google OAuth وتسجيل الدخول بالبريد
-          files: AI-Workspace-Studio-latest.apk
+          files: |
+            AI-Workspace-Studio-latest.apk
+            AI-Workspace-Studio-latest.aab
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
