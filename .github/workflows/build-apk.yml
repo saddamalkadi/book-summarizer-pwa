@@ -122,7 +122,13 @@ jobs:
             echo "No APK changes to commit"
           else
             git commit -m "chore: sync Android release APK to downloads [skip ci]"
-            git fetch origin "${GITHUB_REF_NAME}"
-            git pull --rebase origin "${GITHUB_REF_NAME}"
-            git push origin "HEAD:${GITHUB_REF_NAME}"
+            BRANCH="${GITHUB_REF_NAME:-main}"
+            for i in 1 2 3 4 5; do
+              git fetch origin "$BRANCH"
+              if git pull --rebase origin "$BRANCH" && git push origin "HEAD:${BRANCH}"; then
+                break
+              fi
+              echo "[apk-commit] push failed (attempt $i), retrying..."
+              sleep $((i * 4))
+            done
           fi
