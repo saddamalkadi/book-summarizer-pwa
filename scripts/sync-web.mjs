@@ -51,12 +51,10 @@ if (MODE === 'pages') {
     if (existsSync(indexSrc)) {
       cpSync(indexSrc, join(downloadsDest, 'index.html'), { force: true });
     }
-    const allowedNames = new Set([
-      'ai-workspace-studio-latest.apk',
-      'ai-workspace-studio-v8.84.0-android-release.apk'
-    ]);
+    const allowedExact = new Set(['ai-workspace-studio-latest.apk']);
+    const allowedPattern = /^ai-workspace-studio-v\d+\.\d+(?:\.\d+)?-android-release\.apk$/i;
     for (const name of readdirSync(downloadsSrc)) {
-      if (!allowedNames.has(name)) continue;
+      if (!(allowedExact.has(name) || allowedPattern.test(name))) continue;
       const p = join(downloadsSrc, name);
       if (statSync(p).isFile()) {
         cpSync(p, join(downloadsDest, name), { force: true });

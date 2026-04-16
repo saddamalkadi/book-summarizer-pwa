@@ -1,5 +1,5 @@
 // AI Workspace Studio - Service Worker
-const APP_VERSION = "884";
+const APP_VERSION = "885";
 const CACHE_NAME = `aistudio-cache-v${APP_VERSION}`;
 const CORE = [
   "./",
@@ -47,7 +47,7 @@ async function swr(request){
 async function networkFirst(request){
   const cache = await caches.open(CACHE_NAME);
   try {
-    const res = await fetch(request);
+    const res = await fetch(request, { cache: "no-store" });
     if (res && res.status === 200) cache.put(request, res.clone());
     return res;
   } catch (_) {
@@ -79,7 +79,7 @@ self.addEventListener("fetch", (event) => {
       event.respondWith(networkFirst(event.request));
       return;
     }
-    if (url.pathname.endsWith("/app.js") || url.pathname.endsWith("/index.html")) {
+    if (url.pathname.endsWith("/app.js") || url.pathname.endsWith("/index.html") || url.pathname.endsWith("/sw.js") || url.pathname.endsWith("/manifest.webmanifest")) {
       event.respondWith(networkFirst(event.request));
       return;
     }
