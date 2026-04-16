@@ -20,10 +20,20 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 
-# Keep WebView bridge/plugin entry points used by Capacitor.
+# Capacitor + plugins reflection
 -keep class com.getcapacitor.** { *; }
--keep class capacitor.plugin.** { *; }
--keep class com.capacitorjs.plugins.** { *; }
+-keep class com.capacitorjs.** { *; }
+-keep @com.getcapacitor.annotation.CapacitorPlugin class * { *; }
+-keepclassmembers class * extends com.getcapacitor.Plugin { *; }
+-keep class com.google.androidbrowserhelper.** { *; }
 
-# Preserve runtime annotations referenced by AndroidX / Capacitor plugins.
--keepattributes *Annotation*
+# AndroidX and WebView essentials
+-keep class androidx.webkit.** { *; }
+-keep class org.apache.cordova.** { *; }
+
+# Keep annotations used reflectively
+-keepattributes *Annotation*, InnerClasses, EnclosingMethod, Signature
+
+# Suppress warnings for optional deps
+-dontwarn org.jetbrains.annotations.**
+-dontwarn javax.annotation.**

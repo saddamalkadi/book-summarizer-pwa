@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   build:
+    if: ${{ github.event_name != 'push' || github.event.head_commit == null || !contains(github.event.head_commit.message, '[skip ci]') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -23,7 +24,7 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Sync web assets for Capacitor
+      - name: Sync web into www (Capacitor)
         run: npm run sync:web
 
       - name: Sync Capacitor (generates capacitor-cordova-android-plugins)
@@ -59,22 +60,58 @@ jobs:
 
       - name: Build release APK and AAB
         working-directory: android
-        run: ./gradlew clean assembleRelease bundleRelease --no-daemon --stacktrace
+        run: ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
 
-      - name: Rename release artifacts
+      - name: Stage APK for Pages; keep AAB as GitHub-Release-only artifact
+        run: |
+          set -e
+          mkdir -p downloads staging
+          SRC_APK="android/app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$SRC_APK" ]; then
+            SRC_APK="android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          fi
+          if [ ! -f "$SRC_APK" ]; then
+            echo "Release APK missing under android/app/build/outputs/apk/release/" >&2
+            ls -la android/app/build/outputs/apk/release/ || true
+            exit 1
+          fi
+          SRC_AAB="android/app/build/outputs/bundle/release/app-release.aab"
+          if [ ! -f "$SRC_AAB" ]; then
+            echo "Missing $SRC_AAB" >&2
+            exit 1
+          fi
+          cp "$SRC_APK" "AI-Workspace-Studio-latest.apk"
+          cp "$SRC_APK" "downloads/ai-workspace-studio-latest.apk"
+          VN="${{ steps.version.outputs.version_name }}"
+          cp "$SRC_APK" "downloads/ai-workspace-studio-v${VN}-android-release.apk"
+          # AAB is staged OUTSIDE the publicly served downloads/ directory — only GitHub Releases gets it.
+          cp "$SRC_AAB" "staging/ai-workspace-studio-v${VN}-android-release.aab"
+          echo "APK: $(du -sh AI-Workspace-Studio-latest.apk)"
+          echo "AAB: $(du -sh staging/ai-workspace-studio-v${VN}-android-release.aab)"
+          ls -la downloads/
+
+      - name: Build release APK and AAB
+        working-directory: android
+        run: ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
+
+      - name: Prepare release artifacts
         run: |
           cp android/app/build/outputs/apk/release/app-release.apk AI-Workspace-Studio-latest.apk
           cp android/app/build/outputs/bundle/release/app-release.aab AI-Workspace-Studio-latest.aab
+          cp AI-Workspace-Studio-latest.apk AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}.apk
+          cp AI-Workspace-Studio-latest.aab AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}.aab
           echo "APK size: $(du -sh AI-Workspace-Studio-latest.apk)"
           echo "AAB size: $(du -sh AI-Workspace-Studio-latest.aab)"
 
-      - name: Upload Android artifacts (GitHub Actions)
+      - name: Upload release artifacts (GitHub Actions)
         uses: actions/upload-artifact@v4
         with:
           name: AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}
           path: |
             AI-Workspace-Studio-latest.apk
             AI-Workspace-Studio-latest.aab
+            AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}.apk
+            AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}.aab
           retention-days: 30
 
       - name: Create or update GitHub Release
@@ -85,25 +122,49 @@ jobs:
           body: |
             ## AI Workspace Studio v${{ steps.version.outputs.version_name }}
 
-            **تطبيق مساحة العمل العربية بالذكاء الاصطناعي**
+            **نسخة تجربة ما قبل المتجر — Android APK**
 
-            - **Build**: ${{ steps.version.outputs.version_code }}
-            - **Platform**: Android 7.0+ (API ${{ steps.version.outputs.version_code >= '851' && '24' || '24' }}+)
-            - **Type**: Release build (APK للتجربة المباشرة + AAB للتوزيع الداخلي فقط)
+            - **versionCode**: ${{ steps.version.outputs.version_code }}
+            - **Platform**: Android 7.0+ (API 24+)
+            - **Build**: `assembleRelease` + `bundleRelease`. عند توفر `keystore.properties` يُستخدم توقيع الإصدار؛ وإلا يُستخدم توقيع debug في CI لضمان قابلية التثبيت للتجربة.
 
-            ### التثبيت
+            ### التثبيت (APK)
             1. حمّل ملف `AI-Workspace-Studio-latest.apk`
-            2. فعّل "مصادر غير معروفة" في إعدادات الأمان
-            3. افتح الملف وثبّت التطبيق
+            2. فعّل «مصادر غير معروفة» عند الحاجة
+            3. ثبّت التطبيق
 
-            ### الجديد
-            - مساحة العمل العربية بالذكاء الاصطناعي مع دعم OpenRouter
-            - محادثة عربية مع TTS/STT
-            - تحليل الملفات والمستندات
-            - دعم Google OAuth وتسجيل الدخول بالبريد
+            ### الملفات على GitHub Pages (للتجربة)
+            - `downloads/ai-workspace-studio-latest.apk`
+            - `downloads/ai-workspace-studio-v${{ steps.version.outputs.version_name }}-android-release.apk`
+
+            > AAB للنشر إلى Play Console متاحة كمرفق في هذا الـ Release فقط، وليست منشورة على GitHub Pages.
           files: |
             AI-Workspace-Studio-latest.apk
-            AI-Workspace-Studio-latest.aab
+            staging/ai-workspace-studio-v${{ steps.version.outputs.version_name }}-android-release.aab
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit APK to downloads/ for GitHub Pages (no AAB)
+        run: |
+          set -e
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          # Ensure no AAB ever leaks into the publicly served folder.
+          rm -f downloads/*.aab || true
+          git rm -f --ignore-unmatch 'downloads/*.aab' || true
+          git add downloads/*.apk
+          if git diff --staged --quiet; then
+            echo "No download binary changes to commit"
+          else
+            git commit -m "chore: sync Android release APK to downloads [skip ci]"
+            BRANCH="${GITHUB_REF_NAME:-main}"
+            for i in 1 2 3 4 5; do
+              git fetch origin "$BRANCH"
+              if git pull --rebase origin "$BRANCH" && git push origin "HEAD:${BRANCH}"; then
+                break
+              fi
+              echo "[downloads-commit] push failed (attempt $i), retrying..."
+              sleep $((i * 4))
+            done
+          fi

@@ -1,6 +1,8 @@
 .wrangler/
+.android-sdk/
 node_modules/
 www/
+android/local.properties
 android/keystore.properties
 android/release-keystore.jks
 android/*.jks
@@ -11,3 +13,10 @@ android/.gradle-user/
 android/.android-user/
 .android-user/
 *.idsig
+
+# Keep AAB artifacts out of the publicly served downloads folder — they should only live in GitHub Releases.
+downloads/*.aab
+
+# Dev artifacts (not shipped in public/production)
+attached_assets/
+full-app.png
