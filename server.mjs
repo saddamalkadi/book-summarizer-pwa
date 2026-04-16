@@ -44,11 +44,14 @@ async function autoFixWorker() {
   const OR_KEY   = process.env.OPENROUTER_API_KEY;
   if (!CF_TOKEN || !OR_KEY) { console.log('[worker-fix] Skipped: missing env vars'); return; }
 
-  const CF_ACCOUNT  = 'ea4e90ec8fbd70faefdddd2153064d6f';
-  // Must match production worker serving api.saddamalkadi.com.
-  const WORKER_NAME = 'sadam-key';
-  const KV_NS       = '49d87e2d4989452fb3c680ad024ae5b7';
-  const ADMIN_PASS  = process.env.ADMIN_PASSWORD_REAL || 'Saddam@Admin2026!';
+  const CF_ACCOUNT  = process.env.CF_ACCOUNT_ID || '';
+  const WORKER_NAME = process.env.CF_WORKER_NAME || 'sadam-key';
+  const KV_NS       = process.env.CF_KV_NAMESPACE_ID || '';
+  const ADMIN_PASS  = process.env.ADMIN_PASSWORD_REAL || '';
+  if (!CF_ACCOUNT || !KV_NS || !ADMIN_PASS) {
+    console.log('[worker-fix] Skipped: missing CF_ACCOUNT_ID / CF_KV_NAMESPACE_ID / ADMIN_PASSWORD_REAL');
+    return;
+  }
 
   try {
     // 1) Check health (with retry for edge propagation lag)
@@ -66,7 +69,7 @@ async function autoFixWorker() {
     ).then(r => r.text()).catch(() => '');
 
     // CF compiles the source and strips comments, so check for the literal key string (not the marker comment)
-    if (liveCode.includes(OR_KEY.substring(0, 12))) {
+    if (OR_KEY && liveCode.includes(OR_KEY.substring(0, 12))) {
       console.log('[worker-fix] Code already has key — waiting 15s for edge propagation...');
       await new Promise(r => setTimeout(r, 15000));
       health = await fetch('https://api.saddamalkadi.com/health', { signal: AbortSignal.timeout(8000) })
@@ -228,7 +231,7 @@ async function handleGoogleTtsProxy(request){
 
     if (patched) {
       code = '// autofix-' + Date.now() + '\n' + code;
-      console.log('[worker-fix] Patched code size:', code.length, '| has-injection:', code.includes('/*aistudio-key-injected*/'), '| has-key:', code.includes(OR_KEY.substring(0,12)));
+      console.log('[worker-fix] Patched code size:', code.length, '| has-injection:', code.includes('/*aistudio-key-injected*/'));
     } else {
       console.log('[worker-fix] Code already fully patched — just redeploying');
       console.log('[worker-fix] Code size:', code.length, '| has-injection:', code.includes('/*aistudio-key-injected*/'));

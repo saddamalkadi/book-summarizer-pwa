@@ -8,30 +8,31 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (request.method === "OPTIONS") {
-      return withCors(new Response(null, { status: 204 }), env);
+      return withCors(new Response(null, { status: 204 }), env, request);
     }
 
     try {
       if (url.pathname === "/health" && request.method === "GET") {
-        return withCors(jsonResponse(buildHealth(env)), env);
+        return withCors(jsonResponse(buildHealth(env)), env, request);
       }
 
       enforceClientToken(request, env);
 
       if (url.pathname === "/ocr" && request.method === "POST") {
-        return withCors(await handleOcr(request, env), env);
+        return withCors(await handleOcr(request, env), env, request);
       }
 
       if (url.pathname === "/convert/pdf-to-docx" && request.method === "POST") {
-        return withCors(await handlePdfToDocx(request, env), env);
+        return withCors(await handlePdfToDocx(request, env), env, request);
       }
 
-      return withCors(errorResponse(404, "NOT_FOUND", "المسار المطلوب غير موجود."), env);
+      return withCors(errorResponse(404, "NOT_FOUND", "المسار المطلوب غير موجود."), env, request);
     } catch (err) {
-      if (err instanceof Response) return withCors(err, env);
+      if (err instanceof Response) return withCors(err, env, request);
       return withCors(
         errorResponse(500, "UNHANDLED_ERROR", String(err?.message || err || "Unexpected worker failure")),
-        env
+        env,
+        request
       );
     }
   }
@@ -530,9 +531,35 @@ function extractCloudConvertTaskMessage(task) {
   return String(task?.message || task?.code || task?.result?.message || "").trim();
 }
 
-function withCors(response, env) {
+const CONVERT_ALLOWED_ORIGINS = new Set([
+  "https://app.saddamalkadi.com",
+  "https://api.saddamalkadi.com",
+  "https://convert.saddamalkadi.com",
+  "https://saddamalkadi.github.io",
+  "capacitor://localhost",
+  "ionic://localhost",
+  "http://localhost:8080",
+  "http://127.0.0.1:8080"
+]);
+
+function withCors(response, env, request) {
   const headers = new Headers(response.headers);
-  headers.set("Access-Control-Allow-Origin", String(env.CORS_ALLOW_ORIGIN || "*"));
+  let origin = "null";
+  const configured = String(env?.CORS_ALLOW_ORIGIN || "").trim();
+  const reqOrigin = String(request?.headers?.get?.("Origin") || "").trim();
+  if (configured === "*") {
+    origin = reqOrigin || "*";
+  } else if (configured) {
+    origin = configured;
+  } else if (reqOrigin) {
+    if (CONVERT_ALLOWED_ORIGINS.has(reqOrigin) ||
+        /^https:\/\/[a-z0-9-]+\.saddamalkadi\.com$/i.test(reqOrigin) ||
+        /^https:\/\/[a-z0-9-]+\.pages\.dev$/i.test(reqOrigin) ||
+        /^https:\/\/[a-z0-9-]+\.github\.io$/i.test(reqOrigin)) {
+      origin = reqOrigin;
+    }
+  }
+  headers.set("Access-Control-Allow-Origin", origin);
   headers.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Token");
   headers.set("Vary", "Origin");

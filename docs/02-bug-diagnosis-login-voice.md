@@ -41,9 +41,9 @@
 - **النتيجة:** لا تحذيرات `initialize() is called multiple times`
 
 ### ✅ 4. كلمة مرور الإدارة مكتوبة في الكود
-- **السبب:** `ADMIN_PASS = 'Saddam@Admin2026!'` ثابتة في `server.mjs`
-- **الإصلاح:** `ADMIN_PASS = process.env.ADMIN_PASSWORD_REAL || 'Saddam@Admin2026!'`
-- **النتيجة:** يمكن الآن تعيين `ADMIN_PASSWORD_REAL` كـ Secret لمزيد من الأمان
+- **السبب:** كانت كلمة مرور الإدارة الافتراضية موجودة داخل `server.mjs`
+- **الإصلاح:** `ADMIN_PASS = process.env.ADMIN_PASSWORD_REAL || ''` — لا توجد أي كلمة مرور افتراضية في الكود؛ يجب ضبطها كسر على Replit/Cloudflare
+- **النتيجة:** لا يتم تشغيل auto-fix إطلاقًا إن لم تكن الأسرار مضبوطة؛ لا يوجد أي سر في الريبو
 
 ### ✅ 5. زر "متابعة" يدعم Enter
 - **الإصلاح:** ربط حدث `submit` للنموذج بـ `submitUnifiedAuthEntry()`
