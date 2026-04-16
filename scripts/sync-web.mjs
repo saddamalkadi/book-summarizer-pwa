@@ -12,7 +12,7 @@ const files = [
   'manifest.webmanifest',
   'logo.svg'
 ];
-const directories = ['icons', 'downloads'];
+const directories = ['icons'];
 
 if (existsSync(webDir)) {
   rmSync(webDir, { recursive: true, force: true });
@@ -29,3 +29,7 @@ for (const dir of directories) {
   if (!existsSync(source)) continue;
   cpSync(source, join(webDir, dir), { recursive: true, force: true });
 }
+
+const downloadsDir = join(webDir, 'downloads');
+mkdirSync(downloadsDir, { recursive: true });
+cpSync(join(root, 'downloads', 'index.html'), join(downloadsDir, 'index.html'), { force: true });

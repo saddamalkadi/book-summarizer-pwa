@@ -164,9 +164,9 @@ function resolvePath(urlPath) {
 
   const rel = relative(ROOT, fullPath);
   if ((rel && rel.startsWith('..')) || isAbsolute(rel)) return null;
-  if (existsSync(fullPath)) return fullPath;
   const dirRel = relative(ROOT, directoryIndexPath);
   if ((!dirRel || !dirRel.startsWith('..')) && !isAbsolute(dirRel) && existsSync(directoryIndexPath)) return directoryIndexPath;
+  if (existsSync(fullPath)) return fullPath;
 
   if (!extname(requested)) {
     const fallback = resolve(normalize(join(ROOT, './index.html')));
