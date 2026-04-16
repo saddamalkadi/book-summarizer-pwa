@@ -1,5 +1,5 @@
 // AI Workspace Studio - Service Worker
-const APP_VERSION = "883";
+const APP_VERSION = "884";
 const CACHE_NAME = `aistudio-cache-v${APP_VERSION}`;
 const CORE = [
   "./",
@@ -62,11 +62,16 @@ function isDirectDownloadPath(pathname){
     /\.(apk|aab|zip)$/i.test(pathname);
 }
 
+function isDirectHtmlAsset(pathname){
+  return /\.(html?|txt|xml|json|webmanifest)$/i.test(pathname);
+}
+
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return;
   if (event.request.mode === "navigate") {
-    if (isDirectDownloadPath(url.pathname)) {
+    if (isDirectDownloadPath(url.pathname) || isDirectHtmlAsset(url.pathname)) {
       event.respondWith(networkFirst(event.request));
       return;
     }
@@ -74,15 +79,13 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(networkFirst(appShellRequest));
     return;
   }
-  if (url.origin === self.location.origin) {
-    if (isDirectDownloadPath(url.pathname)) {
-      event.respondWith(networkFirst(event.request));
-      return;
-    }
-    if (url.pathname.endsWith("/app.js") || url.pathname.endsWith("/index.html")) {
-      event.respondWith(networkFirst(event.request));
-      return;
-    }
-    event.respondWith(swr(event.request));
+  if (isDirectDownloadPath(url.pathname)) {
+    event.respondWith(networkFirst(event.request));
+    return;
   }
+  if (url.pathname.endsWith("/app.js") || url.pathname.endsWith("/index.html") || url.pathname.endsWith("/auth-bridge.html")) {
+    event.respondWith(networkFirst(event.request));
+    return;
+  }
+  event.respondWith(swr(event.request));
 });
