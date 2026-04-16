@@ -510,13 +510,20 @@ const server = createServer(async (req, res) => {
     return res.end('Method Not Allowed');
   }
 
-  const path = resolvePath(req.url || '/');
+  let path = resolvePath(req.url || '/');
   if (!path || !existsSync(path)) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     return res.end('Not Found');
   }
 
-  const stats = statSync(path);
+  let stats = statSync(path);
+  if (stats.isDirectory()) {
+    const idx = resolve(path, 'index.html');
+    if (existsSync(idx) && statSync(idx).isFile()) {
+      path = idx;
+      stats = statSync(path);
+    }
+  }
   if (!stats.isFile()) {
     res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
     return res.end('Forbidden');
