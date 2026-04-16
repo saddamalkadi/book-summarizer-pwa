@@ -1,4 +1,4 @@
-﻿/* AI Workspace Studio v8.34 - strategic platform skeleton (no build step) */
+﻿/* AI Workspace Studio v8.84 - release candidate hardening */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -232,7 +232,7 @@
     allowCloudOcr: true,
     allowCloudPolish: true,
     googleClientId: '',
-    upgradeEmail: 'tntntt830@gmail.com',
+    upgradeEmail: '',
 
     orReferer: '',
     orTitle: 'AI Workspace Studio'
@@ -255,11 +255,12 @@
     authRequired: false,
     brandName: 'AI Workspace Studio',
     developerName: 'صدام القاضي',
-    upgradeEmail: 'tntntt830@gmail.com',
-    adminEmail: 'tntntt830@gmail.com',
+    upgradeEmail: '',
+    adminEmail: '',
     adminEnabled: false,
     adminPasswordEnabled: false,
     adminLoginMethod: 'google_only',
+    allowAabDownloads: false,
     googleClientId: '',
     clientIdConfigured: false,
     premiumEnabled: true,
@@ -366,7 +367,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.83';
+  const WEB_RELEASE_LABEL = 'v8.84';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -4846,7 +4847,7 @@ function refreshDeepSearchBtn(){
           <div class="row" style="margin-top:10px">
             <div class="col" style="grid-column:1/-1">
               <label class="hint">بريد طلب الترقية</label>
-              <input id="upgradeEmail" type="email" placeholder="tntntt830@gmail.com" />
+              <input id="upgradeEmail" type="email" placeholder="name@example.com" />
             </div>
           </div>
         </div>`);
@@ -5481,7 +5482,9 @@ async function submitUnifiedAuthEntry(){
   }
 
   function buildUpgradeMailto(account = getAuthState(), config = getEffectiveAuthConfig()){
-    const to = encodeURIComponent(config.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail);
+    const receiver = String(config.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail || '').trim();
+    if (!receiver) return '';
+    const to = encodeURIComponent(receiver);
     const subject = encodeURIComponent(`طلب ترقية حساب - ${account.email || 'مستخدم جديد'}`);
     const body = encodeURIComponent([
       'مرحبًا،',
@@ -5509,6 +5512,9 @@ async function submitUnifiedAuthEntry(){
         body: JSON.stringify({ appVersion: '8.0' })
       }).catch(() => null);
       const mailto = payload?.mailto || buildUpgradeMailto(account, getEffectiveAuthConfig());
+      if (!mailto) {
+        throw new Error('بريد الترقية غير مضبوط. أضف بريد الترقية من إعدادات الإدارة.');
+      }
       window.location.href = mailto;
       toast('✉️ تم تجهيز رسالة طلب الترقية');
     }catch(error){
@@ -6628,7 +6634,7 @@ async function submitUnifiedAuthEntry(){
         id: 'downloads_android',
         page: 'settings',
         title: 'تنزيل تطبيق Android والويب التقدمي',
-        body: 'يوجد قسم تنزيلات داخل الإعدادات يشير إلى ملفات APK/AAB المستضافة. يمكن تثبيت التطبيق كـ PWA من المتصفح أيضًا.',
+        body: 'يوجد قسم تنزيلات داخل الإعدادات يشير إلى ملف APK التجريبي الرسمي. يمكن تثبيت التطبيق كـ PWA من المتصفح أيضًا.',
         steps: [
           'افتح صفحة التنزيلات من الروابط داخل الإعدادات عند الحاجة.',
           'على Android: ثبّت APK عند السماح بالمصادر غير المعروفة وفق سياسة جهازك.',
@@ -11278,6 +11284,15 @@ async function runResearchAgent(topicOverride){
   }
 
 let pinOnly = false;
+
+  function getPublicReleaseVersionTag(){
+    const htmlVersion = String(document.documentElement?.dataset?.appver || '').trim();
+    if (htmlVersion) return `v${htmlVersion}`;
+    const title = String(document.title || '');
+    const match = title.match(/v(\d+(?:\.\d+){0,2})/i);
+    return match ? `v${match[1]}` : 'latest';
+  }
+
   function renderDownloads(){
     const box = $('downloadsList');
     const overview = $('downloadsOverview');
@@ -11288,34 +11303,37 @@ let pinOnly = false;
       const WEB_URL = 'https://app.saddamalkadi.com/';
       const DOWNLOADS_URL = `${WEB_URL}downloads/`;
       const APK_LATEST_URL = `${DOWNLOADS_URL}ai-workspace-studio-latest.apk`;
-      const AAB_LATEST_URL = `${DOWNLOADS_URL}ai-workspace-studio-latest.aab`;
       const APK_BACKUP_URL = `https://github.com/${REPO}/blob/main/downloads/ai-workspace-studio-latest.apk?raw=1`;
-      const AAB_BACKUP_URL = `https://github.com/${REPO}/blob/main/downloads/ai-workspace-studio-latest.aab?raw=1`;
+      const authConfig = getEffectiveAuthConfig();
+      const allowAabDownloads = authConfig?.allowAabDownloads === true;
+      const releaseTag = getPublicReleaseVersionTag();
+      const aabRow = allowAabDownloads
+        ? `<div class="app-release-note">تنزيل AAB مفعّل لهذا الحساب الإداري فقط عبر القناة الداخلية.</div>`
+        : `<div class="app-release-note">ملف AAB مخصص للنشر الداخلي ولا يظهر للمستخدمين التجريبيين في النسخة العامة.</div>`;
 
       overview.innerHTML = `
-        <div class="bubble app-dl-card" style="margin:0;padding:16px">
-          <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-            <img src="./logo.svg" style="width:52px;height:52px;border-radius:14px;flex-shrink:0;border:1px solid rgba(10,20,60,.08)" alt="logo" onerror="this.textContent='🤖';this.style.fontSize='32px'"/>
-            <div style="flex:1;min-width:0">
-              <div style="font-weight:900;font-size:1.08em;letter-spacing:-.01em">AI Workspace Studio</div>
-              <div class="hint" id="releaseVersionMeta" style="margin-top:2px">روابط تنزيل مباشرة من نفس الموقع مع روابط احتياطية من GitHub.</div>
+        <div class="bubble app-release-card">
+          <div class="app-release-head">
+            <img src="./logo.svg" class="app-release-logo" alt="شعار AI Workspace Studio" />
+            <div class="app-release-brand">
+              <strong>AI Workspace Studio</strong>
+              <span class="hint" id="releaseVersionMeta">إصدار ${escapeHtml(releaseTag)} — روابط التنزيل المباشرة من نفس الموقع.</span>
             </div>
-            <span style="flex-shrink:0;padding:3px 10px;border-radius:20px;background:var(--accent,#2563eb);color:#fff;font-size:.72em;font-weight:800">● مباشر</span>
+            <span class="app-release-pill">● مباشر</span>
           </div>
-          <div class="actions" style="flex-wrap:wrap;gap:8px">
-            <a class="btn" id="apkMainBtn" href="${APK_LATEST_URL}" download="AI-Workspace-Studio-latest.apk" target="_blank" rel="noopener noreferrer">⬇ تنزيل APK — Android</a>
-            <a class="btn ghost sm" href="${AAB_LATEST_URL}" download="AI-Workspace-Studio-latest.aab" target="_blank" rel="noopener noreferrer">⬇ تنزيل AAB — Google Play</a>
+          <div class="actions app-release-actions">
+            <a class="btn" id="apkMainBtn" href="${APK_LATEST_URL}" download="ai-workspace-studio-latest.apk" rel="noopener noreferrer">⬇ تنزيل APK — Android</a>
             <a class="btn ghost sm" href="${WEB_URL}" target="_blank" rel="noopener noreferrer">🌐 تطبيق الويب</a>
             <a class="btn ghost sm" href="${DOWNLOADS_URL}" target="_blank" rel="noopener noreferrer">📋 صفحة التنزيل</a>
           </div>
-          <div style="margin-top:10px;font-size:.8em;color:var(--muted,#888)">
-            إذا تعذر التنزيل المباشر من الموقع، استخدم الروابط الاحتياطية التالية:
+          <div class="app-release-note">
+            إذا تعذر التنزيل المباشر من الموقع، استخدم رابط APK الاحتياطي:
           </div>
-          <div class="actions" style="flex-wrap:wrap;gap:8px;margin-top:8px">
+          <div class="actions app-release-actions">
             <a class="btn ghost sm" href="${APK_BACKUP_URL}" target="_blank" rel="noopener noreferrer">رابط APK الاحتياطي</a>
-            <a class="btn ghost sm" href="${AAB_BACKUP_URL}" target="_blank" rel="noopener noreferrer">رابط AAB الاحتياطي</a>
           </div>
-          <div class="hint" style="margin-top:10px;font-size:.78em">
+          ${aabRow}
+          <div class="hint app-release-footnote">
             Android 7.0+ • قم بتفعيل "تثبيت من مصادر غير معروفة" في الإعدادات قبل التثبيت
           </div>
         </div>`;

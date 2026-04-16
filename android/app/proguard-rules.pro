@@ -19,3 +19,10 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Capacitor and plugin entrypoints are discovered reflectively.
+-keep class com.getcapacitor.** { *; }
+-keep class com.capacitorjs.plugins.** { *; }
+-keep class org.apache.cordova.** { *; }
+-dontwarn com.getcapacitor.**
+-dontwarn org.apache.cordova.**

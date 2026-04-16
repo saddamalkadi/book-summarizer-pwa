@@ -62,21 +62,46 @@ jobs:
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
           echo "Version: $VERSION_NAME ($VERSION_CODE)"
 
-      - name: Build debug APK
-        working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
-
-      - name: Rename APK for release
+      - name: Configure release signing (optional)
+        id: signing
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk \
-             AI-Workspace-Studio-latest.apk
-          echo "APK size: $(du -sh AI-Workspace-Studio-latest.apk)"
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ] && [ -n "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" ] && [ -n "${{ secrets.ANDROID_KEY_ALIAS }}" ] && [ -n "${{ secrets.ANDROID_KEY_PASSWORD }}" ]; then
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/release-keystore.jks
+            cat > android/keystore.properties <<EOF
+storeFile=release-keystore.jks
+storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+EOF
+            echo "release_signing=true" >> $GITHUB_OUTPUT
+            echo "Custom release keystore configured."
+          else
+            echo "release_signing=false" >> $GITHUB_OUTPUT
+            echo "Release keystore secrets are missing. Build will fallback to debug signing for installability."
+          fi
 
-      - name: Upload APK artifact (GitHub Actions)
+      - name: Build release APK and AAB
+        working-directory: android
+        run: ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
+
+      - name: Prepare release artifacts
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk AI-Workspace-Studio-latest.apk
+          cp android/app/build/outputs/bundle/release/app-release.aab AI-Workspace-Studio-latest.aab
+          cp AI-Workspace-Studio-latest.apk AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}.apk
+          cp AI-Workspace-Studio-latest.aab AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}.aab
+          echo "APK size: $(du -sh AI-Workspace-Studio-latest.apk)"
+          echo "AAB size: $(du -sh AI-Workspace-Studio-latest.aab)"
+
+      - name: Upload release artifacts (GitHub Actions)
         uses: actions/upload-artifact@v4
         with:
           name: AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}
-          path: AI-Workspace-Studio-latest.apk
+          path: |
+            AI-Workspace-Studio-latest.apk
+            AI-Workspace-Studio-latest.aab
+            AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}.apk
+            AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}.aab
           retention-days: 30
 
       - name: Create or update GitHub Release
@@ -90,8 +115,9 @@ jobs:
             **تطبيق مساحة العمل العربية بالذكاء الاصطناعي**
 
             - **Build**: ${{ steps.version.outputs.version_code }}
-            - **Platform**: Android 7.0+ (API ${{ steps.version.outputs.version_code >= '851' && '24' || '24' }}+)
-            - **Type**: Debug APK (تثبيت مباشر — ليس عبر متجر Google Play)
+            - **Platform**: Android 7.0+ (API 24+)
+            - **Type**: Release APK + Release AAB
+            - **Signing**: ${{ steps.signing.outputs.release_signing == 'true' && 'Custom release keystore' || 'Fallback debug keystore (set signing secrets for store-ready build)' }}
 
             ### التثبيت
             1. حمّل ملف `AI-Workspace-Studio-latest.apk`
@@ -103,7 +129,11 @@ jobs:
             - محادثة عربية مع TTS/STT
             - تحليل الملفات والمستندات
             - دعم Google OAuth وتسجيل الدخول بالبريد
-          files: AI-Workspace-Studio-latest.apk
+          files: |
+            AI-Workspace-Studio-latest.apk
+            AI-Workspace-Studio-latest.aab
+            AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}.apk
+            AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}.aab
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
