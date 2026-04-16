@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.83">
+<html lang="ar" dir="rtl" data-appver="8.84">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.83</title>
+    <title>AI Workspace Studio v8.84</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -156,15 +156,63 @@
     body.dark .chat-inline-file-name{
       color: var(--muted) !important;
     }
+    body.dark .side-footer{
+      background: rgba(255,255,255,.08) !important;
+      border-color: rgba(255,255,255,.12) !important;
+    }
+    body.dark .modal .panel{
+      background: #111b2f !important;
+      border-color: rgba(255,255,255,.12) !important;
+    }
+    body.dark .modal .backdrop{
+      background: rgba(0,0,0,.55) !important;
+    }
+    body.dark .chatbar{
+      background: rgba(17,27,47,.92) !important;
+      border-top-color: rgba(255,255,255,.08) !important;
+    }
+    body.dark .chatbar-mode{
+      background: rgba(255,255,255,.06) !important;
+      border-color: rgba(255,255,255,.10) !important;
+    }
+    body.dark .composer-meta{
+      color: var(--muted) !important;
+    }
+    body.dark .tag{
+      background: rgba(255,255,255,.08) !important;
+      border-color: rgba(255,255,255,.12) !important;
+      color: var(--text) !important;
+    }
+    body.dark .chip{
+      background: #1e3a6a !important;
+      color: #ecf1ff !important;
+    }
+    body.dark code{
+      background: rgba(255,255,255,.10) !important;
+      color: var(--text) !important;
+    }
+    body.dark .thread-card{
+      background: #15223a !important;
+      border-color: rgba(255,255,255,.10) !important;
+    }
+    body.dark .thread-card:hover{
+      border-color: rgba(122,162,255,.30) !important;
+    }
 
     *{
       scrollbar-width: thin;
       scrollbar-color: #8aa8ff #eef2ff;
     }
+    body.dark *{
+      scrollbar-color: #3d5a8a #0a1120;
+    }
     *::-webkit-scrollbar{width:10px; height:10px;}
     *::-webkit-scrollbar-track{background:#eef2ff; border-radius:999px;}
     *::-webkit-scrollbar-thumb{background:linear-gradient(180deg,#90b0ff,#5f83ff); border-radius:999px; border:2px solid #eef2ff;}
     *::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,#7da0ff,#4b72ff);}
+    body.dark *::-webkit-scrollbar-track{background:#0a1120;}
+    body.dark *::-webkit-scrollbar-thumb{background:linear-gradient(180deg,#3d5a8a,#2a4570); border-color:#0a1120;}
+    body.dark *::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,#4b6a9a,#3a5580);}
     a{color:var(--pri); font-weight:900; text-decoration:underline}
     .app{min-height:var(--app-vh); min-height:100vh; width:100%; display:grid; grid-template-columns:minmax(260px,320px) minmax(0,1fr); gap:12px; padding:12px;}
     .side{
@@ -373,9 +421,7 @@
       #page-chat.page.active{overflow:hidden;}
     }
 
-    /* ──────────────────────────────────────────────
-       POLISH PASS (v8.73) — premium rhythm & clarity
-       ────────────────────────────────────────────── */
+    /* Premium UI styles */
     :root{
       --bg: #f7f8fc;
       --card: rgba(255,255,255,.92);
@@ -4393,6 +4439,56 @@ body.dark #topRuntimeBadge{
   border-color: rgba(255,255,255,.14) !important;
   background: rgba(122,162,255,.14) !important;
 }
+body.dark{
+  background: #0a1120 !important;
+}
+body.dark::before{
+  opacity: 0 !important;
+}
+body.dark .topbar{
+  background: rgba(17,27,47,.92) !important;
+  border-color: rgba(255,255,255,.08) !important;
+}
+body.dark .subtopbar{
+  background: rgba(17,27,47,.92) !important;
+  border-color: rgba(255,255,255,.08) !important;
+}
+body.dark .runtime-badge{
+  background: rgba(122,162,255,.14) !important;
+  border-color: rgba(122,162,255,.22) !important;
+  color: var(--text) !important;
+}
+body.dark .tool-group{
+  background: rgba(255,255,255,.04) !important;
+  border-color: rgba(255,255,255,.10) !important;
+}
+body.dark .tool-group-title{
+  color: var(--muted) !important;
+}
+body.dark .btn.ghost{
+  background: rgba(122,162,255,.10) !important;
+  border-color: rgba(122,162,255,.18) !important;
+  color: #7aa2ff !important;
+}
+body.dark .btn.dark{
+  background: linear-gradient(180deg, #1e3a6a, #0b1020) !important;
+  color: #ecf1ff !important;
+}
+body.dark .home-shell,
+body.dark .page{
+  background: #111b2f !important;
+}
+body.dark .home-hero-host{
+  color: var(--text) !important;
+}
+body.dark .settings-overview-card{
+  background: #15223a !important;
+  border-color: rgba(255,255,255,.10) !important;
+  color: var(--text) !important;
+}
+body.dark .navbtn:hover{
+  background: rgba(255,255,255,.18) !important;
+}
 </style>
 </head>
 <body>
@@ -4447,7 +4543,7 @@ body.dark #topRuntimeBadge{
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.83</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.84</div>
       </div>
     </aside>
 
@@ -5471,7 +5567,7 @@ body.dark #topRuntimeBadge{
     })();
   </script>
 
-<script src="app.js?v=881"></script>
+<script src="app.js?v=884"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -5485,7 +5581,7 @@ body.dark #topRuntimeBadge{
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v881";
+          const CURRENT_CACHE = "aistudio-cache-v884";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -5494,7 +5590,7 @@ body.dark #topRuntimeBadge{
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=883").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=884").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

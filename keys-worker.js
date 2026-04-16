@@ -284,18 +284,10 @@ function getWorkerHealth(env) {
     body: {
       ok: configured,
       ready: configured,
-      configured,
-      worker: 'keys',
-      upstream: 'openrouter',
       upstream_configured: upstreamConfigured,
-      client_token_required: clientTokenRequired,
       auth_required: authConfig.authRequired,
       google_client_configured: authConfig.clientIdConfigured,
-      admin_password_ready: adminPasswordReady,
-      admin_google_ready: adminGoogleReady,
       admin_login_ready: adminLoginReady,
-      session_ready: hasSessionSecret,
-      upgrade_flow_ready: hasUpgradeSecret,
       cloud_storage_ready: cloudStorageReady,
       convert_proxy_ready: convertReady,
       voice_cloud_ready: voice.ready,
@@ -325,6 +317,9 @@ function withCors(response, request) {
   h.set('Access-Control-Expose-Headers', 'Content-Type,Content-Length');
   h.delete('alt-svc');
   h.set('Alt-Svc', 'clear');
+  h.set('X-Content-Type-Options', 'nosniff');
+  h.set('X-Frame-Options', 'DENY');
+  h.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers: h });
 }
 
