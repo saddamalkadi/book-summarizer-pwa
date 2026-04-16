@@ -4332,8 +4332,8 @@ body.promptEngineeringMode .topbar .topbar-actions #focusModeBtn{
     position: fixed !important;
     top: 0 !important;
     bottom: 0 !important;
-    left: 0 !important;
-    right: auto !important;
+    inset-inline-start: 0 !important;
+    inset-inline-end: auto !important;
     width: min(360px, 88vw) !important;
     max-width: calc(100vw - 22px);
     max-height: none !important;
@@ -4344,6 +4344,8 @@ body.promptEngineeringMode .topbar .topbar-actions #focusModeBtn{
     padding-bottom: calc(14px + env(safe-area-inset-bottom));
     padding-bottom: calc(14px + constant(safe-area-inset-bottom));
     display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
     visibility: hidden;
     opacity: 0;
     pointer-events: none;
