@@ -1,4 +1,4 @@
-﻿/* AI Workspace Studio v8.34 - strategic platform skeleton (no build step) */
+﻿/* AI Workspace Studio v9.0 - Release Candidate */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -232,7 +232,7 @@
     allowCloudOcr: true,
     allowCloudPolish: true,
     googleClientId: '',
-    upgradeEmail: 'tntntt830@gmail.com',
+    upgradeEmail: '',
 
     orReferer: '',
     orTitle: 'AI Workspace Studio'
@@ -255,8 +255,8 @@
     authRequired: false,
     brandName: 'AI Workspace Studio',
     developerName: 'صدام القاضي',
-    upgradeEmail: 'tntntt830@gmail.com',
-    adminEmail: 'tntntt830@gmail.com',
+    upgradeEmail: '',
+    adminEmail: '',
     adminEnabled: false,
     adminPasswordEnabled: false,
     adminLoginMethod: 'google_only',
@@ -366,7 +366,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.83';
+  const WEB_RELEASE_LABEL = 'v9.0';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -4846,7 +4846,7 @@ function refreshDeepSearchBtn(){
           <div class="row" style="margin-top:10px">
             <div class="col" style="grid-column:1/-1">
               <label class="hint">بريد طلب الترقية</label>
-              <input id="upgradeEmail" type="email" placeholder="tntntt830@gmail.com" />
+              <input id="upgradeEmail" type="email" placeholder="email@example.com" />
             </div>
           </div>
         </div>`);

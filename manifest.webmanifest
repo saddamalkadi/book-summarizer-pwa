@@ -1,5 +1,5 @@
 {
-  "name": "AI Workspace Studio v8.83",
+  "name": "AI Workspace Studio v9.0",
   "short_name": "AI Studio",
   "description": "منصة عربية للدردشة والملفات والمعرفة وسير العمل مع خطط مجانية ومدفوعة.",
   "start_url": "./",
@@ -10,6 +10,12 @@
   "lang": "ar",
   "dir": "rtl",
   "icons": [
+    {
+      "src": "logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
     {
       "src": "icons/icon-192.webp",
       "sizes": "192x192",

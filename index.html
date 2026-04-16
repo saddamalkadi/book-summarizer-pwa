@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.83">
+<html lang="ar" dir="rtl" data-appver="9.0">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.83</title>
+    <title>AI Workspace Studio v9.0</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -159,12 +159,12 @@
 
     *{
       scrollbar-width: thin;
-      scrollbar-color: #8aa8ff #eef2ff;
+      scrollbar-color: rgba(27,102,255,.25) transparent;
     }
-    *::-webkit-scrollbar{width:10px; height:10px;}
-    *::-webkit-scrollbar-track{background:#eef2ff; border-radius:999px;}
-    *::-webkit-scrollbar-thumb{background:linear-gradient(180deg,#90b0ff,#5f83ff); border-radius:999px; border:2px solid #eef2ff;}
-    *::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,#7da0ff,#4b72ff);}
+    *::-webkit-scrollbar{width:6px; height:6px;}
+    *::-webkit-scrollbar-track{background:transparent;}
+    *::-webkit-scrollbar-thumb{background:rgba(27,102,255,.22); border-radius:999px;}
+    *::-webkit-scrollbar-thumb:hover{background:rgba(27,102,255,.4);}
     a{color:var(--pri); font-weight:900; text-decoration:underline}
     .app{min-height:var(--app-vh); min-height:100vh; width:100%; display:grid; grid-template-columns:minmax(260px,320px) minmax(0,1fr); gap:12px; padding:12px;}
     .side{
@@ -3480,6 +3480,15 @@ select{
 *::-webkit-scrollbar-thumb:hover{
   background: rgba(27,102,255,.4);
 }
+body.dark *{
+  scrollbar-color: rgba(122,162,255,.30) transparent;
+}
+body.dark *::-webkit-scrollbar-thumb{
+  background: rgba(122,162,255,.28);
+}
+body.dark *::-webkit-scrollbar-thumb:hover{
+  background: rgba(122,162,255,.48);
+}
 
 /* 13. Modal polish */
 .modal .panel{
@@ -4392,6 +4401,166 @@ body.dark #topRuntimeBadge{
   color: var(--text) !important;
   border-color: rgba(255,255,255,.14) !important;
   background: rgba(122,162,255,.14) !important;
+}
+
+/* Dark mode: comprehensive polish for production */
+body.dark .topbar{
+  background: rgba(17,27,47,.92) !important;
+  border-color: rgba(255,255,255,.08) !important;
+}
+body.dark .subtopbar{
+  background: rgba(17,27,47,.92) !important;
+  border-color: rgba(255,255,255,.08) !important;
+}
+body.dark .modal .panel{
+  background: #111b2f !important;
+  border-color: rgba(255,255,255,.10) !important;
+}
+body.dark .modal .panel .head{
+  border-color: rgba(255,255,255,.10) !important;
+}
+body.dark .modal .backdrop{
+  background: rgba(0,0,0,.55) !important;
+}
+body.dark .signal-card{
+  background: rgba(21,34,58,.92) !important;
+  border-color: rgba(255,255,255,.10) !important;
+}
+body.dark .signal-label{
+  color: var(--muted) !important;
+}
+body.dark .signal-value{
+  color: var(--text) !important;
+}
+body.dark .settings-overview-card{
+  background: #15223a !important;
+  border-color: rgba(255,255,255,.10) !important;
+}
+body.dark .settings-kpi{
+  background: #15223a !important;
+  border-color: rgba(255,255,255,.10) !important;
+}
+body.dark .settings-kpi span{
+  color: var(--muted) !important;
+}
+body.dark .settings-kpi strong{
+  color: var(--text) !important;
+}
+body.dark .settings-health-output{
+  background: #15223a !important;
+  border-color: rgba(255,255,255,.10) !important;
+  color: var(--text) !important;
+}
+body.dark .model-category-chip{
+  background: #15223a !important;
+  border-color: rgba(255,255,255,.10) !important;
+  color: var(--text) !important;
+}
+body.dark .model-category-chip.active{
+  background: linear-gradient(180deg,#1d4ed8,#1e40af) !important;
+  color: #fff !important;
+}
+body.dark .quick-prompt-btn{
+  background: #15223a !important;
+  border-color: rgba(255,255,255,.10) !important;
+  color: var(--text) !important;
+}
+body.dark .empty-chat-state{
+  background: #111b2f !important;
+  border-color: rgba(255,255,255,.12) !important;
+}
+body.dark .empty-chat-card{
+  background: #15223a !important;
+  border-color: rgba(255,255,255,.10) !important;
+}
+body.dark .empty-chat-card strong{
+  color: var(--text) !important;
+}
+body.dark .empty-chat-card span{
+  color: var(--muted) !important;
+}
+body.dark .account-trigger{
+  background: #15223a !important;
+  border-color: rgba(255,255,255,.10) !important;
+  color: var(--text) !important;
+}
+body.dark .account-trigger span{
+  color: var(--muted) !important;
+}
+body.dark .account-summary{
+  background: #15223a !important;
+  border-color: rgba(255,255,255,.10) !important;
+}
+body.dark .account-meta strong{
+  color: var(--text) !important;
+}
+body.dark .account-meta span{
+  color: var(--muted) !important;
+}
+body.dark .plan-pill{
+  background: rgba(122,162,255,.14) !important;
+  border-color: rgba(122,162,255,.22) !important;
+  color: var(--text) !important;
+}
+body.dark .plan-pill.premium{
+  background: linear-gradient(135deg,rgba(255,224,102,.16),rgba(255,193,7,.12)) !important;
+  color: #ffd54f !important;
+  border-color: rgba(255,193,7,.22) !important;
+}
+body.dark .tool-group{
+  background: #15223a !important;
+  border-color: rgba(255,255,255,.10) !important;
+}
+body.dark .topbar-actions{
+  background: rgba(21,34,58,.8) !important;
+  border-color: rgba(255,255,255,.10) !important;
+}
+body.dark .topbar-overflow-panel{
+  background: #111b2f !important;
+  border-color: rgba(255,255,255,.12) !important;
+}
+body.dark .auth-access-note{
+  background: #15223a !important;
+  border-color: rgba(255,255,255,.10) !important;
+}
+body.dark .auth-access-note strong{
+  color: var(--text) !important;
+}
+body.dark .auth-access-note span{
+  color: var(--muted) !important;
+}
+body.dark .prompt-chip{
+  background: #15223a !important;
+  border-color: rgba(255,255,255,.10) !important;
+  color: var(--text) !important;
+}
+body.dark .workspace-deck{
+  background: rgba(17,27,47,.9) !important;
+  border-color: rgba(255,255,255,.06) !important;
+}
+body.dark .settings-overview{
+  background: rgba(17,27,47,.9) !important;
+}
+body.dark .strategic-strip{
+  background: rgba(17,27,47,.5) !important;
+}
+body.dark #page-chat{
+  background: #111b2f !important;
+}
+body.dark .chatbar{
+  background: rgba(17,27,47,.92) !important;
+  border-color: rgba(255,255,255,.08) !important;
+}
+body.dark .composer-meta{
+  color: var(--muted) !important;
+}
+body.dark .composer-status{
+  color: var(--text) !important;
+}
+body.dark .auth-path-pill{
+  background: #15223a !important;
+  border-color: rgba(255,255,255,.10) !important;
+  color: var(--text) !important;
 }
 </style>
 </head>
@@ -5471,7 +5640,7 @@ body.dark #topRuntimeBadge{
     })();
   </script>
 
-<script src="app.js?v=881"></script>
+<script src="app.js?v=900"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -5494,7 +5663,7 @@ body.dark #topRuntimeBadge{
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=883").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=900").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

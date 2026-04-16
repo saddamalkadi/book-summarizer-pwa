@@ -360,7 +360,7 @@ function setCommonHeaders(res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()');
   res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://accounts.google.com https://fonts.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https: wss:; frame-src https://accounts.google.com; media-src 'self' blob: data:");
 }
 
@@ -473,6 +473,15 @@ async function handleTtsProxy(req, res) {
   }
 }
 
+const BLOCKED_PATTERNS = [
+  /\.env/i, /\.git\b/i, /keystore/i, /\.key$/i, /\.pem$/i, /\.p12$/i,
+  /server\.mjs$/i, /keys-worker\.js$/i, /convert-worker\.js$/i,
+  /wrangler/i, /codemagic/i, /\.replit$/i, /replit\.md$/i,
+  /package-lock\.json$/i, /node_modules/i,
+  /\.github\b/i, /attached_assets/i, /docs\//i,
+  /\.yml$/i, /\.yaml$/i
+];
+
 function resolvePath(urlPath) {
   let clean = '/';
   try {
@@ -480,6 +489,8 @@ function resolvePath(urlPath) {
   } catch (_) {
     return null;
   }
+
+  if (BLOCKED_PATTERNS.some(p => p.test(clean))) return null;
 
   const requested = clean === '/' ? '/index.html' : clean;
   const fullPath = resolve(normalize(join(ROOT, `.${requested}`)));

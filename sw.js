@@ -1,5 +1,5 @@
 // AI Workspace Studio - Service Worker
-const APP_VERSION = "883";
+const APP_VERSION = "900";
 const CACHE_NAME = `aistudio-cache-v${APP_VERSION}`;
 const CORE = [
   "./",
@@ -7,15 +7,15 @@ const CORE = [
   "./auth-bridge.html",
   `./app.js?v=${APP_VERSION}`,
   "./manifest.webmanifest",
-  "./logo.svg",
-  "./icons/icon-192.webp",
-  "./icons/icon-512.webp"
+  "./logo.svg"
 ];
 
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
-    await cache.addAll(CORE);
+    await Promise.all(CORE.map(url =>
+      cache.add(url).catch(() => {})
+    ));
     await self.skipWaiting();
   })());
 });

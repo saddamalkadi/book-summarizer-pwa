@@ -224,7 +224,7 @@ function getUpgradeAdminToken(env) {
 }
 
 function getAdminEmail(env) {
-  return String(env.APP_ADMIN_EMAIL || env.ADMIN_EMAIL || 'tntntt830@gmail.com').trim().toLowerCase();
+  return String(env.APP_ADMIN_EMAIL || env.ADMIN_EMAIL || '').trim().toLowerCase();
 }
 
 function getAdminPassword(env) {
@@ -244,9 +244,8 @@ function getPublicAuthConfig(env) {
     authRequired,
     premiumEnabled: true,
     brandName: String(env.APP_BRAND_NAME || 'AI Workspace Studio').trim(),
-    developerName: String(env.APP_DEVELOPER_NAME || 'صدام القاضي').trim(),
-    upgradeEmail: String(env.APP_UPGRADE_EMAIL || 'tntntt830@gmail.com').trim(),
-    adminEmail,
+    developerName: String(env.APP_DEVELOPER_NAME || '').trim(),
+    upgradeEmail: String(env.APP_UPGRADE_EMAIL || '').trim(),
     adminEnabled,
     adminPasswordEnabled,
     adminLoginMethod: adminPasswordEnabled
@@ -1164,7 +1163,7 @@ async function getGoogleVerificationKeys() {
 }
 
 function buildUpgradeMailto(session, upgradeEmail) {
-  const to = encodeURIComponent(String(upgradeEmail || 'tntntt830@gmail.com').trim());
+  const to = encodeURIComponent(String(upgradeEmail || '').trim());
   const subject = encodeURIComponent(`طلب ترقية حساب - ${session.email}`);
   const body = encodeURIComponent([
     'مرحبًا،',
