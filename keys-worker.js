@@ -213,14 +213,16 @@ function getSessionSecret(env) {
   return firstNonEmpty(
     env.APP_SESSION_SECRET,
     env.AUTH_SESSION_SECRET,
-    env.SESSION_SIGNING_SECRET
+    env.SESSION_SIGNING_SECRET,
+    getServerKey(env)
   );
 }
 
 function getUpgradeSecret(env) {
   return firstNonEmpty(
     env.UPGRADE_CODE_SECRET,
-    env.APP_UPGRADE_SECRET
+    env.APP_UPGRADE_SECRET,
+    getSessionSecret(env)
   );
 }
 
