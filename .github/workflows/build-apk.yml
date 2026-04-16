@@ -67,9 +67,14 @@ jobs:
         working-directory: android
         run: ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
 
-      - name: Stage APK for Pages; keep AAB as GitHub-Release-only artifact
+      - name: Stage release artifacts
         run: |
           set -e
+          VN="${{ steps.version.outputs.version_name }}"
+          if [ -z "$VN" ]; then
+            echo "Version name is empty — aborting to avoid writing bogus artifact filenames" >&2
+            exit 1
+          fi
           mkdir -p downloads staging
           SRC_APK="android/app/build/outputs/apk/release/app-release.apk"
           if [ ! -f "$SRC_APK" ]; then
@@ -86,27 +91,14 @@ jobs:
             exit 1
           fi
           cp "$SRC_APK" "AI-Workspace-Studio-latest.apk"
+          cp "$SRC_APK" "AI-Workspace-Studio-v${VN}.apk"
           cp "$SRC_APK" "downloads/ai-workspace-studio-latest.apk"
-          VN="${{ steps.version.outputs.version_name }}"
           cp "$SRC_APK" "downloads/ai-workspace-studio-v${VN}-android-release.apk"
-          # AAB is staged OUTSIDE the publicly served downloads/ directory — only GitHub Releases gets it.
+          cp "$SRC_AAB" "AI-Workspace-Studio-v${VN}.aab"
           cp "$SRC_AAB" "staging/ai-workspace-studio-v${VN}-android-release.aab"
           echo "APK: $(du -sh AI-Workspace-Studio-latest.apk)"
           echo "AAB: $(du -sh staging/ai-workspace-studio-v${VN}-android-release.aab)"
           ls -la downloads/
-
-      - name: Build release APK and AAB
-        working-directory: android
-        run: ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
-
-      - name: Prepare release artifacts
-        run: |
-          cp android/app/build/outputs/apk/release/app-release.apk AI-Workspace-Studio-latest.apk
-          cp android/app/build/outputs/bundle/release/app-release.aab AI-Workspace-Studio-latest.aab
-          cp AI-Workspace-Studio-latest.apk AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}.apk
-          cp AI-Workspace-Studio-latest.aab AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}.aab
-          echo "APK size: $(du -sh AI-Workspace-Studio-latest.apk)"
-          echo "AAB size: $(du -sh AI-Workspace-Studio-latest.aab)"
 
       - name: Upload release artifacts (GitHub Actions)
         uses: actions/upload-artifact@v4
@@ -114,7 +106,6 @@ jobs:
           name: AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}
           path: |
             AI-Workspace-Studio-latest.apk
-            AI-Workspace-Studio-latest.aab
             AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}.apk
             AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}.aab
           retention-days: 30
@@ -155,9 +146,11 @@ jobs:
           set -e
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          # Ensure no AAB ever leaks into the publicly served folder.
+          # Ensure no AAB or bogus empty-version APK ever leaks into the public folder.
           rm -f downloads/*.aab || true
+          rm -f downloads/ai-workspace-studio-v-android-release.apk || true
           git rm -f --ignore-unmatch 'downloads/*.aab' || true
+          git rm -f --ignore-unmatch 'downloads/ai-workspace-studio-v-android-release.apk' || true
           git add downloads/*.apk
           if git diff --staged --quiet; then
             echo "No download binary changes to commit"
