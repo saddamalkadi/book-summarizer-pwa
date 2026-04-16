@@ -307,8 +307,19 @@ function getWorkerHealth(env) {
   };
 }
 
-function withCors(response, request) {
-  const origin = request.headers.get('Origin') || '*';
+function getAllowedOrigin(request, env) {
+  const origin = String(request.headers.get('Origin') || '').trim();
+  if (!origin) return '*';
+  const allowed = String(env.CORS_ALLOW_ORIGIN || 'https://app.saddamalkadi.com')
+    .split(',')
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+  if (!allowed.length) return 'https://app.saddamalkadi.com';
+  return allowed.includes(origin) ? origin : allowed[0];
+}
+
+function withCors(response, request, env = {}) {
+  const origin = getAllowedOrigin(request, env);
   const h = new Headers(response.headers || {});
   h.set('Access-Control-Allow-Origin', origin);
   h.set('Vary', 'Origin');

@@ -8,10 +8,10 @@ const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 8080);
 const ROOT = resolve(process.env.ROOT_DIR || process.cwd());
 
-// ── Startup: clear git lock and push to GitHub if token available ──────────
+// ── Startup: clear git lock and optionally push to GitHub (disabled by default) ──────────
 try { unlinkSync(join(ROOT, '.git/index.lock')); } catch (_) {}
 
-if (process.env.GITHUB_TOKEN) {
+if (process.env.AISTUDIO_ENABLE_SERVER_AUTOFIX === 'true' && process.env.GITHUB_TOKEN) {
   try {
     const token = process.env.GITHUB_TOKEN;
     // Commit any uncommitted working-tree changes before pushing
@@ -38,7 +38,7 @@ if (process.env.GITHUB_TOKEN) {
 }
 // ──────────────────────────────────────────────────────────────────────────
 
-// ── Startup: Auto-fix Cloudflare Worker if misconfigured ──────────────────
+// ── Startup: Auto-fix Cloudflare Worker if misconfigured (disabled by default) ──────────────────
 async function autoFixWorker() {
   const CF_TOKEN = process.env.CF_API_TOKEN;
   const OR_KEY   = process.env.OPENROUTER_API_KEY;
@@ -336,7 +336,11 @@ async function handleGoogleTtsProxy(request){
     console.log('[worker-fix] Error:', e.message);
   }
 }
-autoFixWorker();
+if (process.env.AISTUDIO_ENABLE_SERVER_AUTOFIX === 'true') {
+  autoFixWorker();
+} else {
+  console.log('[worker-fix] Disabled by default. Set AISTUDIO_ENABLE_SERVER_AUTOFIX=true only in trusted operator environments.');
+}
 // ──────────────────────────────────────────────────────────────────────────
 
 const MIME = {
