@@ -367,7 +367,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.92';
+  const WEB_RELEASE_LABEL = 'v8.93';
   const RELEASE_CHANNEL = 'rc';
   const HIDE_PUBLIC_AAB = true;
   const DISABLE_RUNTIME_ENDPOINT_EDITING_FOR_MANAGED = true;
@@ -4445,9 +4445,6 @@ function refreshDeepSearchBtn(){
     const signature = `${tone}:${text}`;
     if (NATIVE_GOOGLE_RUNTIME.lastDialogMessage === signature) return;
     NATIVE_GOOGLE_RUNTIME.lastDialogMessage = signature;
-    window.setTimeout(() => {
-      try{ window.alert(text); }catch(_){}
-    }, 30);
   }
 
   function explainAuthError(error, { nativeGoogle = false } = {}){
@@ -4470,10 +4467,10 @@ function refreshDeepSearchBtn(){
       return 'Google Client ID غير مضبوط على الخادم بعد.';
     }
     if (/This email is configured as the admin account/i.test(raw)){
-      return 'هذا البريد هو بريد الإدارة. استخدم كلمة مرور الإدارة من نفس شاشة الدخول.';
+      return 'هذا الحساب يحتاج مسار دخول الإدارة المناسب.';
     }
     if (/AUTH_ADMIN_PASSWORD_NOT_CONFIGURED|Admin password login is not configured/i.test(raw)){
-      return 'دخول الإدارة بكلمة المرور غير مفعل حاليًا. استخدم تسجيل Google ببريد الإدارة المعتمد.';
+      return 'دخول الإدارة بكلمة المرور غير متاح حاليًا. استخدم Google للحساب الإداري إذا كان مفعّلًا.';
     }
     if (/Authentication is temporarily unavailable/i.test(raw)){
       return 'تسجيل الدخول غير متاح مؤقتًا. يرجى المحاولة بعد قليل.';
@@ -4671,7 +4668,7 @@ function refreshDeepSearchBtn(){
   function setAuthGateStatus(message, tone = 'info'){
     const box = $('authGateStatus');
     if (!box) return;
-    const text = String(message || 'سجّل الدخول ببريدك الشخصي لفتح الخطة المجانية، أو استخدم بريد الإدارة مع كلمة المرور من نفس الشاشة.').trim();
+    const text = String(message || 'سجّل الدخول ببريدك الشخصي لفتح مساحة العمل، ويمكنك استخدام Google عندما يكون متاحًا.').trim();
     if (!text){
       box.hidden = true;
       box.style.display = 'none';
@@ -4765,20 +4762,20 @@ function refreshDeepSearchBtn(){
                 </div>
               </div>
               <h1 class="auth-title">تسجيل الدخول</h1>
-              <p class="auth-copy">واجهة دخول موحّدة: حساب عادي أو إدارة من نفس الشاشة.</p>
+              <p class="auth-copy">دخول موحّد لحسابك ومشاريعك من شاشة واحدة.</p>
             </section>
             <section class="auth-card">
               <div class="auth-form-head">
                 <div class="auth-form-head-copy">
                   <h2>متابعة الحساب</h2>
-                  <p>أدخل البريد والاسم، وسيتم اختيار المسار الصحيح تلقائيًا.</p>
+                  <p>أدخل البريد والاسم للبدء، ويمكن استخدام Google عندما يكون متاحًا.</p>
                 </div>
                 <span class="plan-pill" id="authCurrentPlanPill">الخطة المجانية</span>
               </div>
               <div class="auth-path-pills" aria-label="مسارات الدخول">
-                <span class="auth-path-pill">حساب عادي</span>
+                <span class="auth-path-pill">حسابك</span>
                 <span class="auth-path-pill">Google</span>
-                <span class="auth-path-pill">إدارة (عند الحاجة)</span>
+                <span class="auth-path-pill">مزامنة المشاريع</span>
               </div>
               <div class="auth-status status" id="authGateStatus" data-tone="info">جاهز للدخول.</div>
               <form id="authEntryForm" autocomplete="on" onsubmit="return false" style="margin-top:12px">
@@ -4792,11 +4789,11 @@ function refreshDeepSearchBtn(){
                   <input id="authEntryEmail" name="email" type="email" placeholder="name@example.com" autocomplete="email" />
                 </div>
                 <div style="grid-column:1/-1">
-                  <label class="hint" for="authEntryPassword" id="authEntryPasswordLabel">كلمة المرور (إدارة)</label>
-                  <input id="authEntryPassword" name="password" type="password" placeholder="للبريد الإداري فقط" autocomplete="current-password" />
+                  <label class="hint" for="authEntryPassword" id="authEntryPasswordLabel">كلمة المرور (اختيارية للحسابات المُدارة)</label>
+                  <input id="authEntryPassword" name="password" type="password" placeholder="اتركها فارغة للحساب العادي" autocomplete="current-password" />
                 </div>
               </div>
-              <div class="auth-note" id="authEntryModeHint">يتم تحديد نوع الدخول تلقائيًا من البريد.</div>
+              <div class="auth-note" id="authEntryModeHint">يمكنك المتابعة بالبريد مباشرة، أو باستخدام كلمة مرور حساب مُدار عند تفعيلها على الخادم.</div>
               <div class="account-actions" style="margin-top:12px">
                 <button class="btn dark sm with-label" type="submit" id="authEntrySubmitBtn"><span class="icon">→</span><span class="label" id="authEntrySubmitLabel">متابعة بالخطة المجانية</span></button>
               </div>
@@ -5024,49 +5021,39 @@ function refreshDeepSearchBtn(){
 
 function syncUnifiedAuthEntry(){
     const config = sanitizePublicAuthConfig(getEffectiveAuthConfig());
-    const email = String($('authEntryEmail')?.value || '').trim().toLowerCase();
-    const isAdminEntry = !!email && email === String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
+    const passwordInput = $('authEntryPassword');
+    const passwordEntered = !!String(passwordInput?.value || '').trim();
     const adminPasswordEnabled = config.adminPasswordEnabled === true;
     const adminLoginMethod = String(config.adminLoginMethod || '').trim().toLowerCase();
     const healthPasswordReady = AUTH_RUNTIME.authHealth?.admin_password_ready === true;
     const adminGoogleReady = !!getAuthGoogleClientId();
-    // Web regression guard: the admin password input must remain visible on the official web app
-    // even when admin is currently "google_only" (so admins can see the option/state clearly).
-    const webForceAdminPasswordVisible = isAdminEntry && !isNativePlatform() && isManagedHostedRuntime();
-    const showPassword = isAdminEntry && (
-      webForceAdminPasswordVisible
+    const showPassword = passwordEntered
       || adminPasswordEnabled
       || adminLoginMethod === 'password_or_google'
       || adminLoginMethod === 'password_only'
-      || healthPasswordReady
-    );
-    const adminGoogleOnly = isAdminEntry && !showPassword && adminGoogleReady;
+      || healthPasswordReady;
     const label = $('authEntrySubmitLabel');
     const hint = $('authEntryModeHint');
     const passwordLabel = $('authEntryPasswordLabel');
-    const passwordInput = $('authEntryPassword');
     const passwordWrap = passwordInput?.closest('div[style*="grid-column"]') || passwordInput?.parentElement;
-    if (label) label.textContent = isAdminEntry
-      ? (adminGoogleOnly ? 'متابعة الإدارة عبر Google' : 'دخول الإدارة')
-      : 'متابعة بالخطة المجانية';
-    if (hint) hint.textContent = isAdminEntry
-      ? (adminGoogleOnly
-        ? 'هذا الحساب يحتاج دخول الإدارة عبر Google أو كلمة المرور عندما تكون متاحة.'
-        : 'هذا الحساب يحتاج كلمة مرور الإدارة أو Google عندما تكون متاحة.')
-      : 'أي بريد شخصي صالح يفتح لك الخطة المجانية فورًا، ويمكنك الترقية لاحقًا داخل التطبيق.';
+    if (label) label.textContent = passwordEntered ? 'متابعة بالحساب المُدار' : 'متابعة بالحساب';
+    if (hint) hint.textContent = showPassword
+      ? 'أدخل بريدك للمتابعة. كلمة المرور اختيارية، وتُستخدم فقط للحسابات المُدارة عند تفعيلها على الخادم.'
+      : (adminGoogleReady
+        ? 'يمكنك المتابعة بالبريد مباشرة أو استخدام Google من نفس الشاشة.'
+        : 'أي بريد شخصي صالح يفتح لك الخطة المجانية فورًا، ويمكنك الترقية لاحقًا داخل التطبيق.');
     if ($('authCurrentPlanPill')){
-      $('authCurrentPlanPill').textContent = isAdminEntry ? 'الإدارة' : 'الخطة المجانية';
-      $('authCurrentPlanPill').classList.toggle('premium', isAdminEntry);
+      $('authCurrentPlanPill').textContent = 'الخطة المجانية';
+      $('authCurrentPlanPill').classList.remove('premium');
     }
-    if (passwordLabel) passwordLabel.textContent = isAdminEntry
-      ? (adminGoogleOnly ? 'كلمة مرور الإدارة أو Google' : 'كلمة مرور الإدارة')
-      : 'كلمة المرور للإدارة فقط';
+    if (passwordLabel) passwordLabel.textContent = showPassword
+      ? 'كلمة المرور (اختيارية للحسابات المُدارة)'
+      : 'كلمة المرور (اختيارية)';
     if (passwordInput){
-      passwordInput.placeholder = isAdminEntry
-        ? (adminGoogleOnly ? 'اتركها فارغة لاستخدام Google أو أدخل كلمة المرور' : 'أدخل كلمة مرور الإدارة')
-        : 'اختيارية للمستخدم العادي، ومطلوبة فقط إذا كان هذا بريد الإدارة';
-      passwordInput.disabled = !showPassword;
-      if (!showPassword) passwordInput.value = '';
+      passwordInput.placeholder = showPassword
+        ? 'اتركها فارغة للحساب العادي أو أدخلها للحساب المُدار'
+        : 'اتركها فارغة للحساب العادي';
+      passwordInput.disabled = false;
     }
     if (passwordWrap) passwordWrap.style.display = showPassword ? '' : 'none';
   }
@@ -5375,7 +5362,7 @@ function syncUnifiedAuthEntry(){
     loadRemoteAuthConfig(true).then(() => {
       syncUnifiedAuthEntry();
       syncAccountPlanControls();
-      setAuthGateStatus(message || 'سجّل الدخول ببريدك الشخصي لفتح الخطة المجانية، أو استخدم بريد الإدارة مع كلمة المرور من نفس الشاشة.', 'info');
+      setAuthGateStatus(message || 'سجّل الدخول ببريدك الشخصي لفتح مساحة العمل، ويمكنك استخدام Google عندما يكون متاحًا.', 'info');
       return renderGoogleButton(true);
     }).catch((error) => {
       setAuthGateStatus(`تعذر تهيئة تسجيل الدخول: ${error?.message || error}`, 'error');
@@ -5439,15 +5426,13 @@ async function submitUnifiedAuthEntry(){
     const name = String($('authEntryName')?.value || '').trim();
     const email = String($('authEntryEmail')?.value || '').trim().toLowerCase();
     const password = String($('authEntryPassword')?.value || '').trim();
-    let isAdminEntry = false;
+    let usedManagedPassword = false;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
       setAuthGateStatus('أدخل بريدًا إلكترونيًا صالحًا أولًا.', 'error');
       return;
     }
     try{
       const config = sanitizePublicAuthConfig(await loadRemoteAuthConfig(true).catch(() => getEffectiveAuthConfig()));
-      const adminEmail = String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
-      isAdminEntry = !!email && email === adminEmail;
       const adminPasswordEnabled = config.adminPasswordEnabled === true;
       const adminLoginMethod = String(config.adminLoginMethod || '').trim().toLowerCase();
       const adminAllowsPassword = adminPasswordEnabled
@@ -5455,45 +5440,56 @@ async function submitUnifiedAuthEntry(){
         || adminLoginMethod === 'password_only';
       const adminGoogleReady = !!String(config.googleClientId || '').trim();
       let payload = null;
-      if (isAdminEntry){
-        if (!adminAllowsPassword && adminGoogleReady){
-          setAuthGateStatus('هذا الحساب يحتاج مسار دخول الإدارة المناسب. جارٍ فتح Google...', 'busy');
-          await openGoogleAuthInBrowser();
-          return;
-        }
-        if (!password){
-          if (adminGoogleReady){
-            setAuthGateStatus('هذا الحساب يحتاج كلمة المرور أو Google حسب إعدادات الإدارة.', 'error');
-          } else {
-            setAuthGateStatus('هذا الحساب يحتاج كلمة مرور الإدارة للمتابعة.', 'error');
-          }
-          return;
-        }
-        setAuthGateStatus('جارٍ التحقق من حساب الإدارة...', 'busy');
+      if (password){
+        setAuthGateStatus('جارٍ التحقق من كلمة المرور للحساب المُدار...', 'busy');
         try{
           payload = await fetchAuthJson('/auth/login', {
             method: 'POST',
             body: JSON.stringify({ email, password })
           });
+          usedManagedPassword = true;
         }catch(error){
           const message = sanitizeAuthErrorMessage(error?.message || error || '');
           if (/AUTH_ADMIN_PASSWORD_NOT_CONFIGURED|Admin password login is not configured/i.test(message) && adminGoogleReady){
-            setAuthGateStatus('الخادم يطلب استخدام Google لهذا الحساب الإداري حاليًا. جارٍ فتح الشاشة الوسيطة...', 'busy');
+            setAuthGateStatus('الخادم يطلب المتابعة عبر Google لهذا الحساب حاليًا. جارٍ فتح الشاشة...', 'busy');
             await openGoogleAuthInBrowser();
             return;
           }
           throw error;
         }
-      } else {
+      }
+      if (!payload){
         setAuthGateStatus('جارٍ إنشاء جلسة الخطة المجانية...', 'busy');
-        payload = await fetchAuthJson('/auth/register', {
-          method: 'POST',
-          body: JSON.stringify({
-            name,
-            email,
-            upgradeCode: ($('upgradeCodeInput')?.value || getAuthState().upgradeCode || '').trim()
-          })
-        });
+        try{
+          payload = await fetchAuthJson('/auth/register', {
+            method: 'POST',
+            body: JSON.stringify({
+              name,
+              email,
+              upgradeCode: ($('upgradeCodeInput')?.value || getAuthState().upgradeCode || '').trim()
+            })
+          });
+        }catch(error){
+          const message = sanitizeAuthErrorMessage(error?.message || error || '');
+          if (/AUTH_ADMIN_PASSWORD_REQUIRED|configured as the admin account/i.test(message)){
+            if (password && adminAllowsPassword){
+              setAuthGateStatus('جارٍ إعادة المحاولة بكلمة مرور الحساب المُدار...', 'busy');
+              payload = await fetchAuthJson('/auth/login', {
+                method: 'POST',
+                body: JSON.stringify({ email, password })
+              });
+              usedManagedPassword = true;
+            } else if (adminGoogleReady){
+              setAuthGateStatus('هذا الحساب يحتاج متابعة مُدارة. جارٍ فتح تسجيل Google...', 'busy');
+              await openGoogleAuthInBrowser();
+              return;
+            } else {
+              throw error;
+            }
+          } else {
+            throw error;
+          }
+        }
       }
       applyAuthResponse(payload, { upgradeCode: payload?.plan === 'premium' ? (($('upgradeCodeInput')?.value || getAuthState().upgradeCode || '').trim()) : getAuthState().upgradeCode || '' });
       const remember = !!$('authRememberToggle')?.checked;
@@ -5502,7 +5498,7 @@ async function submitUnifiedAuthEntry(){
           remember: true,
           name,
           email,
-          password: isAdminEntry ? password : ''
+          password: usedManagedPassword ? password : ''
         });
       } else {
         clearRememberedAuthEntry();
@@ -5514,10 +5510,10 @@ async function submitUnifiedAuthEntry(){
       refreshStrategicWorkspace().catch(()=>{});
       closeAuthGate(true);
       if ($('authEntryPassword')) $('authEntryPassword').value = '';
-      toast(isAdminEntry ? '✅ تم تسجيل الدخول الإداري' : '✅ تم فتح الخطة المجانية بنجاح');
+      toast(usedManagedPassword ? '✅ تم تسجيل الدخول بالحساب المُدار' : (payload?.plan === 'premium' ? '✅ تم تسجيل الدخول بالخطة المدفوعة' : '✅ تم فتح الخطة المجانية بنجاح'));
     }catch(error){
       const message = sanitizeAuthErrorMessage(explainAuthError(error, { nativeGoogle: false }));
-      setAuthGateStatus(`${isAdminEntry ? 'فشل دخول الإدارة' : 'فشل تسجيل الدخول'}: ${message}`, 'error');
+      setAuthGateStatus(`فشل تسجيل الدخول: ${message}`, 'error');
       toast(`⚠️ ${message}`);
     }
   }
@@ -8025,7 +8021,16 @@ async function fileToText(file){
   function sanitizeDownloadUrl(raw){
     const value = String(raw || '').trim();
     if (!value) return '';
-    if (/^(https?:|data:|blob:)/i.test(value)) return value;
+    if (/^(data:|blob:)/i.test(value)) return value;
+    try{
+      const parsed = new URL(value, location.href);
+      const protocol = String(parsed.protocol || '').toLowerCase();
+      const host = String(parsed.hostname || '').toLowerCase();
+      if (protocol === 'https:') return parsed.toString();
+      if (protocol === 'http:' && (host === 'localhost' || /^127\./.test(host) || /^192\.168\./.test(host) || /^10\./.test(host))) {
+        return parsed.toString();
+      }
+    }catch(_){}
     return '';
   }
   function inferMimeFromName(name = ''){

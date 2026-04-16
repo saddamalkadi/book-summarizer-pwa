@@ -20,12 +20,12 @@ export default {
       const url = new URL(request.url);
 
       if (url.pathname === '/health') {
-        const health = getWorkerHealth(env);
+        const health = await getWorkerHealth(env);
         return withCors(jsonResponse(health.body, health.status), request);
       }
 
       if (url.pathname === '/auth/config' && request.method === 'GET') {
-        return withCors(jsonResponse(getPublicAuthConfig(env), 200), request);
+        return withCors(jsonResponse(await getPublicAuthConfig(env), 200), request);
       }
 
       if (url.pathname === '/auth/google' && request.method === 'POST') {
@@ -195,26 +195,45 @@ function decodeBase64ToBytes(value) {
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
 
-function getSessionSecret(env) {
+async function getKvConfig(env, key) {
+  try {
+    const store = getUserDataStore(env);
+    if (!store || typeof store.get !== 'function') return '';
+    const value = await store.get(`_config:${String(key || '').trim()}`);
+    return String(value || '').trim();
+  } catch (_) {
+    return '';
+  }
+}
+
+async function getOpenRouterKeyFromKv(env) {
+  return await getKvConfig(env, 'openrouter_api_key') || await getKvConfig(env, 'openrouter_key');
+}
+
+async function getSessionSecret(env) {
   const explicit = String(
     env.APP_SESSION_SECRET ||
     env.AUTH_SESSION_SECRET ||
     ''
   ).trim();
   if (explicit) return explicit;
-  const derived = getServerKey(env);
+  const kvSecret = await getKvConfig(env, 'app_session_secret') || await getKvConfig(env, 'auth_session_secret');
+  if (kvSecret) return kvSecret;
+  const derived = getServerKey(env) || await getOpenRouterKeyFromKv(env);
   if (derived) return derived;
   throw new Error('APP_SESSION_SECRET or AUTH_SESSION_SECRET must be configured on the worker.');
 }
 
-function getUpgradeSecret(env) {
+async function getUpgradeSecret(env) {
   const explicit = String(
     env.UPGRADE_CODE_SECRET ||
     env.APP_UPGRADE_SECRET ||
     ''
   ).trim();
   if (explicit) return explicit;
-  const derived = getServerKey(env);
+  const kvSecret = await getKvConfig(env, 'upgrade_code_secret') || await getKvConfig(env, 'app_upgrade_secret');
+  if (kvSecret) return kvSecret;
+  const derived = getServerKey(env) || await getOpenRouterKeyFromKv(env);
   if (derived) return derived;
   throw new Error('UPGRADE_CODE_SECRET or APP_UPGRADE_SECRET must be configured on the worker.');
 }
@@ -234,11 +253,15 @@ function getAdminPassword(env) {
   return String(env.APP_ADMIN_PASSWORD || env.ADMIN_PASSWORD || '').trim();
 }
 
-function getPublicAuthConfig(env) {
+async function getAdminPasswordWithKv(env) {
+  return String(getAdminPassword(env) || await getKvConfig(env, 'admin_password') || '').trim();
+}
+
+async function getPublicAuthConfig(env) {
   const googleClientId = String(env.GOOGLE_CLIENT_ID_WEB || env.GOOGLE_CLIENT_ID || '').trim();
   const authRequired = String(env.AUTH_REQUIRE_LOGIN || 'true').trim().toLowerCase() !== 'false';
   const adminEmail = getAdminEmail(env);
-  const adminPasswordEnabled = !!getAdminPassword(env);
+  const adminPasswordEnabled = !!await getAdminPasswordWithKv(env);
   const adminGoogleEnabled = !!adminEmail && !!googleClientId;
   const adminEnabled = adminPasswordEnabled || adminGoogleEnabled;
   const allowAabDownloads = String(env.ALLOW_PUBLIC_AAB_DOWNLOADS || '').trim().toLowerCase() === 'true';
@@ -248,6 +271,8 @@ function getPublicAuthConfig(env) {
     authRequired,
     premiumEnabled: true,
     brandName: String(env.APP_BRAND_NAME || 'AI Workspace Studio').trim(),
+    developerName: String(env.APP_DEVELOPER_NAME || '').trim(),
+    upgradeEmail: String(env.APP_UPGRADE_EMAIL || '').trim(),
     adminEnabled,
     adminPasswordEnabled,
     adminLoginMethod: adminPasswordEnabled
@@ -268,13 +293,13 @@ function getPublicAuthConfig(env) {
   };
 }
 
-function getWorkerHealth(env) {
+async function getWorkerHealth(env) {
   const upstreamConfigured = !!getServerKey(env);
   const clientTokenRequired = !!String(env.GATEWAY_CLIENT_TOKEN || '').trim();
-  const authConfig = getPublicAuthConfig(env);
-  const hasSessionSecret = getSessionSecret(env).length >= 16;
-  const hasUpgradeSecret = getUpgradeSecret(env).length >= 16;
-  const adminPasswordReady = !!getAdminPassword(env);
+  const authConfig = await getPublicAuthConfig(env);
+  const hasSessionSecret = (await getSessionSecret(env)).length >= 16;
+  const hasUpgradeSecret = (await getUpgradeSecret(env)).length >= 16;
+  const adminPasswordReady = !!await getAdminPasswordWithKv(env);
   const adminGoogleReady = !!getAdminEmail(env) && authConfig.clientIdConfigured;
   const adminLoginReady = adminPasswordReady || adminGoogleReady;
   const cloudStorageReady = !!getUserDataStore(env);
@@ -419,7 +444,7 @@ async function handlePasswordLogin(request, env) {
     const email = String(body?.email || '').trim().toLowerCase();
     const password = String(body?.password || '').trim();
     const adminEmail = getAdminEmail(env);
-    const adminPassword = getAdminPassword(env);
+    const adminPassword = await getAdminPasswordWithKv(env);
 
     if (!email || !password) {
       return jsonResponse({
@@ -475,7 +500,7 @@ async function handleEmailRegistration(request, env) {
     }
 
     if (email === adminEmail) {
-      const authConfig = getPublicAuthConfig(env);
+      const authConfig = await getPublicAuthConfig(env);
       const adminGoogleOnly = authConfig.adminEnabled && !authConfig.adminPasswordEnabled && !!authConfig.googleClientId;
       return jsonResponse({
         error: adminGoogleOnly
@@ -685,6 +710,13 @@ async function handleVoiceTranscription(request, env) {
 
 async function handleGoogleTtsProxy(request) {
   try {
+    const authHeader = String(request.headers.get('X-App-Session') || request.headers.get('Authorization') || '').trim();
+    if (!authHeader) {
+      return new Response(JSON.stringify({
+        error: 'Authentication is required for the speech proxy.',
+        code: 'TTS_PROXY_AUTH_REQUIRED'
+      }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+    }
     const body = await request.json().catch(() => ({}));
     const text = String(body?.text || '').trim();
     const lang = String(body?.lang || 'ar').split('-')[0] || 'ar';
@@ -829,7 +861,7 @@ async function handleVoiceSynthesis(request, env) {
 async function handleUpgradeRequest(request, env) {
   try {
     const session = await requireSession(request, env);
-    const config = getPublicAuthConfig(env);
+    const config = await getPublicAuthConfig(env);
     const mailto = buildUpgradeMailto(session, String(env.APP_UPGRADE_EMAIL || ''));
     return jsonResponse({
       ok: true,
@@ -922,7 +954,7 @@ async function handleGateway(request, env, url) {
     }
   }
 
-  const serverKey = getServerKey(env);
+  const serverKey = getServerKey(env) || await getOpenRouterKeyFromKv(env);
   const incomingAuth = (request.headers.get('Authorization') || '').trim();
   const authHeader = serverKey ? `Bearer ${serverKey}` : incomingAuth;
 
@@ -1022,7 +1054,7 @@ async function requireSession(request, env) {
   if (!token) {
     throw new Error('Missing signed session. Please log in with Google first.');
   }
-  const secret = getSessionSecret(env);
+  const secret = await getSessionSecret(env);
   if (!secret) {
     throw new Error('Authentication is temporarily unavailable.');
   }
@@ -1054,7 +1086,7 @@ async function issueSessionToken(profile, env) {
     iat: Math.floor(now / 1000),
     exp: Math.floor((now + SESSION_TTL_MS) / 1000)
   };
-  const secret = getSessionSecret(env);
+  const secret = await getSessionSecret(env);
   if (!secret) {
     throw new Error('Authentication is temporarily unavailable.');
   }
@@ -1081,13 +1113,13 @@ async function createUpgradeCode({ email, plan = 'premium', days = 365 }, env) {
     iat: Math.floor(now / 1000),
     exp: Math.floor((now + (days * 24 * 60 * 60 * 1000)) / 1000)
   };
-  const signed = await signCompactToken(payload, getUpgradeSecret(env), 'upgrade');
+  const signed = await signCompactToken(payload, await getUpgradeSecret(env), 'upgrade');
   return `AIPRO-${signed}`;
 }
 
 async function verifyUpgradeCodeForEmail(code, email, env) {
   const raw = String(code || '').trim().replace(/^AIPRO-/, '');
-  const payload = await verifySignedToken(raw, getUpgradeSecret(env), 'upgrade');
+  const payload = await verifySignedToken(raw, await getUpgradeSecret(env), 'upgrade');
   if (!payload?.email) {
     throw new Error('Invalid or expired upgrade code.');
   }
