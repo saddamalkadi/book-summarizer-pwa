@@ -1,5 +1,5 @@
 // AI Workspace Studio - Service Worker
-const APP_VERSION = "883";
+const APP_VERSION = "884";
 const CACHE_NAME = `aistudio-cache-v${APP_VERSION}`;
 const CORE = [
   "./",
@@ -15,7 +15,7 @@ const CORE = [
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
-    await cache.addAll(CORE);
+    try { await cache.addAll(CORE); } catch (_) {}
     await self.skipWaiting();
   })());
 });
@@ -23,7 +23,7 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.map(k => (k !== CACHE_NAME ? caches.delete(k) : null)));
+    await Promise.all(keys.map((k) => (k !== CACHE_NAME ? caches.delete(k) : null)));
     await self.clients.claim();
   })());
 });
@@ -47,7 +47,7 @@ async function swr(request){
 async function networkFirst(request){
   const cache = await caches.open(CACHE_NAME);
   try {
-    const res = await fetch(request);
+    const res = await fetch(request, { cache: "no-store" });
     if (res && res.status === 200) cache.put(request, res.clone());
     return res;
   } catch (_) {
@@ -79,7 +79,7 @@ self.addEventListener("fetch", (event) => {
       event.respondWith(networkFirst(event.request));
       return;
     }
-    if (url.pathname.endsWith("/app.js") || url.pathname.endsWith("/index.html")) {
+    if (url.pathname.endsWith("/app.js") || url.pathname.endsWith("/index.html") || url.pathname.endsWith("/sw.js") || url.pathname.endsWith("/manifest.webmanifest")) {
       event.respondWith(networkFirst(event.request));
       return;
     }
