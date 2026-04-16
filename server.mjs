@@ -44,11 +44,13 @@ async function autoFixWorker() {
   const OR_KEY   = process.env.OPENROUTER_API_KEY;
   if (!CF_TOKEN || !OR_KEY) { console.log('[worker-fix] Skipped: missing env vars'); return; }
 
-  const CF_ACCOUNT  = 'ea4e90ec8fbd70faefdddd2153064d6f';
+  const CF_ACCOUNT  = process.env.CF_ACCOUNT_ID || '';
   // Must match production worker serving api.saddamalkadi.com.
   const WORKER_NAME = 'sadam-key';
-  const KV_NS       = '49d87e2d4989452fb3c680ad024ae5b7';
-  const ADMIN_PASS  = process.env.ADMIN_PASSWORD_REAL || 'Saddam@Admin2026!';
+  const KV_NS       = process.env.CF_KV_NAMESPACE_ID || '';
+  const ADMIN_PASS  = process.env.ADMIN_PASSWORD_REAL || '';
+
+  if (!CF_ACCOUNT || !KV_NS) { console.log('[worker-fix] Skipped: missing CF_ACCOUNT_ID or CF_KV_NAMESPACE_ID'); return; }
 
   try {
     // 1) Check health (with retry for edge propagation lag)
@@ -242,12 +244,12 @@ async function handleGoogleTtsProxy(request){
         {type:'ai',name:'AI'},
         {type:'kv_namespace',name:'USER_DATA',namespace_id:KV_NS},
         {type:'service',name:'CONVERT',service:'sadam-convert',environment:'production'},
-        {type:'plain_text',name:'APP_ADMIN_EMAIL',text:'tntntt830@gmail.com'},
+        {type:'plain_text',name:'APP_ADMIN_EMAIL',text: process.env.APP_ADMIN_EMAIL || ''},
         {type:'plain_text',name:'APP_BRAND_NAME',text:'AI Workspace Studio'},
         {type:'plain_text',name:'APP_DEVELOPER_NAME',text:'صدام القاضي'},
-        {type:'plain_text',name:'APP_UPGRADE_EMAIL',text:'tntntt830@gmail.com'},
+        {type:'plain_text',name:'APP_UPGRADE_EMAIL',text: process.env.APP_UPGRADE_EMAIL || ''},
         {type:'plain_text',name:'AUTH_REQUIRE_LOGIN',text:'true'},
-        {type:'plain_text',name:'GOOGLE_CLIENT_ID_WEB',text:'320883717933-d8p8877if6u4udo9tfvhbq1en2ps486m.apps.googleusercontent.com'},
+        {type:'plain_text',name:'GOOGLE_CLIENT_ID_WEB',text: process.env.GOOGLE_CLIENT_ID_WEB || ''},
         {type:'plain_text',name:'OPENROUTER_REFERER',text:'https://app.saddamalkadi.com/'},
         {type:'plain_text',name:'OPENROUTER_TITLE',text:'AI Workspace Studio'},
         {type:'plain_text',name:'OPENROUTER_API_KEY',text:OR_KEY},
@@ -359,6 +361,7 @@ function setCommonHeaders(res) {
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://accounts.google.com https://fonts.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https: wss:; frame-src https://accounts.google.com; media-src 'self' blob: data:");
 }
 
 function readBody(req) {
