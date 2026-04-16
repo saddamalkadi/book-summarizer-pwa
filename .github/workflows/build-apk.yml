@@ -52,8 +52,13 @@ jobs:
       - name: Extract version from build.gradle
         id: version
         run: |
-          VERSION_NAME=$(rg 'versionName' android/app/build.gradle -o -r '$1' -N --replace '\"([^\"]+)\"' | tail -n 1)
-          VERSION_CODE=$(rg 'versionCode\\s+([0-9]+)' android/app/build.gradle -o -r '$1' -N | tail -n 1)
+          VERSION_NAME=$(grep -E 'versionName\s+"' android/app/build.gradle | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
+          VERSION_CODE=$(grep -E 'versionCode\s+[0-9]+' android/app/build.gradle | head -n1 | sed -E 's/.*versionCode[[:space:]]+([0-9]+).*/\1/')
+          if [ -z "$VERSION_NAME" ] || [ -z "$VERSION_CODE" ]; then
+            echo "Failed to extract versionName/versionCode from android/app/build.gradle" >&2
+            grep -E 'versionName|versionCode' android/app/build.gradle || true
+            exit 1
+          fi
           echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
           echo "Version: $VERSION_NAME ($VERSION_CODE)"
