@@ -24,13 +24,8 @@ jobs:
       - name: Install npm dependencies
         run: npm install
 
-      - name: Prepare www directory for Capacitor
-        run: |
-          mkdir -p www/icons
-          cp index.html app.js sw.js manifest.webmanifest logo.svg www/ 2>/dev/null || true
-          cp auth-bridge.html www/ 2>/dev/null || true
-          cp icons/*.webp www/icons/ 2>/dev/null || true
-          echo "www/ contents:"; ls www/
+      - name: Sync web into www (Capacitor)
+        run: npm run sync:web
 
       - name: Sync Capacitor (generates capacitor-cordova-android-plugins)
         run: npx cap sync android
@@ -72,7 +67,11 @@ jobs:
           mkdir -p downloads
           SRC_APK="android/app/build/outputs/apk/release/app-release.apk"
           if [ ! -f "$SRC_APK" ]; then
-            echo "Release APK missing at $SRC_APK" >&2
+            SRC_APK="android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          fi
+          if [ ! -f "$SRC_APK" ]; then
+            echo "Release APK missing under android/app/build/outputs/apk/release/" >&2
+            ls -la android/app/build/outputs/apk/release/ || true
             exit 1
           fi
           cp "$SRC_APK" "AI-Workspace-Studio-latest.apk"
@@ -97,22 +96,18 @@ jobs:
           body: |
             ## AI Workspace Studio v${{ steps.version.outputs.version_name }}
 
-            **تطبيق مساحة العمل العربية بالذكاء الاصطناعي**
+            **نسخة تجربة ما قبل المتجر — Android APK**
 
-            - **Build**: ${{ steps.version.outputs.version_code }}
+            - **versionCode**: ${{ steps.version.outputs.version_code }}
             - **Platform**: Android 7.0+ (API 24+)
-            - **Type**: Release APK (تثبيت مباشر للتجربة — ليس عبر متجر Google Play)
+            - **Build**: `assembleRelease` (موقّع بمفتاح التصحيح إذا لم يُضبط keystore الإنتاج في CI)
 
             ### التثبيت
             1. حمّل ملف `AI-Workspace-Studio-latest.apk`
-            2. فعّل "مصادر غير معروفة" في إعدادات الأمان
-            3. افتح الملف وثبّت التطبيق
+            2. فعّل "مصادر غير معروفة" عند الحاجة
+            3. ثبّت التطبيق
 
-            ### الجديد
-            - مساحة العمل العربية بالذكاء الاصطناعي مع دعم OpenRouter
-            - محادثة عربية مع TTS/STT
-            - تحليل الملفات والمستندات
-            - دعم Google OAuth وتسجيل الدخول بالبريد
+            **ملاحظة:** حزمة Play (AAB) لا تُرفع هنا؛ تُبنى في بيئة النشر الرسمية عند الاستعداد لـ Google Play.
           files: AI-Workspace-Studio-latest.apk
           make_latest: true
         env:
