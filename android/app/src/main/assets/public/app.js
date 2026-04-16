@@ -11219,7 +11219,7 @@ async function runResearchAgent(topicOverride){
         const res = await window.Tesseract.recognize(f.dataUrl, 'ara+eng');
         f.text = String(res?.data?.text || '').trim();
       }catch(e){
-        wfLog(`❌ OCR failed: ${e?.message||e}`);
+        wfLog(`تعذّر التعرف على النص: ${e?.message||e}`);
       }
       saveFiles(pid, files);
     }
@@ -11296,7 +11296,7 @@ let pinOnly = false;
             <img src="./logo.svg" style="width:52px;height:52px;border-radius:14px;flex-shrink:0;border:1px solid rgba(10,20,60,.08)" alt="logo" onerror="this.textContent='🤖';this.style.fontSize='32px'"/>
             <div style="flex:1;min-width:0">
               <div style="font-weight:900;font-size:1.08em;letter-spacing:-.01em">AI Workspace Studio</div>
-              <div class="hint" id="releaseVersionMeta" style="margin-top:2px">روابط تنزيل مباشرة من نفس الموقع مع روابط احتياطية من GitHub.</div>
+              <div class="hint" id="releaseVersionMeta" style="margin-top:2px">الإصدار ${WEB_RELEASE_LABEL} • تنزيل مباشر من الموقع مع رابط احتياطي عند الحاجة.</div>
             </div>
             <span style="flex-shrink:0;padding:3px 10px;border-radius:20px;background:var(--accent,#2563eb);color:#fff;font-size:.72em;font-weight:800">● مباشر</span>
           </div>
