@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.80">
+<html lang="ar" dir="rtl" data-appver="8.81">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.80</title>
+    <title>AI Workspace Studio v8.81</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -63,6 +63,7 @@
       --shadow: 0 12px 30px rgba(10,20,60,0.09);
       --r:18px;
       --app-vh:100vh;
+      --ui-scale:1;
     }
     @supports (height: 100svh){
       :root{--app-vh:100svh;}
@@ -73,6 +74,18 @@
     *{box-sizing:border-box}
     html,body{height:100%}
     body{margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; overflow:auto; overflow-x:hidden; touch-action:pan-y;}
+    body .app{transform:scale(var(--ui-scale)); transform-origin: top right; width:calc(100% / var(--ui-scale));}
+    body.dark{--bg:#0a1120; --card:#111b2f; --card-solid:#111b2f; --text:#ecf1ff; --muted:#a9b7d4; --pri:#7aa2ff; --pri2:#d7e4ff; --line:rgba(255,255,255,.10); --shadow:0 14px 34px rgba(0,0,0,.42);}
+    body.dark .content, body.dark .panel, body.dark .settings-overview-card, body.dark .workspace-deck, body.dark .modal .panel, body.dark .bubble, body.dark .chatlog, body.dark .toolbar, body.dark .subtopbar, body.dark .topbar, body.dark #page-chat, body.dark #page-settings, body.dark #page-transcription, body.dark #page-downloads, body.dark #page-canvas, body.dark #page-files, body.dark #page-guide{background:#111b2f !important; color:#ecf1ff !important; border-color:rgba(255,255,255,.09) !important;}
+    body.dark input, body.dark textarea, body.dark select, body.dark .pill, body.dark .btn.ghost{background:#15223a !important; color:#ecf1ff !important; border-color:rgba(255,255,255,.12) !important;}
+    body.dark .hint, body.dark .bubble .meta, body.dark .workspace-section-summary, body.dark .settings-overview-card p{color:#a9b7d4 !important;}
+    body.dark .bubble.user{background:linear-gradient(145deg,#173258,#21406f) !important; border-color:rgba(122,162,255,.22) !important;}
+    body.dark .chatbar-composer-cluster{background:rgba(255,255,255,.04) !important; border-color:rgba(255,255,255,.10) !important;}
+    body.dark .navbtn{background:rgba(255,255,255,.06); border-color:rgba(255,255,255,.10);}
+    body.dark .navbtn.active{background:linear-gradient(135deg,rgba(122,162,255,.24),rgba(80,110,190,.18)); border-color:rgba(122,162,255,.35);}
+    body.dark .btn.dark{background:#7aa2ff; color:#08101f;}
+    body.dark .status{background:#15223a; color:#ecf1ff; border-color:rgba(122,162,255,.20);}
+
     *{
       scrollbar-width: thin;
       scrollbar-color: #8aa8ff #eef2ff;
@@ -146,6 +159,7 @@
     .bubble .meta{font-size:12px; color:var(--muted); font-weight:900; margin-bottom:6px}
     .bubble .actions{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px}
     .chatbar{display:flex; gap:8px; padding:10px;}
+    .chatbar textarea{transition:height .18s ease, min-height .18s ease;}
     .chatbar input{flex:1;}
     .chips{display:flex; flex-wrap:wrap; gap:8px; padding:0 10px 10px;}
     .chip{display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; background:#0b1020; color:#fff; font-size:12px; font-weight:900;}
@@ -778,7 +792,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     .empty-chat-card strong{display:block; margin-bottom:6px; color:#0b1020;}
     .empty-chat-card span{display:block; color:#516079; line-height:1.7; font-size:13px;}
     .chatbar textarea{
-      flex:1; min-width:280px; min-height:60px; max-height:180px; resize:vertical;
+      flex:1; min-width:280px; min-height:38px; max-height:180px; resize:vertical;
       line-height:1.7; padding-top:12px; padding-bottom:12px;
     }
     .composer-meta{
@@ -4296,7 +4310,7 @@ body.promptEngineeringMode .topbar .topbar-actions #focusModeBtn{
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.80</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.81</div>
       </div>
     </aside>
 
@@ -5170,6 +5184,23 @@ body.promptEngineeringMode .topbar .topbar-actions #focusModeBtn{
     </main>
   </div>
 
+  <div class="modal" id="exitAppModal" aria-hidden="true">
+    <div class="backdrop" id="exitAppBackdrop"></div>
+    <div class="panel" style="top:16vh; max-width:420px; margin:0 auto; left:0; right:0;">
+      <div class="head">
+        <div style="font-weight:1000">تأكيد الخروج</div>
+        <button class="btn ghost sm icon" type="button" id="exitAppCloseBtn" aria-label="إغلاق">✕</button>
+      </div>
+      <div class="body" style="display:grid; gap:14px; text-align:center;">
+        <div style="font-size:22px; font-weight:1000;">هل تريد الخروج؟</div>
+        <div class="row" style="justify-content:center; margin:0; gap:10px;">
+          <button class="btn dark sm with-label" type="button" id="exitAppYesBtn"><span class="label">نعم</span></button>
+          <button class="btn ghost sm with-label" type="button" id="exitAppNoBtn"><span class="label">لا</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Model Hub Modal -->
 
   <div class="modal" id="canvasAiModal" aria-hidden="true">
@@ -5303,7 +5334,7 @@ body.promptEngineeringMode .topbar .topbar-actions #focusModeBtn{
     })();
   </script>
 
-<script src="app.js?v=880"></script>
+<script src="app.js?v=881"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -5317,7 +5348,7 @@ body.promptEngineeringMode .topbar .topbar-actions #focusModeBtn{
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v880";
+          const CURRENT_CACHE = "aistudio-cache-v881";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -5326,7 +5357,7 @@ body.promptEngineeringMode .topbar .topbar-actions #focusModeBtn{
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=880").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=881").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

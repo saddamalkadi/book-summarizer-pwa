@@ -40,7 +40,9 @@
     authRemember: 'aistudio_auth_remember_v1',
     voiceMode: 'aistudio_voice_mode_v1',
     cloudMeta: 'aistudio_cloud_meta_v1',
-    chatReadingMode: 'aistudio_chat_reading_mode_v1'
+    chatReadingMode: 'aistudio_chat_reading_mode_v1',
+    uiZoom: 'aistudio_ui_zoom_v1',
+    darkMode: 'aistudio_dark_mode_v1'
   };
 
   const nowTs = () => Date.now();
@@ -76,6 +78,102 @@
   }
   function saveJSON(key, val){
     try{ localStorage.setItem(key, JSON.stringify(val)); }catch(_){}
+  }
+
+
+  function getSavedZoomLevel(){
+    try{
+      const raw = Number(localStorage.getItem(KEYS.uiZoom) || 1);
+      return Number.isFinite(raw) ? Math.min(1.3, Math.max(0.85, raw)) : 1;
+    }catch(_){ return 1; }
+  }
+  function setSavedZoomLevel(value){
+    const next = Math.min(1.3, Math.max(0.85, Number(value || 1)));
+    try{ localStorage.setItem(KEYS.uiZoom, String(next)); }catch(_){ }
+    applyUiZoom(next);
+    return next;
+  }
+  function applyUiZoom(level = getSavedZoomLevel()){
+    const next = Math.min(1.3, Math.max(0.85, Number(level || 1)));
+    document.documentElement.style.setProperty('--ui-scale', String(next));
+    if ($('zoomLevelBadge')) $('zoomLevelBadge').textContent = `${Math.round(next * 100)}%`;
+    if ($('zoomOutBtn')) $('zoomOutBtn').disabled = next <= 0.85 + 0.001;
+    if ($('zoomInBtn')) $('zoomInBtn').disabled = next >= 1.3 - 0.001;
+    scheduleShellLayoutRefresh();
+  }
+  function getDarkModeEnabled(){
+    try{ return localStorage.getItem(KEYS.darkMode) === '1'; }catch(_){ return false; }
+  }
+  function setDarkModeEnabled(on){
+    try{
+      if (on) localStorage.setItem(KEYS.darkMode, '1');
+      else localStorage.removeItem(KEYS.darkMode);
+    }catch(_){ }
+    applyDarkMode();
+  }
+  function applyDarkMode(){
+    const on = getDarkModeEnabled();
+    document.body.classList.toggle('dark', on);
+    if ($('darkModeBtn')) {
+      $('darkModeBtn').classList.toggle('dark', on);
+      $('darkModeBtn').setAttribute('aria-pressed', on ? 'true' : 'false');
+      const label = $('darkModeBtn').querySelector('.label');
+      if (label) label.textContent = on ? 'داكن ✓' : 'داكن';
+    }
+  }
+  let composerExpandedByFocus = false;
+  function expandComposerOnFocus(){
+    const input = $('chatInput');
+    if (!input || input.tagName !== 'TEXTAREA') return;
+    composerExpandedByFocus = true;
+    input.setAttribute('rows', String(Math.max(3, Number(input.getAttribute('rows') || 1))));
+    input.dataset.expanded = 'true';
+    resizeComposerInput(input);
+  }
+  function shrinkComposerToCompact(force = false){
+    const input = $('chatInput');
+    if (!input || input.tagName !== 'TEXTAREA') return;
+    const value = String(input.value || '');
+    if (!force && value.trim()) return;
+    composerExpandedByFocus = false;
+    input.dataset.expanded = 'false';
+    const mode = getComposerMode();
+    input.setAttribute('rows', mode === 'multi' ? '2' : '1');
+    resizeComposerInput(input);
+  }
+  async function confirmExitApp(){
+    const modal = $('exitAppModal');
+    if (!modal) return false;
+    return await new Promise((resolve) => {
+      const close = (answer) => {
+        modal.classList.remove('show');
+        modal.setAttribute('aria-hidden', 'true');
+        resolve(answer);
+      };
+      const yes = $('exitAppYesBtn');
+      const no = $('exitAppNoBtn');
+      const backdrop = $('exitAppBackdrop');
+      const onYes = () => close(true);
+      const onNo = () => close(false);
+      const cleanup = () => {
+        yes?.removeEventListener('click', onYes);
+        no?.removeEventListener('click', onNo);
+        backdrop?.removeEventListener('click', onNo);
+      };
+      yes?.addEventListener('click', () => { cleanup(); onYes(); }, { once:true });
+      no?.addEventListener('click', () => { cleanup(); onNo(); }, { once:true });
+      backdrop?.addEventListener('click', () => { cleanup(); onNo(); }, { once:true });
+      modal.classList.add('show');
+      modal.setAttribute('aria-hidden', 'false');
+    });
+  }
+  async function requestExitApp(){
+    const ok = await confirmExitApp();
+    if (!ok) return;
+    if (isNativePlatform()){
+      try{ await getCapacitorAppPlugin()?.exitApp?.(); return; }catch(_){ }
+    }
+    toast('ℹ️ لا يمكن إغلاق التطبيق تلقائيًا من المتصفح. يمكنك إغلاق التبويب يدويًا.');
   }
 
   function shouldCloudTrackStorageKey(key){
@@ -268,7 +366,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.80';
+  const WEB_RELEASE_LABEL = 'v8.81';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -4242,7 +4340,7 @@ function refreshDeepSearchBtn(){
     try{ localStorage.setItem('aistudio_composer_mode_v1', next); }catch(_){}
     document.body.classList.toggle('composer-multi', next === 'multi');
     input.dataset.mode = next;
-    input.setAttribute('rows', next === 'multi' ? '3' : '1');
+    input.setAttribute('rows', next === 'multi' ? '2' : '1');
     input.setAttribute('placeholder',
       next === 'multi'
         ? 'اكتب رسالتك… (Ctrl+Enter للإرسال)'
@@ -5627,6 +5725,48 @@ async function submitUnifiedAuthEntry(){
       voice.className = 'btn ghost sm with-label';
       voice.innerHTML = '<span class="icon">🎙️</span><span class="label">صوت</span>';
       topActions.insertBefore(voice, $('modeOffBtn') || $('newThreadBtn') || null);
+    }
+    if (topActions && !$('zoomOutBtn')){
+      const zoomOut = document.createElement('button');
+      zoomOut.type = 'button';
+      zoomOut.id = 'zoomOutBtn';
+      zoomOut.className = 'btn ghost sm with-label';
+      zoomOut.innerHTML = '<span class="icon">➖</span><span class="label">تصغير</span>';
+      topActions.insertBefore(zoomOut, $('newThreadBtn') || null);
+    }
+    if (topActions && !$('zoomLevelBadge')){
+      const badge = document.createElement('span');
+      badge.id = 'zoomLevelBadge';
+      badge.className = 'tag';
+      badge.textContent = '100%';
+      topActions.insertBefore(badge, $('newThreadBtn') || null);
+    }
+    if (topActions && !$('zoomInBtn')){
+      const zoomIn = document.createElement('button');
+      zoomIn.type = 'button';
+      zoomIn.id = 'zoomInBtn';
+      zoomIn.className = 'btn ghost sm with-label';
+      zoomIn.innerHTML = '<span class="icon">➕</span><span class="label">تكبير</span>';
+      topActions.insertBefore(zoomIn, $('newThreadBtn') || null);
+    }
+    if (topActions && !$('darkModeBtn')){
+      const dark = document.createElement('button');
+      dark.type = 'button';
+      dark.id = 'darkModeBtn';
+      dark.className = 'btn ghost sm with-label';
+      dark.setAttribute('aria-pressed', 'false');
+      dark.innerHTML = '<span class="icon">🌙</span><span class="label">داكن</span>';
+      topActions.insertBefore(dark, $('newThreadBtn') || null);
+    }
+
+    const moreGroupItems = $('moreGroupItems');
+    if (moreGroupItems && !$('exitAppNavBtn')){
+      const exitBtn = document.createElement('button');
+      exitBtn.className = 'navbtn sub';
+      exitBtn.id = 'exitAppNavBtn';
+      exitBtn.type = 'button';
+      exitBtn.innerHTML = '<span class="navbtn-icon">⏻</span><span class="navbtn-label">خروج</span><span class="meta">تأكيد</span>';
+      moreGroupItems.appendChild(exitBtn);
     }
 
     unwrapLegacyTopbarScroll();
@@ -9951,6 +10091,7 @@ function updateChips(){
 
     clearComposerEditState();
     input.value = '';
+    shrinkComposerToCompact(true);
     resizeComposerInput(input);
     syncComposerMeta();
     renderChat();
@@ -11993,6 +12134,21 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
       toast(getWebToggle() ? '🔎 تم تفعيل الويب' : '🔎 تم إيقاف الويب');
     });
 
+    $('zoomOutBtn')?.addEventListener('click', () => {
+      const next = setSavedZoomLevel(getSavedZoomLevel() - 0.05);
+      toast(`🔎 تم التصغير إلى ${Math.round(next * 100)}%`);
+    });
+    $('zoomInBtn')?.addEventListener('click', () => {
+      const next = setSavedZoomLevel(getSavedZoomLevel() + 0.05);
+      toast(`🔍 تم التكبير إلى ${Math.round(next * 100)}%`);
+    });
+    $('darkModeBtn')?.addEventListener('click', () => {
+      const next = !getDarkModeEnabled();
+      setDarkModeEnabled(next);
+      toast(next ? '🌙 تم تفعيل الوضع الداكن' : '☀️ تم إلغاء الوضع الداكن');
+    });
+    $('exitAppNavBtn')?.addEventListener('click', () => { void requestExitApp(); });
+
     $('newThreadBtn').addEventListener('click', () => { newThread(); openWorkspacePage('chat'); });
 
     document.addEventListener('click', (e) => {
@@ -12041,6 +12197,10 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
       const files = e.target.files;
       void addChatAttachments(files);
       e.target.value = '';
+    });
+    $('chatInput')?.addEventListener('focus', () => expandComposerOnFocus());
+    $('chatInput')?.addEventListener('blur', () => {
+      window.setTimeout(() => shrinkComposerToCompact(false), 80);
     });
 
     // New/Clear chat shortcuts in toolbar
@@ -12806,6 +12966,8 @@ ${e?.message||e}`, false);
     refreshCanvasPreview();
     refreshModeButtons();
     updateChips();
+    applyUiZoom();
+    applyDarkMode();
 
     bind();
     openWorkspacePage(DEFAULT_POST_LOGIN_PAGE);
