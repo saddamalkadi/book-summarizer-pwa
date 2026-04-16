@@ -1,9 +1,11 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.83">
+<html lang="ar" dir="rtl" data-appver="9.0">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.83</title>
+  <meta name="description" content="منصة عربية للدردشة والملفات والمعرفة وسير العمل مع الذكاء الاصطناعي" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
+  <title>AI Workspace Studio v9.0</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -156,15 +158,58 @@
     body.dark .chat-inline-file-name{
       color: var(--muted) !important;
     }
+    body.dark .modal .panel{
+      background:#111b2f !important;
+      border-color:rgba(255,255,255,.12) !important;
+    }
+    body.dark .modal .panel .head{
+      border-color:rgba(255,255,255,.10) !important;
+    }
+    body.dark .auth-gate{
+      background:
+        radial-gradient(circle at top right, rgba(122,162,255,.16), transparent 32%),
+        radial-gradient(circle at bottom left, rgba(94,234,212,.10), transparent 28%),
+        rgba(6,10,20,.88) !important;
+    }
+    body.dark .auth-card{
+      background:linear-gradient(180deg,#111b2f,#0f1828) !important;
+      color:var(--text) !important;
+    }
+    body.dark .auth-card h2{color:var(--text) !important;}
+    body.dark .auth-note{color:var(--muted) !important;}
+    body.dark .auth-status{background:#15223a !important; border-color:rgba(122,162,255,.18) !important; color:var(--text) !important;}
+    body.dark .signal-card{background:#15223a !important; border-color:rgba(255,255,255,.10) !important;}
+    body.dark .signal-label{color:var(--muted) !important;}
+    body.dark .signal-value{color:var(--text) !important;}
+    body.dark .home-card{background:#15223a !important; border-color:rgba(255,255,255,.10) !important;}
+    body.dark .home-card h3{color:var(--text) !important;}
+    body.dark .home-card p{color:var(--muted) !important;}
+    body.dark .settings-kpi{background:#15223a !important; border-color:rgba(255,255,255,.10) !important;}
+    body.dark .settings-kpi span{color:var(--muted) !important;}
+    body.dark .settings-kpi strong{color:var(--text) !important;}
+    body.dark .settings-health-output{background:#15223a !important; border-color:rgba(255,255,255,.10) !important; color:var(--text) !important;}
+    body.dark .model-card{background:#15223a !important; border-color:rgba(255,255,255,.10) !important;}
+    body.dark .quick-prompt-btn{background:#15223a !important; color:var(--text) !important; border-color:rgba(255,255,255,.10) !important;}
+    body.dark .empty-chat-state{background:#111b2f !important; border-color:rgba(122,162,255,.18) !important;}
+    body.dark .empty-chat-card{background:rgba(255,255,255,.04) !important; border-color:rgba(255,255,255,.10) !important;}
+    body.dark .empty-chat-card strong{color:var(--text) !important;}
+    body.dark .empty-chat-card span{color:var(--muted) !important;}
+    body.dark .chatbar{background:rgba(17,27,47,.92) !important; border-color:rgba(255,255,255,.08) !important;}
+    body.dark .composer-meta{color:var(--muted) !important;}
+    body.dark .composer-status{color:var(--text) !important;}
+    body.dark .workspace-hero{box-shadow:0 20px 50px rgba(0,0,0,.35) !important;}
+    body.dark .account-trigger{background:linear-gradient(180deg,#15223a,#111b2f) !important; color:var(--text) !important; border-color:rgba(255,255,255,.12) !important;}
+    body.dark .account-trigger span{color:var(--muted) !important;}
+    body.dark .account-summary{background:linear-gradient(180deg,#15223a,#111b2f) !important; border-color:rgba(255,255,255,.10) !important;}
 
     *{
       scrollbar-width: thin;
-      scrollbar-color: #8aa8ff #eef2ff;
+      scrollbar-color: rgba(27,102,255,.25) transparent;
     }
-    *::-webkit-scrollbar{width:10px; height:10px;}
-    *::-webkit-scrollbar-track{background:#eef2ff; border-radius:999px;}
-    *::-webkit-scrollbar-thumb{background:linear-gradient(180deg,#90b0ff,#5f83ff); border-radius:999px; border:2px solid #eef2ff;}
-    *::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,#7da0ff,#4b72ff);}
+    *::-webkit-scrollbar{width:6px; height:6px;}
+    *::-webkit-scrollbar-track{background:transparent; border-radius:999px;}
+    *::-webkit-scrollbar-thumb{background:rgba(27,102,255,.22); border-radius:999px;}
+    *::-webkit-scrollbar-thumb:hover{background:rgba(27,102,255,.4);}
     a{color:var(--pri); font-weight:900; text-decoration:underline}
     .app{min-height:var(--app-vh); min-height:100vh; width:100%; display:grid; grid-template-columns:minmax(260px,320px) minmax(0,1fr); gap:12px; padding:12px;}
     .side{
@@ -4447,7 +4492,7 @@ body.dark #topRuntimeBadge{
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.83</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v9.0</div>
       </div>
     </aside>
 

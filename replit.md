@@ -70,7 +70,7 @@ On every startup, `autoFixWorker()` runs asynchronously:
 | `CF_API_TOKEN` | Cloudflare API token (Workers + KV read/write) |
 | `OPENROUTER_API_KEY` | OpenRouter API key (injected into Worker) |
 | `GITHUB_TOKEN` | GitHub token (auto-push to GitHub Pages) |
-| `ADMIN_PASSWORD_REAL` | Admin login password (optional, fallback: Saddam@Admin2026!) |
+| `ADMIN_PASSWORD_REAL` | Admin login password (required for admin access) |
 
 ## Phase 5 Release Hardening (مارس 2026)
 

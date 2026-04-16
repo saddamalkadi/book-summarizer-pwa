@@ -8,34 +8,8 @@ const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 8080);
 const ROOT = resolve(process.env.ROOT_DIR || process.cwd());
 
-// ── Startup: clear git lock and push to GitHub if token available ──────────
+// ── Startup: clear stale git lock ──────────────────────────────────────────
 try { unlinkSync(join(ROOT, '.git/index.lock')); } catch (_) {}
-
-if (process.env.GITHUB_TOKEN) {
-  try {
-    const token = process.env.GITHUB_TOKEN;
-    // Commit any uncommitted working-tree changes before pushing
-    try {
-      execSync(`git -C "${ROOT}" config user.email "deploy@aistudio.bot"`, { stdio: 'pipe' });
-      execSync(`git -C "${ROOT}" config user.name "AI Studio Deploy"`, { stdio: 'pipe' });
-      execSync(`git -C "${ROOT}" add -A`, { stdio: 'pipe' });
-      execSync(`git -C "${ROOT}" commit -m "chore: auto-commit working-tree changes [deploy]" --allow-empty`, { stdio: 'pipe' });
-      console.log('[startup] Git commit: SUCCESS');
-    } catch (ce) {
-      // nothing to commit or already clean
-      const cmsg = ((ce.stdout||'')+(ce.stderr||'')).toString().substring(0, 100);
-      console.log('[startup] Git commit skipped:', cmsg);
-    }
-    execSync(
-      `git -C "${ROOT}" push "https://saddamalkadi:${token}@github.com/saddamalkadi/book-summarizer-pwa.git" main`,
-      { timeout: 60000, stdio: 'pipe' }
-    );
-    console.log('[startup] GitHub push: SUCCESS');
-  } catch (e) {
-    const msg = ((e.stdout||'')+(e.stderr||'')).toString().replace(process.env.GITHUB_TOKEN,'[TOKEN]');
-    console.log('[startup] GitHub push skipped:', msg.substring(0, 200));
-  }
-}
 // ──────────────────────────────────────────────────────────────────────────
 
 // ── Startup: Auto-fix Cloudflare Worker if misconfigured ──────────────────
@@ -44,11 +18,12 @@ async function autoFixWorker() {
   const OR_KEY   = process.env.OPENROUTER_API_KEY;
   if (!CF_TOKEN || !OR_KEY) { console.log('[worker-fix] Skipped: missing env vars'); return; }
 
-  const CF_ACCOUNT  = 'ea4e90ec8fbd70faefdddd2153064d6f';
-  // Must match production worker serving api.saddamalkadi.com.
-  const WORKER_NAME = 'sadam-key';
-  const KV_NS       = '49d87e2d4989452fb3c680ad024ae5b7';
-  const ADMIN_PASS  = process.env.ADMIN_PASSWORD_REAL || 'Saddam@Admin2026!';
+  const CF_ACCOUNT  = process.env.CF_ACCOUNT_ID || '';
+  const WORKER_NAME = process.env.CF_WORKER_NAME || 'sadam-key';
+  const KV_NS       = process.env.CF_KV_NAMESPACE_ID || '';
+
+  if (!CF_ACCOUNT || !KV_NS) { console.log('[worker-fix] Skipped: missing CF_ACCOUNT_ID or CF_KV_NAMESPACE_ID'); return; }
+  const ADMIN_PASS  = process.env.ADMIN_PASSWORD_REAL || '';
 
   try {
     // 1) Check health (with retry for edge propagation lag)
@@ -242,16 +217,16 @@ async function handleGoogleTtsProxy(request){
         {type:'ai',name:'AI'},
         {type:'kv_namespace',name:'USER_DATA',namespace_id:KV_NS},
         {type:'service',name:'CONVERT',service:'sadam-convert',environment:'production'},
-        {type:'plain_text',name:'APP_ADMIN_EMAIL',text:'tntntt830@gmail.com'},
+        {type:'plain_text',name:'APP_ADMIN_EMAIL',text: process.env.APP_ADMIN_EMAIL || ''},
         {type:'plain_text',name:'APP_BRAND_NAME',text:'AI Workspace Studio'},
-        {type:'plain_text',name:'APP_DEVELOPER_NAME',text:'صدام القاضي'},
-        {type:'plain_text',name:'APP_UPGRADE_EMAIL',text:'tntntt830@gmail.com'},
+        {type:'plain_text',name:'APP_DEVELOPER_NAME',text: process.env.APP_DEVELOPER_NAME || ''},
+        {type:'plain_text',name:'APP_UPGRADE_EMAIL',text: process.env.APP_UPGRADE_EMAIL || ''},
         {type:'plain_text',name:'AUTH_REQUIRE_LOGIN',text:'true'},
-        {type:'plain_text',name:'GOOGLE_CLIENT_ID_WEB',text:'320883717933-d8p8877if6u4udo9tfvhbq1en2ps486m.apps.googleusercontent.com'},
+        {type:'plain_text',name:'GOOGLE_CLIENT_ID_WEB',text: process.env.GOOGLE_CLIENT_ID_WEB || ''},
         {type:'plain_text',name:'OPENROUTER_REFERER',text:'https://app.saddamalkadi.com/'},
         {type:'plain_text',name:'OPENROUTER_TITLE',text:'AI Workspace Studio'},
         {type:'plain_text',name:'OPENROUTER_API_KEY',text:OR_KEY},
-        {type:'plain_text',name:'APP_ADMIN_PASSWORD',text:ADMIN_PASS}
+        ...(ADMIN_PASS ? [{type:'plain_text',name:'APP_ADMIN_PASSWORD',text:ADMIN_PASS}] : [])
       ],
       compatibility_date: '2024-09-23',
       compatibility_flags: ['nodejs_compat']
@@ -359,6 +334,7 @@ function setCommonHeaders(res) {
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
 }
 
 function readBody(req) {
@@ -479,6 +455,17 @@ function resolvePath(urlPath) {
   }
 
   const requested = clean === '/' ? '/index.html' : clean;
+
+  const DENIED = [
+    '/server.mjs', '/keys-worker.js', '/convert-worker.js',
+    '/wrangler.jsonc', '/wrangler.convert.jsonc',
+    '/package.json', '/package-lock.json',
+    '/capacitor.config.json', '/codemagic.yaml',
+    '/.gitignore', '/.assetsignore', '/replit.md',
+    '/CODEX_HANDOFF.md'
+  ];
+  if (DENIED.some(d => requested === d || requested.startsWith('/.git/') || requested.startsWith('/android/') || requested.startsWith('/ios/') || requested.startsWith('/scripts/') || requested.startsWith('/docs/') || requested.startsWith('/attached_assets/'))) return null;
+
   const fullPath = resolve(normalize(join(ROOT, `.${requested}`)));
 
   const rel = relative(ROOT, fullPath);

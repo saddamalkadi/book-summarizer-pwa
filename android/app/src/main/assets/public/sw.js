@@ -1,5 +1,5 @@
 // AI Workspace Studio - Service Worker
-const APP_VERSION = "881";
+const APP_VERSION = "900";
 const CACHE_NAME = `aistudio-cache-v${APP_VERSION}`;
 const CORE = [
   "./",
@@ -15,7 +15,9 @@ const CORE = [
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
-    await cache.addAll(CORE);
+    for (const url of CORE) {
+      try { await cache.add(url); } catch (_) {}
+    }
     await self.skipWaiting();
   })());
 });

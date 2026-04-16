@@ -11,3 +11,7 @@ android/.gradle-user/
 android/.android-user/
 .android-user/
 *.idsig
+
+# Prevent large binaries and sensitive build outputs from repo
+downloads/*.aab
+downloads/ai-workspace-studio-v*

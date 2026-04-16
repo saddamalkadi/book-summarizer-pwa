@@ -1,4 +1,4 @@
-﻿/* AI Workspace Studio v8.34 - strategic platform skeleton (no build step) */
+﻿/* AI Workspace Studio v9.0 */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -366,7 +366,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.83';
+  const WEB_RELEASE_LABEL = 'v9.0';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -1960,7 +1960,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     if (/dash\.cloudflare\.com$/.test(host) || path.includes('/workers/services/view/') || path.includes('/production/settings')){
       return {
         ok:false,
-        reason:'هذا رابط لوحة Cloudflare وليس رابط الـ Worker المباشر. استخدم Gateway URL مثل https://sadam-key...workers.dev'
+        reason:'رابط البوابة غير صحيح. تأكد من استخدام الرابط الصحيح للخدمة.'
       };
     }
     if (/github\.io$/.test(host)){
@@ -1972,7 +1972,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     if (/(^|\/)(convert\/pdf-to-docx|pdf-to-docx|ocr)(\/|$)/.test(path)){
       return {
         ok:false,
-        reason:'هذا رابط خدمة التحويل أو OCR، وليس رابط بوابة الدردشة. استخدم Worker الدردشة مثل sadam-key...workers.dev.'
+        reason:'هذا رابط خدمة التحويل وليس رابط بوابة الدردشة. تأكد من استخدام رابط البوابة الصحيح.'
       };
     }
     const normalized = raw
@@ -2030,7 +2030,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
 
   function getMissingAuthMessage(settings){
     if (settings.provider === 'gemini') return 'أضف مفتاح Gemini من صفحة الإعدادات قبل المتابعة.';
-    if (settings.authMode === 'gateway') return 'أضف رابط البوابة أو فعّل Cloudflare Worker المتوافق قبل المتابعة.';
+    if (settings.authMode === 'gateway') return 'تأكد من إعداد رابط البوابة بشكل صحيح قبل المتابعة.';
     return 'أضف مفتاح API من صفحة الإعدادات قبل المتابعة.';
   }
 
@@ -4443,7 +4443,7 @@ function refreshDeepSearchBtn(){
       return 'هذا البريد هو بريد الإدارة. استخدم كلمة مرور الإدارة من نفس شاشة الدخول.';
     }
     if (/AUTH_ADMIN_PASSWORD_NOT_CONFIGURED|Admin password login is not configured/i.test(raw)){
-      return 'دخول الإدارة بكلمة المرور غير مفعل حاليًا على الخادم. استخدم تسجيل Google ببريد الإدارة نفسه، أو أعد ضبط APP_ADMIN_PASSWORD على Cloudflare.';
+      return 'دخول الإدارة بكلمة المرور غير مفعل حاليًا. يمكنك تسجيل الدخول عبر Google بحساب الإدارة.';
     }
     return raw;
   }
