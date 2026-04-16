@@ -19,3 +19,22 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Capacitor core/plugin keep rules for release minification.
+-keep @com.getcapacitor.annotation.CapacitorPlugin public class * {
+    @com.getcapacitor.annotation.PermissionCallback <methods>;
+    @com.getcapacitor.annotation.ActivityCallback <methods>;
+    @com.getcapacitor.annotation.Permission <methods>;
+    @com.getcapacitor.PluginMethod public <methods>;
+}
+
+-keep public class * extends com.getcapacitor.Plugin { *; }
+
+-keep @com.getcapacitor.NativePlugin public class * {
+    @com.getcapacitor.PluginMethod public <methods>;
+}
+
+-keep public class * extends org.apache.cordova.* {
+    public <fields>;
+    public <methods>;
+}

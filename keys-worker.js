@@ -196,29 +196,33 @@ function decodeBase64ToBytes(value) {
 }
 
 function getSessionSecret(env) {
-  return (
+  const secret = (
     env.APP_SESSION_SECRET ||
     env.AUTH_SESSION_SECRET ||
-    getServerKey(env) ||
-    env.GATEWAY_CLIENT_TOKEN ||
-    'aistudio-session-fallback'
+    ''
   ).trim();
+  if (!secret) {
+    throw new Error('APP_SESSION_SECRET is not configured.');
+  }
+  return secret;
 }
 
 function getUpgradeSecret(env) {
-  return (
+  const secret = (
     env.UPGRADE_CODE_SECRET ||
     env.APP_SESSION_SECRET ||
     env.AUTH_SESSION_SECRET ||
-    getServerKey(env) ||
-    'aistudio-upgrade-fallback'
+    ''
   ).trim();
+  if (!secret) {
+    throw new Error('UPGRADE_CODE_SECRET is not configured.');
+  }
+  return secret;
 }
 
 function getUpgradeAdminToken(env) {
   return (
     env.UPGRADE_ADMIN_TOKEN ||
-    env.GATEWAY_CLIENT_TOKEN ||
     ''
   ).trim();
 }
@@ -234,9 +238,8 @@ function getAdminPassword(env) {
 function getPublicAuthConfig(env) {
   const googleClientId = String(env.GOOGLE_CLIENT_ID_WEB || env.GOOGLE_CLIENT_ID || '').trim();
   const authRequired = String(env.AUTH_REQUIRE_LOGIN || 'true').trim().toLowerCase() !== 'false';
-  const adminEmail = getAdminEmail(env);
   const adminPasswordEnabled = !!getAdminPassword(env);
-  const adminGoogleEnabled = !!adminEmail && !!googleClientId;
+  const adminGoogleEnabled = !!googleClientId;
   const adminEnabled = adminPasswordEnabled || adminGoogleEnabled;
   const voice = getVoiceApiConfig(env);
   return {
@@ -246,7 +249,6 @@ function getPublicAuthConfig(env) {
     brandName: String(env.APP_BRAND_NAME || 'AI Workspace Studio').trim(),
     developerName: String(env.APP_DEVELOPER_NAME || 'صدام القاضي').trim(),
     upgradeEmail: String(env.APP_UPGRADE_EMAIL || 'tntntt830@gmail.com').trim(),
-    adminEmail,
     adminEnabled,
     adminPasswordEnabled,
     adminLoginMethod: adminPasswordEnabled
@@ -270,10 +272,10 @@ function getWorkerHealth(env) {
   const upstreamConfigured = !!getServerKey(env);
   const clientTokenRequired = !!String(env.GATEWAY_CLIENT_TOKEN || '').trim();
   const authConfig = getPublicAuthConfig(env);
-  const hasSessionSecret = !!getSessionSecret(env);
-  const hasUpgradeSecret = !!getUpgradeSecret(env);
+  const hasSessionSecret = !!String(env.APP_SESSION_SECRET || env.AUTH_SESSION_SECRET || '').trim();
+  const hasUpgradeSecret = !!String(env.UPGRADE_CODE_SECRET || env.APP_SESSION_SECRET || env.AUTH_SESSION_SECRET || '').trim();
   const adminPasswordReady = !!getAdminPassword(env);
-  const adminGoogleReady = !!getAdminEmail(env) && authConfig.clientIdConfigured;
+  const adminGoogleReady = authConfig.clientIdConfigured;
   const adminLoginReady = adminPasswordReady || adminGoogleReady;
   const cloudStorageReady = !!getUserDataStore(env);
   const voice = getVoiceApiConfig(env);
@@ -308,10 +310,15 @@ function getWorkerHealth(env) {
 }
 
 function withCors(response, request) {
-  const origin = request.headers.get('Origin') || '*';
+  const origin = resolveAllowedOrigin(request);
   const h = new Headers(response.headers || {});
-  h.set('Access-Control-Allow-Origin', origin);
-  h.set('Vary', 'Origin');
+  if (origin) {
+    h.set('Access-Control-Allow-Origin', origin);
+    h.set('Vary', 'Origin');
+  } else {
+    h.delete('Access-Control-Allow-Origin');
+    h.set('Vary', 'Origin');
+  }
   h.set('Access-Control-Allow-Methods', 'GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS');
   h.set('Access-Control-Allow-Headers', [
     'Authorization',
@@ -326,6 +333,25 @@ function withCors(response, request) {
   h.delete('alt-svc');
   h.set('Alt-Svc', 'clear');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers: h });
+}
+
+function resolveAllowedOrigin(request) {
+  const origin = String(request.headers.get('Origin') || '').trim();
+  if (!origin) return '*';
+  try {
+    const parsed = new URL(origin);
+    const host = String(parsed.hostname || '').toLowerCase();
+    if (
+      host === 'app.saddamalkadi.com' ||
+      host === 'saddamalkadi.com' ||
+      host.endsWith('.saddamalkadi.com') ||
+      host === 'localhost' ||
+      host === '127.0.0.1'
+    ) {
+      return origin;
+    }
+  } catch (_) {}
+  return '';
 }
 
 async function handleGoogleAuth(request, env) {

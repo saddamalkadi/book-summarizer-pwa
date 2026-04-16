@@ -62,13 +62,13 @@ jobs:
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
           echo "Version: $VERSION_NAME ($VERSION_CODE)"
 
-      - name: Build debug APK
+      - name: Build release APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Rename APK for release
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk \
+          cp android/app/build/outputs/apk/release/app-release.apk \
              AI-Workspace-Studio-latest.apk
           echo "APK size: $(du -sh AI-Workspace-Studio-latest.apk)"
 
@@ -91,7 +91,7 @@ jobs:
 
             - **Build**: ${{ steps.version.outputs.version_code }}
             - **Platform**: Android 7.0+ (API ${{ steps.version.outputs.version_code >= '851' && '24' || '24' }}+)
-            - **Type**: Debug APK (تثبيت مباشر — ليس عبر متجر Google Play)
+            - **Type**: Release APK (تثبيت مباشر — صالح للتجربة خارج المتجر)
 
             ### التثبيت
             1. حمّل ملف `AI-Workspace-Studio-latest.apk`

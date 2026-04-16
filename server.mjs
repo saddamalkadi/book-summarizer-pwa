@@ -7,11 +7,15 @@ import { execSync } from 'node:child_process';
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 8080);
 const ROOT = resolve(process.env.ROOT_DIR || process.cwd());
+const ENABLE_AUTOPUSH = String(process.env.ENABLE_AUTOPUSH || '').trim().toLowerCase() === 'true';
+const ENABLE_WORKER_AUTOFIX = String(process.env.ENABLE_WORKER_AUTOFIX || '').trim().toLowerCase() === 'true';
+const ENABLE_TTS_PROXY = String(process.env.ENABLE_TTS_PROXY || '').trim().toLowerCase() === 'true';
+const ALLOW_PORT_KILL = String(process.env.ALLOW_PORT_KILL || '').trim().toLowerCase() === 'true';
 
-// ── Startup: clear git lock and push to GitHub if token available ──────────
+// ── Startup: clear stale git lock only ──────────────────────────────────────
 try { unlinkSync(join(ROOT, '.git/index.lock')); } catch (_) {}
 
-if (process.env.GITHUB_TOKEN) {
+if (ENABLE_AUTOPUSH && process.env.GITHUB_TOKEN) {
   try {
     const token = process.env.GITHUB_TOKEN;
     // Commit any uncommitted working-tree changes before pushing
@@ -35,20 +39,25 @@ if (process.env.GITHUB_TOKEN) {
     const msg = ((e.stdout||'')+(e.stderr||'')).toString().replace(process.env.GITHUB_TOKEN,'[TOKEN]');
     console.log('[startup] GitHub push skipped:', msg.substring(0, 200));
   }
+} else if (process.env.GITHUB_TOKEN) {
+  console.log('[startup] GitHub auto-push disabled (set ENABLE_AUTOPUSH=true to opt in)');
 }
 // ──────────────────────────────────────────────────────────────────────────
 
 // ── Startup: Auto-fix Cloudflare Worker if misconfigured ──────────────────
 async function autoFixWorker() {
-  const CF_TOKEN = process.env.CF_API_TOKEN;
+  const CF_TOKEN = process.env.CLOUDFLARE_API_TOKEN || process.env.CF_API_TOKEN;
   const OR_KEY   = process.env.OPENROUTER_API_KEY;
   if (!CF_TOKEN || !OR_KEY) { console.log('[worker-fix] Skipped: missing env vars'); return; }
 
-  const CF_ACCOUNT  = 'ea4e90ec8fbd70faefdddd2153064d6f';
-  // Must match production worker serving api.saddamalkadi.com.
-  const WORKER_NAME = 'sadam-key';
-  const KV_NS       = '49d87e2d4989452fb3c680ad024ae5b7';
-  const ADMIN_PASS  = process.env.ADMIN_PASSWORD_REAL || 'Saddam@Admin2026!';
+  const CF_ACCOUNT  = String(process.env.CF_ACCOUNT_ID || '').trim();
+  const WORKER_NAME = String(process.env.CF_WORKER_NAME || '').trim();
+  const KV_NS       = String(process.env.CF_KV_NAMESPACE_ID || '').trim();
+  const ADMIN_PASS  = String(process.env.ADMIN_PASSWORD_REAL || '').trim();
+  if (!CF_ACCOUNT || !WORKER_NAME || !KV_NS || !ADMIN_PASS) {
+    console.log('[worker-fix] Skipped: missing CF_ACCOUNT_ID / CF_WORKER_NAME / CF_KV_NAMESPACE_ID / ADMIN_PASSWORD_REAL');
+    return;
+  }
 
   try {
     // 1) Check health (with retry for edge propagation lag)
@@ -242,14 +251,14 @@ async function handleGoogleTtsProxy(request){
         {type:'ai',name:'AI'},
         {type:'kv_namespace',name:'USER_DATA',namespace_id:KV_NS},
         {type:'service',name:'CONVERT',service:'sadam-convert',environment:'production'},
-        {type:'plain_text',name:'APP_ADMIN_EMAIL',text:'tntntt830@gmail.com'},
-        {type:'plain_text',name:'APP_BRAND_NAME',text:'AI Workspace Studio'},
-        {type:'plain_text',name:'APP_DEVELOPER_NAME',text:'صدام القاضي'},
-        {type:'plain_text',name:'APP_UPGRADE_EMAIL',text:'tntntt830@gmail.com'},
-        {type:'plain_text',name:'AUTH_REQUIRE_LOGIN',text:'true'},
-        {type:'plain_text',name:'GOOGLE_CLIENT_ID_WEB',text:'320883717933-d8p8877if6u4udo9tfvhbq1en2ps486m.apps.googleusercontent.com'},
-        {type:'plain_text',name:'OPENROUTER_REFERER',text:'https://app.saddamalkadi.com/'},
-        {type:'plain_text',name:'OPENROUTER_TITLE',text:'AI Workspace Studio'},
+        {type:'plain_text',name:'APP_ADMIN_EMAIL',text:String(process.env.APP_ADMIN_EMAIL || '').trim()},
+        {type:'plain_text',name:'APP_BRAND_NAME',text:String(process.env.APP_BRAND_NAME || 'AI Workspace Studio').trim()},
+        {type:'plain_text',name:'APP_DEVELOPER_NAME',text:String(process.env.APP_DEVELOPER_NAME || 'صدام القاضي').trim()},
+        {type:'plain_text',name:'APP_UPGRADE_EMAIL',text:String(process.env.APP_UPGRADE_EMAIL || '').trim()},
+        {type:'plain_text',name:'AUTH_REQUIRE_LOGIN',text:String(process.env.AUTH_REQUIRE_LOGIN || 'true').trim()},
+        {type:'plain_text',name:'GOOGLE_CLIENT_ID_WEB',text:String(process.env.GOOGLE_CLIENT_ID_WEB || '').trim()},
+        {type:'plain_text',name:'OPENROUTER_REFERER',text:String(process.env.OPENROUTER_REFERER || 'https://app.saddamalkadi.com/').trim()},
+        {type:'plain_text',name:'OPENROUTER_TITLE',text:String(process.env.OPENROUTER_TITLE || 'AI Workspace Studio').trim()},
         {type:'plain_text',name:'OPENROUTER_API_KEY',text:OR_KEY},
         {type:'plain_text',name:'APP_ADMIN_PASSWORD',text:ADMIN_PASS}
       ],
@@ -327,7 +336,11 @@ async function handleGoogleTtsProxy(request){
     console.log('[worker-fix] Error:', e.message);
   }
 }
-autoFixWorker();
+if (ENABLE_WORKER_AUTOFIX) {
+  autoFixWorker();
+} else {
+  console.log('[worker-fix] Disabled by default (set ENABLE_WORKER_AUTOFIX=true to opt in)');
+}
 // ──────────────────────────────────────────────────────────────────────────
 
 const MIME = {
@@ -351,14 +364,31 @@ const MIME = {
 };
 
 function setCommonHeaders(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', process.env.CORS_ALLOW_ORIGIN || '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  // The shipped app currently relies on inline <style> and <script> blocks.
+  res.setHeader(
+    'Content-Security-Policy',
+    [
+      "default-src 'self' https: data: blob:",
+      "script-src 'self' https: 'unsafe-inline'",
+      "style-src 'self' https: 'unsafe-inline'",
+      "img-src 'self' https: data: blob:",
+      "font-src 'self' https: data:",
+      "connect-src 'self' https:",
+      "media-src 'self' https: data: blob:",
+      "frame-src 'self' https://accounts.google.com",
+      "frame-ancestors 'self'",
+      "object-src 'none'",
+      "base-uri 'self'"
+    ].join('; ')
+  );
 }
 
 function readBody(req) {
@@ -504,7 +534,7 @@ const server = createServer(async (req, res) => {
 
   const urlPath = (req.url || '/').split('?')[0];
 
-  if (urlPath === '/proxy/tts' && (req.method === 'POST' || req.method === 'GET')) {
+  if (ENABLE_TTS_PROXY && urlPath === '/proxy/tts' && (req.method === 'POST' || req.method === 'GET')) {
     return handleTtsProxy(req, res);
   }
 
@@ -549,7 +579,11 @@ server.on('error', (e) => {
       console.log(`[server] Port ${PORT} still in use after ${_portRetries} attempts — giving up`);
       process.exit(1);
     }
-    console.log(`[server] Port ${PORT} in use — attempt ${_portRetries}/3, freeing port...`);
+    console.log(`[server] Port ${PORT} in use — attempt ${_portRetries}/3`);
+    if (!ALLOW_PORT_KILL) {
+      console.log('[server] Port killing disabled (set ALLOW_PORT_KILL=true to opt in)');
+      process.exit(1);
+    }
     try {
       execSync(`fuser -k ${PORT}/tcp 2>/dev/null || true`, { timeout: 4000, shell: '/bin/bash' });
     } catch (_) {}

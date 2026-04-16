@@ -1,4 +1,4 @@
-﻿/* AI Workspace Studio v8.34 - strategic platform skeleton (no build step) */
+﻿/* AI Workspace Studio v8.84 - release candidate platform shell (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -256,7 +256,7 @@
     brandName: 'AI Workspace Studio',
     developerName: 'صدام القاضي',
     upgradeEmail: 'tntntt830@gmail.com',
-    adminEmail: 'tntntt830@gmail.com',
+    adminEmail: '',
     adminEnabled: false,
     adminPasswordEnabled: false,
     adminLoginMethod: 'google_only',
@@ -366,8 +366,9 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.83';
+  const WEB_RELEASE_LABEL = 'v8.84';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
+  const isLockedManagedRuntime = () => isManagedHostedRuntime() || isNativePlatform();
 
   const UNSYNCED_STORAGE_KEYS = new Set([
     KEYS.authState,
@@ -784,14 +785,20 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       remember: !!saved.remember,
       name: String(saved.name || '').trim(),
       email: String(saved.email || '').trim(),
-      password: String(saved.password || '').trim()
+      password: ''
     };
   }
 
   function saveRememberedAuthEntry(patch = {}){
     const next = { ...getRememberedAuthEntry(), ...(patch || {}) };
-    saveJSON(KEYS.authRemember, next);
-    return next;
+    const sanitized = {
+      remember: !!next.remember,
+      name: String(next.name || '').trim(),
+      email: String(next.email || '').trim(),
+      password: ''
+    };
+    saveJSON(KEYS.authRemember, sanitized);
+    return sanitized;
   }
 
   function clearRememberedAuthEntry(){
@@ -1183,8 +1190,10 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
 
   function buildAuthHeaders(settings){
     const h = {};
+    const auth = getAuthState();
     if (settings.authMode === 'gateway'){
       if (settings.gatewayToken) h['X-Client-Token'] = settings.gatewayToken;
+      if (auth.sessionToken) h['X-App-Session'] = auth.sessionToken;
       // Cloudflare/OpenAI-compatible gateways may still require Bearer auth.
       if (settings.apiKey) h['Authorization'] = `Bearer ${settings.apiKey}`;
     } else {
@@ -4440,10 +4449,10 @@ function refreshDeepSearchBtn(){
       return 'Google Client ID غير مضبوط على الخادم بعد.';
     }
     if (/This email is configured as the admin account/i.test(raw)){
-      return 'هذا البريد هو بريد الإدارة. استخدم كلمة مرور الإدارة من نفس شاشة الدخول.';
+      return 'هذا الحساب يحتاج وضع الإدارة. فعّل المسار الإداري ثم أكمل بكلمة المرور أو Google حسب التهيئة.';
     }
     if (/AUTH_ADMIN_PASSWORD_NOT_CONFIGURED|Admin password login is not configured/i.test(raw)){
-      return 'دخول الإدارة بكلمة المرور غير مفعل حاليًا على الخادم. استخدم تسجيل Google ببريد الإدارة نفسه، أو أعد ضبط APP_ADMIN_PASSWORD على Cloudflare.';
+      return 'دخول الإدارة بكلمة المرور غير متاح حاليًا. استخدم Google الإداري أو تواصل مع المسؤول.';
     }
     return raw;
   }
@@ -4780,6 +4789,13 @@ function refreshDeepSearchBtn(){
           <span>حفظ بيانات الدخول على هذا الجهاز</span>
         </label>`);
     }
+    if (authGoogleSlot && !$('authAdminModeToggle')){
+      authGoogleSlot.insertAdjacentHTML('beforebegin', `
+        <label class="auth-inline-check">
+          <input id="authAdminModeToggle" type="checkbox" />
+          <span>استخدام وضع الإدارة عند الحاجة</span>
+        </label>`);
+    }
     if (authGoogleSlot && !$('authGoogleBrowserBtn')){
       authGoogleSlot.insertAdjacentHTML('afterend', `
         <div class="auth-browser-actions" id="authBrowserActions">
@@ -4870,7 +4886,7 @@ function refreshDeepSearchBtn(){
     const planNote = $('authGatePlanNote');
     if (planNote) planNote.textContent = 'تُربط المشاريع والمحادثات بالحساب بعد الدخول.';
     const modeHint = $('authEntryModeHint');
-    if (modeHint) modeHint.textContent = 'يتم اختيار نوع الدخول تلقائيًا من البريد.';
+    if (modeHint) modeHint.textContent = 'استخدم المسار العادي افتراضيًا، وفعّل وضع الإدارة فقط إذا كان لديك وصول إداري.';
   }
 
   function syncAccountUi(){
@@ -4983,14 +4999,17 @@ function refreshDeepSearchBtn(){
 function syncUnifiedAuthEntry(){
     const config = getEffectiveAuthConfig();
     const email = String($('authEntryEmail')?.value || '').trim().toLowerCase();
-    const isAdminEntry = !!email && email === String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
+    const manualAdminMode = !!$('authAdminModeToggle')?.checked;
+    const knownAdminEmail = String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
+    const matchesKnownAdmin = !!email && !!knownAdminEmail && email === knownAdminEmail;
+    const isAdminEntry = manualAdminMode || matchesKnownAdmin;
     const adminPasswordEnabled = config.adminPasswordEnabled === true;
     const adminLoginMethod = String(config.adminLoginMethod || '').trim().toLowerCase();
     const healthPasswordReady = AUTH_RUNTIME.authHealth?.admin_password_ready === true;
     const adminGoogleReady = !!getAuthGoogleClientId();
     // Web regression guard: the admin password input must remain visible on the official web app
     // even when admin is currently "google_only" (so admins can see the option/state clearly).
-    const webForceAdminPasswordVisible = isAdminEntry && !isNativePlatform() && isManagedHostedRuntime();
+    const webForceAdminPasswordVisible = (manualAdminMode || matchesKnownAdmin) && !isNativePlatform() && isManagedHostedRuntime();
     const showPassword = isAdminEntry && (
       webForceAdminPasswordVisible
       || adminPasswordEnabled
@@ -5009,8 +5028,8 @@ function syncUnifiedAuthEntry(){
       : 'متابعة بالخطة المجانية';
     if (hint) hint.textContent = isAdminEntry
       ? (adminGoogleOnly
-        ? 'تم التعرف على بريد الإدارة. يمكنك المتابعة عبر Google، أو تجربة كلمة المرور إذا تم تفعيلها على الخادم.'
-        : 'تم التعرف على بريد الإدارة. أدخل كلمة المرور لفتح الحساب الإداري، ويمكنك أيضًا استخدام Google بنفس البريد.')
+        ? 'وضع الإدارة مفعّل. يمكنك المتابعة عبر Google الإداري، أو تجربة كلمة المرور إذا كانت مفعلة على الخادم.'
+        : 'وضع الإدارة مفعّل. أدخل كلمة المرور لفتح الحساب الإداري، ويمكنك أيضًا استخدام Google إذا كان ذلك مدعومًا.')
       : 'أي بريد شخصي صالح يفتح لك الخطة المجانية فورًا، ويمكنك طلب الترقية لاحقًا من داخل التطبيق.';
     if ($('authCurrentPlanPill')){
       $('authCurrentPlanPill').textContent = isAdminEntry ? 'الإدارة' : 'الخطة المجانية';
@@ -5022,7 +5041,7 @@ function syncUnifiedAuthEntry(){
     if (passwordInput){
       passwordInput.placeholder = isAdminEntry
         ? (adminGoogleOnly ? 'اتركها فارغة لاستخدام Google أو أدخل كلمة المرور' : 'أدخل كلمة مرور الإدارة')
-        : 'اختيارية للمستخدم العادي، ومطلوبة فقط إذا كان هذا بريد الإدارة';
+        : 'لا تستخدم إلا مع وضع الإدارة عند الحاجة';
       passwordInput.disabled = !showPassword;
       if (!showPassword) passwordInput.value = '';
     }
@@ -5404,8 +5423,9 @@ async function submitUnifiedAuthEntry(){
     }
     try{
       const config = await loadRemoteAuthConfig(true).catch(() => getEffectiveAuthConfig());
-      const adminEmail = String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
-      isAdminEntry = !!email && email === adminEmail;
+      const manualAdminMode = !!$('authAdminModeToggle')?.checked;
+      const knownAdminEmail = String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
+      isAdminEntry = !!manualAdminMode || (!!email && !!knownAdminEmail && email === knownAdminEmail);
       const adminPasswordEnabled = config.adminPasswordEnabled === true;
       const adminLoginMethod = String(config.adminLoginMethod || '').trim().toLowerCase();
       const adminAllowsPassword = adminPasswordEnabled
@@ -5415,15 +5435,15 @@ async function submitUnifiedAuthEntry(){
       let payload = null;
       if (isAdminEntry){
         if (!adminAllowsPassword && adminGoogleReady){
-          setAuthGateStatus('هذا هو بريد الإدارة. جارٍ فتح شاشة Google الوسيطة لهذا الحساب...', 'busy');
+          setAuthGateStatus('وضع الإدارة مفعّل. جارٍ فتح شاشة Google لهذا الحساب...', 'busy');
           await openGoogleAuthInBrowser();
           return;
         }
         if (!password){
           if (adminGoogleReady){
-            setAuthGateStatus('هذا هو بريد الإدارة. أدخل كلمة المرور أو استخدم Google من نفس الشاشة.', 'error');
+            setAuthGateStatus('وضع الإدارة مفعّل. أدخل كلمة المرور أو استخدم Google من نفس الشاشة.', 'error');
           } else {
-            setAuthGateStatus('هذا هو بريد الإدارة. أدخل كلمة المرور للمتابعة.', 'error');
+            setAuthGateStatus('وضع الإدارة مفعّل. أدخل كلمة المرور للمتابعة.', 'error');
           }
           return;
         }
@@ -11288,9 +11308,7 @@ let pinOnly = false;
       const WEB_URL = 'https://app.saddamalkadi.com/';
       const DOWNLOADS_URL = `${WEB_URL}downloads/`;
       const APK_LATEST_URL = `${DOWNLOADS_URL}ai-workspace-studio-latest.apk`;
-      const AAB_LATEST_URL = `${DOWNLOADS_URL}ai-workspace-studio-latest.aab`;
       const APK_BACKUP_URL = `https://github.com/${REPO}/blob/main/downloads/ai-workspace-studio-latest.apk?raw=1`;
-      const AAB_BACKUP_URL = `https://github.com/${REPO}/blob/main/downloads/ai-workspace-studio-latest.aab?raw=1`;
 
       overview.innerHTML = `
         <div class="bubble app-dl-card" style="margin:0;padding:16px">
@@ -11304,7 +11322,6 @@ let pinOnly = false;
           </div>
           <div class="actions" style="flex-wrap:wrap;gap:8px">
             <a class="btn" id="apkMainBtn" href="${APK_LATEST_URL}" download="AI-Workspace-Studio-latest.apk" target="_blank" rel="noopener noreferrer">⬇ تنزيل APK — Android</a>
-            <a class="btn ghost sm" href="${AAB_LATEST_URL}" download="AI-Workspace-Studio-latest.aab" target="_blank" rel="noopener noreferrer">⬇ تنزيل AAB — Google Play</a>
             <a class="btn ghost sm" href="${WEB_URL}" target="_blank" rel="noopener noreferrer">🌐 تطبيق الويب</a>
             <a class="btn ghost sm" href="${DOWNLOADS_URL}" target="_blank" rel="noopener noreferrer">📋 صفحة التنزيل</a>
           </div>
@@ -11313,10 +11330,9 @@ let pinOnly = false;
           </div>
           <div class="actions" style="flex-wrap:wrap;gap:8px;margin-top:8px">
             <a class="btn ghost sm" href="${APK_BACKUP_URL}" target="_blank" rel="noopener noreferrer">رابط APK الاحتياطي</a>
-            <a class="btn ghost sm" href="${AAB_BACKUP_URL}" target="_blank" rel="noopener noreferrer">رابط AAB الاحتياطي</a>
           </div>
           <div class="hint" style="margin-top:10px;font-size:.78em">
-            Android 7.0+ • قم بتفعيل "تثبيت من مصادر غير معروفة" في الإعدادات قبل التثبيت
+            Android 7.0+ • هذه الصفحة تعرض نسخة التثبيت النهائية فقط للمستخدمين التجريبيين
           </div>
         </div>`;
     }
@@ -11507,8 +11523,15 @@ let pinOnly = false;
     if ($('gatewayPreset')){
       const managedRoot = normalizeManagedGatewayUrl(DEFAULT_SETTINGS.gatewayUrl || getPlatformServiceRoot());
       const currentRoot = normalizeManagedGatewayUrl(s.gatewayUrl || '');
+      const managedLocked = isLockedManagedRuntime();
       $('gatewayPreset').value = (!currentRoot || currentRoot === managedRoot) ? 'managed' : 'custom';
-      if ($('gatewayUrl')) $('gatewayUrl').disabled = $('gatewayPreset').value !== 'custom';
+      $('gatewayPreset').disabled = managedLocked;
+      if ($('gatewayUrl')) $('gatewayUrl').disabled = managedLocked || $('gatewayPreset').value !== 'custom';
+      if ($('authMode')) $('authMode').disabled = managedLocked;
+      if ($('gatewayToken')) $('gatewayToken').disabled = managedLocked;
+      if ($('cloudConvertEndpoint')) $('cloudConvertEndpoint').disabled = managedLocked;
+      if ($('cloudConvertFallbackEndpoint')) $('cloudConvertFallbackEndpoint').disabled = managedLocked;
+      if ($('ocrCloudEndpoint')) $('ocrCloudEndpoint').disabled = managedLocked;
     }
     if ($('gatewayToken')) $('gatewayToken').value = s.gatewayToken || '';
     if ($('cloudConvertEndpoint')) $('cloudConvertEndpoint').value = s.cloudConvertEndpoint || '';
@@ -11540,16 +11563,23 @@ let pinOnly = false;
   }
 
   function saveSettingsFromUI(){
-    const authMode = $('authMode') ? $('authMode').value : 'browser';
-    const gatewayPreset = $('gatewayPreset') ? $('gatewayPreset').value : 'managed';
+    const managedLocked = isLockedManagedRuntime();
+    const authMode = managedLocked ? 'gateway' : ($('authMode') ? $('authMode').value : 'browser');
+    const gatewayPreset = managedLocked ? 'managed' : ($('gatewayPreset') ? $('gatewayPreset').value : 'managed');
     const gatewayTyped = $('gatewayUrl') ? normalizeEndpointUrl($('gatewayUrl').value) : '';
     const gatewayInput = gatewayPreset === 'custom'
       ? gatewayTyped
       : normalizeManagedGatewayUrl(DEFAULT_SETTINGS.gatewayUrl || getPlatformServiceRoot());
-    const gatewayToken = $('gatewayToken') ? $('gatewayToken').value.trim() : '';
-    const cloudConvertEndpoint = $('cloudConvertEndpoint') ? normalizeDocxCloudEndpoint($('cloudConvertEndpoint').value) : '';
-    const cloudConvertFallbackEndpoint = $('cloudConvertFallbackEndpoint') ? normalizeDocxCloudEndpoint($('cloudConvertFallbackEndpoint').value) : '';
-    const ocrCloudEndpoint = $('ocrCloudEndpoint') ? normalizeOcrCloudEndpoint($('ocrCloudEndpoint').value) : '';
+    const gatewayToken = managedLocked ? '' : ($('gatewayToken') ? $('gatewayToken').value.trim() : '');
+    const cloudConvertEndpoint = managedLocked
+      ? normalizeDocxCloudEndpoint(DEFAULT_SETTINGS.cloudConvertEndpoint)
+      : ($('cloudConvertEndpoint') ? normalizeDocxCloudEndpoint($('cloudConvertEndpoint').value) : '');
+    const cloudConvertFallbackEndpoint = managedLocked
+      ? normalizeDocxCloudEndpoint(DEFAULT_SETTINGS.cloudConvertFallbackEndpoint)
+      : ($('cloudConvertFallbackEndpoint') ? normalizeDocxCloudEndpoint($('cloudConvertFallbackEndpoint').value) : '');
+    const ocrCloudEndpoint = managedLocked
+      ? normalizeOcrCloudEndpoint(DEFAULT_SETTINGS.ocrCloudEndpoint)
+      : ($('ocrCloudEndpoint') ? normalizeOcrCloudEndpoint($('ocrCloudEndpoint').value) : '');
     const ocrLang = $('ocrLang') ? $('ocrLang').value.trim() : 'ara+eng';
     const cloudRetryMax = $('cloudRetryMax') ? clamp(Number($('cloudRetryMax').value || 2), 1, 5) : 2;
     const freeMode = $('freeMode') ? !!$('freeMode').checked : false;
@@ -12378,6 +12408,7 @@ let pinOnly = false;
       });
     });
     $('authEntryEmail')?.addEventListener('input', syncUnifiedAuthEntry);
+    $('authAdminModeToggle')?.addEventListener('change', syncUnifiedAuthEntry);
     $('authGoogleBrowserBtn')?.addEventListener('click', openGoogleAuthInBrowser);
     $('authRememberToggle')?.addEventListener('change', () => {
       if (!$('authRememberToggle')?.checked) clearRememberedAuthEntry();
@@ -12712,9 +12743,9 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
       saveSettingsFromUI();
     });
     $('gatewayPreset') && $('gatewayPreset').addEventListener('change', () => {
-      const preset = $('gatewayPreset')?.value || 'managed';
+      const preset = isLockedManagedRuntime() ? 'managed' : ($('gatewayPreset')?.value || 'managed');
       if ($('gatewayUrl')){
-        $('gatewayUrl').disabled = preset !== 'custom';
+        $('gatewayUrl').disabled = isLockedManagedRuntime() || preset !== 'custom';
         if (preset !== 'custom'){
           $('gatewayUrl').value = normalizeManagedGatewayUrl(DEFAULT_SETTINGS.gatewayUrl || getPlatformServiceRoot());
         } else if (!String($('gatewayUrl').value || '').trim()){
