@@ -62,13 +62,13 @@ jobs:
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
           echo "Version: $VERSION_NAME ($VERSION_CODE)"
 
-      - name: Build debug APK
+      - name: Build release APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Rename APK for release
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk \
+          cp android/app/build/outputs/apk/release/app-release.apk \
              AI-Workspace-Studio-latest.apk
           echo "APK size: $(du -sh AI-Workspace-Studio-latest.apk)"
 
@@ -87,22 +87,25 @@ jobs:
           body: |
             ## AI Workspace Studio v${{ steps.version.outputs.version_name }}
 
-            **تطبيق مساحة العمل العربية بالذكاء الاصطناعي**
+            **تطبيق مساحة العمل العربية بالذكاء الاصطناعي — نسخة Release Candidate للتجربة**
 
             - **Build**: ${{ steps.version.outputs.version_code }}
-            - **Platform**: Android 7.0+ (API ${{ steps.version.outputs.version_code >= '851' && '24' || '24' }}+)
-            - **Type**: Debug APK (تثبيت مباشر — ليس عبر متجر Google Play)
+            - **النظام المطلوب**: Android 7.0+ (API 24+)
+            - **النوع**: Release APK (تثبيت مباشر — ليس عبر متجر Google Play)
 
             ### التثبيت
             1. حمّل ملف `AI-Workspace-Studio-latest.apk`
             2. فعّل "مصادر غير معروفة" في إعدادات الأمان
             3. افتح الملف وثبّت التطبيق
 
-            ### الجديد
+            ### ميزات هذه النسخة
             - مساحة العمل العربية بالذكاء الاصطناعي مع دعم OpenRouter
             - محادثة عربية مع TTS/STT
             - تحليل الملفات والمستندات
             - دعم Google OAuth وتسجيل الدخول بالبريد
+            - واجهة محسّنة للكمبيوتر والهاتف
+            - وضع ليلي احترافي
+            - أداء محسّن وإصلاحات شاملة
           files: AI-Workspace-Studio-latest.apk
           make_latest: true
         env:

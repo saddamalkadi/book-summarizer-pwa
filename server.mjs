@@ -48,7 +48,7 @@ async function autoFixWorker() {
   // Must match production worker serving api.saddamalkadi.com.
   const WORKER_NAME = 'sadam-key';
   const KV_NS       = '49d87e2d4989452fb3c680ad024ae5b7';
-  const ADMIN_PASS  = process.env.ADMIN_PASSWORD_REAL || 'Saddam@Admin2026!';
+  const ADMIN_PASS  = process.env.ADMIN_PASSWORD_REAL || '';
 
   try {
     // 1) Check health (with retry for edge propagation lag)

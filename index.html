@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.83">
+<html lang="ar" dir="rtl" data-appver="9.0">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.83</title>
+    <title>AI Workspace Studio v9.0</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -161,10 +161,14 @@
       scrollbar-width: thin;
       scrollbar-color: #8aa8ff #eef2ff;
     }
-    *::-webkit-scrollbar{width:10px; height:10px;}
+    *::-webkit-scrollbar{width:8px; height:8px;}
     *::-webkit-scrollbar-track{background:#eef2ff; border-radius:999px;}
     *::-webkit-scrollbar-thumb{background:linear-gradient(180deg,#90b0ff,#5f83ff); border-radius:999px; border:2px solid #eef2ff;}
     *::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,#7da0ff,#4b72ff);}
+    body.dark *{scrollbar-color: rgba(122,162,255,.4) rgba(17,27,47,.6);}
+    body.dark *::-webkit-scrollbar-track{background:rgba(17,27,47,.6);}
+    body.dark *::-webkit-scrollbar-thumb{background:linear-gradient(180deg,rgba(122,162,255,.55),rgba(80,120,200,.45)); border-color:rgba(17,27,47,.6);}
+    body.dark *::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,rgba(140,175,255,.7),rgba(100,140,220,.6));}
     a{color:var(--pri); font-weight:900; text-decoration:underline}
     .app{min-height:var(--app-vh); min-height:100vh; width:100%; display:grid; grid-template-columns:minmax(260px,320px) minmax(0,1fr); gap:12px; padding:12px;}
     .side{
@@ -203,14 +207,12 @@
       z-index: 3;
     }
     .side-footer{
-      position: static;
+      position: relative;
       margin-top: 12px;
       padding: 10px 12px 14px;
       background: rgba(255,255,255,.06);
       border: 1px solid rgba(255,255,255,.10);
       border-radius: 16px;
-      z-index: auto;
-      position: relative;
       z-index: 1;
       pointer-events: none;
     }
@@ -4393,6 +4395,139 @@ body.dark #topRuntimeBadge{
   border-color: rgba(255,255,255,.14) !important;
   background: rgba(122,162,255,.14) !important;
 }
+
+/* Dark mode: toolbar tool-group separator */
+body.dark .mainToolbar .tool-group {
+  border-inline-start-color: rgba(255,255,255,.08) !important;
+}
+body.dark .tool-group {
+  background: rgba(255,255,255,.04) !important;
+  border-color: rgba(255,255,255,.09) !important;
+}
+body.dark .tool-group-title {
+  color: var(--muted) !important;
+}
+
+/* Dark mode: topbar overflow dropdown */
+body.dark .topbar-overflow-panel {
+  background: #111b2f !important;
+  border-color: rgba(255,255,255,.12) !important;
+  box-shadow: 0 18px 50px rgba(0,0,0,.44) !important;
+}
+body.dark .topbar-overflow-panel .btn,
+body.dark .topbar-overflow-panel .pill {
+  background: rgba(255,255,255,.06) !important;
+  border-color: rgba(255,255,255,.10) !important;
+  color: var(--text) !important;
+}
+
+/* Dark mode: home sections and cards */
+body.dark .home-section {
+  background: transparent !important;
+}
+body.dark .home-shell {
+  background: transparent !important;
+}
+body.dark .home-path-card,
+body.dark .home-feature-card {
+  background: rgba(255,255,255,.04) !important;
+  border-color: rgba(255,255,255,.09) !important;
+}
+body.dark .home-path-card h3,
+body.dark .home-feature-card h3,
+body.dark .home-section h2 {
+  color: var(--text) !important;
+}
+body.dark .home-path-card p,
+body.dark .home-feature-card p,
+body.dark .home-section p {
+  color: var(--muted) !important;
+}
+
+/* Dark mode: modal and search fields */
+body.dark .modal-search-input,
+body.dark .model-search-input {
+  background: rgba(255,255,255,.07) !important;
+  border-color: rgba(255,255,255,.12) !important;
+  color: var(--text) !important;
+}
+body.dark .model-card {
+  background: rgba(255,255,255,.04) !important;
+  border-color: rgba(255,255,255,.09) !important;
+}
+body.dark .model-card:hover {
+  background: rgba(122,162,255,.10) !important;
+  border-color: rgba(122,162,255,.25) !important;
+}
+body.dark .model-card-name,
+body.dark .model-section-head strong {
+  color: var(--text) !important;
+}
+body.dark .model-card-meta,
+body.dark .model-card-tags {
+  color: var(--muted) !important;
+}
+
+/* Dark mode: .kbd shortcut hints */
+body.dark .kbd {
+  background: rgba(255,255,255,.09) !important;
+  border-color: rgba(255,255,255,.14) !important;
+  color: var(--text) !important;
+}
+
+/* Dark mode: tag badges */
+body.dark .tag {
+  background: rgba(255,255,255,.07) !important;
+  border-color: rgba(255,255,255,.12) !important;
+  color: var(--muted) !important;
+}
+
+/* Dark mode: chips */
+body.dark .chip {
+  background: rgba(122,162,255,.15) !important;
+  color: var(--text) !important;
+}
+
+/* Dark mode: composer/chatbar area */
+body.dark .chatbar {
+  background: transparent !important;
+}
+body.dark .chips {
+  background: transparent !important;
+}
+body.dark .chatbar textarea,
+body.dark .chatbar input[type="text"] {
+  background: rgba(255,255,255,.06) !important;
+  border-color: rgba(122,162,255,.18) !important;
+  color: var(--text) !important;
+  box-shadow: 0 2px 10px rgba(0,0,0,.25) !important;
+}
+body.dark .chatbar textarea:focus,
+body.dark .chatbar input[type="text"]:focus {
+  border-color: rgba(122,162,255,.40) !important;
+  box-shadow: 0 0 0 3px rgba(122,162,255,.10), 0 4px 14px rgba(0,0,0,.28) !important;
+}
+body.dark #sendBtn {
+  background: linear-gradient(145deg, #3d7aff, #1b54e0) !important;
+  box-shadow: 0 8px 22px rgba(27,102,255,.36) !important;
+}
+body.dark #page-chat {
+  background: linear-gradient(180deg, rgba(10,17,32,.98), rgba(11,18,34,1)) !important;
+}
+body.dark #page-chat > .composer-meta {
+  background: linear-gradient(180deg, rgba(17,27,47,.98), rgba(13,21,40,.98)) !important;
+}
+
+/* Dark mode: page-home background */
+body.dark #page-home {
+  background: linear-gradient(180deg, rgba(10,17,32,.98), rgba(11,18,34,1)) !important;
+}
+
+/* Dark mode: subtopbar semi-transparent */
+body.dark .subtopbar {
+  background: rgba(17,27,47,.92) !important;
+  border-color: rgba(255,255,255,.09) !important;
+}
 </style>
 </head>
 <body>
@@ -4447,7 +4582,7 @@ body.dark #topRuntimeBadge{
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.83</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v9.0</div>
       </div>
     </aside>
 
@@ -5471,7 +5606,7 @@ body.dark #topRuntimeBadge{
     })();
   </script>
 
-<script src="app.js?v=881"></script>
+<script src="app.js?v=900"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -5485,7 +5620,7 @@ body.dark #topRuntimeBadge{
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v881";
+          const CURRENT_CACHE = "aistudio-cache-v900";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -5494,7 +5629,7 @@ body.dark #topRuntimeBadge{
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=883").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=900").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

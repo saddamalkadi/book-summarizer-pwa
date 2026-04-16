@@ -291,18 +291,12 @@ function getWorkerHealth(env) {
       client_token_required: clientTokenRequired,
       auth_required: authConfig.authRequired,
       google_client_configured: authConfig.clientIdConfigured,
-      admin_password_ready: adminPasswordReady,
-      admin_google_ready: adminGoogleReady,
       admin_login_ready: adminLoginReady,
-      session_ready: hasSessionSecret,
-      upgrade_flow_ready: hasUpgradeSecret,
       cloud_storage_ready: cloudStorageReady,
       convert_proxy_ready: convertReady,
       voice_cloud_ready: voice.ready,
       voice_stt_ready: voice.sttReady,
-      voice_tts_ready: voice.ttsReady,
-      voice_provider: voice.provider,
-      voice_premium_only: false
+      voice_tts_ready: voice.ttsReady
     }
   };
 }

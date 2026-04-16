@@ -11,3 +11,5 @@ android/.gradle-user/
 android/.android-user/
 .android-user/
 *.idsig
+android/app/build/
+android/.gradle/
