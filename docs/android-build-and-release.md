@@ -1,80 +1,59 @@
 ## Android Build and Release
 
-### Environment used
-- Repository:
-  - `C:\Users\Elite\OneDrive\Documenti\GitHub\book-summarizer-pwa`
-- JDK used for this pass:
-  - `C:\Program Files\Android\Android Studio\jbr`
+### Prerequisites
 
-### Required commands
+- JDK 17 or 21 (Temurin recommended)
+- Android SDK with platform and build-tools (see `.github/workflows/build-apk.yml`)
+- Node.js 20+ for Capacitor sync
 
-#### 1. Sync current web into Capacitor web dir
-```powershell
-& 'C:\Program Files\nodejs\npm.cmd' run sync:web
+### 1. Sync web assets into `www/`
+
+```bash
+npm run sync:web
 ```
 
-#### 2. Sync Android Capacitor project
-```powershell
-& 'C:\Program Files\nodejs\npm.cmd' run cap:sync
+### 2. Sync Capacitor Android project
+
+```bash
+npm run cap:sync
 ```
 
-#### 3. Build debug APK
-```powershell
-$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'
-Set-Location 'C:\Users\Elite\OneDrive\Documenti\GitHub\book-summarizer-pwa\android'
-& '.\gradlew.bat' assembleDebug
+### 3. Build for local testing (debug)
+
+```bash
+cd android
+./gradlew assembleDebug --no-daemon
 ```
 
-#### 4. Build release APK and AAB
-```powershell
-$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'
-Set-Location 'C:\Users\Elite\OneDrive\Documenti\GitHub\book-summarizer-pwa\android'
-& '.\gradlew.bat' assembleRelease
-& '.\gradlew.bat' bundleRelease
+Output: `android/app/build/outputs/apk/debug/app-debug.apk`
+
+### 4. Build release APK / AAB
+
+```bash
+cd android
+./gradlew assembleRelease bundleRelease --no-daemon
 ```
 
-### Release signing used in this pass
+Outputs:
 
-#### APK signing
-```powershell
-$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'
-$bt='C:\Users\Elite\AppData\Local\Android\Sdk\build-tools\36.1.0'
-& "$bt\apksigner.bat" sign --ks 'C:\path\to\release-keystore.jks' --ks-key-alias 'aiworkspace' --ks-pass env:AIWS_STORE_PASS --key-pass env:AIWS_KEY_PASS --out 'C:\path\to\app-release.apk' 'C:\path\to\app-release-unsigned.apk'
-```
+- `android/app/build/outputs/apk/release/app-release.apk` (or `app-release-unsigned.apk` depending on AGP/signing)
+- `android/app/build/outputs/bundle/release/app-release.aab`
 
-#### APK signature verification
-```powershell
-$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'
-$bt='C:\Users\Elite\AppData\Local\Android\Sdk\build-tools\36.1.0'
-& "$bt\apksigner.bat" verify --print-certs 'C:\Users\Elite\OneDrive\Documenti\GitHub\book-summarizer-pwa\android\app\build\outputs\apk\release\app-release.apk'
-```
+### 5. Signing (release)
 
-Verified certificate:
-- SHA-1: `56DABCF0F5A47A19051A07F2940FFDFADF7CAF03`
-- SHA-256: `590DF9D96E6A13B764AD264B163597B5BB3E91B1E8E60E82E1226BB26DA0E822`
+Create `android/keystore.properties` (not committed; path is gitignored) with:
 
-#### AAB signing
-```powershell
-$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'
-& 'C:\Program Files\Android\Android Studio\jbr\bin\jarsigner.exe' -keystore 'C:\path\to\release-keystore.jks' -storepass "$env:AIWS_STORE_PASS" -keypass "$env:AIWS_KEY_PASS" -signedjar 'C:\path\to\app-release-signed.aab' 'C:\path\to\app-release.aab' aiworkspace
-```
+- `storeFile` — path to your keystore file
+- `storePassword`, `keyAlias`, `keyPassword`
 
-#### AAB verification
-```powershell
-$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'
-& 'C:\Program Files\Android\Android Studio\jbr\bin\jarsigner.exe' -verify -certs 'C:\Users\Elite\OneDrive\Documenti\GitHub\book-summarizer-pwa\android\app\build\outputs\bundle\release\app-release-signed.aab'
-```
+When this file is valid, `android/app/build.gradle` applies `signingConfigs.release` to the `release` build type.
 
-### Final output files from this pass
-- Debug APK:
-  - `android/app/build/outputs/apk/debug/app-debug.apk`
-- Signed release APK:
-  - `android/app/build/outputs/apk/release/app-release.apk`
-- Signed release AAB:
-  - `android/app/build/outputs/bundle/release/app-release-signed.aab`
+If no keystore is configured, release builds fall back to the debug keystore so CI can produce an installable APK for pre-store testing. **Do not use debug-signed builds for Play Store submission.**
 
-### Copied release files in downloads/
-- `downloads/ai-workspace-studio-v8.60-android-release.apk`
-- `downloads/ai-workspace-studio-v8.60-android-release.aab`
-- `downloads/ai-workspace-studio-latest.apk`
-- `downloads/ai-workspace-studio-latest.aab`
+### 6. Verify an APK
+
+Use `apksigner verify` from Android build-tools on the release APK you intend to distribute.
+
+### 7. Public download page (`downloads/`)
+
+The hosted trial page ships **APK** as the primary user-facing artifact (`ai-workspace-studio-latest.apk`). The AAB is produced in CI for Play Console uploads and synced under `downloads/` for maintainers; it is not promoted on the public downloads page.

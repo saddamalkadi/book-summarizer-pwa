@@ -1,86 +1,34 @@
 #!/usr/bin/env node
 import { createServer } from 'node:http';
-import { createReadStream, existsSync, statSync, unlinkSync, readFileSync } from 'node:fs';
+import { createReadStream, existsSync, statSync, unlinkSync } from 'node:fs';
 import { extname, isAbsolute, join, normalize, relative, resolve } from 'node:path';
-import { execSync } from 'node:child_process';
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 8080);
 const ROOT = resolve(process.env.ROOT_DIR || process.cwd());
-const ENABLE_STARTUP_GIT_PUSH = String(process.env.ENABLE_STARTUP_GIT_PUSH || '').trim().toLowerCase() === 'true';
-const ENABLE_WORKER_AUTOFIX = String(process.env.ENABLE_WORKER_AUTOFIX || '').trim().toLowerCase() === 'true';
-const BLOCKED_STATIC_PATHS = new Set([
-  '/server.mjs',
-  '/keys-worker.js',
-  '/convert-worker.js',
-  '/wrangler.jsonc',
-  '/wrangler.convert.jsonc',
-  '/package.json',
-  '/package-lock.json',
-  '/capacitor.config.json',
-  '/codemagic.yaml',
-  '/README.md',
-  '/GUIDE.ar.md',
-  '/TESTFLIGHT.ar.md',
-  '/IOS_CLOUD_BUILD.ar.md',
-  '/CODEX_HANDOFF.md',
-  '/replit.md',
-  '/_config.yml'
-]);
-const BLOCKED_STATIC_PREFIXES = [
-  '/docs/',
-  '/android/',
-  '/ios/',
-  '/scripts/',
-  '/attached_assets/',
-  '/assets/',
-  '/github/',
-  '/.github/'
-];
 
-// ── Startup: clear stale git lock only (never auto-push by default) ────────
+// ── Startup: clear stale git lock only (no auto-push, no auto-commit) ──────
 try { unlinkSync(join(ROOT, '.git/index.lock')); } catch (_) {}
-
-if (ENABLE_STARTUP_GIT_PUSH && process.env.GITHUB_TOKEN) {
-  try {
-    const token = process.env.GITHUB_TOKEN;
-    // Commit any uncommitted working-tree changes before pushing
-    try {
-      execSync(`git -C "${ROOT}" config user.email "deploy@aistudio.bot"`, { stdio: 'pipe' });
-      execSync(`git -C "${ROOT}" config user.name "AI Studio Deploy"`, { stdio: 'pipe' });
-      execSync(`git -C "${ROOT}" add -A`, { stdio: 'pipe' });
-      execSync(`git -C "${ROOT}" commit -m "chore: auto-commit working-tree changes [deploy]" --allow-empty`, { stdio: 'pipe' });
-      console.log('[startup] Git commit: SUCCESS');
-    } catch (ce) {
-      // nothing to commit or already clean
-      const cmsg = ((ce.stdout||'')+(ce.stderr||'')).toString().substring(0, 100);
-      console.log('[startup] Git commit skipped:', cmsg);
-    }
-    execSync(
-      `git -C "${ROOT}" push "https://saddamalkadi:${token}@github.com/saddamalkadi/book-summarizer-pwa.git" main`,
-      { timeout: 60000, stdio: 'pipe' }
-    );
-    console.log('[startup] GitHub push: SUCCESS');
-  } catch (e) {
-    const msg = ((e.stdout||'')+(e.stderr||'')).toString().replace(process.env.GITHUB_TOKEN,'[TOKEN]');
-    console.log('[startup] GitHub push skipped:', msg.substring(0, 200));
-  }
-} else if (process.env.GITHUB_TOKEN) {
-  console.log('[startup] Git push automation disabled (set ENABLE_STARTUP_GIT_PUSH=true to opt in)');
-}
 // ──────────────────────────────────────────────────────────────────────────
 
 // ── Startup: Auto-fix Cloudflare Worker if misconfigured ──────────────────
 async function autoFixWorker() {
+  // Opt-in only: never auto-deploy the Worker unless the operator explicitly enables it.
+  if (String(process.env.AUTO_FIX_WORKER || '').toLowerCase() !== 'true') {
+    return;
+  }
   const CF_TOKEN = process.env.CF_API_TOKEN;
   const OR_KEY   = process.env.OPENROUTER_API_KEY;
   if (!CF_TOKEN || !OR_KEY) { console.log('[worker-fix] Skipped: missing env vars'); return; }
 
-  const CF_ACCOUNT  = 'ea4e90ec8fbd70faefdddd2153064d6f';
-  // Must match production worker serving api.saddamalkadi.com.
-  const WORKER_NAME = 'sadam-key';
-  const KV_NS       = '49d87e2d4989452fb3c680ad024ae5b7';
-  const ADMIN_PASS  = String(process.env.ADMIN_PASSWORD_REAL || '').trim();
+  const CF_ACCOUNT  = process.env.CF_ACCOUNT_ID  || '';
+  const WORKER_NAME = process.env.CF_WORKER_NAME || 'sadam-key';
+  const KV_NS       = process.env.CF_KV_NS       || '';
+  const ADMIN_PASS  = process.env.ADMIN_PASSWORD_REAL || '';
+  if (!CF_ACCOUNT || !KV_NS || !ADMIN_PASS) {
+    console.log('[worker-fix] Skipped: require CF_ACCOUNT_ID, CF_KV_NS and ADMIN_PASSWORD_REAL env vars');
+    return;
+  }
 
   try {
     // 1) Check health (with retry for edge propagation lag)
@@ -368,11 +316,7 @@ async function handleGoogleTtsProxy(request){
     console.log('[worker-fix] Error:', e.message);
   }
 }
-if (ENABLE_WORKER_AUTOFIX) {
-  autoFixWorker();
-} else {
-  console.log('[worker-fix] Disabled by default (set ENABLE_WORKER_AUTOFIX=true to opt in)');
-}
+autoFixWorker();
 // ──────────────────────────────────────────────────────────────────────────
 
 const MIME = {
@@ -403,7 +347,9 @@ function setCommonHeaders(res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  // Allow microphone for voice input / STT on the origin itself; camera and geolocation stay disabled.
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=(), interest-cohort=()');
+  res.setHeader('Strict-Transport-Security', 'max-age=15552000; includeSubDomains');
 }
 
 function readBody(req) {
@@ -524,9 +470,6 @@ function resolvePath(urlPath) {
   }
 
   const requested = clean === '/' ? '/index.html' : clean;
-  if (BLOCKED_STATIC_PATHS.has(requested) || BLOCKED_STATIC_PREFIXES.some((prefix) => requested.startsWith(prefix))) {
-    return null;
-  }
   const fullPath = resolve(normalize(join(ROOT, `.${requested}`)));
 
   const rel = relative(ROOT, fullPath);
@@ -566,13 +509,20 @@ const server = createServer(async (req, res) => {
     return res.end('Method Not Allowed');
   }
 
-  const path = resolvePath(req.url || '/');
+  let path = resolvePath(req.url || '/');
   if (!path || !existsSync(path)) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     return res.end('Not Found');
   }
 
-  const stats = statSync(path);
+  let stats = statSync(path);
+  if (stats.isDirectory()) {
+    const idx = resolve(path, 'index.html');
+    if (existsSync(idx) && statSync(idx).isFile()) {
+      path = idx;
+      stats = statSync(path);
+    }
+  }
   if (!stats.isFile()) {
     res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
     return res.end('Forbidden');
@@ -589,19 +539,10 @@ const server = createServer(async (req, res) => {
   createReadStream(path).pipe(res);
 });
 
-let _portRetries = 0;
 server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
-    _portRetries++;
-    if (_portRetries > 3) {
-      console.log(`[server] Port ${PORT} still in use after ${_portRetries} attempts — giving up`);
-      process.exit(1);
-    }
-    console.log(`[server] Port ${PORT} in use — attempt ${_portRetries}/3, freeing port...`);
-    try {
-      execSync(`fuser -k ${PORT}/tcp 2>/dev/null || true`, { timeout: 4000, shell: '/bin/bash' });
-    } catch (_) {}
-    setTimeout(() => server.listen(PORT, HOST), 2000);
+    console.log(`[server] Port ${PORT} is already in use. Stop the running process or set a different PORT.`);
+    process.exit(1);
   } else {
     throw e;
   }

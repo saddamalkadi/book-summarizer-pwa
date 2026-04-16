@@ -40,10 +40,10 @@
 - **الإصلاح:** إضافة `window._gsiInitialized` و `window._gsiClientId` — التهيئة تحدث فقط عند أول استدعاء أو عند تغيّر الـ client ID
 - **النتيجة:** لا تحذيرات `initialize() is called multiple times`
 
-### ✅ 4. كلمة مرور الإدارة كانت ثابتة في الكود
-- **السبب:** كانت هناك قيمة fallback صريحة داخل `server.mjs`
-- **الإصلاح:** أصبحت كلمة المرور تُقرأ من `process.env.ADMIN_PASSWORD_REAL` فقط عند الحاجة
-- **النتيجة:** لم تعد كلمة المرور تُخزَّن كنص صريح داخل مسار التشغيل
+### ✅ 4. كلمة مرور الإدارة مكتوبة في الكود
+- **السبب:** قيمة admin password كانت hardcoded في `server.mjs`.
+- **الإصلاح:** الآن تُقرأ من `process.env.ADMIN_PASSWORD_REAL` فقط، دون قيمة افتراضية في الكود، وإذا لم تُضبط فإن أداة الصيانة الخاصة بـ Worker لا تعمل أصلًا.
+- **النتيجة:** لا تسريب لكلمة مرور الإدارة في المستودع العام.
 
 ### ✅ 5. زر "متابعة" يدعم Enter
 - **الإصلاح:** ربط حدث `submit` للنموذج بـ `submitUnifiedAuthEntry()`
@@ -65,7 +65,8 @@
 | العنصر | القيمة |
 |--------|-------|
 | Admin Email | `tntntt830@gmail.com` |
-| Admin Password | `process.env.ADMIN_PASSWORD_REAL` |
-| Cloudflare Account / KV IDs | مضبوطة في بيئة النشر ولا يجب تدوينها هنا |
-| Worker Name | مذكور في إعدادات النشر الحالية |
+| Admin Password | `process.env.ADMIN_PASSWORD_REAL` (أو fallback في الكود) |
+| Cloudflare Account ID | `ea4e90ec8fbd70faefdddd2153064d6f` |
+| KV Namespace ID | `49d87e2d4989452fb3c680ad024ae5b7` |
+| Worker Name | `book-summarizer-pwa-convert` |
 | Google Client ID | `320883717933-d8p8877if6u4udo9tfvhbq1en2ps486m.apps.googleusercontent.com` |

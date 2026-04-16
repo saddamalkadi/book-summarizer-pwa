@@ -1,10 +1,10 @@
-title: AI Workspace Studio
 exclude:
-  - README.md
-  - GUIDE.ar.md
-  - TESTFLIGHT.ar.md
-  - IOS_CLOUD_BUILD.ar.md
+  - docs
   - CODEX_HANDOFF.md
+  - GUIDE.ar.md
+  - IOS_CLOUD_BUILD.ar.md
+  - TESTFLIGHT.ar.md
+  - README.md
   - replit.md
   - server.mjs
   - keys-worker.js
@@ -12,14 +12,16 @@ exclude:
   - wrangler.jsonc
   - wrangler.convert.jsonc
   - codemagic.yaml
+  - capacitor.config.json
   - package.json
   - package-lock.json
-  - capacitor.config.json
+  - scripts
   - android
   - ios
-  - scripts
-  - docs
-  - attached_assets
-  - assets
   - github
+  - node_modules
+  - assets
+  - attached_assets
+  - .assetsignore
+  - .replit
   - .github

@@ -6,6 +6,7 @@
   "server": {
     "androidScheme": "https",
     "allowNavigation": [
+      "saddamalkadi.com",
       "app.saddamalkadi.com",
       "api.saddamalkadi.com",
       "convert.saddamalkadi.com",

@@ -196,19 +196,18 @@ function decodeBase64ToBytes(value) {
 }
 
 function getSessionSecret(env) {
-  return (
+  return String(
     env.APP_SESSION_SECRET ||
     env.AUTH_SESSION_SECRET ||
-    getServerKey(env)
+    ''
   ).trim();
 }
 
 function getUpgradeSecret(env) {
-  return (
+  return String(
     env.UPGRADE_CODE_SECRET ||
-    env.APP_SESSION_SECRET ||
-    env.AUTH_SESSION_SECRET ||
-    getServerKey(env)
+    env.APP_UPGRADE_SECRET ||
+    ''
   ).trim();
 }
 
@@ -220,7 +219,7 @@ function getUpgradeAdminToken(env) {
 }
 
 function getAdminEmail(env) {
-  return String(env.APP_ADMIN_EMAIL || env.ADMIN_EMAIL || 'tntntt830@gmail.com').trim().toLowerCase();
+  return String(env.APP_ADMIN_EMAIL || env.ADMIN_EMAIL || '').trim().toLowerCase();
 }
 
 function getAdminPassword(env) {
@@ -234,6 +233,7 @@ function getPublicAuthConfig(env) {
   const adminPasswordEnabled = !!getAdminPassword(env);
   const adminGoogleEnabled = !!adminEmail && !!googleClientId;
   const adminEnabled = adminPasswordEnabled || adminGoogleEnabled;
+  const allowAabDownloads = String(env.ALLOW_PUBLIC_AAB_DOWNLOADS || '').trim().toLowerCase() === 'true';
   const voice = getVoiceApiConfig(env);
   return {
     ok: true,
@@ -248,6 +248,7 @@ function getPublicAuthConfig(env) {
     adminLoginMethod: adminPasswordEnabled
       ? (adminGoogleEnabled ? 'password_or_google' : 'password_only')
       : (adminGoogleEnabled ? 'google_only' : 'disabled'),
+    allowAabDownloads,
     googleClientId,
     clientIdConfigured: !!googleClientId,
     voiceCloudReady: voice.ready,
@@ -266,8 +267,8 @@ function getWorkerHealth(env) {
   const upstreamConfigured = !!getServerKey(env);
   const clientTokenRequired = !!String(env.GATEWAY_CLIENT_TOKEN || '').trim();
   const authConfig = getPublicAuthConfig(env);
-  const hasSessionSecret = !!getSessionSecret(env);
-  const hasUpgradeSecret = !!getUpgradeSecret(env);
+  const hasSessionSecret = getSessionSecret(env).length >= 16;
+  const hasUpgradeSecret = getUpgradeSecret(env).length >= 16;
   const adminPasswordReady = !!getAdminPassword(env);
   const adminGoogleReady = !!getAdminEmail(env) && authConfig.clientIdConfigured;
   const adminLoginReady = adminPasswordReady || adminGoogleReady;
@@ -303,29 +304,8 @@ function getWorkerHealth(env) {
   };
 }
 
-function getAllowedCorsOrigin(request) {
-  const origin = String(request.headers.get('Origin') || '').trim();
-  if (!origin) return '*';
-  try {
-    const parsed = new URL(origin);
-    const host = String(parsed.hostname || '').trim().toLowerCase();
-    const protocol = String(parsed.protocol || '').trim().toLowerCase();
-    const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host.endsWith('.localhost');
-    const isOfficialHost = (
-      host === 'app.saddamalkadi.com'
-      || host === 'saddamalkadi.com'
-      || host.endsWith('.saddamalkadi.com')
-    );
-    const isGitHubPagesHost = /(^|\.)saddamalkadi\.github\.io$/i.test(host);
-    if ((protocol === 'http:' || protocol === 'https:') && (isLocalHost || isOfficialHost || isGitHubPagesHost)) {
-      return parsed.origin;
-    }
-  } catch (_) {}
-  return 'https://app.saddamalkadi.com';
-}
-
 function withCors(response, request) {
-  const origin = getAllowedCorsOrigin(request);
+  const origin = request.headers.get('Origin') || '*';
   const h = new Headers(response.headers || {});
   h.set('Access-Control-Allow-Origin', origin);
   h.set('Vary', 'Origin');
@@ -333,6 +313,8 @@ function withCors(response, request) {
   h.set('Access-Control-Allow-Headers', [
     'Authorization',
     'Content-Type',
+    'Cache-Control',
+    'Pragma',
     'X-Client-Token',
     'X-App-Session',
     'X-Admin-Token',
@@ -399,7 +381,7 @@ async function handlePasswordLogin(request, env) {
 
     if (!adminPassword) {
       return jsonResponse({
-        error: 'Admin password login is not configured on the worker. Use Google sign-in with the admin Gmail account or configure APP_ADMIN_PASSWORD.',
+        error: 'Admin password sign-in is not available. Please use Google sign-in with the approved admin account.',
         code: 'AUTH_ADMIN_PASSWORD_NOT_CONFIGURED'
       }, 503);
     }
@@ -843,7 +825,7 @@ async function handleAdminUpgradeCode(request, env) {
   const expected = getUpgradeAdminToken(env);
   const provided = String(request.headers.get('X-Admin-Token') || '').trim();
   let adminAuthorized = false;
-  if (expected && provided && timingSafeEqual(provided, expected)) {
+  if (expected && provided && provided === expected) {
     adminAuthorized = true;
   } else {
     try {
@@ -1060,19 +1042,27 @@ async function verifyUpgradeCodeForEmail(code, email, env) {
 }
 
 async function signCompactToken(payload, secret, typ) {
+  const normalizedSecret = String(secret || '').trim();
+  if (!normalizedSecret) {
+    throw new Error('Token signing secret is not configured.');
+  }
   const header = { alg: 'HS256', typ };
   const encodedHeader = base64UrlEncode(JSON.stringify(header));
   const encodedPayload = base64UrlEncode(JSON.stringify(payload));
   const message = `${encodedHeader}.${encodedPayload}`;
-  const signature = await hmacSha256Base64Url(message, secret);
+  const signature = await hmacSha256Base64Url(message, normalizedSecret);
   return `${message}.${signature}`;
 }
 
 async function verifySignedToken(token, secret, expectedType) {
+  const normalizedSecret = String(secret || '').trim();
+  if (!normalizedSecret) {
+    throw new Error('Token verification secret is not configured.');
+  }
   const parts = String(token || '').trim().split('.');
   if (parts.length !== 3) throw new Error('Malformed signed token.');
   const [encodedHeader, encodedPayload, signature] = parts;
-  const expectedSignature = await hmacSha256Base64Url(`${encodedHeader}.${encodedPayload}`, secret);
+  const expectedSignature = await hmacSha256Base64Url(`${encodedHeader}.${encodedPayload}`, normalizedSecret);
   if (!timingSafeEqual(signature, expectedSignature)) {
     throw new Error('Signed token verification failed.');
   }
@@ -1181,7 +1171,9 @@ async function getGoogleVerificationKeys() {
 }
 
 function buildUpgradeMailto(session, upgradeEmail) {
-  const to = encodeURIComponent(String(upgradeEmail || 'tntntt830@gmail.com').trim());
+  const receiver = String(upgradeEmail || '').trim();
+  if (!receiver) return '';
+  const to = encodeURIComponent(receiver);
   const subject = encodeURIComponent(`طلب ترقية حساب - ${session.email}`);
   const body = encodeURIComponent([
     'مرحبًا،',

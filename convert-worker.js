@@ -534,7 +534,7 @@ function withCors(response, env) {
   const headers = new Headers(response.headers);
   headers.set("Access-Control-Allow-Origin", String(env.CORS_ALLOW_ORIGIN || "*"));
   headers.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Token");
+  headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Token, Cache-Control, Pragma, Accept, X-Requested-With");
   headers.set("Vary", "Origin");
   return new Response(response.body, {
     status: response.status,

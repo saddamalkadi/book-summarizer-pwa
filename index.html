@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.85">
+<html lang="ar" dir="rtl" data-appver="8.90">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.85</title>
+    <title>AI Workspace Studio</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -156,33 +156,6 @@
     body.dark .chat-inline-file-name{
       color: var(--muted) !important;
     }
-    body.dark .bubble.assistant .body code:not(pre code){
-      background: rgba(122,162,255,.14) !important;
-      color: #dce8ff !important;
-    }
-    body.dark .bubble.assistant .body blockquote{
-      color: var(--muted) !important;
-      border-inline-start-color: rgba(122,162,255,.7) !important;
-    }
-    body.dark .bubble.assistant .body th{
-      background: linear-gradient(180deg, rgba(42,58,92,.95), rgba(28,40,66,.98)) !important;
-      color: var(--text) !important;
-      border-color: rgba(122,162,255,.18) !important;
-    }
-    body.dark .bubble.assistant .body td{
-      color: var(--text-subtle) !important;
-      border-color: rgba(255,255,255,.08) !important;
-      background: rgba(255,255,255,.02) !important;
-    }
-    body.dark .bubble.assistant .body tr:hover td{
-      background: rgba(122,162,255,.08) !important;
-    }
-    body.dark *{
-      scrollbar-color: rgba(122,162,255,.6) rgba(17,27,47,.92);
-    }
-    body.dark *::-webkit-scrollbar-track{background:rgba(17,27,47,.92);}
-    body.dark *::-webkit-scrollbar-thumb{background:linear-gradient(180deg,rgba(122,162,255,.82),rgba(79,108,191,.82)); border-color:rgba(17,27,47,.92);}
-    body.dark *::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,rgba(152,181,255,.92),rgba(94,126,220,.92));}
 
     *{
       scrollbar-width: thin;
@@ -212,7 +185,6 @@
     /* Sidebar: keep nav hitboxes reliable (no overlap). */
     .side{overflow:hidden;}
     .nav{overflow:auto;}
-    .side-footer{position:static;}
     .brand{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12); border-radius:16px;}
     .brand .name{font-weight:1000}
     .brand .sub{opacity:.82; font-size:11px; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
@@ -230,18 +202,15 @@
       z-index: 3;
     }
     .side-footer{
-      position: static;
+      position: relative;
       margin-top: 12px;
       padding: 10px 12px 14px;
       background: rgba(255,255,255,.06);
       border: 1px solid rgba(255,255,255,.10);
       border-radius: 16px;
-      z-index: auto;
-      position: relative;
-      z-index: 1;
-      pointer-events: none;
+      z-index: 2;
+      pointer-events: auto;
     }
-    .side-footer *{ pointer-events: auto; }
     .navbtn{border:none; cursor:pointer; padding:12px 14px; border-radius:16px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12); color:#fff; display:flex; align-items:center; gap:10px; font-weight:700; width:100%; min-height:46px; -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); transition:transform .15s ease, background .15s ease, border-color .15s ease; font-family:inherit;}
     .navbtn-icon{font-size:16px; flex-shrink:0; line-height:1;}
     .navbtn-label{flex:1; text-align:start; font-size:13.5px;}
@@ -272,21 +241,6 @@
     .btn.danger{background:#ff3b30}
     .btn:disabled, .pill:disabled, input:disabled, select:disabled, textarea:disabled{opacity:.55; cursor:not-allowed; filter:saturate(.7);}
     .is-disabled{opacity:.55; cursor:not-allowed; filter:saturate(.7);}
-    .settings-lock-note{
-      margin-top:8px;
-      padding:10px 12px;
-      border-radius:12px;
-      border:1px solid rgba(27,102,255,.14);
-      background:#eef4ff;
-      color:#21406f;
-      font-size:12px;
-      line-height:1.8;
-    }
-    body.dark .settings-lock-note{
-      background:#15223a;
-      border-color:rgba(122,162,255,.22);
-      color:var(--text-subtle);
-    }
     .btn.sm{height:30px; padding:0 8px; border-radius:10px; font-size:11px;}
     .btn.icon{width:30px; height:30px; min-width:30px; padding:0; display:inline-flex; align-items:center; justify-content:center; font-size:14px;}
     .btn.with-label{display:inline-flex; align-items:center; gap:6px; min-height:34px;}
@@ -360,11 +314,6 @@
       .topbar .left{width:100%;}
       .topbar .row{width:100%; justify-content:flex-start;}
       .topbar-actions{flex-wrap:nowrap; overflow:visible; align-items:center; gap:6px; min-width:0;}
-      .topbar-scroll{display:flex; align-items:center; gap:6px; flex:1 1 auto; min-width:0; overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch; scrollbar-width:none; padding-bottom:2px;}
-      .topbar-scroll::-webkit-scrollbar{display:none;}
-      .topbar-scroll > .btn{flex:0 0 auto;}
-      #topbarOverflowMenuBtn{flex:0 0 auto;}
-      .topbar-overflow-panel{position:absolute; z-index:120; background:var(--card-solid, #fff); border:1px solid rgba(15,23,42,.12); border-radius:14px; box-shadow:0 18px 50px rgba(8,15,35,.18); padding:8px; display:flex; flex-direction:column; gap:6px; max-height:min(70vh, 520px); overflow:auto;}
       .topbar-actions{flex-wrap:wrap; overflow:visible;}
       .toolbar{padding:6px; gap:5px;}
       .nav{flex-direction:column; overflow-x:hidden; overflow-y:auto; padding:2px 2px 8px; scrollbar-width:none;}
@@ -387,7 +336,7 @@
       .topbar-actions{padding:2px; gap:4px; border-radius:10px;}
       .topbar-actions .btn{height:30px; min-height:30px; padding:0 8px; font-size:11px; border-radius:9px;}
       .topbar-actions .btn.with-label .label{font-size:11px;}
-      /* Never silently hide critical chat actions on mobile — use overflow menu instead */
+      /* Never silently hide critical chat actions on mobile. */
       .content{border-radius:0; border-left:none; border-right:none;}
       .toolbar{padding:6px 6px 4px;}
       .chatlog{padding:8px 6px;}
@@ -568,12 +517,15 @@
       box-shadow: 0 14px 30px rgba(11,16,32,.18);
     }
 
-    /* Topbar actions: reduce clutter by showing labels only on wide screens */
-    .topbar-actions .btn.with-label .label{ display:none; }
+    /* Topbar actions: keep labels visible on desktop/tablet, trim only on narrow screens */
+    .topbar-actions .btn.with-label .label{ display:inline; }
     .topbar-actions .btn.with-label{ padding: 8px 10px; }
-    @media (min-width: 1100px){
-      .topbar-actions .btn.with-label .label{ display:inline; }
-      .topbar-actions .btn.with-label{ padding: 8px 12px; }
+    @media (max-width: 1100px){
+      .topbar-actions .btn.with-label .label{ font-size: 11px; }
+      .topbar-actions .btn.with-label{ padding: 8px 9px; }
+    }
+    @media (max-width: 760px){
+      .topbar-actions .btn.with-label .label{ display:none; }
     }
 
     /* Settings — clearer section rhythm */
@@ -1201,7 +1153,7 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     #page-chat > .chatbar{
       position: sticky;
       bottom: 0;
-      z-index: 12;
+      z-index: 86;
       padding-bottom: calc(12px + env(safe-area-inset-bottom));
       padding-bottom: calc(12px + constant(safe-area-inset-bottom));
       background: linear-gradient(180deg, rgba(248,251,255,.86), rgba(255,255,255,.98));
@@ -1702,6 +1654,57 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       color: #5d6a86;
       font-size: 12px;
       font-weight: 700;
+    }
+    .app-release-card{
+      margin:0;
+      padding:16px;
+    }
+    .app-release-head{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      margin-bottom:14px;
+      flex-wrap:wrap;
+    }
+    .app-release-logo{
+      width:52px;
+      height:52px;
+      border-radius:14px;
+      flex-shrink:0;
+      border:1px solid rgba(10,20,60,.08);
+    }
+    .app-release-brand{
+      flex:1;
+      min-width:0;
+      display:grid;
+      gap:4px;
+    }
+    .app-release-brand strong{
+      font-weight:900;
+      font-size:1.08em;
+      letter-spacing:-.01em;
+    }
+    .app-release-pill{
+      flex-shrink:0;
+      padding:3px 10px;
+      border-radius:20px;
+      background:var(--accent,#2563eb);
+      color:#fff;
+      font-size:.72em;
+      font-weight:800;
+    }
+    .app-release-actions{
+      flex-wrap:wrap;
+      gap:8px;
+    }
+    .app-release-note{
+      margin-top:10px;
+      font-size:.8em;
+      color:var(--muted);
+    }
+    .app-release-footnote{
+      margin-top:10px;
+      font-size:.78em;
     }
     .floating-scroll-nav{
       position: fixed;
@@ -3571,15 +3574,10 @@ select{
 }
 
 /* 18. Mobile + desktop: chatbar always above floating nav */
-.chatbar{
-  position: sticky;
-  bottom: 0;
-  z-index: 80;
-}
 #page-chat > .composer-meta{
   position: sticky;
   bottom: 0;
-  z-index: 79;
+  z-index: 85;
   background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,251,255,.98));
 }
 .floating-scroll-nav{
@@ -4374,8 +4372,8 @@ body.promptEngineeringMode .topbar .topbar-actions #focusModeBtn{
     position: fixed !important;
     top: 0 !important;
     bottom: 0 !important;
-    left: 0 !important;
-    right: auto !important;
+    inset-inline-start: 0 !important;
+    inset-inline-end: auto !important;
     width: min(360px, 88vw) !important;
     max-width: calc(100vw - 22px);
     max-height: none !important;
@@ -4386,6 +4384,8 @@ body.promptEngineeringMode .topbar .topbar-actions #focusModeBtn{
     padding-bottom: calc(14px + env(safe-area-inset-bottom));
     padding-bottom: calc(14px + constant(safe-area-inset-bottom));
     display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
     visibility: hidden;
     opacity: 0;
     pointer-events: none;
@@ -4434,6 +4434,73 @@ body.dark #topRuntimeBadge{
   color: var(--text) !important;
   border-color: rgba(255,255,255,.14) !important;
   background: rgba(122,162,255,.14) !important;
+}
+body.dark .subtopbar{
+  background: rgba(17,27,47,.92) !important;
+  border-color: rgba(255,255,255,.12) !important;
+}
+body.dark .assistant-files-placeholder{
+  border-color: rgba(122,162,255,.4) !important;
+  background: linear-gradient(180deg, rgba(122,162,255,.16), rgba(122,162,255,.08)) !important;
+  color: var(--text) !important;
+}
+body.dark .assistant-preview{
+  background: #15223a !important;
+  border-color: rgba(255,255,255,.1) !important;
+  box-shadow: none !important;
+}
+body.dark .assistant-preview--audio,
+body.dark .assistant-preview--text,
+body.dark .assistant-preview--docx{
+  background: linear-gradient(180deg, rgba(21,34,58,.98), rgba(17,27,47,.98)) !important;
+  color: var(--text) !important;
+}
+body.dark .assistant-preview-empty{
+  color: var(--muted) !important;
+}
+body.dark .assistant-download-link{
+  background: linear-gradient(180deg, rgba(21,34,58,.98), rgba(17,27,47,.98)) !important;
+  border-color: rgba(255,255,255,.12) !important;
+  box-shadow: none !important;
+}
+body.dark .assistant-download-link:hover{
+  border-color: rgba(122,162,255,.45) !important;
+  box-shadow: 0 8px 20px rgba(3,8,20,.35) !important;
+}
+body.dark .app-release-pill{
+  background: rgba(122,162,255,.92);
+  color: #071225;
+}
+body.dark .app-release-note,
+body.dark .app-release-footnote{
+  color: var(--muted) !important;
+}
+body.dark .prompt-chip{
+  background: linear-gradient(180deg, rgba(21,34,58,.98), rgba(17,27,47,.98)) !important;
+  border-color: rgba(122,162,255,.28) !important;
+  color: var(--text) !important;
+}
+body.dark .prompt-chip:hover{
+  background: linear-gradient(180deg, rgba(40,58,92,.98), rgba(21,34,58,.98)) !important;
+  border-color: rgba(122,162,255,.45) !important;
+}
+body.dark .empty-chat-title{
+  color: var(--text) !important;
+  background: none !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+body.dark *{
+  scrollbar-color: rgba(122,162,255,.6) rgba(255,255,255,.08);
+}
+body.dark *::-webkit-scrollbar-track{
+  background: rgba(255,255,255,.06);
+}
+body.dark *::-webkit-scrollbar-thumb{
+  background: linear-gradient(180deg, rgba(122,162,255,.85), rgba(96,124,214,.88));
+  border: 2px solid rgba(255,255,255,.08);
+}
+body.dark *::-webkit-scrollbar-thumb:hover{
+  background: linear-gradient(180deg, rgba(148,181,255,.95), rgba(122,162,255,.9));
 }
 </style>
 </head>
@@ -4489,7 +4556,7 @@ body.dark #topRuntimeBadge{
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.85</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.90</div>
       </div>
     </aside>
 
@@ -5162,9 +5229,6 @@ body.dark #topRuntimeBadge{
                   <input id="gatewayUrl" type="text" placeholder="مثال: https://api.saddamalkadi.com" />
                 </div>
               </div>
-              <div class="hint" id="gatewayPresetDisabledNote" style="margin-top:8px; display:none">
-                النسخة الرسمية تستخدم بوابة الإنتاج وإعدادات السحابة المعتمدة تلقائيًا، لذلك تم قفل هذه الحقول في هذه البيئة للحفاظ على الثبات ومنع mismatch.
-              </div>
 
               <!-- ── مفاتيح API ── -->
               <div class="settings-section-label" style="margin-top:14px">مفاتيح API</div>
@@ -5516,7 +5580,7 @@ body.dark #topRuntimeBadge{
     })();
   </script>
 
-<script src="app.js?v=885"></script>
+<script src="app.js?v=890"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -5530,7 +5594,7 @@ body.dark #topRuntimeBadge{
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v885";
+          const CURRENT_CACHE = "aistudio-cache-v890";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -5539,7 +5603,7 @@ body.dark #topRuntimeBadge{
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=885").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=890").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {
