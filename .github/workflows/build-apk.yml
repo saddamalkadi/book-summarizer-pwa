@@ -106,8 +106,7 @@ jobs:
           name: AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}
           path: |
             AI-Workspace-Studio-latest.apk
-            AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}.apk
-            AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}.aab
+            staging/ai-workspace-studio-v${{ steps.version.outputs.version_name }}-android-release.aab
           retention-days: 30
 
       - name: Create or update GitHub Release
