@@ -268,7 +268,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.77';
+  const WEB_RELEASE_LABEL = 'v8.78';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -812,7 +812,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   }
 
   function alignManagedRuntimeSettings(){
-    if (!isManagedHostedRuntime()) return getSettings();
+    if (!(isManagedHostedRuntime() || (typeof isNativePlatform === 'function' && isNativePlatform()))) return getSettings();
     const current = getSettings();
     const nextGateway = getPlatformServiceRoot();
     if (!nextGateway) return current;
@@ -2253,6 +2253,12 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   }
 
   function getChatBaseUrlCandidates(settings){
+    // Final rule: in gateway mode, never fall back to OpenRouter/OpenAI public endpoints.
+    // Falling back can route to a protected/static origin and surface Cloudflare Access/cookie errors.
+    if (settings && settings.authMode === 'gateway'){
+      const only = normalizeUrl(normalizeEndpointUrl(effectiveBaseUrl(settings)));
+      return only ? [only] : [];
+    }
     const defaults = (settings.provider === 'openrouter') ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1';
     const out = [effectiveBaseUrl(settings), settings.baseUrl, defaults]
       .map(normalizeEndpointUrl)
@@ -4214,10 +4220,18 @@ function refreshDeepSearchBtn(){
   function resizeComposerInput(input = $('chatInput')){
     if (!input) return;
     if (input.tagName === 'TEXTAREA'){
+      const compact = typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 980px), (pointer: coarse)').matches;
+      const minH = compact ? 38 : 44;
+      const value = String(input.value || '');
+      // Compact default: keep one-line height when empty/short. Grow only when needed.
+      const shouldStayCompact = !value.trim() || (!value.includes('
+') && value.length < 120);
       input.style.height = 'auto';
-      const compact = typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 980px)').matches;
-      const minH = compact ? 40 : 46;
-      input.style.height = `${Math.min(200, Math.max(minH, input.scrollHeight))}px`;
+      if (shouldStayCompact){
+        input.style.height = `${minH}px`;
+      } else {
+        input.style.height = `${Math.min(220, Math.max(minH, input.scrollHeight))}px`;
+      }
     }
     scheduleShellLayoutRefresh();
   }
