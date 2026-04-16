@@ -6,7 +6,7 @@ Arabic AI Workspace Studio PWA — commercial-ready platform with full chat, voi
 
 - **Frontend**: https://app.saddamalkadi.com (GitHub Pages)
 - **API/Worker**: https://api.saddamalkadi.com (Cloudflare Worker `book-summarizer-pwa-convert`)
-- **Admin**: email `tntntt830@gmail.com` / password in `ADMIN_PASSWORD_REAL` env var
+- **Admin**: email `tntntt830@gmail.com` — password (if enabled) lives only in `ADMIN_PASSWORD_REAL` env var on the deploy host / Worker; no fallback value ships with the code.
 
 ## Architecture
 
@@ -70,7 +70,7 @@ On every startup, `autoFixWorker()` runs asynchronously:
 | `CF_API_TOKEN` | Cloudflare API token (Workers + KV read/write) |
 | `OPENROUTER_API_KEY` | OpenRouter API key (injected into Worker) |
 | `GITHUB_TOKEN` | GitHub token (auto-push to GitHub Pages) |
-| `ADMIN_PASSWORD_REAL` | Admin login password (optional, fallback: Saddam@Admin2026!) |
+| `ADMIN_PASSWORD_REAL` | Admin login password (optional — when not set, admin password login is disabled and only Google admin sign-in works) |
 
 ## Phase 5 Release Hardening (مارس 2026)
 

@@ -41,9 +41,9 @@
 - **النتيجة:** لا تحذيرات `initialize() is called multiple times`
 
 ### ✅ 4. كلمة مرور الإدارة مكتوبة في الكود
-- **السبب:** `ADMIN_PASS = 'Saddam@Admin2026!'` ثابتة في `server.mjs`
-- **الإصلاح:** `ADMIN_PASS = process.env.ADMIN_PASSWORD_REAL || 'Saddam@Admin2026!'`
-- **النتيجة:** يمكن الآن تعيين `ADMIN_PASSWORD_REAL` كـ Secret لمزيد من الأمان
+- **السبب:** كانت كلمة المرور الإدارية ثابتة داخل `server.mjs`.
+- **الإصلاح:** الاعتماد فقط على `ADMIN_PASSWORD_REAL` من بيئة التشغيل، وعند غيابها يُعطَّل دخول الإدارة بكلمة المرور ويُكتفى بـ Google.
+- **النتيجة:** لا توجد قيمة ضعيفة أو قابلة للتخمين داخل الكود المصدري.
 
 ### ✅ 5. زر "متابعة" يدعم Enter
 - **الإصلاح:** ربط حدث `submit` للنموذج بـ `submitUnifiedAuthEntry()`
