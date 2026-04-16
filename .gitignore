@@ -13,3 +13,6 @@ android/.gradle-user/
 android/.android-user/
 .android-user/
 *.idsig
+
+# Keep AAB artifacts out of the publicly served downloads folder — they should only live in GitHub Releases.
+downloads/*.aab
