@@ -196,23 +196,31 @@ function decodeBase64ToBytes(value) {
 }
 
 function getSessionSecret(env) {
-  return (
+  const candidate = (
     env.APP_SESSION_SECRET ||
     env.AUTH_SESSION_SECRET ||
     getServerKey(env) ||
     env.GATEWAY_CLIENT_TOKEN ||
-    'aistudio-session-fallback'
+    ''
   ).trim();
+  if (!candidate) {
+    throw new Error('Session secret is not configured.');
+  }
+  return candidate;
 }
 
 function getUpgradeSecret(env) {
-  return (
+  const candidate = (
     env.UPGRADE_CODE_SECRET ||
     env.APP_SESSION_SECRET ||
     env.AUTH_SESSION_SECRET ||
     getServerKey(env) ||
-    'aistudio-upgrade-fallback'
+    ''
   ).trim();
+  if (!candidate) {
+    throw new Error('Upgrade secret is not configured.');
+  }
+  return candidate;
 }
 
 function getUpgradeAdminToken(env) {
@@ -224,7 +232,7 @@ function getUpgradeAdminToken(env) {
 }
 
 function getAdminEmail(env) {
-  return String(env.APP_ADMIN_EMAIL || env.ADMIN_EMAIL || 'tntntt830@gmail.com').trim().toLowerCase();
+  return String(env.APP_ADMIN_EMAIL || env.ADMIN_EMAIL || '').trim().toLowerCase();
 }
 
 function getAdminPassword(env) {
@@ -245,7 +253,7 @@ function getPublicAuthConfig(env) {
     premiumEnabled: true,
     brandName: String(env.APP_BRAND_NAME || 'AI Workspace Studio').trim(),
     developerName: String(env.APP_DEVELOPER_NAME || 'صدام القاضي').trim(),
-    upgradeEmail: String(env.APP_UPGRADE_EMAIL || 'tntntt830@gmail.com').trim(),
+    upgradeEmail: String(env.APP_UPGRADE_EMAIL || '').trim(),
     adminEmail,
     adminEnabled,
     adminPasswordEnabled,
@@ -270,8 +278,10 @@ function getWorkerHealth(env) {
   const upstreamConfigured = !!getServerKey(env);
   const clientTokenRequired = !!String(env.GATEWAY_CLIENT_TOKEN || '').trim();
   const authConfig = getPublicAuthConfig(env);
-  const hasSessionSecret = !!getSessionSecret(env);
-  const hasUpgradeSecret = !!getUpgradeSecret(env);
+  let hasSessionSecret = false;
+  let hasUpgradeSecret = false;
+  try { hasSessionSecret = !!getSessionSecret(env); } catch (_) {}
+  try { hasUpgradeSecret = !!getUpgradeSecret(env); } catch (_) {}
   const adminPasswordReady = !!getAdminPassword(env);
   const adminGoogleReady = !!getAdminEmail(env) && authConfig.clientIdConfigured;
   const adminLoginReady = adminPasswordReady || adminGoogleReady;
@@ -308,7 +318,8 @@ function getWorkerHealth(env) {
 }
 
 function withCors(response, request) {
-  const origin = request.headers.get('Origin') || '*';
+  const originHeader = String(request.headers.get('Origin') || '').trim();
+  const origin = normalizeCorsOrigin(originHeader);
   const h = new Headers(response.headers || {});
   h.set('Access-Control-Allow-Origin', origin);
   h.set('Vary', 'Origin');
@@ -326,6 +337,18 @@ function withCors(response, request) {
   h.delete('alt-svc');
   h.set('Alt-Svc', 'clear');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers: h });
+}
+
+function normalizeCorsOrigin(origin) {
+  if (!origin || origin === 'null') return '*';
+  try {
+    const parsed = new URL(origin);
+    if (parsed.protocol === 'https:') return parsed.origin;
+    if (parsed.protocol === 'http:' && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1')) {
+      return parsed.origin;
+    }
+  } catch (_) {}
+  return '*';
 }
 
 async function handleGoogleAuth(request, env) {
@@ -1164,7 +1187,7 @@ async function getGoogleVerificationKeys() {
 }
 
 function buildUpgradeMailto(session, upgradeEmail) {
-  const to = encodeURIComponent(String(upgradeEmail || 'tntntt830@gmail.com').trim());
+  const to = encodeURIComponent(String(upgradeEmail || '').trim());
   const subject = encodeURIComponent(`طلب ترقية حساب - ${session.email}`);
   const body = encodeURIComponent([
     'مرحبًا،',

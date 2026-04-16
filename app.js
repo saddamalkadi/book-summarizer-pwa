@@ -366,7 +366,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.83';
+  const WEB_RELEASE_LABEL = 'v8.84';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -4415,9 +4415,7 @@ function refreshDeepSearchBtn(){
     const signature = `${tone}:${text}`;
     if (NATIVE_GOOGLE_RUNTIME.lastDialogMessage === signature) return;
     NATIVE_GOOGLE_RUNTIME.lastDialogMessage = signature;
-    window.setTimeout(() => {
-      try{ window.alert(text); }catch(_){}
-    }, 30);
+    // Keep Android auth feedback inside the in-app UI (no native alert popups).
   }
 
   function explainAuthError(error, { nativeGoogle = false } = {}){
@@ -4443,7 +4441,7 @@ function refreshDeepSearchBtn(){
       return 'هذا البريد هو بريد الإدارة. استخدم كلمة مرور الإدارة من نفس شاشة الدخول.';
     }
     if (/AUTH_ADMIN_PASSWORD_NOT_CONFIGURED|Admin password login is not configured/i.test(raw)){
-      return 'دخول الإدارة بكلمة المرور غير مفعل حاليًا على الخادم. استخدم تسجيل Google ببريد الإدارة نفسه، أو أعد ضبط APP_ADMIN_PASSWORD على Cloudflare.';
+      return 'دخول الإدارة بكلمة المرور غير متاح حاليًا. استخدم تسجيل Google ببريد الإدارة نفسه أو تواصل مع الدعم.';
     }
     return raw;
   }
@@ -6628,7 +6626,7 @@ async function submitUnifiedAuthEntry(){
         id: 'downloads_android',
         page: 'settings',
         title: 'تنزيل تطبيق Android والويب التقدمي',
-        body: 'يوجد قسم تنزيلات داخل الإعدادات يشير إلى ملفات APK/AAB المستضافة. يمكن تثبيت التطبيق كـ PWA من المتصفح أيضًا.',
+        body: 'يوجد قسم تنزيلات داخل الإعدادات يشير إلى ملف APK الرسمي للتثبيت المباشر، ويمكنك أيضًا تثبيت نسخة الويب كتطبيق PWA من المتصفح.',
         steps: [
           'افتح صفحة التنزيلات من الروابط داخل الإعدادات عند الحاجة.',
           'على Android: ثبّت APK عند السماح بالمصادر غير المعروفة وفق سياسة جهازك.',
@@ -11288,9 +11286,7 @@ let pinOnly = false;
       const WEB_URL = 'https://app.saddamalkadi.com/';
       const DOWNLOADS_URL = `${WEB_URL}downloads/`;
       const APK_LATEST_URL = `${DOWNLOADS_URL}ai-workspace-studio-latest.apk`;
-      const AAB_LATEST_URL = `${DOWNLOADS_URL}ai-workspace-studio-latest.aab`;
       const APK_BACKUP_URL = `https://github.com/${REPO}/blob/main/downloads/ai-workspace-studio-latest.apk?raw=1`;
-      const AAB_BACKUP_URL = `https://github.com/${REPO}/blob/main/downloads/ai-workspace-studio-latest.aab?raw=1`;
 
       overview.innerHTML = `
         <div class="bubble app-dl-card" style="margin:0;padding:16px">
@@ -11304,7 +11300,6 @@ let pinOnly = false;
           </div>
           <div class="actions" style="flex-wrap:wrap;gap:8px">
             <a class="btn" id="apkMainBtn" href="${APK_LATEST_URL}" download="AI-Workspace-Studio-latest.apk" target="_blank" rel="noopener noreferrer">⬇ تنزيل APK — Android</a>
-            <a class="btn ghost sm" href="${AAB_LATEST_URL}" download="AI-Workspace-Studio-latest.aab" target="_blank" rel="noopener noreferrer">⬇ تنزيل AAB — Google Play</a>
             <a class="btn ghost sm" href="${WEB_URL}" target="_blank" rel="noopener noreferrer">🌐 تطبيق الويب</a>
             <a class="btn ghost sm" href="${DOWNLOADS_URL}" target="_blank" rel="noopener noreferrer">📋 صفحة التنزيل</a>
           </div>
@@ -11313,7 +11308,6 @@ let pinOnly = false;
           </div>
           <div class="actions" style="flex-wrap:wrap;gap:8px;margin-top:8px">
             <a class="btn ghost sm" href="${APK_BACKUP_URL}" target="_blank" rel="noopener noreferrer">رابط APK الاحتياطي</a>
-            <a class="btn ghost sm" href="${AAB_BACKUP_URL}" target="_blank" rel="noopener noreferrer">رابط AAB الاحتياطي</a>
           </div>
           <div class="hint" style="margin-top:10px;font-size:.78em">
             Android 7.0+ • قم بتفعيل "تثبيت من مصادر غير معروفة" في الإعدادات قبل التثبيت
