@@ -63,23 +63,25 @@ jobs:
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
           echo "Version: $VERSION_NAME ($VERSION_CODE)"
 
-      - name: Build release APK (debug keystore if no keystore.properties)
+      - name: Build release APK and AAB
         working-directory: android
-        run: ./gradlew assembleRelease --no-daemon --stacktrace
+        run: ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
 
-      - name: Stage APK for Pages + GitHub Release
+      - name: Stage APK and AAB for Pages and GitHub Release
         run: |
+          set -e
           mkdir -p downloads
           SRC_APK="android/app/build/outputs/apk/release/app-release.apk"
-          if [ ! -f "$SRC_APK" ]; then
-            echo "Release APK missing at $SRC_APK" >&2
-            exit 1
-          fi
+          SRC_AAB="android/app/build/outputs/bundle/release/app-release.aab"
+          if [ ! -f "$SRC_APK" ]; then echo "Missing $SRC_APK" >&2; exit 1; fi
+          if [ ! -f "$SRC_AAB" ]; then echo "Missing $SRC_AAB" >&2; exit 1; fi
           cp "$SRC_APK" "AI-Workspace-Studio-latest.apk"
           cp "$SRC_APK" "downloads/ai-workspace-studio-latest.apk"
           VN="${{ steps.version.outputs.version_name }}"
           cp "$SRC_APK" "downloads/ai-workspace-studio-v${VN}-android-release.apk"
-          echo "APK size: $(du -sh AI-Workspace-Studio-latest.apk)"
+          cp "$SRC_AAB" "downloads/ai-workspace-studio-latest.aab"
+          cp "$SRC_AAB" "downloads/ai-workspace-studio-v${VN}-android-release.aab"
+          echo "APK: $(du -sh AI-Workspace-Studio-latest.apk)"
           ls -la downloads/
 
       - name: Upload APK artifact (GitHub Actions)
@@ -99,33 +101,35 @@ jobs:
 
             **تطبيق مساحة العمل العربية بالذكاء الاصطناعي**
 
-            - **Build**: ${{ steps.version.outputs.version_code }}
+            - **versionCode**: ${{ steps.version.outputs.version_code }}
             - **Platform**: Android 7.0+ (API 24+)
-            - **Type**: Release APK (تثبيت مباشر للتجربة — ليس عبر متجر Google Play)
+            - **Type**: Release APK للتثبيت المباشر (تجربة ما قبل المتجر). عند توفر `keystore.properties` يُستخدم توقيع الإصدار؛ وإلا يُستخدم توقيع debug لضمان قابلية التثبيت في CI.
 
-            ### التثبيت
+            ### التثبيت (APK)
             1. حمّل ملف `AI-Workspace-Studio-latest.apk`
-            2. فعّل "مصادر غير معروفة" في إعدادات الأمان
+            2. فعّل «مصادر غير معروفة» إذا لزم
             3. افتح الملف وثبّت التطبيق
 
-            ### الجديد
-            - مساحة العمل العربية بالذكاء الاصطناعي مع دعم OpenRouter
-            - محادثة عربية مع TTS/STT
-            - تحليل الملفات والمستندات
-            - دعم Google OAuth وتسجيل الدخول بالبريد
-          files: AI-Workspace-Studio-latest.apk
+            ### الملفات على GitHub Pages
+            - `downloads/ai-workspace-studio-latest.apk`
+            - `downloads/ai-workspace-studio-v${{ steps.version.outputs.version_name }}-android-release.apk`
+            - AAB (للنشر إلى Play Console): `downloads/ai-workspace-studio-v${{ steps.version.outputs.version_name }}-android-release.aab`
+          files: |
+            AI-Workspace-Studio-latest.apk
+            downloads/ai-workspace-studio-v${{ steps.version.outputs.version_name }}-android-release.aab
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Commit APK to downloads/ for GitHub Pages
+      - name: Commit binaries to downloads/ for GitHub Pages
         run: |
+          set -e
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          git add downloads/*.apk
+          git add downloads/*.apk downloads/*.aab
           if git diff --staged --quiet; then
-            echo "No APK changes to commit"
+            echo "No download binary changes to commit"
           else
-            git commit -m "chore: sync Android release APK to downloads [skip ci]"
+            git commit -m "chore: sync Android release APK/AAB to downloads [skip ci]"
             git push
           fi
