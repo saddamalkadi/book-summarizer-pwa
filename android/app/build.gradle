@@ -20,8 +20,8 @@ android {
         applicationId "com.saddamalkadi.aiworkspace"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 883
-        versionName "8.83.0"
+        versionCode 890
+        versionName "8.90.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -41,7 +41,14 @@ android {
     }
     buildTypes {
         release {
+            // We keep minify/shrink disabled because Capacitor + AndroidX reflection can
+            // silently break without a full ProGuard map. Safer for pre-release test builds.
             minifyEnabled false
+            shrinkResources false
+            debuggable false
+            jniDebuggable false
+            renderscriptDebuggable false
+            zipAlignEnabled true
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
             if (hasReleaseKeystore) {
                 signingConfig signingConfigs.release
@@ -50,6 +57,16 @@ android {
                 // the standard debug keystore when no release keystore is configured (CI / OSS).
                 signingConfig signingConfigs.debug
             }
+        }
+    }
+    packagingOptions {
+        resources {
+            excludes += [
+                'META-INF/DEPENDENCIES',
+                'META-INF/LICENSE*',
+                'META-INF/NOTICE*',
+                'META-INF/*.kotlin_module'
+            ]
         }
     }
 }

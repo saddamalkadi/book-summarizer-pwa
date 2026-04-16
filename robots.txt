@@ -1,0 +1,7 @@
+User-agent: *
+Disallow: /downloads/
+Disallow: /auth-bridge.html
+Disallow: /docs/
+Allow: /$
+Allow: /index.html
+Sitemap: https://app.saddamalkadi.com/sitemap.xml
