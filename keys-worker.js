@@ -11,10 +11,12 @@ let googleKeysCache = {
   keys: null,
   expiresAt: 0
 };
+const ENV_FOR_CORS = new WeakMap();
 
 export default {
   async fetch(request, env) {
     try {
+      ENV_FOR_CORS.set(request, env);
       if (request.method === 'OPTIONS') return handleOptions(request);
 
       const url = new URL(request.url);
@@ -61,6 +63,7 @@ export default {
       }
 
       if (url.pathname === '/proxy/tts' && (request.method === 'POST' || request.method === 'GET')) {
+        enforceClientTokenIfConfigured(request, env);
         return withCors(await handleGoogleTtsProxy(request), request);
       }
 
@@ -133,6 +136,57 @@ function getServerKey(env) {
   ).trim();
 }
 
+function getAllowedOrigins(env) {
+  const configured = String(env.APP_ALLOWED_ORIGINS || '').trim();
+  const defaults = [
+    'https://app.saddamalkadi.com',
+    'https://saddamalkadi.com',
+    'https://www.saddamalkadi.com',
+    'https://api.saddamalkadi.com',
+    'https://localhost',
+    'http://localhost',
+    'http://127.0.0.1',
+    'https://127.0.0.1',
+    'capacitor://localhost'
+  ];
+  return (configured ? configured.split(',') : defaults)
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+}
+
+function resolveAllowedOrigin(request, env) {
+  const origin = String(request.headers.get('Origin') || '').trim();
+  if (!origin) return '*';
+  const allowed = getAllowedOrigins(env);
+  return allowed.includes(origin) ? origin : '';
+}
+
+function getConfiguredSecret(...values) {
+  for (const value of values) {
+    const normalized = String(value || '').trim();
+    if (normalized) return normalized;
+  }
+  return '';
+}
+
+function assertRequiredSecret(secret, message) {
+  const normalized = String(secret || '').trim();
+  if (!normalized) throw new Error(message);
+  return normalized;
+}
+
+function enforceClientTokenIfConfigured(request, env) {
+  const expected = String(env.GATEWAY_CLIENT_TOKEN || '').trim();
+  if (!expected) return;
+  const provided = String(request.headers.get('X-Client-Token') || '').trim();
+  if (!provided || provided !== expected) {
+    throw jsonResponse({
+      error: 'Unauthorized client token.',
+      code: 'GATEWAY_INVALID_CLIENT_TOKEN'
+    }, 401);
+  }
+}
+
 function getVoiceApiConfig(env) {
   const hasWorkersAi = !!env.AI && typeof env.AI.run === 'function';
   const apiKey = String(
@@ -196,31 +250,24 @@ function decodeBase64ToBytes(value) {
 }
 
 function getSessionSecret(env) {
-  return (
+  return getConfiguredSecret(
     env.APP_SESSION_SECRET ||
     env.AUTH_SESSION_SECRET ||
-    getServerKey(env) ||
-    env.GATEWAY_CLIENT_TOKEN ||
-    'aistudio-session-fallback'
-  ).trim();
+    env.SESSION_SECRET
+  );
 }
 
 function getUpgradeSecret(env) {
-  return (
+  return getConfiguredSecret(
     env.UPGRADE_CODE_SECRET ||
     env.APP_SESSION_SECRET ||
     env.AUTH_SESSION_SECRET ||
-    getServerKey(env) ||
-    'aistudio-upgrade-fallback'
-  ).trim();
+    env.UPGRADE_SECRET
+  );
 }
 
 function getUpgradeAdminToken(env) {
-  return (
-    env.UPGRADE_ADMIN_TOKEN ||
-    env.GATEWAY_CLIENT_TOKEN ||
-    ''
-  ).trim();
+  return getConfiguredSecret(env.UPGRADE_ADMIN_TOKEN);
 }
 
 function getAdminEmail(env) {
@@ -270,8 +317,8 @@ function getWorkerHealth(env) {
   const upstreamConfigured = !!getServerKey(env);
   const clientTokenRequired = !!String(env.GATEWAY_CLIENT_TOKEN || '').trim();
   const authConfig = getPublicAuthConfig(env);
-  const hasSessionSecret = !!getSessionSecret(env);
-  const hasUpgradeSecret = !!getUpgradeSecret(env);
+  const hasSessionSecret = !!getConfiguredSecret(env.APP_SESSION_SECRET, env.AUTH_SESSION_SECRET, env.SESSION_SECRET);
+  const hasUpgradeSecret = !!getConfiguredSecret(env.UPGRADE_CODE_SECRET, env.UPGRADE_SECRET, env.APP_SESSION_SECRET, env.AUTH_SESSION_SECRET);
   const adminPasswordReady = !!getAdminPassword(env);
   const adminGoogleReady = !!getAdminEmail(env) && authConfig.clientIdConfigured;
   const adminLoginReady = adminPasswordReady || adminGoogleReady;
@@ -308,10 +355,15 @@ function getWorkerHealth(env) {
 }
 
 function withCors(response, request) {
-  const origin = request.headers.get('Origin') || '*';
+  const origin = resolveAllowedOrigin(request, ENV_FOR_CORS.get(request) || {});
   const h = new Headers(response.headers || {});
-  h.set('Access-Control-Allow-Origin', origin);
-  h.set('Vary', 'Origin');
+  if (origin) {
+    h.set('Access-Control-Allow-Origin', origin);
+    h.set('Vary', 'Origin');
+  } else {
+    h.delete('Access-Control-Allow-Origin');
+    h.delete('Vary');
+  }
   h.set('Access-Control-Allow-Methods', 'GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS');
   h.set('Access-Control-Allow-Headers', [
     'Authorization',
@@ -864,35 +916,21 @@ async function handleAdminUpgradeCode(request, env) {
 }
 
 async function handleGateway(request, env, url) {
-  const expectedClientToken = (env.GATEWAY_CLIENT_TOKEN || '').trim();
-  if (expectedClientToken) {
-    const got = (request.headers.get('X-Client-Token') || '').trim();
-    if (!got || got !== expectedClientToken) {
-      return withCors(jsonResponse({
-        error: 'Unauthorized client token. Check Gateway Client Token in the app settings.',
-        code: 'GATEWAY_INVALID_CLIENT_TOKEN'
-      }, 401), request);
-    }
+  try {
+    enforceClientTokenIfConfigured(request, env);
+  } catch (response) {
+    return withCors(response, request);
   }
 
   const serverKey = getServerKey(env);
-  const incomingAuth = (request.headers.get('Authorization') || '').trim();
-  const authHeader = serverKey ? `Bearer ${serverKey}` : incomingAuth;
-
-  if (!authHeader && url.pathname === '/v1/models') {
+  if (!serverKey) {
     return withCors(jsonResponse({
-      object: 'list',
-      data: FALLBACK_MODEL_LIST
-    }, 200), request);
-  }
-
-  if (!authHeader) {
-    return withCors(jsonResponse({
-      error: 'Missing API key. Set OPENROUTER_API_KEY in Cloudflare Worker Secrets, or send Authorization header for temporary browser-side auth.',
+      error: 'Gateway upstream is not configured on the server.',
       code: 'GATEWAY_MISSING_UPSTREAM_KEY',
       configured: false
-    }, 401), request);
+    }, 503), request);
   }
+  const authHeader = `Bearer ${serverKey}`;
 
   const upstreamPath = url.pathname.startsWith('/v1/')
     ? `/api${url.pathname}`
@@ -975,7 +1013,11 @@ async function requireSession(request, env) {
   if (!token) {
     throw new Error('Missing signed session. Please log in with Google first.');
   }
-  const payload = await verifySignedToken(token, getSessionSecret(env), 'session');
+  const payload = await verifySignedToken(
+    token,
+    assertRequiredSecret(getSessionSecret(env), 'Session secret is not configured on the worker.'),
+    'session'
+  );
   if (!payload?.email) {
     throw new Error('Invalid or expired session.');
   }
@@ -1003,7 +1045,11 @@ async function issueSessionToken(profile, env) {
     iat: Math.floor(now / 1000),
     exp: Math.floor((now + SESSION_TTL_MS) / 1000)
   };
-  const sessionToken = await signCompactToken(payload, getSessionSecret(env), 'session');
+  const sessionToken = await signCompactToken(
+    payload,
+    assertRequiredSecret(getSessionSecret(env), 'Session secret is not configured on the worker.'),
+    'session'
+  );
   return {
     ok: true,
     email: payload.email,
@@ -1026,13 +1072,21 @@ async function createUpgradeCode({ email, plan = 'premium', days = 365 }, env) {
     iat: Math.floor(now / 1000),
     exp: Math.floor((now + (days * 24 * 60 * 60 * 1000)) / 1000)
   };
-  const signed = await signCompactToken(payload, getUpgradeSecret(env), 'upgrade');
+  const signed = await signCompactToken(
+    payload,
+    assertRequiredSecret(getUpgradeSecret(env), 'Upgrade secret is not configured on the worker.'),
+    'upgrade'
+  );
   return `AIPRO-${signed}`;
 }
 
 async function verifyUpgradeCodeForEmail(code, email, env) {
   const raw = String(code || '').trim().replace(/^AIPRO-/, '');
-  const payload = await verifySignedToken(raw, getUpgradeSecret(env), 'upgrade');
+  const payload = await verifySignedToken(
+    raw,
+    assertRequiredSecret(getUpgradeSecret(env), 'Upgrade secret is not configured on the worker.'),
+    'upgrade'
+  );
   if (!payload?.email) {
     throw new Error('Invalid or expired upgrade code.');
   }

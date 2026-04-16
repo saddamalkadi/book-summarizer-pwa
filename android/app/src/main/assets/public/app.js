@@ -366,7 +366,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.81';
+  const WEB_RELEASE_LABEL = 'v8.84';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -2455,16 +2455,21 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     if (typeof document === 'undefined') return String(html || '');
     const tpl = document.createElement('template');
     tpl.innerHTML = String(html || '');
-    tpl.content.querySelectorAll('script,iframe,object,embed,link,meta').forEach((el) => el.remove());
+    tpl.content.querySelectorAll('script,iframe,object,embed,link,meta,style,form,input,button,textarea,select,option').forEach((el) => el.remove());
     tpl.content.querySelectorAll('*').forEach((el) => {
+      const tag = String(el.tagName || '').toLowerCase();
+      if (tag === 'svg' || tag === 'math'){
+        el.remove();
+        return;
+      }
       [...el.attributes].forEach((attr) => {
         const name = String(attr.name || '').toLowerCase();
         const value = String(attr.value || '');
-        if (name.startsWith('on') || name === 'srcdoc'){
+        if (name.startsWith('on') || name === 'srcdoc' || name === 'style'){
           el.removeAttribute(attr.name);
           return;
         }
-        if ((name === 'href' || name === 'src') && /^\s*javascript:/i.test(value)){
+        if ((name === 'href' || name === 'src') && /^\s*(?:javascript:|vbscript:|file:)/i.test(value)){
           el.removeAttribute(attr.name);
         }
       });
@@ -2473,6 +2478,8 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
         if (/^(https?:|mailto:|tel:)/i.test(href)){
           el.setAttribute('target', '_blank');
           el.setAttribute('rel', 'noopener noreferrer');
+        } else if (href && !/^(data:|blob:|#)/i.test(href)){
+          el.removeAttribute('href');
         }
         if (/^(data:|blob:)/i.test(href)){
           el.setAttribute('download', '');
@@ -2525,7 +2532,12 @@ const getChatToolbarCollapsed = () => (localStorage.getItem(KEYS.chatToolbarColl
 const setChatToolbarCollapsed = (v) => localStorage.setItem(KEYS.chatToolbarCollapsed, v ? 'true' : 'false');
 const getChatToolbarPinned = () => (localStorage.getItem(KEYS.chatToolbarPinned) || 'true') === 'true';
 const setChatToolbarPinned = (v) => localStorage.setItem(KEYS.chatToolbarPinned, v ? 'true' : 'false');
-const getSidebarPinned = () => (localStorage.getItem(KEYS.sidebarPinned) || 'false') === 'true';
+// Default to pinned on fresh installs to keep navigation discoverable.
+const getSidebarPinned = () => {
+  const raw = localStorage.getItem(KEYS.sidebarPinned);
+  if (raw == null) return true;
+  return String(raw) === 'true';
+};
 const setSidebarPinned = (v) => localStorage.setItem(KEYS.sidebarPinned, v ? 'true' : 'false');
 const getPromptEngineeringMode = () => {
   const explicit = localStorage.getItem(KEYS.promptEngineeringMode);
@@ -7972,7 +7984,9 @@ async function fileToText(file){
   function sanitizeDownloadUrl(raw){
     const value = String(raw || '').trim();
     if (!value) return '';
-    if (/^(https?:|data:|blob:)/i.test(value)) return value;
+    if (/^https?:/i.test(value)) return value;
+    if (/^data:/i.test(value) && /^data:(?:application\/|text\/|image\/|audio\/|video\/)/i.test(value)) return value;
+    if (/^blob:/i.test(value)) return value;
     return '';
   }
   function inferMimeFromName(name = ''){
@@ -8282,26 +8296,27 @@ async function fileToText(file){
       anchor.remove();
       return true;
     }
+    // Important: keep the download inside the same user gesture chain.
+    // Many mobile browsers/WebViews block async fetch->download flows.
     try{
-      const response = await fetch(normalized.url, { method:'GET' });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const blob = await response.blob();
-      downloadBlob(normalized.name, new Blob([blob], { type: blob.type || normalized.mime }));
+      const href = normalized.url;
+      const sameOrigin = (() => {
+        try{ return new URL(href, location.href).origin === location.origin; }catch(_){ return false; }
+      })();
+      const anchor = document.createElement('a');
+      anchor.href = href;
+      if (sameOrigin) anchor.download = normalized.name;
+      anchor.target = '_blank';
+      anchor.rel = 'noopener noreferrer';
+      anchor.style.position = 'fixed';
+      anchor.style.left = '-9999px';
+      anchor.style.top = '-9999px';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
       return true;
     }catch(_){
-      try{
-        const anchor = document.createElement('a');
-        anchor.href = normalized.url;
-        anchor.download = normalized.name;
-        anchor.target = '_blank';
-        anchor.rel = 'noopener noreferrer';
-        document.body.appendChild(anchor);
-        anchor.click();
-        anchor.remove();
-        return true;
-      }catch(__){
-        return false;
-      }
+      return false;
     }
   }
   async function downloadStoredItem(downloadId){
@@ -8312,6 +8327,36 @@ async function fileToText(file){
     }
     downloadBlob(entry.name, buildBlobFromDownload(entry));
     return true;
+  }
+
+  function downloadStoredItemInGesture(downloadId){
+    const entry = resolveDownloadEntry(downloadId);
+    if (!entry) return false;
+    // Keep downloads inside a direct user gesture chain (Android/desktop mobile browsers block async downloads).
+    if (entry.encoding === 'url' && entry.url){
+      const normalized = normalizeDownloadEntry(entry);
+      try{
+        const anchor = document.createElement('a');
+        anchor.href = normalized.url;
+        anchor.rel = 'noopener noreferrer';
+        anchor.target = '_blank';
+        // Only set download attribute for same-origin / data URLs (cross-origin often ignores it).
+        if (/^data:/i.test(normalized.url)) anchor.download = normalized.name;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        return true;
+      }catch(_){
+        try{ window.open(normalized.url, '_blank', 'noopener'); }catch(__){}
+        return true;
+      }
+    }
+    try{
+      downloadBlob(entry.name, buildBlobFromDownload(entry));
+      return true;
+    }catch(_){
+      return false;
+    }
   }
   function estimateDownloadBytes(entry){
     const normalized = normalizeDownloadEntry(entry);
@@ -9594,13 +9639,286 @@ ${clip}` });
     scope?.querySelectorAll?.('[data-download-id]')?.forEach((el) => {
       if (el.dataset.bound === 'true') return;
       el.dataset.bound = 'true';
-      el.addEventListener('click', async (ev) => {
+      el.addEventListener('click', (ev) => {
         ev.preventDefault();
-        const ok = await downloadStoredItem(el.dataset.downloadId);
+        const ok = downloadStoredItemInGesture(el.dataset.downloadId);
         if (!ok) toast('⚠️ تعذر العثور على الملف المطلوب');
       });
     });
     bindAssistantDocxPreviews(scope).catch(() => {});
+  }
+
+  // ---------------- Assistant artifacts (download-as) ----------------
+  const ARTIFACT_LIBS = {
+    jszip: { url: 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js', check: () => !!window.JSZip },
+    xlsx: { url: 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js', check: () => !!window.XLSX },
+    pptx: { url: 'https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js', check: () => !!window.PptxGenJS },
+    jspdf: { url: 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js', check: () => !!(window.jspdf && window.jspdf.jsPDF) }
+  };
+  const ARTIFACT_FORMATS = [
+    { id:'txt', label:'TXT' },
+    { id:'md', label:'Markdown' },
+    { id:'html', label:'HTML' },
+    { id:'json', label:'JSON' },
+    { id:'csv', label:'CSV' },
+    { id:'docx', label:'DOCX' },
+    { id:'pdf', label:'PDF' },
+    { id:'xlsx', label:'XLSX' },
+    { id:'pptx', label:'PPTX' },
+    { id:'zip', label:'ZIP (جمع الملفات)' },
+  ];
+
+  function loadScriptOnce(url){
+    const href = String(url || '').trim();
+    if (!href) return Promise.reject(new Error('missing_script_url'));
+    if (!window.__aistudioScripts) window.__aistudioScripts = new Map();
+    const cache = window.__aistudioScripts;
+    if (cache.has(href)) return cache.get(href);
+    const p = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = href;
+      s.async = true;
+      s.onload = () => resolve(true);
+      s.onerror = () => reject(new Error(`script_load_failed ${href}`));
+      document.head.appendChild(s);
+    });
+    cache.set(href, p);
+    return p;
+  }
+  async function ensureArtifactLib(kind){
+    const spec = ARTIFACT_LIBS[kind];
+    if (!spec) return true;
+    if (spec.check()) return true;
+    await loadScriptOnce(spec.url);
+    return !!spec.check();
+  }
+
+  function ensureArtifactModal(){
+    if ($('artifactModal')) return;
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'artifactModal';
+    modal.innerHTML = `
+      <div class="backdrop" data-artifact-close="1"></div>
+      <div class="panel" role="dialog" aria-modal="true" aria-label="تنزيل الرد كملف">
+        <div class="head">
+          <div class="title">تنزيل الرد كملف</div>
+          <button class="btn ghost sm" data-artifact-close="1">إغلاق</button>
+        </div>
+        <div class="body">
+          <div class="row">
+            <div class="col">
+              <div class="hint">الصيغة</div>
+              <select id="artifactFormat"></select>
+            </div>
+            <div class="col">
+              <div class="hint">اسم الملف</div>
+              <input id="artifactFilename" type="text" placeholder="output.txt" />
+            </div>
+          </div>
+          <div class="hint" style="margin-top:10px">سيتم تنزيل محتوى الرد الحالي. في ZIP سيتم جمع الملفات المُستخرجة من الرسالة (إن وجدت).</div>
+          <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+            <button class="btn" id="artifactDownloadBtn">⬇ تنزيل</button>
+            <span class="hint" id="artifactStatus"></span>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+
+    const sel = $('artifactFormat');
+    if (sel){
+      sel.innerHTML = ARTIFACT_FORMATS.map((f) => `<option value="${escapeHtml(f.id)}">${escapeHtml(f.label)}</option>`).join('');
+    }
+    modal.querySelectorAll('[data-artifact-close="1"]').forEach((el) => {
+      el.addEventListener('click', () => closeArtifactModal());
+    });
+  }
+  function openArtifactModal(payload){
+    ensureArtifactModal();
+    const modal = $('artifactModal');
+    if (!modal) return;
+    modal.dataset.mid = String(payload?.mid || '');
+    modal.dataset.title = String(payload?.title || '');
+    modal.dataset.text = String(payload?.text || '');
+    modal.dataset.downloadCount = String(payload?.downloads?.length || 0);
+
+    const fmt = $('artifactFormat');
+    const name = $('artifactFilename');
+    const status = $('artifactStatus');
+    if (status) status.textContent = '';
+    if (fmt) fmt.value = 'md';
+    if (name){
+      const base = sanitizeBlockAttrValue(payload?.title || 'assistant') || 'assistant';
+      name.value = `${base}.md`;
+    }
+    if (fmt && name){
+      fmt.addEventListener('change', () => {
+        const base = (name.value || 'assistant').replace(/\.[a-z0-9]+$/i,'') || 'assistant';
+        name.value = `${base}.${fmt.value}`;
+      }, { once: true });
+    }
+    const btn = $('artifactDownloadBtn');
+    if (btn && btn.dataset.bound !== 'true'){
+      btn.dataset.bound = 'true';
+      btn.addEventListener('click', () => runArtifactDownload().catch(() => {}));
+    }
+    modal.classList.add('show');
+  }
+  function closeArtifactModal(){
+    const modal = $('artifactModal');
+    if (!modal) return;
+    modal.classList.remove('show');
+  }
+
+  function pickMessageDownloads(mid){
+    const b = $('chatLog')?.querySelector?.(`.bubble.assistant[data-mid="${CSS.escape(String(mid||''))}"]`);
+    if (!b) return [];
+    // downloads are already stored in localStorage; we only need the IDs.
+    const ids = Array.from(b.querySelectorAll('[data-download-id]')).map((el) => el.dataset.downloadId).filter(Boolean);
+    return ids.map((id) => resolveDownloadEntry(id)).filter(Boolean);
+  }
+
+  function extractLikelyJson(text){
+    const s = String(text || '').trim();
+    if (!s) return null;
+    // Try direct JSON, or first fenced code block.
+    try{ return JSON.parse(s); }catch(_){}
+    const m = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (m){
+      try{ return JSON.parse(String(m[1] || '').trim()); }catch(_){}
+    }
+    return null;
+  }
+  function extractLikelyCsv(text){
+    const s = String(text || '').trim();
+    if (!s) return '';
+    const m = s.match(/```(?:csv)?\s*([\s\S]*?)```/i);
+    return String((m ? m[1] : s) || '').trim();
+  }
+
+  async function buildArtifactBlob({ format, filename, text, downloads }){
+    const fmt = String(format || 'txt').toLowerCase();
+    const name = String(filename || 'download').trim() || 'download';
+    const rawText = String(text || '');
+
+    if (fmt === 'zip'){
+      await ensureArtifactLib('jszip');
+      if (!window.JSZip) throw new Error('ZIP_LIB_MISSING');
+      const zip = new window.JSZip();
+      const list = Array.isArray(downloads) ? downloads.filter(Boolean) : [];
+      if (list.length){
+        for (const entry of list){
+          const n = sanitizeBlockAttrValue(entry.name || '') || 'download.bin';
+          const blob = entry.encoding === 'url' && entry.url ? null : buildBlobFromDownload(entry);
+          if (blob){
+            zip.file(n, blob);
+          }else if (entry.url){
+            zip.file(`${n}.url.txt`, String(entry.url || '').trim());
+          }
+        }
+      }else{
+        zip.file(name.replace(/\.zip$/i,'') + '.md', rawText || '');
+      }
+      const out = await zip.generateAsync({ type:'blob' });
+      return { blob: out, mime:'application/zip', filename: name.endsWith('.zip') ? name : `${name}.zip` };
+    }
+
+    if (fmt === 'json'){
+      const payload = extractLikelyJson(rawText);
+      if (!payload) throw new Error('INVALID_JSON');
+      const normalized = JSON.stringify(payload, null, 2);
+      return { blob: new Blob([normalized], { type:'application/json;charset=utf-8' }), mime:'application/json', filename: name.endsWith('.json') ? name : `${name}.json` };
+    }
+
+    if (fmt === 'csv'){
+      const csv = extractLikelyCsv(rawText);
+      return { blob: new Blob([csv], { type:'text/csv;charset=utf-8' }), mime:'text/csv', filename: name.endsWith('.csv') ? name : `${name}.csv` };
+    }
+
+    if (fmt === 'md'){
+      return { blob: new Blob([rawText], { type:'text/markdown;charset=utf-8' }), mime:'text/markdown', filename: name.endsWith('.md') ? name : `${name}.md` };
+    }
+    if (fmt === 'html'){
+      const html = (window.marked ? sanitizeRenderedHtml(window.marked.parse(String(rawText || ''))) : `<pre>${escapeHtml(rawText)}</pre>`);
+      const doc = `<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><title>${escapeHtml(name)}</title><body>${html}</body></html>`;
+      return { blob: new Blob([doc], { type:'text/html;charset=utf-8' }), mime:'text/html', filename: name.endsWith('.html') ? name : `${name}.html` };
+    }
+    if (fmt === 'docx'){
+      const toDocx = getHtmlToDocxFn?.() || null;
+      if (!toDocx) throw new Error('DOCX_CONVERTER_MISSING');
+      const html = (window.marked ? sanitizeRenderedHtml(window.marked.parse(String(rawText || ''))) : `<pre>${escapeHtml(rawText)}</pre>`);
+      const bin = await toDocx(html, { orientation:'portrait' });
+      return { blob: new Blob([bin], { type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), mime:'application/vnd.openxmlformats-officedocument.wordprocessingml.document', filename: name.endsWith('.docx') ? name : `${name}.docx` };
+    }
+    if (fmt === 'pdf'){
+      await ensureArtifactLib('jspdf');
+      const jsPDF = window.jspdf?.jsPDF;
+      if (!jsPDF) throw new Error('PDF_LIB_MISSING');
+      const doc = new jsPDF({ unit:'pt', format:'a4' });
+      const margin = 48;
+      const maxW = doc.internal.pageSize.getWidth() - margin * 2;
+      const lines = doc.splitTextToSize(String(rawText || ''), maxW);
+      doc.text(lines, margin, margin);
+      const blob = doc.output('blob');
+      return { blob, mime:'application/pdf', filename: name.endsWith('.pdf') ? name : `${name}.pdf` };
+    }
+    if (fmt === 'xlsx'){
+      await ensureArtifactLib('xlsx');
+      if (!window.XLSX) throw new Error('XLSX_LIB_MISSING');
+      const payload = extractLikelyJson(rawText);
+      let ws;
+      if (Array.isArray(payload)){
+        ws = window.XLSX.utils.json_to_sheet(payload);
+      }else{
+        const csv = extractLikelyCsv(rawText);
+        ws = window.XLSX.utils.aoa_to_sheet(csv.split(/\r?\n/).filter(Boolean).map((line) => line.split(',')));
+      }
+      const wb = window.XLSX.utils.book_new();
+      window.XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+      const out = window.XLSX.write(wb, { bookType:'xlsx', type:'array' });
+      return { blob: new Blob([out], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), mime:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', filename: name.endsWith('.xlsx') ? name : `${name}.xlsx` };
+    }
+    if (fmt === 'pptx'){
+      await ensureArtifactLib('pptx');
+      if (!window.PptxGenJS) throw new Error('PPTX_LIB_MISSING');
+      const pptx = new window.PptxGenJS();
+      pptx.layout = 'LAYOUT_WIDE';
+      const slide = pptx.addSlide();
+      const content = String(rawText || '').trim() || ' ';
+      slide.addText(content.slice(0, 5000), { x:0.6, y:0.6, w:12.0, h:6.2, fontSize:18, color:'2b2b2b', rtl:true });
+      const buf = await pptx.write('arraybuffer');
+      return { blob: new Blob([buf], { type:'application/vnd.openxmlformats-officedocument.presentationml.presentation' }), mime:'application/vnd.openxmlformats-officedocument.presentationml.presentation', filename: name.endsWith('.pptx') ? name : `${name}.pptx` };
+    }
+
+    return { blob: new Blob([rawText], { type:'text/plain;charset=utf-8' }), mime:'text/plain', filename: name.endsWith('.txt') ? name : `${name}.txt` };
+  }
+
+  async function runArtifactDownload(){
+    const modal = $('artifactModal');
+    if (!modal) return;
+    const fmt = $('artifactFormat')?.value || 'txt';
+    const filename = $('artifactFilename')?.value || 'download.txt';
+    const status = $('artifactStatus');
+    if (status) status.textContent = '...';
+    const mid = modal.dataset.mid || '';
+    const title = modal.dataset.title || '';
+    const text = modal.dataset.text || '';
+    const downloads = pickMessageDownloads(mid);
+    try{
+      const out = await buildArtifactBlob({ format: fmt, filename, text, downloads, title });
+      downloadBlob(out.filename || filename, out.blob);
+      if (status) status.textContent = '✅ تم تجهيز التنزيل';
+    }catch(err){
+      const msg = String(err?.message || err || '').toUpperCase();
+      if (msg.includes('INVALID_JSON')) toast('⚠️ لا يوجد JSON صالح في هذا الرد.');
+      else if (msg.includes('DOCX_CONVERTER_MISSING')) toast('⚠️ محول DOCX غير متاح في هذه الجلسة.');
+      else if (msg.includes('ZIP_LIB_MISSING')) toast('⚠️ تعذر تحميل مكتبة ZIP.');
+      else if (msg.includes('PDF_LIB_MISSING')) toast('⚠️ تعذر تحميل مكتبة PDF.');
+      else if (msg.includes('XLSX_LIB_MISSING')) toast('⚠️ تعذر تحميل مكتبة Excel.');
+      else if (msg.includes('PPTX_LIB_MISSING')) toast('⚠️ تعذر تحميل مكتبة PowerPoint.');
+      else toast('⚠️ تعذر تجهيز الملف للتنزيل.');
+      if (status) status.textContent = '';
+    }
   }
 
   function describeAttachmentChip(a){
@@ -9796,6 +10114,19 @@ ${clip}` });
       }
 
       if (m.role === 'assistant'){
+        const artifactBtn = document.createElement('button');
+        artifactBtn.className = 'btn ghost sm';
+        artifactBtn.textContent = '⬇ تنزيل الرد';
+        artifactBtn.addEventListener('click', () => {
+          openArtifactModal({
+            mid: m.id || '',
+            title: titleFromMessage(m.content || '', 'assistant'),
+            text: String(m.content || ''),
+            downloads: []
+          });
+        });
+        actions.appendChild(artifactBtn);
+
         const canvasBtn = document.createElement('button');
         canvasBtn.className = 'btn ghost sm';
         canvasBtn.textContent = 'إلى اللوحة';
@@ -10962,13 +11293,9 @@ let pinOnly = false;
     const dl = loadDownloads();
     $('navDlMeta').textContent = String(dl.length);
     if (overview){
-      const REPO = 'saddamalkadi/book-summarizer-pwa';
       const WEB_URL = 'https://app.saddamalkadi.com/';
       const DOWNLOADS_URL = `${WEB_URL}downloads/`;
       const APK_LATEST_URL = `${DOWNLOADS_URL}ai-workspace-studio-latest.apk`;
-      const AAB_LATEST_URL = `${DOWNLOADS_URL}ai-workspace-studio-latest.aab`;
-      const APK_BACKUP_URL = `https://github.com/${REPO}/blob/main/downloads/ai-workspace-studio-latest.apk?raw=1`;
-      const AAB_BACKUP_URL = `https://github.com/${REPO}/blob/main/downloads/ai-workspace-studio-latest.aab?raw=1`;
 
       overview.innerHTML = `
         <div class="bubble app-dl-card" style="margin:0;padding:16px">
@@ -10976,25 +11303,17 @@ let pinOnly = false;
             <img src="./logo.svg" style="width:52px;height:52px;border-radius:14px;flex-shrink:0;border:1px solid rgba(10,20,60,.08)" alt="logo" onerror="this.textContent='🤖';this.style.fontSize='32px'"/>
             <div style="flex:1;min-width:0">
               <div style="font-weight:900;font-size:1.08em;letter-spacing:-.01em">AI Workspace Studio</div>
-              <div class="hint" id="releaseVersionMeta" style="margin-top:2px">روابط تنزيل مباشرة من نفس الموقع مع روابط احتياطية من GitHub.</div>
+              <div class="hint" id="releaseVersionMeta" style="margin-top:2px">نسخة التجربة المعتمدة للمستخدمين متاحة الآن عبر APK النهائي من نفس الإصدار الحي.</div>
             </div>
-            <span style="flex-shrink:0;padding:3px 10px;border-radius:20px;background:var(--accent,#2563eb);color:#fff;font-size:.72em;font-weight:800">● مباشر</span>
+            <span style="flex-shrink:0;padding:3px 10px;border-radius:20px;background:var(--accent,#2563eb);color:#fff;font-size:.72em;font-weight:800">● RC</span>
           </div>
           <div class="actions" style="flex-wrap:wrap;gap:8px">
             <a class="btn" id="apkMainBtn" href="${APK_LATEST_URL}" download="AI-Workspace-Studio-latest.apk" target="_blank" rel="noopener noreferrer">⬇ تنزيل APK — Android</a>
-            <a class="btn ghost sm" href="${AAB_LATEST_URL}" download="AI-Workspace-Studio-latest.aab" target="_blank" rel="noopener noreferrer">⬇ تنزيل AAB — Google Play</a>
             <a class="btn ghost sm" href="${WEB_URL}" target="_blank" rel="noopener noreferrer">🌐 تطبيق الويب</a>
             <a class="btn ghost sm" href="${DOWNLOADS_URL}" target="_blank" rel="noopener noreferrer">📋 صفحة التنزيل</a>
           </div>
-          <div style="margin-top:10px;font-size:.8em;color:var(--muted,#888)">
-            إذا تعذر التنزيل المباشر من الموقع، استخدم الروابط الاحتياطية التالية:
-          </div>
-          <div class="actions" style="flex-wrap:wrap;gap:8px;margin-top:8px">
-            <a class="btn ghost sm" href="${APK_BACKUP_URL}" target="_blank" rel="noopener noreferrer">رابط APK الاحتياطي</a>
-            <a class="btn ghost sm" href="${AAB_BACKUP_URL}" target="_blank" rel="noopener noreferrer">رابط AAB الاحتياطي</a>
-          </div>
           <div class="hint" style="margin-top:10px;font-size:.78em">
-            Android 7.0+ • قم بتفعيل "تثبيت من مصادر غير معروفة" في الإعدادات قبل التثبيت
+            Android 7.0+ • فعّل التثبيت من المصادر الموثوقة عند الحاجة • هذه هي قناة التجربة النهائية المعروضة للمستخدم
           </div>
         </div>`;
     }
@@ -11398,6 +11717,17 @@ let pinOnly = false;
     if (!nav) return;
     nav.innerHTML = NAV_STRUCTURE.map(renderNavNode).join('');
     if ($('sideVersionLabel')) $('sideVersionLabel').textContent = WEB_RELEASE_LABEL;
+    syncSidebarFooterClearance();
+  }
+
+  function syncSidebarFooterClearance(){
+    const nav = $('nav');
+    const footer = $('sideFooter');
+    if (!nav || !footer) return;
+    try{
+      const h = Math.max(96, Math.ceil(footer.getBoundingClientRect().height || footer.offsetHeight || 0) + 16);
+      nav.style.paddingBottom = `${h}px`;
+    }catch(_){}
   }
 
   function setActiveNav(page){

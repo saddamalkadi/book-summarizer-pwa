@@ -1,4 +1,4 @@
-﻿/* AI Workspace Studio v8.34 - strategic platform skeleton (no build step) */
+﻿/* AI Workspace Studio v8.84 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -366,7 +366,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.83';
+  const WEB_RELEASE_LABEL = 'v8.84';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -2455,16 +2455,21 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     if (typeof document === 'undefined') return String(html || '');
     const tpl = document.createElement('template');
     tpl.innerHTML = String(html || '');
-    tpl.content.querySelectorAll('script,iframe,object,embed,link,meta').forEach((el) => el.remove());
+    tpl.content.querySelectorAll('script,iframe,object,embed,link,meta,style,form,input,button,textarea,select,option').forEach((el) => el.remove());
     tpl.content.querySelectorAll('*').forEach((el) => {
+      const tag = String(el.tagName || '').toLowerCase();
+      if (tag === 'svg' || tag === 'math'){
+        el.remove();
+        return;
+      }
       [...el.attributes].forEach((attr) => {
         const name = String(attr.name || '').toLowerCase();
         const value = String(attr.value || '');
-        if (name.startsWith('on') || name === 'srcdoc'){
+        if (name.startsWith('on') || name === 'srcdoc' || name === 'style'){
           el.removeAttribute(attr.name);
           return;
         }
-        if ((name === 'href' || name === 'src') && /^\s*javascript:/i.test(value)){
+        if ((name === 'href' || name === 'src') && /^\s*(?:javascript:|vbscript:|file:)/i.test(value)){
           el.removeAttribute(attr.name);
         }
       });
@@ -2473,6 +2478,8 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
         if (/^(https?:|mailto:|tel:)/i.test(href)){
           el.setAttribute('target', '_blank');
           el.setAttribute('rel', 'noopener noreferrer');
+        } else if (href && !/^(data:|blob:|#)/i.test(href)){
+          el.removeAttribute('href');
         }
         if (/^(data:|blob:)/i.test(href)){
           el.setAttribute('download', '');
@@ -7977,7 +7984,9 @@ async function fileToText(file){
   function sanitizeDownloadUrl(raw){
     const value = String(raw || '').trim();
     if (!value) return '';
-    if (/^(https?:|data:|blob:)/i.test(value)) return value;
+    if (/^https?:/i.test(value)) return value;
+    if (/^data:/i.test(value) && /^data:(?:application\/|text\/|image\/|audio\/|video\/)/i.test(value)) return value;
+    if (/^blob:/i.test(value)) return value;
     return '';
   }
   function inferMimeFromName(name = ''){
@@ -11284,13 +11293,9 @@ let pinOnly = false;
     const dl = loadDownloads();
     $('navDlMeta').textContent = String(dl.length);
     if (overview){
-      const REPO = 'saddamalkadi/book-summarizer-pwa';
       const WEB_URL = 'https://app.saddamalkadi.com/';
       const DOWNLOADS_URL = `${WEB_URL}downloads/`;
       const APK_LATEST_URL = `${DOWNLOADS_URL}ai-workspace-studio-latest.apk`;
-      const AAB_LATEST_URL = `${DOWNLOADS_URL}ai-workspace-studio-latest.aab`;
-      const APK_BACKUP_URL = `https://github.com/${REPO}/blob/main/downloads/ai-workspace-studio-latest.apk?raw=1`;
-      const AAB_BACKUP_URL = `https://github.com/${REPO}/blob/main/downloads/ai-workspace-studio-latest.aab?raw=1`;
 
       overview.innerHTML = `
         <div class="bubble app-dl-card" style="margin:0;padding:16px">
@@ -11298,25 +11303,17 @@ let pinOnly = false;
             <img src="./logo.svg" style="width:52px;height:52px;border-radius:14px;flex-shrink:0;border:1px solid rgba(10,20,60,.08)" alt="logo" onerror="this.textContent='🤖';this.style.fontSize='32px'"/>
             <div style="flex:1;min-width:0">
               <div style="font-weight:900;font-size:1.08em;letter-spacing:-.01em">AI Workspace Studio</div>
-              <div class="hint" id="releaseVersionMeta" style="margin-top:2px">روابط تنزيل مباشرة من نفس الموقع مع روابط احتياطية من GitHub.</div>
+              <div class="hint" id="releaseVersionMeta" style="margin-top:2px">نسخة التجربة المعتمدة للمستخدمين متاحة الآن عبر APK النهائي من نفس الإصدار الحي.</div>
             </div>
-            <span style="flex-shrink:0;padding:3px 10px;border-radius:20px;background:var(--accent,#2563eb);color:#fff;font-size:.72em;font-weight:800">● مباشر</span>
+            <span style="flex-shrink:0;padding:3px 10px;border-radius:20px;background:var(--accent,#2563eb);color:#fff;font-size:.72em;font-weight:800">● RC</span>
           </div>
           <div class="actions" style="flex-wrap:wrap;gap:8px">
             <a class="btn" id="apkMainBtn" href="${APK_LATEST_URL}" download="AI-Workspace-Studio-latest.apk" target="_blank" rel="noopener noreferrer">⬇ تنزيل APK — Android</a>
-            <a class="btn ghost sm" href="${AAB_LATEST_URL}" download="AI-Workspace-Studio-latest.aab" target="_blank" rel="noopener noreferrer">⬇ تنزيل AAB — Google Play</a>
             <a class="btn ghost sm" href="${WEB_URL}" target="_blank" rel="noopener noreferrer">🌐 تطبيق الويب</a>
             <a class="btn ghost sm" href="${DOWNLOADS_URL}" target="_blank" rel="noopener noreferrer">📋 صفحة التنزيل</a>
           </div>
-          <div style="margin-top:10px;font-size:.8em;color:var(--muted,#888)">
-            إذا تعذر التنزيل المباشر من الموقع، استخدم الروابط الاحتياطية التالية:
-          </div>
-          <div class="actions" style="flex-wrap:wrap;gap:8px;margin-top:8px">
-            <a class="btn ghost sm" href="${APK_BACKUP_URL}" target="_blank" rel="noopener noreferrer">رابط APK الاحتياطي</a>
-            <a class="btn ghost sm" href="${AAB_BACKUP_URL}" target="_blank" rel="noopener noreferrer">رابط AAB الاحتياطي</a>
-          </div>
           <div class="hint" style="margin-top:10px;font-size:.78em">
-            Android 7.0+ • قم بتفعيل "تثبيت من مصادر غير معروفة" في الإعدادات قبل التثبيت
+            Android 7.0+ • فعّل التثبيت من المصادر الموثوقة عند الحاجة • هذه هي قناة التجربة النهائية المعروضة للمستخدم
           </div>
         </div>`;
     }
