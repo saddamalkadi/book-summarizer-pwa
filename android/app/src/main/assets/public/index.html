@@ -185,7 +185,6 @@
     /* Sidebar: keep nav hitboxes reliable (no overlap). */
     .side{overflow:hidden;}
     .nav{overflow:auto;}
-    .side-footer{position:static;}
     .brand{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12); border-radius:16px;}
     .brand .name{font-weight:1000}
     .brand .sub{opacity:.82; font-size:11px; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
@@ -203,18 +202,15 @@
       z-index: 3;
     }
     .side-footer{
-      position: static;
+      position: relative;
       margin-top: 12px;
       padding: 10px 12px 14px;
       background: rgba(255,255,255,.06);
       border: 1px solid rgba(255,255,255,.10);
       border-radius: 16px;
-      z-index: auto;
-      position: relative;
-      z-index: 1;
-      pointer-events: none;
+      z-index: 2;
+      pointer-events: auto;
     }
-    .side-footer *{ pointer-events: auto; }
     .navbtn{border:none; cursor:pointer; padding:12px 14px; border-radius:16px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12); color:#fff; display:flex; align-items:center; gap:10px; font-weight:700; width:100%; min-height:46px; -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); transition:transform .15s ease, background .15s ease, border-color .15s ease; font-family:inherit;}
     .navbtn-icon{font-size:16px; flex-shrink:0; line-height:1;}
     .navbtn-label{flex:1; text-align:start; font-size:13.5px;}
