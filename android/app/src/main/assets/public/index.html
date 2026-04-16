@@ -1,9 +1,10 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.84">
+<html lang="ar" dir="rtl" data-appver="8.85">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.84</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; connect-src 'self' https://app.saddamalkadi.com https://api.saddamalkadi.com https://convert.saddamalkadi.com https://openrouter.ai https://api.openai.com https://generativelanguage.googleapis.com https://accounts.google.com https://www.googleapis.com https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://translate.googleapis.com; script-src 'self' 'unsafe-inline' https://accounts.google.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; frame-src 'self' https://accounts.google.com https://view.officeapps.live.com; worker-src 'self' blob:;" />
+    <title>AI Workspace Studio v8.85</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -4245,9 +4246,17 @@ body.chat-page-active #page-chat #regenBtn{
     padding: 2px 6px;
     gap: 3px;
   }
+  body.chat-page-active #page-chat #chatComposerCluster .chatbar-mode{
+    display: none !important;
+  }
+  body.chat-page-active #page-chat #chatComposerCluster #chatAttachBtn{
+    min-width: 36px;
+    min-height: 36px;
+  }
   body.chat-page-active #page-chat #chatComposerCluster #chatInput{
-    padding: 7px 6px !important;
+    padding: 7px 8px !important;
     min-height: 34px !important;
+    min-width: 140px !important;
   }
 }
 
@@ -4447,7 +4456,7 @@ body.dark #topRuntimeBadge{
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.84</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.85</div>
       </div>
     </aside>
 
@@ -5100,6 +5109,7 @@ body.dark #topRuntimeBadge{
 
               <!-- ── الاتصال ── -->
               <div class="settings-section-label">الاتصال والمصادقة</div>
+              <div class="status" id="settingsRuntimeLockNotice" style="display:none; margin-top:10px"></div>
               <div class="row" style="margin-top:6px">
                 <div class="col">
                   <label class="hint">نمط المصادقة</label>
@@ -5471,7 +5481,7 @@ body.dark #topRuntimeBadge{
     })();
   </script>
 
-<script src="app.js?v=884"></script>
+<script src="app.js?v=885"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -5485,7 +5495,7 @@ body.dark #topRuntimeBadge{
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v884";
+          const CURRENT_CACHE = "aistudio-cache-v885";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -5494,7 +5504,7 @@ body.dark #topRuntimeBadge{
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=884").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=885").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {
