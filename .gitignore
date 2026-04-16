@@ -1,6 +1,8 @@
 .wrangler/
+.android-sdk/
 node_modules/
 www/
+android/local.properties
 android/keystore.properties
 android/release-keystore.jks
 android/*.jks
