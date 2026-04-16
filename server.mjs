@@ -7,11 +7,41 @@ import { execSync } from 'node:child_process';
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 8080);
 const ROOT = resolve(process.env.ROOT_DIR || process.cwd());
+const ENABLE_STARTUP_GIT_PUSH = String(process.env.ENABLE_STARTUP_GIT_PUSH || '').trim().toLowerCase() === 'true';
+const ENABLE_WORKER_AUTOFIX = String(process.env.ENABLE_WORKER_AUTOFIX || '').trim().toLowerCase() === 'true';
+const BLOCKED_STATIC_PATHS = new Set([
+  '/server.mjs',
+  '/keys-worker.js',
+  '/convert-worker.js',
+  '/wrangler.jsonc',
+  '/wrangler.convert.jsonc',
+  '/package.json',
+  '/package-lock.json',
+  '/capacitor.config.json',
+  '/codemagic.yaml',
+  '/README.md',
+  '/GUIDE.ar.md',
+  '/TESTFLIGHT.ar.md',
+  '/IOS_CLOUD_BUILD.ar.md',
+  '/CODEX_HANDOFF.md',
+  '/replit.md',
+  '/_config.yml'
+]);
+const BLOCKED_STATIC_PREFIXES = [
+  '/docs/',
+  '/android/',
+  '/ios/',
+  '/scripts/',
+  '/attached_assets/',
+  '/assets/',
+  '/github/',
+  '/.github/'
+];
 
-// ── Startup: clear git lock and push to GitHub if token available ──────────
+// ── Startup: clear stale git lock only (never auto-push by default) ────────
 try { unlinkSync(join(ROOT, '.git/index.lock')); } catch (_) {}
 
-if (process.env.GITHUB_TOKEN) {
+if (ENABLE_STARTUP_GIT_PUSH && process.env.GITHUB_TOKEN) {
   try {
     const token = process.env.GITHUB_TOKEN;
     // Commit any uncommitted working-tree changes before pushing
@@ -35,6 +65,8 @@ if (process.env.GITHUB_TOKEN) {
     const msg = ((e.stdout||'')+(e.stderr||'')).toString().replace(process.env.GITHUB_TOKEN,'[TOKEN]');
     console.log('[startup] GitHub push skipped:', msg.substring(0, 200));
   }
+} else if (process.env.GITHUB_TOKEN) {
+  console.log('[startup] Git push automation disabled (set ENABLE_STARTUP_GIT_PUSH=true to opt in)');
 }
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -336,7 +368,11 @@ async function handleGoogleTtsProxy(request){
     console.log('[worker-fix] Error:', e.message);
   }
 }
-autoFixWorker();
+if (ENABLE_WORKER_AUTOFIX) {
+  autoFixWorker();
+} else {
+  console.log('[worker-fix] Disabled by default (set ENABLE_WORKER_AUTOFIX=true to opt in)');
+}
 // ──────────────────────────────────────────────────────────────────────────
 
 const MIME = {
@@ -488,6 +524,9 @@ function resolvePath(urlPath) {
   }
 
   const requested = clean === '/' ? '/index.html' : clean;
+  if (BLOCKED_STATIC_PATHS.has(requested) || BLOCKED_STATIC_PREFIXES.some((prefix) => requested.startsWith(prefix))) {
+    return null;
+  }
   const fullPath = resolve(normalize(join(ROOT, `.${requested}`)));
 
   const rel = relative(ROOT, fullPath);

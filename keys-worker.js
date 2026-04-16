@@ -199,9 +199,7 @@ function getSessionSecret(env) {
   return (
     env.APP_SESSION_SECRET ||
     env.AUTH_SESSION_SECRET ||
-    getServerKey(env) ||
-    env.GATEWAY_CLIENT_TOKEN ||
-    'aistudio-session-fallback'
+    getServerKey(env)
   ).trim();
 }
 
@@ -210,15 +208,13 @@ function getUpgradeSecret(env) {
     env.UPGRADE_CODE_SECRET ||
     env.APP_SESSION_SECRET ||
     env.AUTH_SESSION_SECRET ||
-    getServerKey(env) ||
-    'aistudio-upgrade-fallback'
+    getServerKey(env)
   ).trim();
 }
 
 function getUpgradeAdminToken(env) {
   return (
     env.UPGRADE_ADMIN_TOKEN ||
-    env.GATEWAY_CLIENT_TOKEN ||
     ''
   ).trim();
 }
@@ -307,8 +303,29 @@ function getWorkerHealth(env) {
   };
 }
 
+function getAllowedCorsOrigin(request) {
+  const origin = String(request.headers.get('Origin') || '').trim();
+  if (!origin) return '*';
+  try {
+    const parsed = new URL(origin);
+    const host = String(parsed.hostname || '').trim().toLowerCase();
+    const protocol = String(parsed.protocol || '').trim().toLowerCase();
+    const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host.endsWith('.localhost');
+    const isOfficialHost = (
+      host === 'app.saddamalkadi.com'
+      || host === 'saddamalkadi.com'
+      || host.endsWith('.saddamalkadi.com')
+    );
+    const isGitHubPagesHost = /(^|\.)saddamalkadi\.github\.io$/i.test(host);
+    if ((protocol === 'http:' || protocol === 'https:') && (isLocalHost || isOfficialHost || isGitHubPagesHost)) {
+      return parsed.origin;
+    }
+  } catch (_) {}
+  return 'https://app.saddamalkadi.com';
+}
+
 function withCors(response, request) {
-  const origin = request.headers.get('Origin') || '*';
+  const origin = getAllowedCorsOrigin(request);
   const h = new Headers(response.headers || {});
   h.set('Access-Control-Allow-Origin', origin);
   h.set('Vary', 'Origin');
@@ -826,7 +843,7 @@ async function handleAdminUpgradeCode(request, env) {
   const expected = getUpgradeAdminToken(env);
   const provided = String(request.headers.get('X-Admin-Token') || '').trim();
   let adminAuthorized = false;
-  if (expected && provided && provided === expected) {
+  if (expected && provided && timingSafeEqual(provided, expected)) {
     adminAuthorized = true;
   } else {
     try {

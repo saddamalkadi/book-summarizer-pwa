@@ -5,6 +5,7 @@ const root = process.cwd();
 const webDir = join(root, 'www');
 const files = [
   'CNAME',
+  '_config.yml',
   'index.html',
   'auth-bridge.html',
   'app.js',
@@ -41,7 +42,7 @@ if (existsSync(downloadsSrc)) {
   }
   const allowedNames = new Set([
     'ai-workspace-studio-latest.apk',
-    'ai-workspace-studio-v8.84.0-android-release.apk'
+    'ai-workspace-studio-v8.85.0-android-release.apk'
   ]);
   for (const name of readdirSync(downloadsSrc)) {
     if (!allowedNames.has(name)) continue;

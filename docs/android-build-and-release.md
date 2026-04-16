@@ -39,7 +39,7 @@ Set-Location 'C:\Users\Elite\OneDrive\Documenti\GitHub\book-summarizer-pwa\andro
 ```powershell
 $env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'
 $bt='C:\Users\Elite\AppData\Local\Android\Sdk\build-tools\36.1.0'
-& "$bt\apksigner.bat" sign --ks 'C:\Users\Elite\OneDrive\Documenti\GitHub\book-summarizer-pwa\android\release-keystore.jks' --ks-key-alias 'aiworkspace' --ks-pass pass:AiWsStore!2026#K9 --key-pass pass:AiWsStore!2026#K9 --out 'C:\Users\Elite\OneDrive\Documenti\GitHub\book-summarizer-pwa\android\app\build\outputs\apk\release\app-release.apk' 'C:\Users\Elite\OneDrive\Documenti\GitHub\book-summarizer-pwa\android\app\build\outputs\apk\release\app-release-unsigned.apk'
+& "$bt\apksigner.bat" sign --ks 'C:\path\to\release-keystore.jks' --ks-key-alias 'aiworkspace' --ks-pass env:AIWS_STORE_PASS --key-pass env:AIWS_KEY_PASS --out 'C:\path\to\app-release.apk' 'C:\path\to\app-release-unsigned.apk'
 ```
 
 #### APK signature verification
@@ -56,7 +56,7 @@ Verified certificate:
 #### AAB signing
 ```powershell
 $env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'
-& 'C:\Program Files\Android\Android Studio\jbr\bin\jarsigner.exe' -keystore 'C:\Users\Elite\OneDrive\Documenti\GitHub\book-summarizer-pwa\android\release-keystore.jks' -storepass 'AiWsStore!2026#K9' -keypass 'AiWsStore!2026#K9' -signedjar 'C:\Users\Elite\OneDrive\Documenti\GitHub\book-summarizer-pwa\android\app\build\outputs\bundle\release\app-release-signed.aab' 'C:\Users\Elite\OneDrive\Documenti\GitHub\book-summarizer-pwa\android\app\build\outputs\bundle\release\app-release.aab' aiworkspace
+& 'C:\Program Files\Android\Android Studio\jbr\bin\jarsigner.exe' -keystore 'C:\path\to\release-keystore.jks' -storepass "$env:AIWS_STORE_PASS" -keypass "$env:AIWS_KEY_PASS" -signedjar 'C:\path\to\app-release-signed.aab' 'C:\path\to\app-release.aab' aiworkspace
 ```
 
 #### AAB verification

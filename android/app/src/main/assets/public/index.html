@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.84">
+<html lang="ar" dir="rtl" data-appver="8.85">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.84</title>
+    <title>AI Workspace Studio v8.85</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -156,6 +156,33 @@
     body.dark .chat-inline-file-name{
       color: var(--muted) !important;
     }
+    body.dark .bubble.assistant .body code:not(pre code){
+      background: rgba(122,162,255,.14) !important;
+      color: #dce8ff !important;
+    }
+    body.dark .bubble.assistant .body blockquote{
+      color: var(--muted) !important;
+      border-inline-start-color: rgba(122,162,255,.7) !important;
+    }
+    body.dark .bubble.assistant .body th{
+      background: linear-gradient(180deg, rgba(42,58,92,.95), rgba(28,40,66,.98)) !important;
+      color: var(--text) !important;
+      border-color: rgba(122,162,255,.18) !important;
+    }
+    body.dark .bubble.assistant .body td{
+      color: var(--text-subtle) !important;
+      border-color: rgba(255,255,255,.08) !important;
+      background: rgba(255,255,255,.02) !important;
+    }
+    body.dark .bubble.assistant .body tr:hover td{
+      background: rgba(122,162,255,.08) !important;
+    }
+    body.dark *{
+      scrollbar-color: rgba(122,162,255,.6) rgba(17,27,47,.92);
+    }
+    body.dark *::-webkit-scrollbar-track{background:rgba(17,27,47,.92);}
+    body.dark *::-webkit-scrollbar-thumb{background:linear-gradient(180deg,rgba(122,162,255,.82),rgba(79,108,191,.82)); border-color:rgba(17,27,47,.92);}
+    body.dark *::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,rgba(152,181,255,.92),rgba(94,126,220,.92));}
 
     *{
       scrollbar-width: thin;
@@ -245,6 +272,21 @@
     .btn.danger{background:#ff3b30}
     .btn:disabled, .pill:disabled, input:disabled, select:disabled, textarea:disabled{opacity:.55; cursor:not-allowed; filter:saturate(.7);}
     .is-disabled{opacity:.55; cursor:not-allowed; filter:saturate(.7);}
+    .settings-lock-note{
+      margin-top:8px;
+      padding:10px 12px;
+      border-radius:12px;
+      border:1px solid rgba(27,102,255,.14);
+      background:#eef4ff;
+      color:#21406f;
+      font-size:12px;
+      line-height:1.8;
+    }
+    body.dark .settings-lock-note{
+      background:#15223a;
+      border-color:rgba(122,162,255,.22);
+      color:var(--text-subtle);
+    }
     .btn.sm{height:30px; padding:0 8px; border-radius:10px; font-size:11px;}
     .btn.icon{width:30px; height:30px; min-width:30px; padding:0; display:inline-flex; align-items:center; justify-content:center; font-size:14px;}
     .btn.with-label{display:inline-flex; align-items:center; gap:6px; min-height:34px;}
@@ -4447,7 +4489,7 @@ body.dark #topRuntimeBadge{
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.84</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.85</div>
       </div>
     </aside>
 
@@ -5120,6 +5162,9 @@ body.dark #topRuntimeBadge{
                   <input id="gatewayUrl" type="text" placeholder="مثال: https://api.saddamalkadi.com" />
                 </div>
               </div>
+              <div class="hint" id="gatewayPresetDisabledNote" style="margin-top:8px; display:none">
+                النسخة الرسمية تستخدم بوابة الإنتاج وإعدادات السحابة المعتمدة تلقائيًا، لذلك تم قفل هذه الحقول في هذه البيئة للحفاظ على الثبات ومنع mismatch.
+              </div>
 
               <!-- ── مفاتيح API ── -->
               <div class="settings-section-label" style="margin-top:14px">مفاتيح API</div>
@@ -5471,7 +5516,7 @@ body.dark #topRuntimeBadge{
     })();
   </script>
 
-<script src="app.js?v=884"></script>
+<script src="app.js?v=885"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -5485,7 +5530,7 @@ body.dark #topRuntimeBadge{
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v884";
+          const CURRENT_CACHE = "aistudio-cache-v885";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -5494,7 +5539,7 @@ body.dark #topRuntimeBadge{
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=884").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=885").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

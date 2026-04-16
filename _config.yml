@@ -1,0 +1,25 @@
+title: AI Workspace Studio
+exclude:
+  - README.md
+  - GUIDE.ar.md
+  - TESTFLIGHT.ar.md
+  - IOS_CLOUD_BUILD.ar.md
+  - CODEX_HANDOFF.md
+  - replit.md
+  - server.mjs
+  - keys-worker.js
+  - convert-worker.js
+  - wrangler.jsonc
+  - wrangler.convert.jsonc
+  - codemagic.yaml
+  - package.json
+  - package-lock.json
+  - capacitor.config.json
+  - android
+  - ios
+  - scripts
+  - docs
+  - attached_assets
+  - assets
+  - github
+  - .github
