@@ -7,11 +7,13 @@ import { execSync } from 'node:child_process';
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 8080);
 const ROOT = resolve(process.env.ROOT_DIR || process.cwd());
+const ENABLE_STARTUP_GIT_PUSH = String(process.env.ENABLE_STARTUP_GIT_PUSH || '').trim() === '1';
+const ENABLE_WORKER_AUTOFIX = String(process.env.ENABLE_WORKER_AUTOFIX || '').trim() === '1';
 
-// ── Startup: clear git lock and push to GitHub if token available ──────────
+// ── Optional startup maintenance (disabled by default) ─────────────────────
 try { unlinkSync(join(ROOT, '.git/index.lock')); } catch (_) {}
 
-if (process.env.GITHUB_TOKEN) {
+if (ENABLE_STARTUP_GIT_PUSH && process.env.GITHUB_TOKEN) {
   try {
     const token = process.env.GITHUB_TOKEN;
     // Commit any uncommitted working-tree changes before pushing
@@ -38,7 +40,7 @@ if (process.env.GITHUB_TOKEN) {
 }
 // ──────────────────────────────────────────────────────────────────────────
 
-// ── Startup: Auto-fix Cloudflare Worker if misconfigured ──────────────────
+// ── Optional startup: auto-fix Cloudflare Worker if misconfigured ─────────
 async function autoFixWorker() {
   const CF_TOKEN = process.env.CF_API_TOKEN;
   const OR_KEY   = process.env.OPENROUTER_API_KEY;
@@ -336,7 +338,9 @@ async function handleGoogleTtsProxy(request){
     console.log('[worker-fix] Error:', e.message);
   }
 }
-autoFixWorker();
+if (ENABLE_WORKER_AUTOFIX) {
+  autoFixWorker();
+}
 // ──────────────────────────────────────────────────────────────────────────
 
 const MIME = {
@@ -367,7 +371,7 @@ function setCommonHeaders(res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()');
 }
 
 function readBody(req) {

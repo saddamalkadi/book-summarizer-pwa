@@ -366,7 +366,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.84';
+  const WEB_RELEASE_LABEL = 'v8.85';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -890,6 +890,56 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     }
   }
 
+  function shouldLockManagedRuntimeSettings(){
+    return isManagedHostedRuntime() && !isNativePlatform();
+  }
+
+  function canEditRuntimeSettings(){
+    return !shouldLockManagedRuntimeSettings();
+  }
+
+  function syncManagedRuntimeLockUi(settings = getSettings()){
+    const locked = shouldLockManagedRuntimeSettings();
+    const auth = getAuthState();
+    const isAdmin = auth?.role === 'admin' && hasValidAuthSession(auth);
+    const runtimeInputs = [
+      'authMode',
+      'gatewayPreset',
+      'gatewayUrl',
+      'apiKey',
+      'geminiKey',
+      'gatewayToken',
+      'cloudConvertEndpoint',
+      'cloudConvertFallbackEndpoint',
+      'ocrCloudEndpoint',
+      'orReferer',
+      'orTitle',
+      'baseUrl'
+    ];
+    runtimeInputs.forEach((id) => {
+      const node = $(id);
+      if (!node) return;
+      if (!locked) {
+        node.disabled = false;
+        node.removeAttribute('aria-disabled');
+        return;
+      }
+      node.disabled = true;
+      node.setAttribute('aria-disabled', 'true');
+    });
+    const gatewayUrl = $('gatewayUrl');
+    if (gatewayUrl && locked) gatewayUrl.value = getPlatformServiceRoot();
+    const gatewayPreset = $('gatewayPreset');
+    if (gatewayPreset && locked) gatewayPreset.value = 'managed';
+    const runtimeLockNote = $('settingsRuntimeLockNotice');
+    if (runtimeLockNote) {
+      runtimeLockNote.style.display = locked ? '' : 'none';
+      runtimeLockNote.textContent = isAdmin
+        ? 'هذه النسخة الرسمية مقفلة على إعدادات التشغيل المعتمدة. يمكنك مراجعة الحالة، لكن تغيير مسارات البوابة أو المفاتيح معطل في النسخة العامة.'
+        : 'هذه النسخة الرسمية تستخدم إعدادات تشغيل معتمدة وثابتة. تم إخفاء تعديل مسارات البوابة والمفاتيح لتقليل الأخطاء والعبث أثناء التجربة.';
+    }
+  }
+
   /** Remove legacy overflow UI (#topbarScroll clone menu): use native horizontal scroll only. */
   function unwrapLegacyTopbarScroll(){
     const topActions = document.querySelector('.topbar .topbar-actions');
@@ -1183,8 +1233,10 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
 
   function buildAuthHeaders(settings){
     const h = {};
+    const auth = getAuthState();
     if (settings.authMode === 'gateway'){
       if (settings.gatewayToken) h['X-Client-Token'] = settings.gatewayToken;
+      if (auth.sessionToken) h['X-App-Session'] = auth.sessionToken;
       // Cloudflare/OpenAI-compatible gateways may still require Bearer auth.
       if (settings.apiKey) h['Authorization'] = `Bearer ${settings.apiKey}`;
     } else {
@@ -11532,10 +11584,12 @@ let pinOnly = false;
 
     refreshModeButtons();
     syncAccountUi();
+    syncManagedRuntimeLockUi(s);
     refreshStrategicWorkspace().catch(()=>{});
   }
 
   function saveSettingsFromUI(){
+    const runtimeLocked = shouldLockManagedRuntimeSettings();
     const authMode = $('authMode') ? $('authMode').value : 'browser';
     const gatewayPreset = $('gatewayPreset') ? $('gatewayPreset').value : 'managed';
     const gatewayTyped = $('gatewayUrl') ? normalizeEndpointUrl($('gatewayUrl').value) : '';
@@ -11602,8 +11656,8 @@ let pinOnly = false;
       baseUrl,
       model: selectedModel,
 
-      apiKey: $('apiKey').value.trim(),
-      geminiKey: $('geminiKey').value.trim(),
+      apiKey: runtimeLocked ? '' : $('apiKey').value.trim(),
+      geminiKey: runtimeLocked ? '' : $('geminiKey').value.trim(),
       systemPrompt: $('systemPrompt').value,
 
       maxOut: Number($('maxOut').value || 2000),
@@ -11615,13 +11669,13 @@ let pinOnly = false;
 
       toolsEnabled,
 
-      authMode,
-      gatewayUrl,
-      gatewayToken,
-      cloudConvertEndpoint,
-      cloudConvertFallbackEndpoint,
+      authMode: runtimeLocked ? 'gateway' : authMode,
+      gatewayUrl: runtimeLocked ? getPlatformServiceRoot() : gatewayUrl,
+      gatewayToken: runtimeLocked ? '' : gatewayToken,
+      cloudConvertEndpoint: runtimeLocked ? normalizeDocxCloudEndpoint(DEFAULT_SETTINGS.cloudConvertEndpoint) : cloudConvertEndpoint,
+      cloudConvertFallbackEndpoint: runtimeLocked ? '' : cloudConvertFallbackEndpoint,
       cloudRetryMax,
-      ocrCloudEndpoint,
+      ocrCloudEndpoint: runtimeLocked ? normalizeOcrCloudEndpoint(DEFAULT_SETTINGS.ocrCloudEndpoint) : ocrCloudEndpoint,
       ocrLang: ocrLang || 'ara+eng',
       freeMode,
       costGuard,
@@ -11632,8 +11686,8 @@ let pinOnly = false;
       allowCloudOcr,
       allowCloudPolish,
 
-      orReferer: $('orReferer').value.trim(),
-      orTitle: $('orTitle').value.trim()
+      orReferer: runtimeLocked ? '' : $('orReferer').value.trim(),
+      orTitle: runtimeLocked ? 'AI Workspace Studio' : $('orTitle').value.trim()
     });
 
     // sync toggles
@@ -11649,6 +11703,7 @@ let pinOnly = false;
     }
     loadRemoteAuthConfig(true).then(() => syncAccountUi()).catch(() => syncAccountUi());
     refreshModeButtons();
+    syncManagedRuntimeLockUi(s);
     refreshStrategicWorkspace().catch(()=>{});
     return s;
   }

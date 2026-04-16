@@ -196,23 +196,29 @@ function decodeBase64ToBytes(value) {
 }
 
 function getSessionSecret(env) {
-  return (
+  const explicit = (
     env.APP_SESSION_SECRET ||
     env.AUTH_SESSION_SECRET ||
-    getServerKey(env) ||
     env.GATEWAY_CLIENT_TOKEN ||
-    'aistudio-session-fallback'
+    ''
   ).trim();
+  if (explicit) return explicit;
+  const derived = getServerKey(env);
+  if (derived) return derived;
+  throw new Error('APP_SESSION_SECRET or AUTH_SESSION_SECRET must be configured on the worker.');
 }
 
 function getUpgradeSecret(env) {
-  return (
+  const explicit = (
     env.UPGRADE_CODE_SECRET ||
     env.APP_SESSION_SECRET ||
     env.AUTH_SESSION_SECRET ||
-    getServerKey(env) ||
-    'aistudio-upgrade-fallback'
+    ''
   ).trim();
+  if (explicit) return explicit;
+  const derived = getServerKey(env);
+  if (derived) return derived;
+  throw new Error('UPGRADE_CODE_SECRET or APP_SESSION_SECRET must be configured on the worker.');
 }
 
 function getUpgradeAdminToken(env) {
@@ -270,8 +276,12 @@ function getWorkerHealth(env) {
   const upstreamConfigured = !!getServerKey(env);
   const clientTokenRequired = !!String(env.GATEWAY_CLIENT_TOKEN || '').trim();
   const authConfig = getPublicAuthConfig(env);
-  const hasSessionSecret = !!getSessionSecret(env);
-  const hasUpgradeSecret = !!getUpgradeSecret(env);
+  const hasSessionSecret = (() => {
+    try { return !!getSessionSecret(env); } catch (_) { return false; }
+  })();
+  const hasUpgradeSecret = (() => {
+    try { return !!getUpgradeSecret(env); } catch (_) { return false; }
+  })();
   const adminPasswordReady = !!getAdminPassword(env);
   const adminGoogleReady = !!getAdminEmail(env) && authConfig.clientIdConfigured;
   const adminLoginReady = adminPasswordReady || adminGoogleReady;
@@ -308,14 +318,25 @@ function getWorkerHealth(env) {
 }
 
 function withCors(response, request) {
-  const origin = request.headers.get('Origin') || '*';
+  const origin = request.headers.get('Origin') || '';
   const h = new Headers(response.headers || {});
-  h.set('Access-Control-Allow-Origin', origin);
-  h.set('Vary', 'Origin');
+  const allowedOrigin = resolveAllowedOrigin(origin);
+  if (allowedOrigin) {
+    h.set('Access-Control-Allow-Origin', allowedOrigin);
+    h.set('Vary', 'Origin');
+  } else if (!origin) {
+    h.set('Access-Control-Allow-Origin', '*');
+  } else {
+    h.set('Access-Control-Allow-Origin', 'null');
+    h.set('Vary', 'Origin');
+  }
   h.set('Access-Control-Allow-Methods', 'GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS');
   h.set('Access-Control-Allow-Headers', [
     'Authorization',
     'Content-Type',
+    'Accept',
+    'Cache-Control',
+    'Pragma',
     'X-Client-Token',
     'X-App-Session',
     'X-Admin-Token',
@@ -326,6 +347,27 @@ function withCors(response, request) {
   h.delete('alt-svc');
   h.set('Alt-Svc', 'clear');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers: h });
+}
+
+function resolveAllowedOrigin(origin = '') {
+  const value = String(origin || '').trim();
+  if (!value) return '';
+  try {
+    const parsed = new URL(value);
+    const host = String(parsed.hostname || '').toLowerCase();
+    if (
+      host === 'app.saddamalkadi.com'
+      || host === 'saddamalkadi.com'
+      || host.endsWith('.saddamalkadi.com')
+      || host === 'localhost'
+      || host === '127.0.0.1'
+    ) {
+      return parsed.origin;
+    }
+    return '';
+  } catch (_) {
+    return '';
+  }
 }
 
 async function handleGoogleAuth(request, env) {
@@ -886,9 +928,20 @@ async function handleGateway(request, env, url) {
     }, 200), request);
   }
 
+  if (url.pathname !== '/v1/models') {
+    try {
+      await requireSession(request, env);
+    } catch (_) {
+      return withCors(jsonResponse({
+        error: 'Authentication required.',
+        code: 'AUTH_SESSION_REQUIRED'
+      }, 401), request);
+    }
+  }
+
   if (!authHeader) {
     return withCors(jsonResponse({
-      error: 'Missing API key. Set OPENROUTER_API_KEY in Cloudflare Worker Secrets, or send Authorization header for temporary browser-side auth.',
+      error: 'The AI upstream key is not configured on the server.',
       code: 'GATEWAY_MISSING_UPSTREAM_KEY',
       configured: false
     }, 401), request);
