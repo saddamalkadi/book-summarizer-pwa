@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.90">
+<html lang="ar" dir="rtl" data-appver="8.91">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -4445,7 +4445,7 @@ body.dark #topRuntimeBadge{
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.90</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.91</div>
       </div>
     </aside>
 
@@ -5469,7 +5469,7 @@ body.dark #topRuntimeBadge{
     })();
   </script>
 
-<script src="app.js?v=890"></script>
+<script src="app.js?v=891"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -5483,7 +5483,7 @@ body.dark #topRuntimeBadge{
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v890";
+          const CURRENT_CACHE = "aistudio-cache-v891";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -5492,7 +5492,7 @@ body.dark #topRuntimeBadge{
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=890").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=891").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

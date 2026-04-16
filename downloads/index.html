@@ -3,10 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="robots" content="noindex, nofollow" />
+  <meta name="robots" content="noindex,nofollow" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <title>تنزيل تطبيق AI Workspace Studio</title>
   <meta name="theme-color" content="#081121" />
-  <meta name="robots" content="noindex,nofollow" />
   <style>
     :root{
       --bg:#081121;
@@ -112,16 +114,16 @@
         <h2>ملف التثبيت المباشر</h2>
         <p>استخدم هذا الملف للتثبيت اليدوي على الهاتف. النسخة مبنية من نفس شفرة الويب المعتمدة في المستودع.</p>
         <ul>
-          <li>الإصدار: <code>v8.90 RC</code></li>
+          <li>الإصدار: <code>v8.91 RC</code></li>
           <li>الحد الأدنى للنظام: <code>Android 7.0+</code></li>
           <li>نوع البناء: <code>release</code> (R8 + shrinkResources)</li>
         </ul>
         <div class="actions">
-          <a class="btn primary" href="./ai-workspace-studio-latest.apk" download="ai-workspace-studio-latest.apk">تنزيل APK</a>
-          <a class="btn ghost" href="https://github.com/saddamalkadi/book-summarizer-pwa/blob/main/downloads/ai-workspace-studio-latest.apk?raw=1" target="_blank" rel="noopener noreferrer">رابط احتياطي</a>
+          <a class="btn primary" id="apkPrimary" href="./ai-workspace-studio-latest.apk" download="ai-workspace-studio-latest.apk">تنزيل APK</a>
+          <a class="btn ghost" href="https://github.com/saddamalkadi/book-summarizer-pwa/releases/latest/download/AI-Workspace-Studio-latest.apk" target="_blank" rel="noopener noreferrer">رابط احتياطي</a>
           <a class="btn ghost" href="../">فتح نسخة الويب</a>
         </div>
-        <div class="meta">اسم الإصدار المحدد: <code>ai-workspace-studio-v8.90.0-android-release.apk</code></div>
+        <div class="meta">اسم الإصدار المحدد: <code>ai-workspace-studio-v8.91.0-android-release.apk</code></div>
       </article>
     </section>
 
@@ -132,5 +134,14 @@
       (PWA) حتى يتوفر إخراج تنفيذي عبر App Store عند الجاهزية.
     </section>
   </div>
+  <script>
+    (function(){
+      try{
+        var bust = Date.now();
+        var link = document.getElementById('apkPrimary');
+        if (link) link.href = './ai-workspace-studio-latest.apk?v=' + bust;
+      }catch(_){ /* noop */ }
+    })();
+  </script>
 </body>
 </html>
