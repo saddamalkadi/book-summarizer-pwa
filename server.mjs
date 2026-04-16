@@ -185,7 +185,9 @@ function resolvePath(urlPath) {
     return null;
   }
 
-  const requested = clean === '/' ? '/index.html' : clean;
+  const requested = clean === '/'
+    ? '/index.html'
+    : (clean.endsWith('/') ? `${clean}index.html` : clean);
   if (!isPubliclyServable(requested)) return null;
 
   const fullPath = resolve(normalize(join(ROOT, `.${requested}`)));
