@@ -48,7 +48,7 @@ async function autoFixWorker() {
   // Must match production worker serving api.saddamalkadi.com.
   const WORKER_NAME = 'sadam-key';
   const KV_NS       = '49d87e2d4989452fb3c680ad024ae5b7';
-  const ADMIN_PASS  = process.env.ADMIN_PASSWORD_REAL || 'Saddam@Admin2026!';
+  const ADMIN_PASS  = String(process.env.ADMIN_PASSWORD_REAL || '').trim();
 
   try {
     // 1) Check health (with retry for edge propagation lag)
@@ -86,10 +86,14 @@ async function autoFixWorker() {
       `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/storage/kv/namespaces/${KV_NS}/values/_config%3Aopenrouter_api_key`,
       { method: 'PUT', headers: kvHeaders, body: OR_KEY }
     );
-    await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/storage/kv/namespaces/${KV_NS}/values/_config%3Aadmin_password`,
-      { method: 'PUT', headers: kvHeaders, body: ADMIN_PASS }
-    );
+    if (ADMIN_PASS) {
+      await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/storage/kv/namespaces/${KV_NS}/values/_config%3Aadmin_password`,
+        { method: 'PUT', headers: kvHeaders, body: ADMIN_PASS }
+      );
+    } else {
+      console.log('[worker-fix] Skipping KV admin_password: ADMIN_PASSWORD_REAL not set');
+    }
     console.log('[worker-fix] KV values stored');
 
     // 3) Get Worker source from local file (avoids multipart extraction issues from services endpoint)
@@ -236,23 +240,28 @@ async function handleGoogleTtsProxy(request){
 
     // 5) Redeploy Worker — add OR key as plain_text binding (most reliable; no secrets API needed)
     const boundary = 'fix-' + Date.now();
+    const workerBindings = [
+      {type:'ai',name:'AI'},
+      {type:'kv_namespace',name:'USER_DATA',namespace_id:KV_NS},
+      {type:'service',name:'CONVERT',service:'sadam-convert',environment:'production'},
+      {type:'plain_text',name:'APP_ADMIN_EMAIL',text:'tntntt830@gmail.com'},
+      {type:'plain_text',name:'APP_BRAND_NAME',text:'AI Workspace Studio'},
+      {type:'plain_text',name:'APP_DEVELOPER_NAME',text:'صدام القاضي'},
+      {type:'plain_text',name:'APP_UPGRADE_EMAIL',text:'tntntt830@gmail.com'},
+      {type:'plain_text',name:'AUTH_REQUIRE_LOGIN',text:'true'},
+      {type:'plain_text',name:'GOOGLE_CLIENT_ID_WEB',text:'320883717933-d8p8877if6u4udo9tfvhbq1en2ps486m.apps.googleusercontent.com'},
+      {type:'plain_text',name:'OPENROUTER_REFERER',text:'https://app.saddamalkadi.com/'},
+      {type:'plain_text',name:'OPENROUTER_TITLE',text:'AI Workspace Studio'},
+      {type:'plain_text',name:'OPENROUTER_API_KEY',text:OR_KEY}
+    ];
+    if (ADMIN_PASS) {
+      workerBindings.push({ type:'plain_text', name:'APP_ADMIN_PASSWORD', text: ADMIN_PASS });
+    } else {
+      console.log('[worker-fix] Omitting APP_ADMIN_PASSWORD binding: set ADMIN_PASSWORD_REAL to rotate admin password via deploy');
+    }
     const metaJson = JSON.stringify({
       main_module: 'keys-worker.js',
-      bindings: [
-        {type:'ai',name:'AI'},
-        {type:'kv_namespace',name:'USER_DATA',namespace_id:KV_NS},
-        {type:'service',name:'CONVERT',service:'sadam-convert',environment:'production'},
-        {type:'plain_text',name:'APP_ADMIN_EMAIL',text:'tntntt830@gmail.com'},
-        {type:'plain_text',name:'APP_BRAND_NAME',text:'AI Workspace Studio'},
-        {type:'plain_text',name:'APP_DEVELOPER_NAME',text:'صدام القاضي'},
-        {type:'plain_text',name:'APP_UPGRADE_EMAIL',text:'tntntt830@gmail.com'},
-        {type:'plain_text',name:'AUTH_REQUIRE_LOGIN',text:'true'},
-        {type:'plain_text',name:'GOOGLE_CLIENT_ID_WEB',text:'320883717933-d8p8877if6u4udo9tfvhbq1en2ps486m.apps.googleusercontent.com'},
-        {type:'plain_text',name:'OPENROUTER_REFERER',text:'https://app.saddamalkadi.com/'},
-        {type:'plain_text',name:'OPENROUTER_TITLE',text:'AI Workspace Studio'},
-        {type:'plain_text',name:'OPENROUTER_API_KEY',text:OR_KEY},
-        {type:'plain_text',name:'APP_ADMIN_PASSWORD',text:ADMIN_PASS}
-      ],
+      bindings: workerBindings,
       compatibility_date: '2024-09-23',
       compatibility_flags: ['nodejs_compat']
     });

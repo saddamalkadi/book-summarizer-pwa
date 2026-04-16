@@ -5471,7 +5471,7 @@ body.dark #topRuntimeBadge{
     })();
   </script>
 
-<script src="app.js?v=881"></script>
+<script src="app.js?v=884"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -5485,7 +5485,7 @@ body.dark #topRuntimeBadge{
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v881";
+          const CURRENT_CACHE = "aistudio-cache-v884";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }

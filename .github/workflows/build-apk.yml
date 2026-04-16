@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   build:
+    if: ${{ github.event_name != 'push' || github.event.head_commit == null || !contains(github.event.head_commit.message, '[skip ci]') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -62,19 +63,24 @@ jobs:
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
           echo "Version: $VERSION_NAME ($VERSION_CODE)"
 
-      - name: Build release APK
+      - name: Build release APK (debug keystore if no keystore.properties)
         working-directory: android
         run: ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: Stage APK for distribution
+      - name: Stage APK for Pages + GitHub Release
         run: |
-          cp android/app/build/outputs/apk/release/app-release.apk \
-             AI-Workspace-Studio-latest.apk
-          cp android/app/build/outputs/apk/release/app-release.apk \
-             downloads/ai-workspace-studio-latest.apk
-          cp android/app/build/outputs/apk/release/app-release.apk \
-             "downloads/ai-workspace-studio-v${{ steps.version.outputs.version_name }}-android-release.apk"
+          mkdir -p downloads
+          SRC_APK="android/app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$SRC_APK" ]; then
+            echo "Release APK missing at $SRC_APK" >&2
+            exit 1
+          fi
+          cp "$SRC_APK" "AI-Workspace-Studio-latest.apk"
+          cp "$SRC_APK" "downloads/ai-workspace-studio-latest.apk"
+          VN="${{ steps.version.outputs.version_name }}"
+          cp "$SRC_APK" "downloads/ai-workspace-studio-v${VN}-android-release.apk"
           echo "APK size: $(du -sh AI-Workspace-Studio-latest.apk)"
+          ls -la downloads/
 
       - name: Upload APK artifact (GitHub Actions)
         uses: actions/upload-artifact@v4
@@ -94,7 +100,7 @@ jobs:
             **تطبيق مساحة العمل العربية بالذكاء الاصطناعي**
 
             - **Build**: ${{ steps.version.outputs.version_code }}
-            - **Platform**: Android 7.0+ (API ${{ steps.version.outputs.version_code >= '851' && '24' || '24' }}+)
+            - **Platform**: Android 7.0+ (API 24+)
             - **Type**: Release APK (تثبيت مباشر للتجربة — ليس عبر متجر Google Play)
 
             ### التثبيت
@@ -111,3 +117,15 @@ jobs:
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit APK to downloads/ for GitHub Pages
+        run: |
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add downloads/*.apk
+          if git diff --staged --quiet; then
+            echo "No APK changes to commit"
+          else
+            git commit -m "chore: sync Android release APK to downloads [skip ci]"
+            git push
+          fi
