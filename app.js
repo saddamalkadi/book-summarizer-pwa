@@ -11326,7 +11326,6 @@ let pinOnly = false;
           <div class="actions app-release-actions">
             <a class="btn ghost sm" href="${APK_BACKUP_URL}" target="_blank" rel="noopener noreferrer">رابط APK الاحتياطي</a>
           </div>
-          ${aabRow}
           <div class="hint app-release-footnote">
             Android 7.0+ • قم بتفعيل "تثبيت من مصادر غير معروفة" في الإعدادات قبل التثبيت
           </div>
