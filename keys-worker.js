@@ -326,7 +326,9 @@ function withCors(response, request, env = {}) {
   h.set('Access-Control-Allow-Methods', 'GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS');
   h.set('Access-Control-Allow-Headers', [
     'Authorization',
+    'Cache-Control',
     'Content-Type',
+    'Pragma',
     'X-Client-Token',
     'X-App-Session',
     'X-Admin-Token',
