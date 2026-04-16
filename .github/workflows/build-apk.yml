@@ -62,15 +62,14 @@ jobs:
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
           echo "Version: $VERSION_NAME ($VERSION_CODE)"
 
-      - name: Build debug APK
+      - name: Build release APK and AAB
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
 
-      - name: Rename APK for release
+      - name: Rename APK for GitHub Release artifact
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk \
+          cp android/app/build/outputs/apk/release/app-release.apk \
              AI-Workspace-Studio-latest.apk
-          echo "APK size: $(du -sh AI-Workspace-Studio-latest.apk)"
 
       - name: Upload APK artifact (GitHub Actions)
         uses: actions/upload-artifact@v4
@@ -89,21 +88,22 @@ jobs:
 
             **تطبيق مساحة العمل العربية بالذكاء الاصطناعي**
 
-            - **Build**: ${{ steps.version.outputs.version_code }}
-            - **Platform**: Android 7.0+ (API ${{ steps.version.outputs.version_code >= '851' && '24' || '24' }}+)
-            - **Type**: Debug APK (تثبيت مباشر — ليس عبر متجر Google Play)
+            - **versionCode**: ${{ steps.version.outputs.version_code }}
+            - **Platform**: Android 7.0+ (API 24+)
+            - **Build**: `assembleRelease` / `bundleRelease` (signed with release keystore when `keystore.properties` is configured in the repo secrets workflow; otherwise debug signing for installability)
 
-            ### التثبيت
+            ### التثبيت (APK)
             1. حمّل ملف `AI-Workspace-Studio-latest.apk`
-            2. فعّل "مصادر غير معروفة" في إعدادات الأمان
+            2. فعّل «مصادر غير معروفة» إذا لزم
             3. افتح الملف وثبّت التطبيق
 
-            ### الجديد
-            - مساحة العمل العربية بالذكاء الاصطناعي مع دعم OpenRouter
-            - محادثة عربية مع TTS/STT
-            - تحليل الملفات والمستندات
-            - دعم Google OAuth وتسجيل الدخول بالبريد
-          files: AI-Workspace-Studio-latest.apk
+            ### الملفات على GitHub Pages
+            - `downloads/ai-workspace-studio-latest.apk`
+            - `downloads/ai-workspace-studio-v${{ steps.version.outputs.version_name }}-android-release.apk`
+            - AAB (للنشر الداخلي): `downloads/ai-workspace-studio-v${{ steps.version.outputs.version_name }}-android-release.aab`
+          files: |
+            AI-Workspace-Studio-latest.apk
+            android/app/build/outputs/bundle/release/app-release.aab
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
