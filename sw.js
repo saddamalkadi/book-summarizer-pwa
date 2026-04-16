@@ -1,5 +1,5 @@
 // AI Workspace Studio - Service Worker
-const APP_VERSION = "890";
+const APP_VERSION = "891";
 const CACHE_NAME = `aistudio-cache-v${APP_VERSION}`;
 const CORE = [
   "./",
@@ -15,7 +15,14 @@ const CORE = [
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
-    await cache.addAll(CORE);
+    // Use no-cache on pre-cache fetches so stale CDNs never poison the shell.
+    // One asset failing must not block SW install.
+    await Promise.all(CORE.map(async (url) => {
+      try {
+        const res = await fetch(url, { cache: "no-cache" });
+        if (res && res.status === 200) await cache.put(url, res.clone());
+      } catch (_) {}
+    }));
     await self.skipWaiting();
   })());
 });
@@ -32,6 +39,12 @@ self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") {
     self.skipWaiting();
   }
+  if (event.data && event.data.type === "CLEAR_CACHE") {
+    event.waitUntil((async () => {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    })());
+  }
 });
 
 async function swr(request){
@@ -47,7 +60,7 @@ async function swr(request){
 async function networkFirst(request){
   const cache = await caches.open(CACHE_NAME);
   try {
-    const res = await fetch(request);
+    const res = await fetch(request, { cache: 'no-store' });
     if (res && res.status === 200) cache.put(request, res.clone());
     return res;
   } catch (_) {
@@ -83,7 +96,16 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(networkFirst(event.request));
     return;
   }
-  if (url.pathname.endsWith("/app.js") || url.pathname.endsWith("/index.html") || url.pathname.endsWith("/auth-bridge.html")) {
+  // App shell + primary code always network-first so users never get stuck on an old release.
+  if (
+    url.pathname.endsWith("/app.js") ||
+    url.pathname.endsWith("/index.html") ||
+    url.pathname.endsWith("/auth-bridge.html") ||
+    url.pathname.endsWith("/manifest.webmanifest") ||
+    url.pathname.endsWith("/sw.js") ||
+    url.pathname === "/" ||
+    url.pathname === ""
+  ) {
     event.respondWith(networkFirst(event.request));
     return;
   }

@@ -367,7 +367,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.90';
+  const WEB_RELEASE_LABEL = 'v8.91';
   const RELEASE_CHANNEL = 'rc';
   const HIDE_PUBLIC_AAB = true;
   const DISABLE_RUNTIME_ENDPOINT_EDITING_FOR_MANAGED = true;
@@ -1990,7 +1990,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     if (/dash\.cloudflare\.com$/.test(host) || path.includes('/workers/services/view/') || path.includes('/production/settings')){
       return {
         ok:false,
-        reason:'هذا رابط لوحة Cloudflare وليس رابط الـ Worker المباشر. استخدم Gateway URL مثل https://sadam-key...workers.dev'
+        reason:'هذا الرابط هو لوحة إدارة وليس رابط البوابة المباشر. استخدم رابط البوابة الرسمي https://api.saddamalkadi.com.'
       };
     }
     if (/github\.io$/.test(host)){
@@ -2002,7 +2002,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     if (/(^|\/)(convert\/pdf-to-docx|pdf-to-docx|ocr)(\/|$)/.test(path)){
       return {
         ok:false,
-        reason:'هذا رابط خدمة التحويل أو OCR، وليس رابط بوابة الدردشة. استخدم Worker الدردشة مثل sadam-key...workers.dev.'
+        reason:'هذا الرابط لخدمة التحويل أو OCR، وليس بوابة الدردشة. استخدم رابط البوابة الرسمي https://api.saddamalkadi.com.'
       };
     }
     const normalized = raw
@@ -4434,7 +4434,7 @@ function refreshDeepSearchBtn(){
   }
 
   function getAndroidGoogleSetupHint(){
-    return `أضف Android OAuth Client في Google Cloud باستخدام Package Name: ${ANDROID_GOOGLE_SETUP.packageName} وSHA-1: ${ANDROID_GOOGLE_SETUP.releaseSha1}.`;
+    return 'تعذر تسجيل الدخول بحساب Google على هذه النسخة. استخدم نسخة الويب لتسجيل الدخول عبر Google، أو جرّب لاحقًا.';
   }
 
   function maybeShowNativeAuthDialog(message, tone = 'error'){
