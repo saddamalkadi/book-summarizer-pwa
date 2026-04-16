@@ -1,21 +1,28 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# Capacitor WebView app - keep WebView JS interfaces
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Keep Capacitor plugin classes
+-keep class com.getcapacitor.** { *; }
+-keep class * extends com.getcapacitor.Plugin { *; }
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Keep native Google One Tap sign-in
+-keep class com.google.android.gms.** { *; }
+-keep class com.google.android.libraries.identity.** { *; }
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Keep Capacitor Cordova plugins
+-keep class org.apache.cordova.** { *; }
+
+# Don't warn about missing classes from optional dependencies
+-dontwarn com.google.android.gms.**
+-dontwarn org.apache.cordova.**
+-dontwarn com.getcapacitor.**
+
+# Keep JavaScript interface annotations
+-keepattributes JavascriptInterface
+
+# Keep native methods
+-keepclasseswithmembernames class * {
+    native <methods>;
+}

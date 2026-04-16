@@ -4,6 +4,7 @@ www/
 android/keystore.properties
 android/release-keystore.jks
 android/*.jks
+android/*.keystore
 android/RELEASE_SIGNING_INFO.local.txt
 android/.gradle-user-home/
 android/.gradle-user/
@@ -11,3 +12,8 @@ android/.gradle-user/
 android/.android-user/
 .android-user/
 *.idsig
+.env
+.env.*
+*.pem
+*.key
+*.p12
