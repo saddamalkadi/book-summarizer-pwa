@@ -57,18 +57,18 @@ jobs:
         id: version
         run: |
           VERSION_NAME=$(grep 'versionName' android/app/build.gradle | grep -oP '"\K[^"]+')
-          VERSION_CODE=$(grep 'versionCode' android/app/build.gradle | grep -oP '\d+')
+          VERSION_CODE=$(grep 'versionCode' android/app/build.gradle | grep -oP '^\s*versionCode\s+\K[0-9]+' || grep 'versionCode' android/app/build.gradle | grep -oP '\d+' | head -1)
           echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
           echo "Version: $VERSION_NAME ($VERSION_CODE)"
 
-      - name: Build debug APK
+      - name: Build release APK (signed with debug key when no release keystore)
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: Rename APK for release
+      - name: Rename APK for distribution
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk \
+          cp android/app/build/outputs/apk/release/app-release.apk \
              AI-Workspace-Studio-latest.apk
           echo "APK size: $(du -sh AI-Workspace-Studio-latest.apk)"
 
@@ -90,17 +90,17 @@ jobs:
             **تطبيق مساحة العمل العربية بالذكاء الاصطناعي**
 
             - **Build**: ${{ steps.version.outputs.version_code }}
-            - **Platform**: Android 7.0+ (API ${{ steps.version.outputs.version_code >= '851' && '24' || '24' }}+)
-            - **Type**: Debug APK (تثبيت مباشر — ليس عبر متجر Google Play)
+            - **النظام**: Android 7.0+ (API 24+)
+            - **النوع**: APK للتثبيت المباشر (نسخة تجريبية قبل النشر في المتجر)
 
             ### التثبيت
             1. حمّل ملف `AI-Workspace-Studio-latest.apk`
             2. فعّل "مصادر غير معروفة" في إعدادات الأمان
             3. افتح الملف وثبّت التطبيق
 
-            ### الجديد
-            - مساحة العمل العربية بالذكاء الاصطناعي مع دعم OpenRouter
-            - محادثة عربية مع TTS/STT
+            ### المميزات
+            - مساحة عمل عربية بالذكاء الاصطناعي مع دعم OpenRouter
+            - دردشة عربية مع TTS/STT
             - تحليل الملفات والمستندات
             - دعم Google OAuth وتسجيل الدخول بالبريد
           files: AI-Workspace-Studio-latest.apk

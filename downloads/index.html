@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>تنزيل تطبيق Android - AI Workspace Studio</title>
   <meta name="theme-color" content="#081121" />
+  <meta name="robots" content="noindex, nofollow" />
   <style>
     :root{
       --bg:#081121;
@@ -27,7 +28,7 @@
       min-height:100vh;
       padding:24px;
     }
-    .wrap{max-width:1100px; margin:0 auto; display:grid; gap:18px;}
+    .wrap{max-width:860px; margin:0 auto; display:grid; gap:18px;}
     .hero{
       display:grid; gap:16px;
       background:linear-gradient(145deg, rgba(255,255,255,.07), rgba(255,255,255,.03));
@@ -41,7 +42,6 @@
     .brand strong{display:block; font-size:28px;}
     .brand span{display:block; color:rgba(255,255,255,.8); margin-top:4px;}
     .hero p{margin:0; line-height:1.9; color:rgba(255,255,255,.9);}
-    .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px;}
     .card{
       background:var(--panel);
       color:var(--text);
@@ -57,13 +57,14 @@
       width:max-content; padding:6px 12px; border-radius:999px;
       background:#edf3ff; color:#123164; font-size:12px; font-weight:1000;
     }
+    .tag.beta{background:#fff7e6; color:#7c4a00;}
     .card h2{margin:0; font-size:22px;}
     .card p,.card li{margin:0; color:var(--muted); line-height:1.9;}
     .card ul{margin:0; padding:0 18px 0 0; display:grid; gap:6px;}
     .actions{display:flex; flex-wrap:wrap; gap:10px; margin-top:4px;}
     .btn{
       text-decoration:none; border-radius:14px; padding:12px 16px; font-weight:1000;
-      display:inline-flex; align-items:center; justify-content:center;
+      display:inline-flex; align-items:center; justify-content:center; gap:8px;
     }
     .btn.primary{background:var(--pri); color:#fff;}
     .btn.ghost{background:#eef3ff; color:var(--pri2);}
@@ -83,6 +84,27 @@
       padding:2px 6px;
       font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
     }
+    .steps{
+      display:grid;
+      gap:12px;
+      counter-reset:steps;
+    }
+    .step{
+      display:flex;
+      align-items:flex-start;
+      gap:12px;
+    }
+    .step-num{
+      width:28px; height:28px; min-width:28px;
+      border-radius:50%;
+      background:var(--pri);
+      color:#fff;
+      display:flex; align-items:center; justify-content:center;
+      font-weight:1000; font-size:13px;
+      flex-shrink:0;
+      margin-top:2px;
+    }
+    .step-text{line-height:1.8; color:var(--muted);}
     @media (max-width:640px){
       body{padding:14px;}
       .hero,.card{border-radius:22px; padding:18px;}
@@ -97,52 +119,58 @@
         <img src="../logo.svg" alt="شعار AI Workspace Studio" />
         <div>
           <strong>AI Workspace Studio</strong>
-          <span>أحدث مخرجات Android الجاهزة للتنزيل</span>
+          <span>تنزيل النسخة التجريبية لـ Android</span>
         </div>
       </div>
-      <p>هذه الصفحة مخصصة لتنزيل أحدث نسخة Android الجاهزة. الروابط الأساسية تعمل من نفس الموقع مباشرة، مع إبقاء روابط احتياطية من GitHub عند الحاجة.</p>
+      <p>هذه الصفحة مخصصة لتنزيل نسخة Android التجريبية. هذه نسخة ما قبل الإطلاق للتجربة من قبل المستخدمين المختارين قبل النشر في المتجر الرسمي.</p>
     </section>
 
-    <section class="grid">
-      <article class="card">
+    <article class="card">
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
         <span class="tag">Android APK</span>
-        <h2>ملف التثبيت المباشر</h2>
-        <p>استخدم هذا الملف للتثبيت المباشر على الهاتف. هذه النسخة محدثة ومبنية من نفس شِل الويب الحالي.</p>
-        <ul>
-          <li>الإصدار: <code>v8.83 release</code></li>
-          <li>الحد الأدنى للنظام: <code>Android 7.0+</code></li>
-          <li>الأفضل للتثبيت اليدوي المباشر</li>
-        </ul>
-        <div class="actions">
-          <a class="btn primary" href="./ai-workspace-studio-latest.apk" download="ai-workspace-studio-latest.apk">تنزيل APK</a>
-          <a class="btn ghost" href="https://github.com/saddamalkadi/book-summarizer-pwa/blob/main/downloads/ai-workspace-studio-latest.apk?raw=1" target="_blank" rel="noopener noreferrer">رابط احتياطي</a>
-        </div>
-        <div class="meta">يمكنك أيضًا تنزيل ملف الإصدار المحدد باسم <code>ai-workspace-studio-v8.83-android-release.apk</code>.</div>
-      </article>
+        <span class="tag beta">نسخة تجريبية</span>
+      </div>
+      <h2>ملف التثبيت المباشر</h2>
+      <p>استخدم هذا الملف للتثبيت المباشر على الهاتف. هذه نسخة ما قبل الإطلاق مبنية من نفس الكود النهائي المعتمد.</p>
+      <ul>
+        <li>الإصدار: <code>v8.84 pre-release</code></li>
+        <li>الحد الأدنى للنظام: <code>Android 7.0+</code></li>
+        <li>نسخة release موقّعة — جاهزة للتثبيت المباشر</li>
+      </ul>
+      <div class="actions">
+        <a class="btn primary" href="./ai-workspace-studio-latest.apk" download="ai-workspace-studio-latest.apk">⬇ تنزيل APK</a>
+        <a class="btn ghost" href="../">فتح نسخة الويب</a>
+      </div>
+      <div class="meta">ملف التثبيت: <code>ai-workspace-studio-v8.84.apk</code> · Android 7.0 (API 24)+</div>
+    </article>
 
-      <article class="card">
-        <span class="tag">Android AAB</span>
-        <h2>حزمة Google Play</h2>
-        <p>هذا الملف مخصص لرفع التطبيق إلى Google Play Console، وليس للتثبيت المباشر على الهاتف.</p>
-        <ul>
-          <li>الإصدار: <code>v8.83 release</code></li>
-          <li>مناسب للنشر على المتجر</li>
-          <li>متوافق مع نفس نسخة Android الحالية</li>
-        </ul>
-        <div class="actions">
-          <a class="btn primary" href="./ai-workspace-studio-latest.aab" download="ai-workspace-studio-latest.aab">تنزيل AAB</a>
-          <a class="btn ghost" href="https://github.com/saddamalkadi/book-summarizer-pwa/blob/main/downloads/ai-workspace-studio-latest.aab?raw=1" target="_blank" rel="noopener noreferrer">رابط احتياطي</a>
-          <a class="btn ghost" href="../">فتح نسخة الويب</a>
+    <article class="card">
+      <h2>خطوات التثبيت</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-text">حمّل ملف APK من الرابط أعلاه على هاتفك مباشرة.</div>
         </div>
-        <div class="meta">يمكنك أيضًا تنزيل ملف الإصدار المحدد باسم <code>ai-workspace-studio-v8.83-android-release.aab</code>.</div>
-      </article>
-    </section>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-text">اذهب إلى <strong>الإعدادات ← الأمان</strong> (أو <strong>التطبيقات ← تثبيت تطبيقات غير معروفة</strong>) وفعّل الخيار للمتصفح أو مدير الملفات.</div>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <div class="step-text">افتح ملف APK المحمّل وامنح صلاحية التثبيت.</div>
+        </div>
+        <div class="step">
+          <div class="step-num">4</div>
+          <div class="step-text">سجّل الدخول بحساب Google أو بريدك الإلكتروني من داخل التطبيق.</div>
+        </div>
+      </div>
+    </article>
 
     <section class="note">
-      إخراج iPhone التنفيذي النهائي غير متاح من هذا الجهاز لأنه يحتاج <code>macOS + Xcode + Apple Developer</code>.
-      وحتى ذلك الوقت يمكنك استخدام
-      <a class="inline" href="../">نسخة الويب المباشرة</a>
-      أو متابعة التوزيع الحالي عبر Android فقط.
+      هذه نسخة تجريبية لاختبار التطبيق قبل النشر الرسمي في متجر Google Play.
+      إذا واجهت أي مشكلة، يُرجى الإبلاغ عنها عبر
+      <a class="inline" href="../">نسخة الويب</a>
+      أو عبر البريد الإلكتروني المخصص للدعم.
     </section>
   </div>
 </body>

@@ -1,11 +1,12 @@
 // AI Workspace Studio - Service Worker
-const APP_VERSION = "881";
+const APP_VERSION = "884";
 const CACHE_NAME = `aistudio-cache-v${APP_VERSION}`;
 const CORE = [
   "./",
   "./index.html",
   "./auth-bridge.html",
   `./app.js?v=${APP_VERSION}`,
+  `./sw.js?v=${APP_VERSION}`,
   "./manifest.webmanifest",
   "./logo.svg",
   "./icons/icon-192.webp",

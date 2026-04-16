@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.83">
+<html lang="ar" dir="rtl" data-appver="8.84">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.83</title>
+    <title>AI Workspace Studio v8.84</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -2646,13 +2646,14 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       position: fixed;
       top: 18px;
       bottom: 18px;
-      left: 18px;
+      right: 18px;
+      left: auto;
       width: min(420px, 34vw);
       background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(246,249,255,.98));
       border: 1px solid rgba(10,20,60,.1);
       border-radius: 24px;
       box-shadow: 0 28px 60px rgba(15,23,42,.18);
-      transform: translateX(calc(-100% - 28px));
+      transform: translateX(calc(100% + 28px));
       transition: transform .22s ease;
       z-index: 70;
       display: flex;
@@ -4332,13 +4333,13 @@ body.promptEngineeringMode .topbar .topbar-actions #focusModeBtn{
     position: fixed !important;
     top: 0 !important;
     bottom: 0 !important;
-    left: 0 !important;
-    right: auto !important;
+    right: 0 !important;
+    left: auto !important;
     width: min(360px, 88vw) !important;
     max-width: calc(100vw - 22px);
     max-height: none !important;
     height: var(--app-vh);
-    border-radius: 0 22px 22px 0 !important;
+    border-radius: 22px 0 0 22px !important;
     padding-top: calc(14px + env(safe-area-inset-top));
     padding-top: calc(14px + constant(safe-area-inset-top));
     padding-bottom: calc(14px + env(safe-area-inset-bottom));
@@ -4352,7 +4353,7 @@ body.promptEngineeringMode .topbar .topbar-actions #focusModeBtn{
     z-index: 140 !important;
     box-shadow: none;
     transition: transform .18s ease, opacity .18s ease, visibility 0s linear .18s;
-    transform: translate3d(calc(-100% - 18px), 0, 0) !important;
+    transform: translate3d(calc(100% + 18px), 0, 0) !important;
   }
   .side.show {
     visibility: visible;
@@ -4367,7 +4368,7 @@ body.promptEngineeringMode .topbar .topbar-actions #focusModeBtn{
 @media (max-width: 640px) {
   .side {
     width: min(86vw, 350px) !important;
-    border-radius: 0 18px 18px 0 !important;
+    border-radius: 22px 0 0 22px !important;
   }
 }
 
@@ -4393,6 +4394,120 @@ body.dark #topRuntimeBadge{
   border-color: rgba(255,255,255,.14) !important;
   background: rgba(122,162,255,.14) !important;
 }
+
+/* Dark mode scrollbar */
+body.dark *{
+  scrollbar-color: rgba(122,162,255,.35) rgba(255,255,255,.05) !important;
+}
+body.dark *::-webkit-scrollbar-track{
+  background: rgba(255,255,255,.04) !important;
+}
+body.dark *::-webkit-scrollbar-thumb{
+  background: rgba(122,162,255,.32) !important;
+  border-color: transparent !important;
+}
+body.dark *::-webkit-scrollbar-thumb:hover{
+  background: rgba(122,162,255,.52) !important;
+}
+
+/* Dark mode: fix light-colored backgrounds on cards/panels */
+body.dark .home-card,
+body.dark .home-panel,
+body.dark .home-quick-tile,
+body.dark .home-summary-item{
+  background: rgba(255,255,255,.05) !important;
+  border-color: rgba(255,255,255,.09) !important;
+}
+body.dark .home-card h3,
+body.dark .home-panel-head h3,
+body.dark .home-section-head h2{
+  color: var(--text) !important;
+}
+body.dark .home-card p,
+body.dark .home-panel-head p,
+body.dark .home-section-head p,
+body.dark .home-card-meta,
+body.dark .home-summary-item span,
+body.dark .hq-sub{
+  color: var(--muted) !important;
+}
+body.dark .home-summary-item strong,
+body.dark .home-quick-tile .hq-label,
+body.dark .home-quick-tile .hq-ico{
+  color: var(--text) !important;
+}
+
+/* Dark mode: workspace hero text */
+body.dark .workspace-hero .workspace-hero-badge{
+  background: rgba(122,162,255,.18) !important;
+  border-color: rgba(122,162,255,.32) !important;
+  color: #a8c5ff !important;
+}
+body.dark .wqa-btn:not(.primary){
+  background: rgba(255,255,255,.07) !important;
+  border-color: rgba(255,255,255,.12) !important;
+  color: var(--text) !important;
+}
+body.dark .wqa-btn:not(.primary) .wqa-text span{
+  color: var(--muted) !important;
+}
+body.dark .use-case-card{
+  background: rgba(255,255,255,.06) !important;
+  border-color: rgba(255,255,255,.10) !important;
+}
+body.dark .use-case-card:hover{
+  background: rgba(122,162,255,.14) !important;
+  border-color: rgba(122,162,255,.28) !important;
+}
+body.dark .uc-title{
+  color: var(--text) !important;
+}
+body.dark .uc-desc{
+  color: var(--muted) !important;
+}
+
+/* Dark mode: chat composer cluster */
+body.dark .chatbar{
+  background: rgba(17,27,47,.98) !important;
+  border-top-color: rgba(255,255,255,.09) !important;
+}
+body.dark .chatbar-composer-cluster{
+  background: rgba(255,255,255,.06) !important;
+  border-color: rgba(255,255,255,.12) !important;
+}
+body.dark .chatbar-mode{
+  background: rgba(255,255,255,.08) !important;
+  border-color: rgba(255,255,255,.12) !important;
+}
+body.dark .composer-meta{
+  background: rgba(17,27,47,.92) !important;
+}
+
+/* Dark mode: settings */
+body.dark .settings-overview-card h3{
+  color: var(--text) !important;
+}
+body.dark .settings-kpi{
+  background: rgba(255,255,255,.05) !important;
+  border-color: rgba(255,255,255,.09) !important;
+}
+body.dark .settings-kpi span{ color: var(--muted) !important; }
+body.dark .settings-kpi strong{ color: var(--text) !important; }
+body.dark .settings-health-output{
+  background: rgba(255,255,255,.05) !important;
+  border-color: rgba(255,255,255,.09) !important;
+  color: var(--text) !important;
+}
+
+/* Dark mode: thread drawer */
+body.dark .thread-drawer{
+  background: linear-gradient(180deg, #111b2f, #0d1628) !important;
+  border-color: rgba(255,255,255,.1) !important;
+}
+body.dark .thread-card-title{ color: var(--text) !important; }
+body.dark .thread-card-preview,
+body.dark .thread-card-meta,
+body.dark .thread-card-footer{ color: var(--muted) !important; }
 </style>
 </head>
 <body>
@@ -4447,7 +4562,7 @@ body.dark #topRuntimeBadge{
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.83</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.84</div>
       </div>
     </aside>
 
@@ -5471,7 +5586,7 @@ body.dark #topRuntimeBadge{
     })();
   </script>
 
-<script src="app.js?v=881"></script>
+<script src="app.js?v=884"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -5485,7 +5600,7 @@ body.dark #topRuntimeBadge{
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v881";
+          const CURRENT_CACHE = "aistudio-cache-v884";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -5494,7 +5609,7 @@ body.dark #topRuntimeBadge{
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=883").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=884").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {
