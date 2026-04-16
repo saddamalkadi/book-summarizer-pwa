@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createServer } from 'node:http';
-import { createReadStream, existsSync, statSync, unlinkSync, readFileSync } from 'node:fs';
+import { createReadStream, existsSync, statSync, unlinkSync } from 'node:fs';
 import { extname, isAbsolute, join, normalize, relative, resolve } from 'node:path';
 import { execSync } from 'node:child_process';
 
@@ -8,47 +8,28 @@ const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 8080);
 const ROOT = resolve(process.env.ROOT_DIR || process.cwd());
 
-// ── Startup: clear git lock and push to GitHub if token available ──────────
+// ── Startup: clear stale git lock only (no auto-push, no auto-commit) ──────
 try { unlinkSync(join(ROOT, '.git/index.lock')); } catch (_) {}
-
-if (process.env.GITHUB_TOKEN) {
-  try {
-    const token = process.env.GITHUB_TOKEN;
-    // Commit any uncommitted working-tree changes before pushing
-    try {
-      execSync(`git -C "${ROOT}" config user.email "deploy@aistudio.bot"`, { stdio: 'pipe' });
-      execSync(`git -C "${ROOT}" config user.name "AI Studio Deploy"`, { stdio: 'pipe' });
-      execSync(`git -C "${ROOT}" add -A`, { stdio: 'pipe' });
-      execSync(`git -C "${ROOT}" commit -m "chore: auto-commit working-tree changes [deploy]" --allow-empty`, { stdio: 'pipe' });
-      console.log('[startup] Git commit: SUCCESS');
-    } catch (ce) {
-      // nothing to commit or already clean
-      const cmsg = ((ce.stdout||'')+(ce.stderr||'')).toString().substring(0, 100);
-      console.log('[startup] Git commit skipped:', cmsg);
-    }
-    execSync(
-      `git -C "${ROOT}" push "https://saddamalkadi:${token}@github.com/saddamalkadi/book-summarizer-pwa.git" main`,
-      { timeout: 60000, stdio: 'pipe' }
-    );
-    console.log('[startup] GitHub push: SUCCESS');
-  } catch (e) {
-    const msg = ((e.stdout||'')+(e.stderr||'')).toString().replace(process.env.GITHUB_TOKEN,'[TOKEN]');
-    console.log('[startup] GitHub push skipped:', msg.substring(0, 200));
-  }
-}
 // ──────────────────────────────────────────────────────────────────────────
 
 // ── Startup: Auto-fix Cloudflare Worker if misconfigured ──────────────────
 async function autoFixWorker() {
+  // Opt-in only: never auto-deploy the Worker unless the operator explicitly enables it.
+  if (String(process.env.AUTO_FIX_WORKER || '').toLowerCase() !== 'true') {
+    return;
+  }
   const CF_TOKEN = process.env.CF_API_TOKEN;
   const OR_KEY   = process.env.OPENROUTER_API_KEY;
   if (!CF_TOKEN || !OR_KEY) { console.log('[worker-fix] Skipped: missing env vars'); return; }
 
-  const CF_ACCOUNT  = 'ea4e90ec8fbd70faefdddd2153064d6f';
-  // Must match production worker serving api.saddamalkadi.com.
-  const WORKER_NAME = 'sadam-key';
-  const KV_NS       = '49d87e2d4989452fb3c680ad024ae5b7';
-  const ADMIN_PASS  = String(process.env.ADMIN_PASSWORD_REAL || '').trim();
+  const CF_ACCOUNT  = process.env.CF_ACCOUNT_ID  || '';
+  const WORKER_NAME = process.env.CF_WORKER_NAME || 'sadam-key';
+  const KV_NS       = process.env.CF_KV_NS       || '';
+  const ADMIN_PASS  = process.env.ADMIN_PASSWORD_REAL || '';
+  if (!CF_ACCOUNT || !KV_NS || !ADMIN_PASS) {
+    console.log('[worker-fix] Skipped: require CF_ACCOUNT_ID, CF_KV_NS and ADMIN_PASSWORD_REAL env vars');
+    return;
+  }
 
   try {
     // 1) Check health (with retry for edge propagation lag)
@@ -367,7 +348,8 @@ function setCommonHeaders(res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  // Allow microphone for voice input / STT on the origin itself; camera and geolocation stay disabled.
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()');
 }
 
 function readBody(req) {

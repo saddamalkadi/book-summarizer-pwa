@@ -17,7 +17,7 @@ const directories = ['icons'];
 
 /**
  * Build mode:
- *   pages  → for GitHub Pages/web (includes downloads landing + APK)
+ *   pages     → for GitHub Pages/web (includes downloads landing + APK)
  *   capacitor → for the Android/Capacitor bundle (excludes downloads/ to avoid shipping the APK inside itself)
  * Default is 'capacitor' (safer: invoked by `npx cap sync`) and CI's Pages step sets MODE=pages.
  */
@@ -42,7 +42,9 @@ for (const dir of directories) {
 }
 
 if (MODE === 'pages') {
-  /** Only ship the downloads landing page + current APK to Pages (avoid shipping legacy binaries). */
+  /** Only ship the downloads landing page + current release APKs (avoid bloating Pages with legacy binaries).
+   *  Accept the canonical "latest" file plus any versioned "ai-workspace-studio-vX.Y.Z-android-release.apk"
+   *  produced by CI — no per-version hardcoded filename needed. */
   const downloadsSrc = join(root, 'downloads');
   const downloadsDest = join(webDir, 'downloads');
   if (existsSync(downloadsSrc)) {
@@ -51,12 +53,10 @@ if (MODE === 'pages') {
     if (existsSync(indexSrc)) {
       cpSync(indexSrc, join(downloadsDest, 'index.html'), { force: true });
     }
-    const allowedNames = new Set([
-      'ai-workspace-studio-latest.apk',
-      'ai-workspace-studio-v8.84.0-android-release.apk'
-    ]);
+    const versionedApkRe = /^ai-workspace-studio-v\d+\.\d+\.\d+-android-release\.apk$/i;
+    const canonicalApk = 'ai-workspace-studio-latest.apk';
     for (const name of readdirSync(downloadsSrc)) {
-      if (!allowedNames.has(name)) continue;
+      if (name !== canonicalApk && !versionedApkRe.test(name)) continue;
       const p = join(downloadsSrc, name);
       if (statSync(p).isFile()) {
         cpSync(p, join(downloadsDest, name), { force: true });

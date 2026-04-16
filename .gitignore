@@ -16,3 +16,7 @@ android/.android-user/
 
 # Keep AAB artifacts out of the publicly served downloads folder — they should only live in GitHub Releases.
 downloads/*.aab
+
+# Dev artifacts (not shipped in public/production)
+attached_assets/
+full-app.png
