@@ -1,4 +1,4 @@
-﻿/* AI Workspace Studio v8.85 - strategic platform skeleton (no build step) */
+﻿/* AI Workspace Studio v8.86 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -366,7 +366,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.85';
+  const WEB_RELEASE_LABEL = 'v8.86';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -4443,7 +4443,18 @@ function refreshDeepSearchBtn(){
       return 'هذا البريد هو بريد الإدارة. استخدم كلمة مرور الإدارة من نفس شاشة الدخول.';
     }
     if (/AUTH_ADMIN_PASSWORD_NOT_CONFIGURED|Admin password login is not configured/i.test(raw)){
-      return 'دخول الإدارة بكلمة المرور غير مفعل حاليًا على الخادم. استخدم تسجيل Google ببريد الإدارة نفسه، أو أعد ضبط APP_ADMIN_PASSWORD على Cloudflare.';
+      return 'دخول الإدارة بكلمة المرور غير مفعل حاليًا. يرجى استخدام تسجيل الدخول عبر Google.';
+    }
+    if (/Authentication is temporarily unavailable/i.test(raw)){
+      return 'تسجيل الدخول غير متاح مؤقتًا. يرجى المحاولة بعد قليل.';
+    }
+    if (/Invalid or expired session|Missing signed session/i.test(raw)){
+      return 'انتهت صلاحية الجلسة. يرجى إعادة تسجيل الدخول.';
+    }
+    // Do not leak raw backend/runtime errors to end users.
+    if (/^\s*(Error|TypeError|SyntaxError|ReferenceError|RangeError)[:\s]/i.test(raw) ||
+        /\bworker\b|\bcloudflare\b|\bKV\b|\bbinding\b|\bCORS\b|\bNetworkError\b|Failed to fetch/i.test(raw)){
+      return 'تعذر إكمال تسجيل الدخول. يرجى المحاولة مرة أخرى.';
     }
     return raw;
   }

@@ -196,12 +196,13 @@ function decodeBase64ToBytes(value) {
 }
 
 function getSessionSecret(env) {
+  // No literal fallback: an unconfigured env must not silently issue forgeable sessions.
   return (
     env.APP_SESSION_SECRET ||
     env.AUTH_SESSION_SECRET ||
     getServerKey(env) ||
     env.GATEWAY_CLIENT_TOKEN ||
-    'aistudio-session-fallback'
+    ''
   ).trim();
 }
 
@@ -211,7 +212,7 @@ function getUpgradeSecret(env) {
     env.APP_SESSION_SECRET ||
     env.AUTH_SESSION_SECRET ||
     getServerKey(env) ||
-    'aistudio-upgrade-fallback'
+    ''
   ).trim();
 }
 
@@ -224,7 +225,7 @@ function getUpgradeAdminToken(env) {
 }
 
 function getAdminEmail(env) {
-  return String(env.APP_ADMIN_EMAIL || env.ADMIN_EMAIL || 'tntntt830@gmail.com').trim().toLowerCase();
+  return String(env.APP_ADMIN_EMAIL || env.ADMIN_EMAIL || '').trim().toLowerCase();
 }
 
 function getAdminPassword(env) {
@@ -245,7 +246,7 @@ function getPublicAuthConfig(env) {
     premiumEnabled: true,
     brandName: String(env.APP_BRAND_NAME || 'AI Workspace Studio').trim(),
     developerName: String(env.APP_DEVELOPER_NAME || 'صدام القاضي').trim(),
-    upgradeEmail: String(env.APP_UPGRADE_EMAIL || 'tntntt830@gmail.com').trim(),
+    upgradeEmail: String(env.APP_UPGRADE_EMAIL || '').trim(),
     adminEmail,
     adminEnabled,
     adminPasswordEnabled,
@@ -307,8 +308,29 @@ function getWorkerHealth(env) {
   };
 }
 
+const ALLOWED_CORS_ORIGINS = new Set([
+  'https://app.saddamalkadi.com',
+  'https://api.saddamalkadi.com',
+  'https://saddamalkadi.github.io',
+  'https://book-summarizer-pwa.pages.dev',
+  'capacitor://localhost',
+  'ionic://localhost',
+  'http://localhost:8080',
+  'http://127.0.0.1:8080'
+]);
+
+function resolveAllowedOrigin(request) {
+  const origin = String(request.headers.get('Origin') || '').trim();
+  if (!origin) return '*';
+  if (ALLOWED_CORS_ORIGINS.has(origin)) return origin;
+  if (/^https:\/\/[a-z0-9-]+\.saddamalkadi\.com$/i.test(origin)) return origin;
+  if (/^https:\/\/[a-z0-9-]+\.pages\.dev$/i.test(origin)) return origin;
+  if (/^https:\/\/[a-z0-9-]+\.github\.io$/i.test(origin)) return origin;
+  return 'null';
+}
+
 function withCors(response, request) {
-  const origin = request.headers.get('Origin') || '*';
+  const origin = resolveAllowedOrigin(request);
   const h = new Headers(response.headers || {});
   h.set('Access-Control-Allow-Origin', origin);
   h.set('Vary', 'Origin');
@@ -975,7 +997,11 @@ async function requireSession(request, env) {
   if (!token) {
     throw new Error('Missing signed session. Please log in with Google first.');
   }
-  const payload = await verifySignedToken(token, getSessionSecret(env), 'session');
+  const secret = getSessionSecret(env);
+  if (!secret) {
+    throw new Error('Authentication is temporarily unavailable.');
+  }
+  const payload = await verifySignedToken(token, secret, 'session');
   if (!payload?.email) {
     throw new Error('Invalid or expired session.');
   }
@@ -1003,7 +1029,11 @@ async function issueSessionToken(profile, env) {
     iat: Math.floor(now / 1000),
     exp: Math.floor((now + SESSION_TTL_MS) / 1000)
   };
-  const sessionToken = await signCompactToken(payload, getSessionSecret(env), 'session');
+  const secret = getSessionSecret(env);
+  if (!secret) {
+    throw new Error('Authentication is temporarily unavailable.');
+  }
+  const sessionToken = await signCompactToken(payload, secret, 'session');
   return {
     ok: true,
     email: payload.email,
@@ -1164,7 +1194,7 @@ async function getGoogleVerificationKeys() {
 }
 
 function buildUpgradeMailto(session, upgradeEmail) {
-  const to = encodeURIComponent(String(upgradeEmail || 'tntntt830@gmail.com').trim());
+  const to = encodeURIComponent(String(upgradeEmail || '').trim());
   const subject = encodeURIComponent(`طلب ترقية حساب - ${session.email}`);
   const body = encodeURIComponent([
     'مرحبًا،',
