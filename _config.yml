@@ -25,3 +25,4 @@ exclude:
   - .assetsignore
   - .replit
   - .github
+  - full-app.png
