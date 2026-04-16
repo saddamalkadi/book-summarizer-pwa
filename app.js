@@ -4404,7 +4404,7 @@ function refreshDeepSearchBtn(){
   }
 
   function getAndroidGoogleSetupHint(){
-    return `أضف Android OAuth Client في Google Cloud باستخدام Package Name: ${ANDROID_GOOGLE_SETUP.packageName} وSHA-1: ${ANDROID_GOOGLE_SETUP.releaseSha1}.`;
+    return 'تعذر تسجيل الدخول بحساب Google على هذه النسخة من التطبيق. جرّب تسجيل الدخول عبر نسخة الويب أو انتظر تحديثًا قريبًا.';
   }
 
   function maybeShowNativeAuthDialog(message, tone = 'error'){
