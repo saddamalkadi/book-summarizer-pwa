@@ -22,7 +22,7 @@ jobs:
           node-version: '20'
 
       - name: Install npm dependencies
-        run: npm install
+        run: npm ci
 
       - name: Sync web into www (Capacitor)
         run: npm run sync:web
@@ -52,8 +52,8 @@ jobs:
       - name: Extract version from build.gradle
         id: version
         run: |
-          VERSION_NAME=$(grep 'versionName' android/app/build.gradle | grep -oP '"\K[^"]+')
-          VERSION_CODE=$(grep 'versionCode' android/app/build.gradle | grep -oP '\d+')
+          VERSION_NAME=$(rg 'versionName' android/app/build.gradle -o -r '$1' -N --replace '\"([^\"]+)\"' | tail -n 1)
+          VERSION_CODE=$(rg 'versionCode\\s+([0-9]+)' android/app/build.gradle -o -r '$1' -N | tail -n 1)
           echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
           echo "Version: $VERSION_NAME ($VERSION_CODE)"

@@ -240,9 +240,6 @@ function getPublicAuthConfig(env) {
     authRequired,
     premiumEnabled: true,
     brandName: String(env.APP_BRAND_NAME || 'AI Workspace Studio').trim(),
-    developerName: String(env.APP_DEVELOPER_NAME || 'صدام القاضي').trim(),
-    upgradeEmail: String(env.APP_UPGRADE_EMAIL || 'tntntt830@gmail.com').trim(),
-    adminEmail,
     adminEnabled,
     adminPasswordEnabled,
     adminLoginMethod: adminPasswordEnabled
@@ -781,11 +778,10 @@ async function handleUpgradeRequest(request, env) {
   try {
     const session = await requireSession(request, env);
     const config = getPublicAuthConfig(env);
-    const mailto = buildUpgradeMailto(session, config.upgradeEmail);
+    const mailto = buildUpgradeMailto(session, String(env.APP_UPGRADE_EMAIL || ''));
     return jsonResponse({
       ok: true,
       email: session.email,
-      upgradeEmail: config.upgradeEmail,
       mailto
     }, 200);
   } catch (error) {
