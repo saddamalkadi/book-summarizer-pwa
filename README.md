@@ -77,49 +77,37 @@ HOST=0.0.0.0 PORT=9090 node server.mjs
 - إضافة: دعم تحويل PDF→DOCX عبر CloudConvert Worker Endpoint اختياري من الإعدادات (بديل للتحويل المحلي).
 
 ## إعداد Gateway الصحيح
-تم تجهيز الإعدادات الافتراضية داخل التطبيق للعمل مباشرة مع بوابة API:
-- Gateway URL: `https://sadam-key.tntntt830.workers.dev`
-- Cloud PDF→Word Endpoint: `https://sadam-convert.tntntt830.workers.dev/convert/pdf-to-docx`
-- Cloud OCR Endpoint: `https://sadam-convert.tntntt830.workers.dev/ocr`
+الإعدادات الافتراضية داخل التطبيق تستخدم بوابة الإنتاج الموحّدة (نفس النطاق الذي يُنشر عليه الواجهة عادةً):
+- Gateway URL: `https://api.saddamalkadi.com`
+- Cloud PDF→Word Endpoint: `https://api.saddamalkadi.com/convert/pdf-to-docx`
+- Cloud OCR Endpoint: `https://api.saddamalkadi.com/ocr`
 - Auth Mode الافتراضي: `gateway`
 
-إذا كان لديك Worker ثابت للواجهة (مثل `keys.*.workers.dev`) وWorker آخر للـ API، ضع رابط Worker الـ API في Gateway URL.
+إذا كنت تستضيف Worker خاصًا بك، ضع **رابط Worker الـ API** (المسار `/v1/*`) في حقل Gateway URL وليس رابط لوحة Cloudflare أو Worker واجهة ثابتة.
 
-إذا كان الـWorker يتطلب حماية إضافية، ضع قيمة **Gateway Client Token** من صفحة الإعدادات.
+إذا كان الـ Worker يتطلب حماية إضافية، ضع قيمة **Gateway Client Token** من صفحة الإعدادات.
 
 ## حل مشكلة "الرابط لا يعمل" (ERR_FAILED)
-إذا ظهر الخطأ عند فتح رابط مثل `https://keys.<subdomain>.workers.dev` فجرّب التالي بالترتيب:
+1. **تحقق من صحة البوابة**
+   - مثال فحص صحة: `https://api.saddamalkadi.com/health` (يُعيد حالة الخدمة).
 
-1. **تأكد من الرابط الصحيح**
-   - رابط الـ API الافتراضي للتطبيق هو:
-     `https://sadam-key.tntntt830.workers.dev`
-   - رابط الصحة (Health Check):
-     `https://sadam-key.tntntt830.workers.dev/health`
+2. **لا تستخدم رابط لوحة أو واجهة ثابتة كـ Gateway**
+   - في الإعدادات (`Auth Mode = gateway`) يجب أن يكون الرابط لـ Worker يقدّم `/v1/chat/completions` ومسارات الـ API.
 
-2. **لا تستخدم Worker الواجهة كرابط Gateway**
-   - في إعدادات التطبيق (`Auth Mode = gateway`)، ضع رابط Worker الـ API فقط.
-   - لا تضع رابط Worker ثابت/واجهة إذا كان لا يقدّم مسار `/v1/*`.
-
-3. **اختبر من Cloudflare Dashboard**
-   - Workers & Pages → اختر Worker المطلوب.
-   - تأكد أن آخر Deploy ناجح، وأن عنوان `workers.dev` ظاهر ومفعّل.
-
-4. **أعد النشر إذا كان الرابط متوقفًا**
+3. **أعد النشر إذا كان الرابط متوقفًا** (عند استضافة Worker خاص بك)
    ```bash
    wrangler deploy
    ```
 
-5. **تأكد من الأسرار المطلوبة**
+4. **تأكد من الأسرار على الـ Worker** (عند استضافة Worker خاص بك)
    ```bash
    wrangler secret put OPENROUTER_API_KEY
    # اختياري:
    wrangler secret put GATEWAY_CLIENT_TOKEN
    ```
 
-6. **امسح الكاش/حدّث قسريًا**
+5. **امسح الكاش/حدّث قسريًا**
    - لأن التطبيق PWA، نفّذ Hard Refresh أو احذف Service Worker وCache ثم افتح الرابط مجددًا.
-
-> ملاحظة: إذا كان `sadam-key.../health` يعمل بينما `keys...` لا يعمل، فغالبًا Worker `keys` غير منشور أو تم حذفه، واستخدام `sadam-key` كـ Gateway يكفي للتشغيل.
 
 
 
