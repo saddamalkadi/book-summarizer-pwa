@@ -366,7 +366,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.83';
+  const WEB_RELEASE_LABEL = 'v8.84';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -11288,9 +11288,7 @@ let pinOnly = false;
       const WEB_URL = 'https://app.saddamalkadi.com/';
       const DOWNLOADS_URL = `${WEB_URL}downloads/`;
       const APK_LATEST_URL = `${DOWNLOADS_URL}ai-workspace-studio-latest.apk`;
-      const AAB_LATEST_URL = `${DOWNLOADS_URL}ai-workspace-studio-latest.aab`;
       const APK_BACKUP_URL = `https://github.com/${REPO}/blob/main/downloads/ai-workspace-studio-latest.apk?raw=1`;
-      const AAB_BACKUP_URL = `https://github.com/${REPO}/blob/main/downloads/ai-workspace-studio-latest.aab?raw=1`;
 
       overview.innerHTML = `
         <div class="bubble app-dl-card" style="margin:0;padding:16px">
@@ -11303,17 +11301,15 @@ let pinOnly = false;
             <span style="flex-shrink:0;padding:3px 10px;border-radius:20px;background:var(--accent,#2563eb);color:#fff;font-size:.72em;font-weight:800">● مباشر</span>
           </div>
           <div class="actions" style="flex-wrap:wrap;gap:8px">
-            <a class="btn" id="apkMainBtn" href="${APK_LATEST_URL}" download="AI-Workspace-Studio-latest.apk" target="_blank" rel="noopener noreferrer">⬇ تنزيل APK — Android</a>
-            <a class="btn ghost sm" href="${AAB_LATEST_URL}" download="AI-Workspace-Studio-latest.aab" target="_blank" rel="noopener noreferrer">⬇ تنزيل AAB — Google Play</a>
-            <a class="btn ghost sm" href="${WEB_URL}" target="_blank" rel="noopener noreferrer">🌐 تطبيق الويب</a>
+            <a class="btn" id="apkMainBtn" href="${APK_LATEST_URL}" download="AI-Workspace-Studio-latest.apk" target="_blank" rel="noopener noreferrer">⬇ تنزيل تطبيق Android</a>
+            <a class="btn ghost sm" href="${WEB_URL}" target="_blank" rel="noopener noreferrer">🌐 فتح تطبيق الويب</a>
             <a class="btn ghost sm" href="${DOWNLOADS_URL}" target="_blank" rel="noopener noreferrer">📋 صفحة التنزيل</a>
           </div>
           <div style="margin-top:10px;font-size:.8em;color:var(--muted,#888)">
-            إذا تعذر التنزيل المباشر من الموقع، استخدم الروابط الاحتياطية التالية:
+            إذا تعذر التنزيل المباشر من الموقع، استخدم الرابط الاحتياطي التالي:
           </div>
           <div class="actions" style="flex-wrap:wrap;gap:8px;margin-top:8px">
-            <a class="btn ghost sm" href="${APK_BACKUP_URL}" target="_blank" rel="noopener noreferrer">رابط APK الاحتياطي</a>
-            <a class="btn ghost sm" href="${AAB_BACKUP_URL}" target="_blank" rel="noopener noreferrer">رابط AAB الاحتياطي</a>
+            <a class="btn ghost sm" href="${APK_BACKUP_URL}" target="_blank" rel="noopener noreferrer">رابط تثبيت احتياطي</a>
           </div>
           <div class="hint" style="margin-top:10px;font-size:.78em">
             Android 7.0+ • قم بتفعيل "تثبيت من مصادر غير معروفة" في الإعدادات قبل التثبيت

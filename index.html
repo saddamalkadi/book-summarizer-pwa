@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.83">
+<html lang="ar" dir="rtl" data-appver="8.84">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.83</title>
+    <title>AI Workspace Studio v8.84</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -203,18 +203,15 @@
       z-index: 3;
     }
     .side-footer{
-      position: static;
+      position: relative;
       margin-top: 12px;
       padding: 10px 12px 14px;
       background: rgba(255,255,255,.06);
       border: 1px solid rgba(255,255,255,.10);
       border-radius: 16px;
-      z-index: auto;
-      position: relative;
-      z-index: 1;
-      pointer-events: none;
+      z-index: 2;
+      pointer-events: auto;
     }
-    .side-footer *{ pointer-events: auto; }
     .navbtn{border:none; cursor:pointer; padding:12px 14px; border-radius:16px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12); color:#fff; display:flex; align-items:center; gap:10px; font-weight:700; width:100%; min-height:46px; -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); transition:transform .15s ease, background .15s ease, border-color .15s ease; font-family:inherit;}
     .navbtn-icon{font-size:16px; flex-shrink:0; line-height:1;}
     .navbtn-label{flex:1; text-align:start; font-size:13.5px;}
@@ -4447,7 +4444,7 @@ body.dark #topRuntimeBadge{
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.83</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.84</div>
       </div>
     </aside>
 
@@ -5471,7 +5468,7 @@ body.dark #topRuntimeBadge{
     })();
   </script>
 
-<script src="app.js?v=881"></script>
+<script src="app.js?v=884"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -5485,7 +5482,7 @@ body.dark #topRuntimeBadge{
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v881";
+          const CURRENT_CACHE = "aistudio-cache-v884";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -5494,7 +5491,7 @@ body.dark #topRuntimeBadge{
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=883").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=884").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {
