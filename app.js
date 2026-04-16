@@ -1,4 +1,4 @@
-﻿/* AI Workspace Studio v8.34 - strategic platform skeleton (no build step) */
+﻿/* AI Workspace Studio v8.84 - release candidate */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -366,7 +366,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.83';
+  const WEB_RELEASE_LABEL = 'v8.84';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([

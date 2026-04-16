@@ -57,19 +57,20 @@ jobs:
         id: version
         run: |
           VERSION_NAME=$(grep 'versionName' android/app/build.gradle | grep -oP '"\K[^"]+')
-          VERSION_CODE=$(grep 'versionCode' android/app/build.gradle | grep -oP '\d+')
+          VERSION_CODE=$(grep 'versionCode' android/app/build.gradle | grep -oP '\d+' | head -1)
           echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
           echo "Version: $VERSION_NAME ($VERSION_CODE)"
 
-      - name: Build debug APK
+      - name: Build release APK (signed with debug keystore when no release keystore is configured)
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Rename APK for release
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk \
-             AI-Workspace-Studio-latest.apk
+          APK_PATH=$(find android/app/build/outputs/apk/release/ -name "*.apk" | head -1)
+          echo "Found APK: $APK_PATH"
+          cp "$APK_PATH" AI-Workspace-Studio-latest.apk
           echo "APK size: $(du -sh AI-Workspace-Studio-latest.apk)"
 
       - name: Upload APK artifact (GitHub Actions)
@@ -90,15 +91,18 @@ jobs:
             **تطبيق مساحة العمل العربية بالذكاء الاصطناعي**
 
             - **Build**: ${{ steps.version.outputs.version_code }}
-            - **Platform**: Android 7.0+ (API ${{ steps.version.outputs.version_code >= '851' && '24' || '24' }}+)
-            - **Type**: Debug APK (تثبيت مباشر — ليس عبر متجر Google Play)
+            - **Platform**: Android 7.0+ (API 24+)
+            - **Type**: Release APK — تثبيت مباشر خارج متجر Google Play
 
             ### التثبيت
             1. حمّل ملف `AI-Workspace-Studio-latest.apk`
             2. فعّل "مصادر غير معروفة" في إعدادات الأمان
             3. افتح الملف وثبّت التطبيق
 
-            ### الجديد
+            ### ما الجديد في هذا الإصدار
+            - نسخة release candidate مستقرة قبل النشر للمتجر
+            - تحسينات على الواجهة والأداء
+            - إصلاح مشاكل التوافق والثبات
             - مساحة العمل العربية بالذكاء الاصطناعي مع دعم OpenRouter
             - محادثة عربية مع TTS/STT
             - تحليل الملفات والمستندات

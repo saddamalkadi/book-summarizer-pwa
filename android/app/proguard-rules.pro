@@ -1,21 +1,60 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# AI Workspace Studio — ProGuard/R8 rules for release build
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Keep line numbers for crash reporting (strip source file names)
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# ── Capacitor core ──────────────────────────────────────────────────────────
+-keep class com.getcapacitor.** { *; }
+-keep @com.getcapacitor.annotation.CapacitorPlugin class * { *; }
+-keep class com.getcapacitor.plugin.** { *; }
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# ── App package ─────────────────────────────────────────────────────────────
+-keep class com.saddamalkadi.aiworkspace.** { *; }
+
+# ── WebView JavaScript interface ────────────────────────────────────────────
+-keepclassmembers class * extends android.webkit.WebView {
+    public *;
+}
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+
+# ── Google Sign-In ───────────────────────────────────────────────────────────
+-keep class com.google.android.gms.** { *; }
+-keep interface com.google.android.gms.** { *; }
+-dontwarn com.google.android.gms.**
+
+# ── Speech recognition (Capacitor community plugin) ─────────────────────────
+-keep class com.capacitorjs.community.speechrecognition.** { *; }
+
+# ── Text to speech ──────────────────────────────────────────────────────────
+-keep class com.getcapacitor.community.texttospeech.** { *; }
+
+# ── Google One Tap ──────────────────────────────────────────────────────────
+-keep class com.plugin.nativegoogleonetap.** { *; }
+
+# ── AndroidX & Support ──────────────────────────────────────────────────────
+-keep class androidx.** { *; }
+-keep interface androidx.** { *; }
+-dontwarn androidx.**
+
+# ── Prevent stripping of Parcelable implementations ─────────────────────────
+-keepclassmembers class * implements android.os.Parcelable {
+    static ** CREATOR;
+}
+
+# ── Serialization ────────────────────────────────────────────────────────────
+-keepclassmembers class * implements java.io.Serializable {
+    private static final long serialVersionUID;
+    private void writeObject(java.io.ObjectOutputStream);
+    private void readObject(java.io.ObjectInputStream);
+    java.lang.Object writeReplace();
+    java.lang.Object readResolve();
+}
+
+# ── General safety ───────────────────────────────────────────────────────────
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-dontwarn javax.annotation.**
+-dontwarn org.conscrypt.**

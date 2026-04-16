@@ -41,8 +41,8 @@
 - **النتيجة:** لا تحذيرات `initialize() is called multiple times`
 
 ### ✅ 4. كلمة مرور الإدارة مكتوبة في الكود
-- **السبب:** `ADMIN_PASS = 'Saddam@Admin2026!'` ثابتة في `server.mjs`
-- **الإصلاح:** `ADMIN_PASS = process.env.ADMIN_PASSWORD_REAL || 'Saddam@Admin2026!'`
+- **السبب:** كانت قيمة افتراضية مكتوبة في الكود
+- **الإصلاح:** تمت إزالة القيمة الافتراضية — `ADMIN_PASS = process.env.ADMIN_PASSWORD_REAL` بدون fallback
 - **النتيجة:** يمكن الآن تعيين `ADMIN_PASSWORD_REAL` كـ Secret لمزيد من الأمان
 
 ### ✅ 5. زر "متابعة" يدعم Enter

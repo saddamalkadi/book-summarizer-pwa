@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.83">
+<html lang="ar" dir="rtl" data-appver="8.84">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.83</title>
+    <title>AI Workspace Studio v8.84</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -161,10 +161,14 @@
       scrollbar-width: thin;
       scrollbar-color: #8aa8ff #eef2ff;
     }
-    *::-webkit-scrollbar{width:10px; height:10px;}
+    *::-webkit-scrollbar{width:8px; height:8px;}
     *::-webkit-scrollbar-track{background:#eef2ff; border-radius:999px;}
     *::-webkit-scrollbar-thumb{background:linear-gradient(180deg,#90b0ff,#5f83ff); border-radius:999px; border:2px solid #eef2ff;}
     *::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,#7da0ff,#4b72ff);}
+    body.dark *{scrollbar-color: rgba(122,162,255,.45) rgba(17,27,47,.8);}
+    body.dark *::-webkit-scrollbar-track{background:rgba(17,27,47,.8);}
+    body.dark *::-webkit-scrollbar-thumb{background:linear-gradient(180deg,rgba(122,162,255,.55),rgba(80,110,210,.55)); border-color:rgba(17,27,47,.8);}
+    body.dark *::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,rgba(140,175,255,.7),rgba(100,140,230,.7));}
     a{color:var(--pri); font-weight:900; text-decoration:underline}
     .app{min-height:var(--app-vh); min-height:100vh; width:100%; display:grid; grid-template-columns:minmax(260px,320px) minmax(0,1fr); gap:12px; padding:12px;}
     .side{
@@ -680,6 +684,13 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
         radial-gradient(circle at top left, rgba(20,184,166,.12), transparent 28%),
         linear-gradient(180deg, #f8fbff 0%, #eef3fb 52%, #f5f7fb 100%);
     }
+    body.dark{
+      background:
+        radial-gradient(circle at top right, rgba(27,102,255,.12), transparent 35%),
+        radial-gradient(circle at bottom left, rgba(20,184,166,.07), transparent 30%),
+        linear-gradient(180deg, #07101f 0%, #0a1120 52%, #080f1c 100%);
+    }
+    body.dark::before{ opacity: 0 !important; }
     body::before{
       content:"";
       position:fixed;
@@ -4393,6 +4404,98 @@ body.dark #topRuntimeBadge{
   border-color: rgba(255,255,255,.14) !important;
   background: rgba(122,162,255,.14) !important;
 }
+
+/* Dark mode: home page elements */
+body.dark .home-card,
+body.dark .home-panel{
+  background: linear-gradient(180deg, rgba(21,34,58,.9), rgba(15,24,45,.95)) !important;
+  border-color: rgba(255,255,255,.08) !important;
+}
+body.dark .home-card h3,
+body.dark .home-section-head h2{
+  color: var(--text) !important;
+}
+body.dark .home-card p,
+body.dark .home-section-head p{
+  color: var(--muted) !important;
+}
+body.dark .home-card-meta{
+  color: #7aa2ff !important;
+}
+body.dark .home-card-icon{
+  background: linear-gradient(135deg, rgba(122,162,255,.14), rgba(94,234,212,.12)) !important;
+  color: #7aa2ff !important;
+}
+body.dark .home-card:hover{
+  border-color: rgba(122,162,255,.28) !important;
+  box-shadow: 0 18px 38px rgba(0,0,0,.3) !important;
+}
+
+/* Dark mode: signal cards */
+body.dark .signal-card{
+  background: rgba(21,34,58,.9) !important;
+  border-color: rgba(255,255,255,.08) !important;
+}
+
+/* Dark mode: quick prompt buttons */
+body.dark .quick-prompt-btn{
+  background: rgba(21,34,58,.9) !important;
+  color: #c9d6f2 !important;
+  border-color: rgba(122,162,255,.18) !important;
+}
+
+/* Dark mode: model cards */
+body.dark .model-card{
+  background: linear-gradient(180deg, rgba(21,34,58,.9), rgba(15,24,45,.95)) !important;
+  border-color: rgba(255,255,255,.08) !important;
+}
+body.dark .model-category-chip{
+  background: rgba(21,34,58,.9) !important;
+  color: #c9d6f2 !important;
+  border-color: rgba(255,255,255,.1) !important;
+}
+body.dark .model-category-chip.active{
+  background: linear-gradient(180deg, #1b66ff, #184fd6) !important;
+  color: #fff !important;
+}
+body.dark .runtime-badge{
+  background: linear-gradient(135deg, rgba(122,162,255,.14), rgba(94,234,212,.12)) !important;
+  border-color: rgba(122,162,255,.22) !important;
+  color: #a9b7d4 !important;
+}
+
+/* Dark mode: settings KPIs */
+body.dark .settings-kpi{
+  background: rgba(21,34,58,.9) !important;
+  border-color: rgba(255,255,255,.08) !important;
+}
+body.dark .settings-health-output{
+  background: rgba(15,24,45,.95) !important;
+  border-color: rgba(255,255,255,.08) !important;
+  color: var(--text) !important;
+}
+
+/* Dark mode: composer cluster */
+body.dark #chatInput{
+  color: #ecf1ff !important;
+}
+body.dark .chatbar-mode{
+  background: rgba(255,255,255,.06) !important;
+  border-color: rgba(255,255,255,.10) !important;
+}
+
+/* Dark mode: account trigger */
+body.dark .account-trigger{
+  background: linear-gradient(180deg, #15223a, #111b2f) !important;
+  border-color: rgba(255,255,255,.1) !important;
+  color: #ecf1ff !important;
+}
+body.dark .account-trigger strong{
+  color: #ecf1ff !important;
+}
+body.dark .account-trigger span{
+  color: #a9b7d4 !important;
+}
 </style>
 </head>
 <body>
@@ -4447,7 +4550,7 @@ body.dark #topRuntimeBadge{
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.83</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.84</div>
       </div>
     </aside>
 
@@ -5471,7 +5574,7 @@ body.dark #topRuntimeBadge{
     })();
   </script>
 
-<script src="app.js?v=881"></script>
+<script src="app.js?v=884"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -5485,7 +5588,7 @@ body.dark #topRuntimeBadge{
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v881";
+          const CURRENT_CACHE = "aistudio-cache-v884";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -5494,7 +5597,7 @@ body.dark #topRuntimeBadge{
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=883").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=884").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {
