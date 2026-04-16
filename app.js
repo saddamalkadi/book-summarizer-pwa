@@ -1,4 +1,4 @@
-﻿/* AI Workspace Studio v8.34 - strategic platform skeleton (no build step) */
+﻿/* AI Workspace Studio v8.85 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -366,7 +366,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.84';
+  const WEB_RELEASE_LABEL = 'v8.85';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -6628,7 +6628,7 @@ async function submitUnifiedAuthEntry(){
         id: 'downloads_android',
         page: 'settings',
         title: 'تنزيل تطبيق Android والويب التقدمي',
-        body: 'يوجد قسم تنزيلات داخل الإعدادات يشير إلى ملف التثبيت APK المستضاف للتجربة. يمكن تثبيت التطبيق كـ PWA من المتصفح أيضًا.',
+        body: 'يوجد قسم تنزيلات داخل الإعدادات يشير إلى ملفات APK/AAB المستضافة. يمكن تثبيت التطبيق كـ PWA من المتصفح أيضًا.',
         steps: [
           'افتح صفحة التنزيلات من الروابط داخل الإعدادات عند الحاجة.',
           'على Android: ثبّت APK عند السماح بالمصادر غير المعروفة وفق سياسة جهازك.',
@@ -11219,7 +11219,7 @@ async function runResearchAgent(topicOverride){
         const res = await window.Tesseract.recognize(f.dataUrl, 'ara+eng');
         f.text = String(res?.data?.text || '').trim();
       }catch(e){
-        wfLog(`تعذّر التعرف على النص: ${e?.message||e}`);
+        wfLog(`❌ OCR failed: ${e?.message||e}`);
       }
       saveFiles(pid, files);
     }
@@ -11296,7 +11296,7 @@ let pinOnly = false;
             <img src="./logo.svg" style="width:52px;height:52px;border-radius:14px;flex-shrink:0;border:1px solid rgba(10,20,60,.08)" alt="logo" onerror="this.textContent='🤖';this.style.fontSize='32px'"/>
             <div style="flex:1;min-width:0">
               <div style="font-weight:900;font-size:1.08em;letter-spacing:-.01em">AI Workspace Studio</div>
-              <div class="hint" id="releaseVersionMeta" style="margin-top:2px">الإصدار ${WEB_RELEASE_LABEL} • تنزيل مباشر من الموقع مع رابط احتياطي عند الحاجة.</div>
+              <div class="hint" id="releaseVersionMeta" style="margin-top:2px">ملف APK واحد يطابق إصدار الويب الحالي، مع رابط احتياطي من GitHub.</div>
             </div>
             <span style="flex-shrink:0;padding:3px 10px;border-radius:20px;background:var(--accent,#2563eb);color:#fff;font-size:.72em;font-weight:800">● مباشر</span>
           </div>
@@ -11306,7 +11306,7 @@ let pinOnly = false;
             <a class="btn ghost sm" href="${DOWNLOADS_URL}" target="_blank" rel="noopener noreferrer">📋 صفحة التنزيل</a>
           </div>
           <div style="margin-top:10px;font-size:.8em;color:var(--muted,#888)">
-            إذا تعذر التنزيل المباشر من الموقع، استخدم الروابط الاحتياطية التالية:
+            إذا تعذر التنزيل المباشر، استخدم الرابط الاحتياطي التالي:
           </div>
           <div class="actions" style="flex-wrap:wrap;gap:8px;margin-top:8px">
             <a class="btn ghost sm" href="${APK_BACKUP_URL}" target="_blank" rel="noopener noreferrer">رابط APK الاحتياطي</a>
