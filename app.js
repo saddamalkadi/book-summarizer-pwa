@@ -366,7 +366,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.83';
+  const WEB_RELEASE_LABEL = 'v8.84';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -783,8 +783,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     return {
       remember: !!saved.remember,
       name: String(saved.name || '').trim(),
-      email: String(saved.email || '').trim(),
-      password: String(saved.password || '').trim()
+      email: String(saved.email || '').trim()
     };
   }
 
@@ -795,7 +794,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   }
 
   function clearRememberedAuthEntry(){
-    saveJSON(KEYS.authRemember, { remember:false, name:'', email:'', password:'' });
+    saveJSON(KEYS.authRemember, { remember:false, name:'', email:'' });
   }
 
   const getVoiceModeEnabled = () => (localStorage.getItem(KEYS.voiceMode) || 'false') === 'true';
@@ -2451,20 +2450,50 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : c === '"' ? '&quot;' : '&#39;'
     ));
   }
+  function isSafeRenderedUrl(rawValue, { allowData = false, allowBlob = false, allowMailto = false, allowTel = false } = {}){
+    const value = String(rawValue || '').trim();
+    if (!value) return false;
+    if (value.startsWith('#')) return true;
+    if (/^[/.]/.test(value)) return true;
+    if (/^\.\.?[\\/]/.test(value)) return true;
+    if (/^https?:/i.test(value)) return true;
+    if (allowMailto && /^mailto:/i.test(value)) return true;
+    if (allowTel && /^tel:/i.test(value)) return true;
+    if (allowData && /^data:/i.test(value)) return true;
+    if (allowBlob && /^blob:/i.test(value)) return true;
+    return false;
+  }
   function sanitizeRenderedHtml(html){
     if (typeof document === 'undefined') return String(html || '');
     const tpl = document.createElement('template');
     tpl.innerHTML = String(html || '');
-    tpl.content.querySelectorAll('script,iframe,object,embed,link,meta').forEach((el) => el.remove());
+    tpl.content.querySelectorAll('script,iframe,object,embed,link,meta,base,form,input,button,select,textarea').forEach((el) => el.remove());
     tpl.content.querySelectorAll('*').forEach((el) => {
       [...el.attributes].forEach((attr) => {
         const name = String(attr.name || '').toLowerCase();
-        const value = String(attr.value || '');
+        const value = String(attr.value || '').trim();
         if (name.startsWith('on') || name === 'srcdoc'){
           el.removeAttribute(attr.name);
           return;
         }
-        if ((name === 'href' || name === 'src') && /^\s*javascript:/i.test(value)){
+        if (name === 'style' && /(expression\s*\(|javascript:|url\s*\(\s*['"]?\s*javascript:)/i.test(value)){
+          el.removeAttribute(attr.name);
+          return;
+        }
+        if ((name === 'href' || name === 'xlink:href') && !isSafeRenderedUrl(value, {
+          allowData: true,
+          allowBlob: true,
+          allowMailto: true,
+          allowTel: true
+        })){
+          el.removeAttribute(attr.name);
+          return;
+        }
+        if (name === 'src' && !isSafeRenderedUrl(value, { allowData: true, allowBlob: true })){
+          el.removeAttribute(attr.name);
+          return;
+        }
+        if ((name === 'action' || name === 'formaction') && !isSafeRenderedUrl(value)){
           el.removeAttribute(attr.name);
         }
       });
@@ -4975,7 +5004,6 @@ function refreshDeepSearchBtn(){
       : 'يفتح تسجيل Google في المتصفح ثم يعيدك إلى نسخة الويب مباشرة.';
     if ($('authEntryName') && !String($('authEntryName').value || '').trim()) $('authEntryName').value = remembered.name || '';
     if ($('authEntryEmail') && !String($('authEntryEmail').value || '').trim()) $('authEntryEmail').value = remembered.email || '';
-    if ($('authEntryPassword') && remembered.remember && !String($('authEntryPassword').value || '').trim()) $('authEntryPassword').value = remembered.password || '';
     syncUnifiedAuthEntry();
     syncAccountPlanControls();
   }
@@ -5373,8 +5401,7 @@ function syncUnifiedAuthEntry(){
         saveRememberedAuthEntry({
           remember: true,
           name: String(payload?.name || $('authEntryName')?.value || '').trim(),
-          email: String(payload?.email || $('authEntryEmail')?.value || '').trim(),
-          password: ''
+          email: String(payload?.email || $('authEntryEmail')?.value || '').trim()
         });
       } else {
         clearRememberedAuthEntry();
@@ -5459,8 +5486,7 @@ async function submitUnifiedAuthEntry(){
         saveRememberedAuthEntry({
           remember: true,
           name,
-          email,
-          password: isAdminEntry ? password : ''
+          email
         });
       } else {
         clearRememberedAuthEntry();
@@ -6628,7 +6654,7 @@ async function submitUnifiedAuthEntry(){
         id: 'downloads_android',
         page: 'settings',
         title: 'تنزيل تطبيق Android والويب التقدمي',
-        body: 'يوجد قسم تنزيلات داخل الإعدادات يشير إلى ملفات APK/AAB المستضافة. يمكن تثبيت التطبيق كـ PWA من المتصفح أيضًا.',
+        body: 'يوجد قسم تنزيلات داخل الإعدادات يشير إلى ملف APK النهائي المستضاف. يمكن تثبيت التطبيق كـ PWA من المتصفح أيضًا.',
         steps: [
           'افتح صفحة التنزيلات من الروابط داخل الإعدادات عند الحاجة.',
           'على Android: ثبّت APK عند السماح بالمصادر غير المعروفة وفق سياسة جهازك.',
@@ -11288,9 +11314,7 @@ let pinOnly = false;
       const WEB_URL = 'https://app.saddamalkadi.com/';
       const DOWNLOADS_URL = `${WEB_URL}downloads/`;
       const APK_LATEST_URL = `${DOWNLOADS_URL}ai-workspace-studio-latest.apk`;
-      const AAB_LATEST_URL = `${DOWNLOADS_URL}ai-workspace-studio-latest.aab`;
       const APK_BACKUP_URL = `https://github.com/${REPO}/blob/main/downloads/ai-workspace-studio-latest.apk?raw=1`;
-      const AAB_BACKUP_URL = `https://github.com/${REPO}/blob/main/downloads/ai-workspace-studio-latest.aab?raw=1`;
 
       overview.innerHTML = `
         <div class="bubble app-dl-card" style="margin:0;padding:16px">
@@ -11304,7 +11328,6 @@ let pinOnly = false;
           </div>
           <div class="actions" style="flex-wrap:wrap;gap:8px">
             <a class="btn" id="apkMainBtn" href="${APK_LATEST_URL}" download="AI-Workspace-Studio-latest.apk" target="_blank" rel="noopener noreferrer">⬇ تنزيل APK — Android</a>
-            <a class="btn ghost sm" href="${AAB_LATEST_URL}" download="AI-Workspace-Studio-latest.aab" target="_blank" rel="noopener noreferrer">⬇ تنزيل AAB — Google Play</a>
             <a class="btn ghost sm" href="${WEB_URL}" target="_blank" rel="noopener noreferrer">🌐 تطبيق الويب</a>
             <a class="btn ghost sm" href="${DOWNLOADS_URL}" target="_blank" rel="noopener noreferrer">📋 صفحة التنزيل</a>
           </div>
@@ -11313,7 +11336,6 @@ let pinOnly = false;
           </div>
           <div class="actions" style="flex-wrap:wrap;gap:8px;margin-top:8px">
             <a class="btn ghost sm" href="${APK_BACKUP_URL}" target="_blank" rel="noopener noreferrer">رابط APK الاحتياطي</a>
-            <a class="btn ghost sm" href="${AAB_BACKUP_URL}" target="_blank" rel="noopener noreferrer">رابط AAB الاحتياطي</a>
           </div>
           <div class="hint" style="margin-top:10px;font-size:.78em">
             Android 7.0+ • قم بتفعيل "تثبيت من مصادر غير معروفة" في الإعدادات قبل التثبيت

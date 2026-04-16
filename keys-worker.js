@@ -15,77 +15,77 @@ let googleKeysCache = {
 export default {
   async fetch(request, env) {
     try {
-      if (request.method === 'OPTIONS') return handleOptions(request);
+      if (request.method === 'OPTIONS') return handleOptions(request, env);
 
       const url = new URL(request.url);
 
       if (url.pathname === '/health') {
         const health = getWorkerHealth(env);
-        return withCors(jsonResponse(health.body, health.status), request);
+        return withCors(jsonResponse(health.body, health.status), request, env);
       }
 
       if (url.pathname === '/auth/config' && request.method === 'GET') {
-        return withCors(jsonResponse(getPublicAuthConfig(env), 200), request);
+        return withCors(jsonResponse(getPublicAuthConfig(env), 200), request, env);
       }
 
       if (url.pathname === '/auth/google' && request.method === 'POST') {
-        return withCors(await handleGoogleAuth(request, env), request);
+        return withCors(await handleGoogleAuth(request, env), request, env);
       }
 
       if (url.pathname === '/auth/login' && request.method === 'POST') {
-        return withCors(await handlePasswordLogin(request, env), request);
+        return withCors(await handlePasswordLogin(request, env), request, env);
       }
 
       if (url.pathname === '/auth/register' && request.method === 'POST') {
-        return withCors(await handleEmailRegistration(request, env), request);
+        return withCors(await handleEmailRegistration(request, env), request, env);
       }
 
       if (url.pathname === '/auth/session' && request.method === 'GET') {
-        return withCors(await handleSessionLookup(request, env), request);
+        return withCors(await handleSessionLookup(request, env), request, env);
       }
 
       if (url.pathname === '/convert/health' && request.method === 'GET') {
-        return withCors(await proxyConvertService(request, env, '/health'), request);
+        return withCors(await proxyConvertService(request, env, '/health'), request, env);
       }
 
       if (url.pathname === '/storage/state' && request.method === 'GET') {
-        return withCors(await handleStorageStateGet(request, env), request);
+        return withCors(await handleStorageStateGet(request, env), request, env);
       }
 
       if (url.pathname === '/storage/state' && request.method === 'POST') {
-        return withCors(await handleStorageStatePut(request, env), request);
+        return withCors(await handleStorageStatePut(request, env), request, env);
       }
 
       if (url.pathname === '/voice/transcribe' && request.method === 'POST') {
-        return withCors(await handleVoiceTranscription(request, env), request);
+        return withCors(await handleVoiceTranscription(request, env), request, env);
       }
 
       if (url.pathname === '/proxy/tts' && (request.method === 'POST' || request.method === 'GET')) {
-        return withCors(await handleGoogleTtsProxy(request), request);
+        return withCors(await handleGoogleTtsProxy(request), request, env);
       }
 
       if (url.pathname === '/voice/speak' && request.method === 'POST') {
-        return withCors(await handleVoiceSynthesis(request, env), request);
+        return withCors(await handleVoiceSynthesis(request, env), request, env);
       }
 
       if (url.pathname === '/ocr' && request.method === 'POST') {
-        return withCors(await proxyConvertService(request, env, '/ocr'), request);
+        return withCors(await proxyConvertService(request, env, '/ocr'), request, env);
       }
 
       if (url.pathname === '/convert/pdf-to-docx' && request.method === 'POST') {
-        return withCors(await proxyConvertService(request, env, '/convert/pdf-to-docx'), request);
+        return withCors(await proxyConvertService(request, env, '/convert/pdf-to-docx'), request, env);
       }
 
       if (url.pathname === '/auth/upgrade/request' && request.method === 'POST') {
-        return withCors(await handleUpgradeRequest(request, env), request);
+        return withCors(await handleUpgradeRequest(request, env), request, env);
       }
 
       if (url.pathname === '/auth/upgrade/activate' && request.method === 'POST') {
-        return withCors(await handleUpgradeActivation(request, env), request);
+        return withCors(await handleUpgradeActivation(request, env), request, env);
       }
 
       if (url.pathname === '/auth/admin/generate-upgrade-code' && request.method === 'POST') {
-        return withCors(await handleAdminUpgradeCode(request, env), request);
+        return withCors(await handleAdminUpgradeCode(request, env), request, env);
       }
 
       if (url.pathname.startsWith('/v1/')) {
@@ -95,26 +95,32 @@ export default {
       if (env.ASSETS && typeof env.ASSETS.fetch === 'function') {
         const assetResp = await env.ASSETS.fetch(request);
         if (assetResp.status !== 404 || !isSpaRequest(request, url)) {
-          return withCors(assetResp, request);
+          return withCors(assetResp, request, env);
         }
 
         const shellRequest = new Request(new URL('/index.html', url).toString(), request);
         const shellResp = await env.ASSETS.fetch(shellRequest);
-        return withCors(shellResp, request);
+        return withCors(shellResp, request, env);
       }
 
-      return withCors(new Response('Not Found', { status: 404 }), request);
+      return withCors(new Response('Not Found', { status: 404 }), request, env);
     } catch (err) {
+      const exposeInternalErrors = String(env?.EXPOSE_INTERNAL_ERRORS || '').trim().toLowerCase() === 'true';
+      const message = String(err?.message || err || 'Worker error');
       return withCors(jsonResponse({
-        error: String(err?.message || err || 'Worker error'),
+        error: exposeInternalErrors ? message : 'Worker request failed.',
         code: 'WORKER_UNHANDLED_ERROR'
-      }, 500), request);
+      }, 500), request, env);
     }
   }
 };
 
-function handleOptions(request) {
-  return withCors(new Response(null, { status: 204 }), request);
+function handleOptions(request, env) {
+  const origin = String(request.headers.get('Origin') || '').trim();
+  if (origin && !resolveCorsOrigin(request, env)) {
+    return new Response(null, { status: 403 });
+  }
+  return withCors(new Response(null, { status: 204 }), request, env);
 }
 
 function jsonResponse(payload, status = 200) {
@@ -195,32 +201,47 @@ function decodeBase64ToBytes(value) {
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
 
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    const normalized = String(value || '').trim();
+    if (normalized) return normalized;
+  }
+  return '';
+}
+
 function getSessionSecret(env) {
-  return (
-    env.APP_SESSION_SECRET ||
-    env.AUTH_SESSION_SECRET ||
-    getServerKey(env) ||
-    env.GATEWAY_CLIENT_TOKEN ||
-    'aistudio-session-fallback'
-  ).trim();
+  return firstNonEmpty(
+    env.APP_SESSION_SECRET,
+    env.AUTH_SESSION_SECRET,
+    env.SESSION_SIGNING_SECRET
+  );
 }
 
 function getUpgradeSecret(env) {
-  return (
-    env.UPGRADE_CODE_SECRET ||
-    env.APP_SESSION_SECRET ||
-    env.AUTH_SESSION_SECRET ||
-    getServerKey(env) ||
-    'aistudio-upgrade-fallback'
-  ).trim();
+  return firstNonEmpty(
+    env.UPGRADE_CODE_SECRET,
+    env.APP_UPGRADE_SECRET
+  );
 }
 
 function getUpgradeAdminToken(env) {
-  return (
-    env.UPGRADE_ADMIN_TOKEN ||
-    env.GATEWAY_CLIENT_TOKEN ||
-    ''
-  ).trim();
+  return firstNonEmpty(env.UPGRADE_ADMIN_TOKEN);
+}
+
+function requireSessionSecret(env) {
+  const secret = getSessionSecret(env);
+  if (!secret) {
+    throw new Error('Session secret is not configured on the worker. Set APP_SESSION_SECRET or AUTH_SESSION_SECRET.');
+  }
+  return secret;
+}
+
+function requireUpgradeSecret(env) {
+  const secret = getUpgradeSecret(env);
+  if (!secret) {
+    throw new Error('Upgrade secret is not configured on the worker. Set UPGRADE_CODE_SECRET or APP_UPGRADE_SECRET.');
+  }
+  return secret;
 }
 
 function getAdminEmail(env) {
@@ -307,10 +328,71 @@ function getWorkerHealth(env) {
   };
 }
 
-function withCors(response, request) {
-  const origin = request.headers.get('Origin') || '*';
+const DEFAULT_ALLOWED_CORS_ORIGINS = [
+  'https://app.saddamalkadi.com',
+  'https://api.saddamalkadi.com',
+  'https://saddamalkadi.github.io',
+  'https://localhost',
+  'http://localhost',
+  'capacitor://localhost'
+];
+
+function getAllowedCorsOrigins(env) {
+  const extra = String(env?.CORS_ALLOW_ORIGINS || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return [...DEFAULT_ALLOWED_CORS_ORIGINS, ...extra];
+}
+
+function isWildcardHostMatch(originHost, wildcardRule) {
+  const suffix = wildcardRule.replace(/^\*\./, '').toLowerCase();
+  return !!suffix && (originHost === suffix || originHost.endsWith(`.${suffix}`));
+}
+
+function isAllowedCorsOrigin(origin, env) {
+  const value = String(origin || '').trim();
+  if (!value) return false;
+  let parsedOrigin;
+  try {
+    parsedOrigin = new URL(value);
+  } catch (_) {
+    return false;
+  }
+
+  if (/^https?:$/.test(parsedOrigin.protocol) && /^(localhost|127\.0\.0\.1)$/i.test(parsedOrigin.hostname)) {
+    return true;
+  }
+
+  for (const rule of getAllowedCorsOrigins(env)) {
+    const normalizedRule = String(rule || '').trim();
+    if (!normalizedRule) continue;
+    if (normalizedRule === '*') return true;
+    if (normalizedRule.startsWith('*.')) {
+      if (isWildcardHostMatch(parsedOrigin.hostname.toLowerCase(), normalizedRule.toLowerCase())) {
+        return true;
+      }
+      continue;
+    }
+    if (normalizedRule === value) return true;
+  }
+  return false;
+}
+
+function resolveCorsOrigin(request, env) {
+  const origin = String(request.headers.get('Origin') || '').trim();
+  if (!origin) return '';
+  return isAllowedCorsOrigin(origin, env) ? origin : '';
+}
+
+function withCors(response, request, env) {
+  const allowedOrigin = resolveCorsOrigin(request, env);
   const h = new Headers(response.headers || {});
-  h.set('Access-Control-Allow-Origin', origin);
+  if (allowedOrigin) {
+    h.set('Access-Control-Allow-Origin', allowedOrigin);
+  } else {
+    h.delete('Access-Control-Allow-Origin');
+  }
   h.set('Vary', 'Origin');
   h.set('Access-Control-Allow-Methods', 'GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS');
   h.set('Access-Control-Allow-Headers', [
@@ -323,6 +405,8 @@ function withCors(response, request) {
     'X-Title'
   ].join(','));
   h.set('Access-Control-Expose-Headers', 'Content-Type,Content-Length');
+  h.set('X-Content-Type-Options', 'nosniff');
+  h.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   h.delete('alt-svc');
   h.set('Alt-Svc', 'clear');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers: h });
@@ -780,6 +864,7 @@ async function handleVoiceSynthesis(request, env) {
 
 async function handleUpgradeRequest(request, env) {
   try {
+    requireUpgradeSecret(env);
     const session = await requireSession(request, env);
     const config = getPublicAuthConfig(env);
     const mailto = buildUpgradeMailto(session, config.upgradeEmail);
@@ -790,8 +875,15 @@ async function handleUpgradeRequest(request, env) {
       mailto
     }, 200);
   } catch (error) {
+    const message = String(error?.message || error || 'Authentication required.');
+    if (/Upgrade secret is not configured/i.test(message)) {
+      return jsonResponse({
+        error: 'Upgrade flow is not configured on this worker.',
+        code: 'UPGRADE_NOT_CONFIGURED'
+      }, 503);
+    }
     return jsonResponse({
-      error: String(error?.message || error || 'Authentication required.'),
+      error: message,
       code: 'AUTH_SESSION_REQUIRED'
     }, 401);
   }
@@ -799,6 +891,7 @@ async function handleUpgradeRequest(request, env) {
 
 async function handleUpgradeActivation(request, env) {
   try {
+    requireUpgradeSecret(env);
     const session = await requireSession(request, env);
     const body = await parseJson(request);
     const code = String(body?.code || '').trim();
@@ -815,14 +908,29 @@ async function handleUpgradeActivation(request, env) {
     }, env);
     return jsonResponse({ ...upgraded, upgradeAccepted: true }, 200);
   } catch (error) {
+    const message = String(error?.message || error || 'Upgrade activation failed.');
+    if (/Upgrade secret is not configured/i.test(message)) {
+      return jsonResponse({
+        error: 'Upgrade flow is not configured on this worker.',
+        code: 'UPGRADE_NOT_CONFIGURED'
+      }, 503);
+    }
     return jsonResponse({
-      error: String(error?.message || error || 'Upgrade activation failed.'),
+      error: message,
       code: 'UPGRADE_ACTIVATION_FAILED'
     }, 401);
   }
 }
 
 async function handleAdminUpgradeCode(request, env) {
+  try {
+    requireUpgradeSecret(env);
+  } catch (_) {
+    return jsonResponse({
+      error: 'Upgrade flow is not configured on this worker.',
+      code: 'UPGRADE_NOT_CONFIGURED'
+    }, 503);
+  }
   const expected = getUpgradeAdminToken(env);
   const provided = String(request.headers.get('X-Admin-Token') || '').trim();
   let adminAuthorized = false;
@@ -871,7 +979,7 @@ async function handleGateway(request, env, url) {
       return withCors(jsonResponse({
         error: 'Unauthorized client token. Check Gateway Client Token in the app settings.',
         code: 'GATEWAY_INVALID_CLIENT_TOKEN'
-      }, 401), request);
+      }, 401), request, env);
     }
   }
 
@@ -883,7 +991,7 @@ async function handleGateway(request, env, url) {
     return withCors(jsonResponse({
       object: 'list',
       data: FALLBACK_MODEL_LIST
-    }, 200), request);
+    }, 200), request, env);
   }
 
   if (!authHeader) {
@@ -891,7 +999,7 @@ async function handleGateway(request, env, url) {
       error: 'Missing API key. Set OPENROUTER_API_KEY in Cloudflare Worker Secrets, or send Authorization header for temporary browser-side auth.',
       code: 'GATEWAY_MISSING_UPSTREAM_KEY',
       configured: false
-    }, 401), request);
+    }, 401), request, env);
   }
 
   const upstreamPath = url.pathname.startsWith('/v1/')
@@ -923,7 +1031,7 @@ async function handleGateway(request, env, url) {
       error: 'OpenRouter upstream request failed before a response was received.',
       code: 'GATEWAY_UPSTREAM_FETCH_FAILED',
       detail: String(err?.message || err || 'Fetch failed')
-    }, 502), request);
+    }, 502), request, env);
   }
 
   if (!upstreamResp.ok) {
@@ -940,14 +1048,14 @@ async function handleGateway(request, env, url) {
       error: upstreamMessage,
       code: `GATEWAY_UPSTREAM_${upstreamResp.status}`,
       upstream_status: upstreamResp.status
-    }, upstreamResp.status), request);
+    }, upstreamResp.status), request, env);
   }
 
   return withCors(new Response(upstreamResp.body, {
     status: upstreamResp.status,
     statusText: upstreamResp.statusText,
     headers: upstreamResp.headers
-  }), request);
+  }), request, env);
 }
 
 async function proxyConvertService(request, env, targetPath) {
@@ -975,7 +1083,7 @@ async function requireSession(request, env) {
   if (!token) {
     throw new Error('Missing signed session. Please log in with Google first.');
   }
-  const payload = await verifySignedToken(token, getSessionSecret(env), 'session');
+  const payload = await verifySignedToken(token, requireSessionSecret(env), 'session');
   if (!payload?.email) {
     throw new Error('Invalid or expired session.');
   }
@@ -1003,7 +1111,7 @@ async function issueSessionToken(profile, env) {
     iat: Math.floor(now / 1000),
     exp: Math.floor((now + SESSION_TTL_MS) / 1000)
   };
-  const sessionToken = await signCompactToken(payload, getSessionSecret(env), 'session');
+  const sessionToken = await signCompactToken(payload, requireSessionSecret(env), 'session');
   return {
     ok: true,
     email: payload.email,
@@ -1026,13 +1134,13 @@ async function createUpgradeCode({ email, plan = 'premium', days = 365 }, env) {
     iat: Math.floor(now / 1000),
     exp: Math.floor((now + (days * 24 * 60 * 60 * 1000)) / 1000)
   };
-  const signed = await signCompactToken(payload, getUpgradeSecret(env), 'upgrade');
+  const signed = await signCompactToken(payload, requireUpgradeSecret(env), 'upgrade');
   return `AIPRO-${signed}`;
 }
 
 async function verifyUpgradeCodeForEmail(code, email, env) {
   const raw = String(code || '').trim().replace(/^AIPRO-/, '');
-  const payload = await verifySignedToken(raw, getUpgradeSecret(env), 'upgrade');
+  const payload = await verifySignedToken(raw, requireUpgradeSecret(env), 'upgrade');
   if (!payload?.email) {
     throw new Error('Invalid or expired upgrade code.');
   }
