@@ -1,5 +1,5 @@
 // AI Workspace Studio - Service Worker
-const APP_VERSION = "883";
+const APP_VERSION = "884";
 const CACHE_NAME = `aistudio-cache-v${APP_VERSION}`;
 const CORE = [
   "./",
@@ -15,7 +15,7 @@ const CORE = [
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
-    await cache.addAll(CORE);
+    try { await cache.addAll(CORE); } catch (_) {}
     await self.skipWaiting();
   })());
 });
@@ -32,6 +32,12 @@ self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") {
     self.skipWaiting();
   }
+  if (event.data && event.data.type === "CLEAR_CACHE") {
+    event.waitUntil((async () => {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    })());
+  }
 });
 
 async function swr(request){
@@ -47,7 +53,7 @@ async function swr(request){
 async function networkFirst(request){
   const cache = await caches.open(CACHE_NAME);
   try {
-    const res = await fetch(request);
+    const res = await fetch(request, { cache: 'no-store' });
     if (res && res.status === 200) cache.put(request, res.clone());
     return res;
   } catch (_) {
@@ -60,6 +66,16 @@ function isDirectDownloadPath(pathname){
   return pathname.includes("/downloads/") ||
     pathname.endsWith("/downloads") ||
     /\.(apk|aab|zip)$/i.test(pathname);
+}
+
+function isShellCritical(pathname){
+  return (
+    pathname.endsWith("/index.html") ||
+    pathname.endsWith("/app.js") ||
+    pathname.endsWith("/sw.js") ||
+    pathname.endsWith("/manifest.webmanifest") ||
+    pathname.endsWith("/auth-bridge.html")
+  );
 }
 
 self.addEventListener("fetch", (event) => {
@@ -79,7 +95,7 @@ self.addEventListener("fetch", (event) => {
       event.respondWith(networkFirst(event.request));
       return;
     }
-    if (url.pathname.endsWith("/app.js") || url.pathname.endsWith("/index.html")) {
+    if (isShellCritical(url.pathname)) {
       event.respondWith(networkFirst(event.request));
       return;
     }

@@ -44,11 +44,13 @@ async function autoFixWorker() {
   const OR_KEY   = process.env.OPENROUTER_API_KEY;
   if (!CF_TOKEN || !OR_KEY) { console.log('[worker-fix] Skipped: missing env vars'); return; }
 
-  const CF_ACCOUNT  = 'ea4e90ec8fbd70faefdddd2153064d6f';
+  const CF_ACCOUNT  = process.env.CF_ACCOUNT_ID || 'ea4e90ec8fbd70faefdddd2153064d6f';
   // Must match production worker serving api.saddamalkadi.com.
-  const WORKER_NAME = 'sadam-key';
-  const KV_NS       = '49d87e2d4989452fb3c680ad024ae5b7';
-  const ADMIN_PASS  = process.env.ADMIN_PASSWORD_REAL || 'Saddam@Admin2026!';
+  const WORKER_NAME = process.env.CF_WORKER_NAME || 'sadam-key';
+  const KV_NS       = process.env.CF_KV_NAMESPACE || '49d87e2d4989452fb3c680ad024ae5b7';
+  // Never ship a hardcoded admin password fallback. If not configured,
+  // admin password login is simply disabled (Google admin sign-in still works).
+  const ADMIN_PASS  = (process.env.ADMIN_PASSWORD_REAL || '').trim();
 
   try {
     // 1) Check health (with retry for edge propagation lag)
@@ -86,11 +88,15 @@ async function autoFixWorker() {
       `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/storage/kv/namespaces/${KV_NS}/values/_config%3Aopenrouter_api_key`,
       { method: 'PUT', headers: kvHeaders, body: OR_KEY }
     );
-    await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/storage/kv/namespaces/${KV_NS}/values/_config%3Aadmin_password`,
-      { method: 'PUT', headers: kvHeaders, body: ADMIN_PASS }
-    );
-    console.log('[worker-fix] KV values stored');
+    if (ADMIN_PASS){
+      await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/storage/kv/namespaces/${KV_NS}/values/_config%3Aadmin_password`,
+        { method: 'PUT', headers: kvHeaders, body: ADMIN_PASS }
+      );
+      console.log('[worker-fix] KV values stored (including admin password)');
+    } else {
+      console.log('[worker-fix] KV values stored (admin password not configured — skipping)');
+    }
 
     // 3) Get Worker source from local file (avoids multipart extraction issues from services endpoint)
     let code;
@@ -251,7 +257,7 @@ async function handleGoogleTtsProxy(request){
         {type:'plain_text',name:'OPENROUTER_REFERER',text:'https://app.saddamalkadi.com/'},
         {type:'plain_text',name:'OPENROUTER_TITLE',text:'AI Workspace Studio'},
         {type:'plain_text',name:'OPENROUTER_API_KEY',text:OR_KEY},
-        {type:'plain_text',name:'APP_ADMIN_PASSWORD',text:ADMIN_PASS}
+        ...(ADMIN_PASS ? [{type:'plain_text',name:'APP_ADMIN_PASSWORD',text:ADMIN_PASS}] : [])
       ],
       compatibility_date: '2024-09-23',
       compatibility_flags: ['nodejs_compat']
