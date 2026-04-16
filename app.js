@@ -1,4 +1,4 @@
-﻿/* AI Workspace Studio v8.34 - strategic platform skeleton (no build step) */
+﻿/* AI Workspace Studio v8.84 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -366,7 +366,15 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.83';
+  const APP_RELEASE_VERSION = (() => {
+    const raw = String(document?.documentElement?.dataset?.appver || '').trim();
+    if (/^\d+\.\d+(?:\.\d+)?$/.test(raw)) return raw;
+    return '8.84';
+  })();
+  const APP_RELEASE_SEMVER = /^\d+\.\d+\.\d+$/.test(APP_RELEASE_VERSION)
+    ? APP_RELEASE_VERSION
+    : `${APP_RELEASE_VERSION}.0`;
+  const WEB_RELEASE_LABEL = `v${APP_RELEASE_VERSION.replace(/\.0$/, '')}`;
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -1601,7 +1609,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       body: JSON.stringify({
         reason,
         state: snapshot,
-        appVersion: '8.44.0'
+        appVersion: APP_RELEASE_SEMVER
       })
     }).then((payload) => {
       CLOUD_RUNTIME.lastHash = hash;
@@ -4653,6 +4661,7 @@ function refreshDeepSearchBtn(){
   function syncAccountPlanControls(){
     const account = getAccountRuntimeState();
     const freeLocked = account.authRequired && !account.premium;
+    const isAdmin = !!account.admin;
     if ($('freeMode')){
       $('freeMode').checked = freeLocked ? true : !!getSettings().freeMode;
       $('freeMode').disabled = freeLocked;
@@ -4678,6 +4687,10 @@ function refreshDeepSearchBtn(){
       $('pickModelBtn').title = freeLocked
         ? 'يمكنك استعراض النماذج المجانية فقط داخل الخطة المجانية.'
         : 'الموديلات';
+    }
+    if ($('settingsHealthBtn')) $('settingsHealthBtn').style.display = isAdmin ? '' : 'none';
+    if ($('settingsHealthOutput') && !isAdmin){
+      $('settingsHealthOutput').textContent = 'التشغيل مضبوط لنسخة التجربة الحالية.';
     }
   }
 
@@ -4881,6 +4894,10 @@ function refreshDeepSearchBtn(){
     const signedIn = hasValidAuthSession(auth);
     const plan = signedIn && auth.plan === 'premium' ? 'premium' : 'free';
     const role = auth.role === 'admin' ? 'admin' : 'user';
+    const isAdmin = signedIn && role === 'admin';
+    document.body.classList.toggle('admin-controls-visible', isAdmin);
+    document.body.classList.toggle('user-plan-admin', isAdmin);
+    document.body.classList.toggle('user-plan-regular', !isAdmin);
     const displayName = signedIn ? (auth.name || auth.email || 'الحساب') : 'تسجيل الدخول';
     const displayEmail = signedIn ? (auth.email || 'الحساب المسجل') : 'سجّل الدخول ببريدك الشخصي';
     const planLabel = getAccountPlanLabel(plan);
@@ -5506,7 +5523,7 @@ async function submitUnifiedAuthEntry(){
     try{
       const payload = await fetchAuthJson('/auth/upgrade/request', {
         method: 'POST',
-        body: JSON.stringify({ appVersion: '8.0' })
+        body: JSON.stringify({ appVersion: APP_RELEASE_SEMVER })
       }).catch(() => null);
       const mailto = payload?.mailto || buildUpgradeMailto(account, getEffectiveAuthConfig());
       window.location.href = mailto;
@@ -5865,7 +5882,7 @@ async function submitUnifiedAuthEntry(){
       const area = document.createElement('textarea');
       area.id = input.id;
       area.dir = input.getAttribute('dir') || 'auto';
-      area.rows = 2;
+      area.rows = 1;
       area.placeholder = 'اكتب طلبك… Enter للإرسال، Shift+Enter لسطر جديد';
       area.title = 'Enter للإرسال، Shift+Enter لسطر جديد';
       area.value = input.value || '';
@@ -7977,8 +7994,17 @@ async function fileToText(file){
   function sanitizeDownloadUrl(raw){
     const value = String(raw || '').trim();
     if (!value) return '';
-    if (/^(https?:|data:|blob:)/i.test(value)) return value;
+    if (/^https?:/i.test(value)) return value;
+    if (/^data:/i.test(value)) return value.length <= 2_500_000 ? value : '';
     return '';
+  }
+  function sanitizeDownloadFilename(name = 'download.bin'){
+    const cleaned = String(name || '')
+      .replace(/[\\/:*?"<>|]+/g, '_')
+      .replace(/\s+/g, ' ')
+      .replace(/^\.+/g, '')
+      .trim();
+    return (cleaned || 'download.bin').slice(0, 120);
   }
   function inferMimeFromName(name = ''){
     const cleaned = String(name || '').trim().split('?')[0].split('#')[0];
@@ -8194,7 +8220,9 @@ async function fileToText(file){
       : rawEncoding === 'url'
       ? 'url'
       : 'text';
-    const derivedName = String(entry.name || '').trim() || extractFilenameFromUrl(rawUrl, 'download.bin');
+    const derivedName = sanitizeDownloadFilename(
+      String(entry.name || '').trim() || extractFilenameFromUrl(rawUrl, 'download.bin')
+    );
     const derivedMime = String(entry.mime || '').trim()
       || inferMimeFromName(derivedName)
       || inferMimeFromName(extractFilenameFromUrl(rawUrl))
@@ -8471,7 +8499,7 @@ async function fileToText(file){
   }
 
   function downloadBlob(filename, blob){
-    const safeName = String(filename || 'download').trim() || 'download';
+    const safeName = sanitizeDownloadFilename(filename || 'download');
     const safeBlob = (blob instanceof Blob) ? blob : new Blob([blob], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(safeBlob);
     const isCoarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;

@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.83">
+<html lang="ar" dir="rtl" data-appver="8.84">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.83</title>
+    <title>AI Workspace Studio v8.84</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -4134,6 +4134,16 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
 #page-settings .panel > .body {
   padding: 14px 16px 24px;
 }
+#page-settings .release-advanced-toggle .settings-advanced-toggle {
+  font-size: 13px;
+}
+body.user-plan-regular #page-settings .release-admin-only,
+body.user-plan-regular #page-settings .release-advanced-toggle {
+  display: none !important;
+}
+body.user-plan-admin #page-settings .release-advanced-toggle {
+  display: block !important;
+}
 
 /* 7. Use-case cards — better mobile grid */
 @media (max-width: 480px) {
@@ -4287,6 +4297,12 @@ body.promptEngineeringMode .topbar .topbar-actions #focusModeBtn{
 
 /* 10. Settings panel base url — hide from main toolbar, visible in settings only */
 #baseUrl { display: none !important; }
+
+/* Final user hardening: keep advanced runtime controls hidden by default
+   and expose only for signed-in admin accounts from app.js */
+body:not(.admin-controls-visible) #page-settings .settings-advanced{
+  display:none !important;
+}
 
 /* 11. Pill labels in settings: better spacing */
 .settings-inline-pills {
@@ -4447,7 +4463,7 @@ body.dark #topRuntimeBadge{
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.83</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.84</div>
       </div>
     </aside>
 
@@ -5471,8 +5487,10 @@ body.dark #topRuntimeBadge{
     })();
   </script>
 
-<script src="app.js?v=881"></script>
+<script src="app.js?v=884"></script>
   <script>
+    const APP_RELEASE_BUILD = '884';
+    const CURRENT_CACHE = `aistudio-cache-v${APP_RELEASE_BUILD}`;
     const isNativeCapacitorApp = (() => {
       try{
         return !!window.Capacitor?.isNativePlatform?.();
@@ -5482,10 +5500,9 @@ body.dark #topRuntimeBadge{
       }
     })();
     if ("serviceWorker" in navigator && !isNativeCapacitorApp) {
-      // Force-clear any stale SW caches from old versions
+      // Force-clear stale SW caches from old versions.
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v881";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -5494,7 +5511,7 @@ body.dark #topRuntimeBadge{
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=883").then((registration) => {
+        navigator.serviceWorker.register(`./sw.js?v=${APP_RELEASE_BUILD}`).then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

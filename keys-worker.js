@@ -12,80 +12,94 @@ let googleKeysCache = {
   expiresAt: 0
 };
 
+const DEFAULT_CORS_ALLOWED_ORIGINS = [
+  'https://app.saddamalkadi.com',
+  'https://saddamalkadi.com',
+  'https://www.saddamalkadi.com',
+  'https://saddamalkadi.github.io',
+  'https://ai-workspace-studio.pages.dev',
+  'capacitor://localhost',
+  'ionic://localhost',
+  'http://localhost',
+  'https://localhost',
+  'http://127.0.0.1',
+  'https://127.0.0.1'
+];
+
 export default {
   async fetch(request, env) {
     try {
-      if (request.method === 'OPTIONS') return handleOptions(request);
+      if (request.method === 'OPTIONS') return handleOptions(request, env);
 
       const url = new URL(request.url);
 
       if (url.pathname === '/health') {
         const health = getWorkerHealth(env);
-        return withCors(jsonResponse(health.body, health.status), request);
+        return withCors(jsonResponse(health.body, health.status), request, env);
       }
 
       if (url.pathname === '/auth/config' && request.method === 'GET') {
-        return withCors(jsonResponse(getPublicAuthConfig(env), 200), request);
+        return withCors(jsonResponse(getPublicAuthConfig(env), 200), request, env);
       }
 
       if (url.pathname === '/auth/google' && request.method === 'POST') {
-        return withCors(await handleGoogleAuth(request, env), request);
+        return withCors(await handleGoogleAuth(request, env), request, env);
       }
 
       if (url.pathname === '/auth/login' && request.method === 'POST') {
-        return withCors(await handlePasswordLogin(request, env), request);
+        return withCors(await handlePasswordLogin(request, env), request, env);
       }
 
       if (url.pathname === '/auth/register' && request.method === 'POST') {
-        return withCors(await handleEmailRegistration(request, env), request);
+        return withCors(await handleEmailRegistration(request, env), request, env);
       }
 
       if (url.pathname === '/auth/session' && request.method === 'GET') {
-        return withCors(await handleSessionLookup(request, env), request);
+        return withCors(await handleSessionLookup(request, env), request, env);
       }
 
       if (url.pathname === '/convert/health' && request.method === 'GET') {
-        return withCors(await proxyConvertService(request, env, '/health'), request);
+        return withCors(await proxyConvertService(request, env, '/health'), request, env);
       }
 
       if (url.pathname === '/storage/state' && request.method === 'GET') {
-        return withCors(await handleStorageStateGet(request, env), request);
+        return withCors(await handleStorageStateGet(request, env), request, env);
       }
 
       if (url.pathname === '/storage/state' && request.method === 'POST') {
-        return withCors(await handleStorageStatePut(request, env), request);
+        return withCors(await handleStorageStatePut(request, env), request, env);
       }
 
       if (url.pathname === '/voice/transcribe' && request.method === 'POST') {
-        return withCors(await handleVoiceTranscription(request, env), request);
+        return withCors(await handleVoiceTranscription(request, env), request, env);
       }
 
       if (url.pathname === '/proxy/tts' && (request.method === 'POST' || request.method === 'GET')) {
-        return withCors(await handleGoogleTtsProxy(request), request);
+        return withCors(await handleGoogleTtsProxy(request), request, env);
       }
 
       if (url.pathname === '/voice/speak' && request.method === 'POST') {
-        return withCors(await handleVoiceSynthesis(request, env), request);
+        return withCors(await handleVoiceSynthesis(request, env), request, env);
       }
 
       if (url.pathname === '/ocr' && request.method === 'POST') {
-        return withCors(await proxyConvertService(request, env, '/ocr'), request);
+        return withCors(await proxyConvertService(request, env, '/ocr'), request, env);
       }
 
       if (url.pathname === '/convert/pdf-to-docx' && request.method === 'POST') {
-        return withCors(await proxyConvertService(request, env, '/convert/pdf-to-docx'), request);
+        return withCors(await proxyConvertService(request, env, '/convert/pdf-to-docx'), request, env);
       }
 
       if (url.pathname === '/auth/upgrade/request' && request.method === 'POST') {
-        return withCors(await handleUpgradeRequest(request, env), request);
+        return withCors(await handleUpgradeRequest(request, env), request, env);
       }
 
       if (url.pathname === '/auth/upgrade/activate' && request.method === 'POST') {
-        return withCors(await handleUpgradeActivation(request, env), request);
+        return withCors(await handleUpgradeActivation(request, env), request, env);
       }
 
       if (url.pathname === '/auth/admin/generate-upgrade-code' && request.method === 'POST') {
-        return withCors(await handleAdminUpgradeCode(request, env), request);
+        return withCors(await handleAdminUpgradeCode(request, env), request, env);
       }
 
       if (url.pathname.startsWith('/v1/')) {
@@ -95,26 +109,30 @@ export default {
       if (env.ASSETS && typeof env.ASSETS.fetch === 'function') {
         const assetResp = await env.ASSETS.fetch(request);
         if (assetResp.status !== 404 || !isSpaRequest(request, url)) {
-          return withCors(assetResp, request);
+          return withCors(assetResp, request, env);
         }
 
         const shellRequest = new Request(new URL('/index.html', url).toString(), request);
         const shellResp = await env.ASSETS.fetch(shellRequest);
-        return withCors(shellResp, request);
+        return withCors(shellResp, request, env);
       }
 
-      return withCors(new Response('Not Found', { status: 404 }), request);
+      return withCors(new Response('Not Found', { status: 404 }), request, env);
     } catch (err) {
       return withCors(jsonResponse({
         error: String(err?.message || err || 'Worker error'),
         code: 'WORKER_UNHANDLED_ERROR'
-      }, 500), request);
+      }, 500), request, env);
     }
   }
 };
 
-function handleOptions(request) {
-  return withCors(new Response(null, { status: 204 }), request);
+function handleOptions(request, env) {
+  const allowedOrigin = resolveAllowedCorsOrigin(request, env);
+  if (!allowedOrigin) {
+    return new Response('CORS origin denied', { status: 403 });
+  }
+  return withCors(new Response(null, { status: 204 }), request, env);
 }
 
 function jsonResponse(payload, status = 200) {
@@ -199,9 +217,7 @@ function getSessionSecret(env) {
   return (
     env.APP_SESSION_SECRET ||
     env.AUTH_SESSION_SECRET ||
-    getServerKey(env) ||
-    env.GATEWAY_CLIENT_TOKEN ||
-    'aistudio-session-fallback'
+    getServerKey(env)
   ).trim();
 }
 
@@ -210,8 +226,7 @@ function getUpgradeSecret(env) {
     env.UPGRADE_CODE_SECRET ||
     env.APP_SESSION_SECRET ||
     env.AUTH_SESSION_SECRET ||
-    getServerKey(env) ||
-    'aistudio-upgrade-fallback'
+    getServerKey(env)
   ).trim();
 }
 
@@ -291,27 +306,24 @@ function getWorkerHealth(env) {
       client_token_required: clientTokenRequired,
       auth_required: authConfig.authRequired,
       google_client_configured: authConfig.clientIdConfigured,
-      admin_password_ready: adminPasswordReady,
-      admin_google_ready: adminGoogleReady,
       admin_login_ready: adminLoginReady,
+      is_admin_configured: adminLoginReady,
       session_ready: hasSessionSecret,
       upgrade_flow_ready: hasUpgradeSecret,
       cloud_storage_ready: cloudStorageReady,
       convert_proxy_ready: convertReady,
       voice_cloud_ready: voice.ready,
       voice_stt_ready: voice.sttReady,
-      voice_tts_ready: voice.ttsReady,
-      voice_provider: voice.provider,
-      voice_premium_only: false
+      voice_tts_ready: voice.ttsReady
     }
   };
 }
 
-function withCors(response, request) {
-  const origin = request.headers.get('Origin') || '*';
+function withCors(response, request, env) {
+  const origin = resolveAllowedCorsOrigin(request, env);
   const h = new Headers(response.headers || {});
-  h.set('Access-Control-Allow-Origin', origin);
-  h.set('Vary', 'Origin');
+  if (origin) h.set('Access-Control-Allow-Origin', origin);
+  h.set('Vary', appendVaryHeader(h.get('Vary'), 'Origin'));
   h.set('Access-Control-Allow-Methods', 'GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS');
   h.set('Access-Control-Allow-Headers', [
     'Authorization',
@@ -323,9 +335,59 @@ function withCors(response, request) {
     'X-Title'
   ].join(','));
   h.set('Access-Control-Expose-Headers', 'Content-Type,Content-Length');
+  h.set('Access-Control-Max-Age', '86400');
   h.delete('alt-svc');
   h.set('Alt-Svc', 'clear');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers: h });
+}
+
+function appendVaryHeader(current, value) {
+  const normalized = String(current || '').split(',').map((entry) => entry.trim()).filter(Boolean);
+  if (!normalized.includes(value)) normalized.push(value);
+  return normalized.join(', ');
+}
+
+function getCorsAllowList(env) {
+  const configured = String(env.CORS_ALLOWED_ORIGINS || '').trim();
+  if (!configured) return DEFAULT_CORS_ALLOWED_ORIGINS;
+  return configured
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function wildcardPatternToRegex(pattern) {
+  const escaped = String(pattern || '')
+    .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*');
+  return new RegExp(`^${escaped}$`, 'i');
+}
+
+function isCorsOriginAllowed(origin, requestUrl, env) {
+  if (!origin) return true;
+  if (origin === 'null') {
+    return String(env.CORS_ALLOW_NULL_ORIGIN || '').trim().toLowerCase() === 'true';
+  }
+  if (requestUrl && origin === requestUrl.origin) return true;
+  const allowList = getCorsAllowList(env);
+  return allowList.some((entry) => {
+    if (entry === '*') return true;
+    if (entry.includes('*')) return wildcardPatternToRegex(entry).test(origin);
+    return entry.toLowerCase() === origin.toLowerCase();
+  });
+}
+
+function resolveAllowedCorsOrigin(request, env) {
+  const origin = String(request.headers.get('Origin') || '').trim();
+  if (!origin) return '*';
+  let requestUrl = null;
+  try {
+    requestUrl = new URL(request.url);
+  } catch (_) {
+    requestUrl = null;
+  }
+  if (!isCorsOriginAllowed(origin, requestUrl, env)) return '';
+  return origin;
 }
 
 async function handleGoogleAuth(request, env) {
@@ -871,7 +933,7 @@ async function handleGateway(request, env, url) {
       return withCors(jsonResponse({
         error: 'Unauthorized client token. Check Gateway Client Token in the app settings.',
         code: 'GATEWAY_INVALID_CLIENT_TOKEN'
-      }, 401), request);
+      }, 401), request, env);
     }
   }
 
@@ -883,7 +945,7 @@ async function handleGateway(request, env, url) {
     return withCors(jsonResponse({
       object: 'list',
       data: FALLBACK_MODEL_LIST
-    }, 200), request);
+    }, 200), request, env);
   }
 
   if (!authHeader) {
@@ -891,7 +953,7 @@ async function handleGateway(request, env, url) {
       error: 'Missing API key. Set OPENROUTER_API_KEY in Cloudflare Worker Secrets, or send Authorization header for temporary browser-side auth.',
       code: 'GATEWAY_MISSING_UPSTREAM_KEY',
       configured: false
-    }, 401), request);
+    }, 401), request, env);
   }
 
   const upstreamPath = url.pathname.startsWith('/v1/')
@@ -923,7 +985,7 @@ async function handleGateway(request, env, url) {
       error: 'OpenRouter upstream request failed before a response was received.',
       code: 'GATEWAY_UPSTREAM_FETCH_FAILED',
       detail: String(err?.message || err || 'Fetch failed')
-    }, 502), request);
+    }, 502), request, env);
   }
 
   if (!upstreamResp.ok) {
@@ -940,14 +1002,14 @@ async function handleGateway(request, env, url) {
       error: upstreamMessage,
       code: `GATEWAY_UPSTREAM_${upstreamResp.status}`,
       upstream_status: upstreamResp.status
-    }, upstreamResp.status), request);
+    }, upstreamResp.status), request, env);
   }
 
   return withCors(new Response(upstreamResp.body, {
     status: upstreamResp.status,
     statusText: upstreamResp.statusText,
     headers: upstreamResp.headers
-  }), request);
+  }), request, env);
 }
 
 async function proxyConvertService(request, env, targetPath) {
