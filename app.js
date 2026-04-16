@@ -366,7 +366,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.85';
+  const WEB_RELEASE_LABEL = 'v8.90';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -4443,7 +4443,7 @@ function refreshDeepSearchBtn(){
       return 'هذا البريد هو بريد الإدارة. استخدم كلمة مرور الإدارة من نفس شاشة الدخول.';
     }
     if (/AUTH_ADMIN_PASSWORD_NOT_CONFIGURED|Admin password login is not configured/i.test(raw)){
-      return 'دخول الإدارة بكلمة المرور غير مفعل حاليًا على الخادم. استخدم تسجيل Google ببريد الإدارة نفسه، أو أعد ضبط APP_ADMIN_PASSWORD على Cloudflare.';
+      return 'دخول الإدارة بكلمة المرور غير مفعل حاليًا. استخدم تسجيل Google ببريد الإدارة المعتمد.';
     }
     return raw;
   }
@@ -4846,7 +4846,7 @@ function refreshDeepSearchBtn(){
           <div class="row" style="margin-top:10px">
             <div class="col" style="grid-column:1/-1">
               <label class="hint">بريد طلب الترقية</label>
-              <input id="upgradeEmail" type="email" placeholder="tntntt830@gmail.com" />
+              <input id="upgradeEmail" type="email" placeholder="name@example.com" autocomplete="email" />
             </div>
           </div>
         </div>`);

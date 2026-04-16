@@ -1,0 +1,27 @@
+exclude:
+  - docs
+  - CODEX_HANDOFF.md
+  - GUIDE.ar.md
+  - IOS_CLOUD_BUILD.ar.md
+  - TESTFLIGHT.ar.md
+  - README.md
+  - replit.md
+  - server.mjs
+  - keys-worker.js
+  - convert-worker.js
+  - wrangler.jsonc
+  - wrangler.convert.jsonc
+  - codemagic.yaml
+  - capacitor.config.json
+  - package.json
+  - package-lock.json
+  - scripts
+  - android
+  - ios
+  - github
+  - node_modules
+  - assets
+  - attached_assets
+  - .assetsignore
+  - .replit
+  - .github

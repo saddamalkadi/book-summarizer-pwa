@@ -382,7 +382,7 @@ async function handlePasswordLogin(request, env) {
 
     if (!adminPassword) {
       return jsonResponse({
-        error: 'Admin password login is not configured on the worker. Use Google sign-in with the admin Gmail account or configure APP_ADMIN_PASSWORD.',
+        error: 'Admin password sign-in is not available. Please use Google sign-in with the approved admin account.',
         code: 'AUTH_ADMIN_PASSWORD_NOT_CONFIGURED'
       }, 503);
     }

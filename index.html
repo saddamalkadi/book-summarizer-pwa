@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.85">
+<html lang="ar" dir="rtl" data-appver="8.90">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.85</title>
+    <title>AI Workspace Studio</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -4445,7 +4445,7 @@ body.dark #topRuntimeBadge{
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.85</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.90</div>
       </div>
     </aside>
 
@@ -5469,7 +5469,7 @@ body.dark #topRuntimeBadge{
     })();
   </script>
 
-<script src="app.js?v=885"></script>
+<script src="app.js?v=890"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -5483,7 +5483,7 @@ body.dark #topRuntimeBadge{
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v885";
+          const CURRENT_CACHE = "aistudio-cache-v890";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -5492,7 +5492,7 @@ body.dark #topRuntimeBadge{
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=885").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=890").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

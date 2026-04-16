@@ -11,7 +11,8 @@ const files = [
   'sw.js',
   'manifest.webmanifest',
   'logo.svg',
-  'robots.txt'
+  'robots.txt',
+  '_config.yml'
 ];
 const directories = ['icons'];
 
