@@ -1,5 +1,5 @@
 // AI Workspace Studio - Service Worker
-const APP_VERSION = "881";
+const APP_VERSION = "884";
 const CACHE_NAME = `aistudio-cache-v${APP_VERSION}`;
 const CORE = [
   "./",
@@ -59,7 +59,7 @@ async function networkFirst(request){
 function isDirectDownloadPath(pathname){
   return pathname.includes("/downloads/") ||
     pathname.endsWith("/downloads") ||
-    /\.(apk|aab|zip)$/i.test(pathname);
+    /\.(apk|zip)$/i.test(pathname);
 }
 
 self.addEventListener("fetch", (event) => {

@@ -56,6 +56,7 @@ function buildHealth(env) {
     docxMode,
     fidelityReady,
     ocrReady,
+    tokenRequired: Boolean(String(env.GATEWAY_CLIENT_TOKEN || "").trim()),
     message: docxUpstreamReady
       ? (ocrReady
         ? "DOCX high-fidelity upstream route and OCR are ready."
@@ -532,7 +533,7 @@ function extractCloudConvertTaskMessage(task) {
 
 function withCors(response, env) {
   const headers = new Headers(response.headers);
-  headers.set("Access-Control-Allow-Origin", String(env.CORS_ALLOW_ORIGIN || "*"));
+  headers.set("Access-Control-Allow-Origin", String(env.CORS_ALLOW_ORIGIN || "https://app.saddamalkadi.com"));
   headers.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Token");
   headers.set("Vary", "Origin");

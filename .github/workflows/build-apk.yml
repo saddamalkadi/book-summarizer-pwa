@@ -23,13 +23,8 @@ jobs:
       - name: Install npm dependencies
         run: npm install
 
-      - name: Prepare www directory for Capacitor
-        run: |
-          mkdir -p www/icons
-          cp index.html app.js sw.js manifest.webmanifest logo.svg www/ 2>/dev/null || true
-          cp auth-bridge.html www/ 2>/dev/null || true
-          cp icons/*.webp www/icons/ 2>/dev/null || true
-          echo "www/ contents:"; ls www/
+      - name: Prepare web assets for Capacitor
+        run: npm run sync:web
 
       - name: Sync Capacitor (generates capacitor-cordova-android-plugins)
         run: npx cap sync android
@@ -62,14 +57,17 @@ jobs:
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
           echo "Version: $VERSION_NAME ($VERSION_CODE)"
 
-      - name: Build debug APK
+      - name: Build release APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: Rename APK for release
+      - name: Rename APK for distribution
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk \
+          cp android/app/build/outputs/apk/release/app-release.apk \
              AI-Workspace-Studio-latest.apk
+          cp AI-Workspace-Studio-latest.apk \
+             "downloads/ai-workspace-studio-v${{ steps.version.outputs.version_name }}-android-release.apk"
+          cp AI-Workspace-Studio-latest.apk downloads/ai-workspace-studio-latest.apk
           echo "APK size: $(du -sh AI-Workspace-Studio-latest.apk)"
 
       - name: Upload APK artifact (GitHub Actions)
@@ -91,7 +89,7 @@ jobs:
 
             - **Build**: ${{ steps.version.outputs.version_code }}
             - **Platform**: Android 7.0+ (API ${{ steps.version.outputs.version_code >= '851' && '24' || '24' }}+)
-            - **Type**: Debug APK (تثبيت مباشر — ليس عبر متجر Google Play)
+            - **Type**: Release APK (نسخة تجريبية مستقرة للتثبيت المباشر)
 
             ### التثبيت
             1. حمّل ملف `AI-Workspace-Studio-latest.apk`

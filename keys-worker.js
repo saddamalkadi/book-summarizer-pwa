@@ -201,7 +201,7 @@ function getSessionSecret(env) {
     env.AUTH_SESSION_SECRET ||
     getServerKey(env) ||
     env.GATEWAY_CLIENT_TOKEN ||
-    'aistudio-session-fallback'
+    ''
   ).trim();
 }
 
@@ -211,7 +211,7 @@ function getUpgradeSecret(env) {
     env.APP_SESSION_SECRET ||
     env.AUTH_SESSION_SECRET ||
     getServerKey(env) ||
-    'aistudio-upgrade-fallback'
+    ''
   ).trim();
 }
 
@@ -221,6 +221,48 @@ function getUpgradeAdminToken(env) {
     env.GATEWAY_CLIENT_TOKEN ||
     ''
   ).trim();
+}
+
+function parseAllowedOrigins(env) {
+  const raw = String(
+    env.CORS_ALLOW_ORIGIN ||
+    env.CORS_ALLOW_ORIGINS ||
+    'https://app.saddamalkadi.com,https://saddamalkadi.com'
+  ).trim();
+  return raw
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function resolveCorsOrigin(request, env) {
+  const requestOrigin = String(request.headers.get('Origin') || '').trim();
+  const allowed = parseAllowedOrigins(env);
+  if (!requestOrigin) return allowed[0] || '*';
+  if (allowed.includes('*')) return '*';
+  return allowed.includes(requestOrigin) ? requestOrigin : (allowed[0] || 'https://app.saddamalkadi.com');
+}
+
+function getPublicHealth(env) {
+  const upstreamConfigured = !!getServerKey(env);
+  const cloudStorageReady = !!getUserDataStore(env);
+  const voice = getVoiceApiConfig(env);
+  const convertReady = !!env.CONVERT && typeof env.CONVERT.fetch === 'function';
+  const authConfig = getPublicAuthConfig(env);
+  const ready = upstreamConfigured && authConfig.clientIdConfigured && cloudStorageReady;
+  return {
+    status: ready ? 200 : 503,
+    body: {
+      ok: ready,
+      ready,
+      worker: 'keys',
+      authRequired: authConfig.authRequired,
+      clientIdConfigured: authConfig.clientIdConfigured,
+      storageReady: cloudStorageReady,
+      convertReady,
+      voiceReady: voice.ready
+    }
+  };
 }
 
 function getAdminEmail(env) {
@@ -246,7 +288,6 @@ function getPublicAuthConfig(env) {
     brandName: String(env.APP_BRAND_NAME || 'AI Workspace Studio').trim(),
     developerName: String(env.APP_DEVELOPER_NAME || 'صدام القاضي').trim(),
     upgradeEmail: String(env.APP_UPGRADE_EMAIL || 'tntntt830@gmail.com').trim(),
-    adminEmail,
     adminEnabled,
     adminPasswordEnabled,
     adminLoginMethod: adminPasswordEnabled
@@ -286,31 +327,34 @@ function getWorkerHealth(env) {
       ready: configured,
       configured,
       worker: 'keys',
-      upstream: 'openrouter',
-      upstream_configured: upstreamConfigured,
-      client_token_required: clientTokenRequired,
-      auth_required: authConfig.authRequired,
-      google_client_configured: authConfig.clientIdConfigured,
-      admin_password_ready: adminPasswordReady,
-      admin_google_ready: adminGoogleReady,
-      admin_login_ready: adminLoginReady,
-      session_ready: hasSessionSecret,
-      upgrade_flow_ready: hasUpgradeSecret,
-      cloud_storage_ready: cloudStorageReady,
-      convert_proxy_ready: convertReady,
-      voice_cloud_ready: voice.ready,
-      voice_stt_ready: voice.sttReady,
-      voice_tts_ready: voice.ttsReady,
-      voice_provider: voice.provider,
-      voice_premium_only: false
+      checks: {
+        upstreamConfigured,
+        clientTokenRequired,
+        authRequired: authConfig.authRequired,
+        googleClientConfigured: authConfig.clientIdConfigured,
+        adminPasswordReady,
+        adminGoogleReady,
+        adminLoginReady,
+        sessionReady: hasSessionSecret,
+        upgradeFlowReady: hasUpgradeSecret,
+        cloudStorageReady,
+        convertProxyReady: convertReady,
+        voiceCloudReady: voice.ready,
+        voiceSttReady: voice.sttReady,
+        voiceTtsReady: voice.ttsReady
+      }
     }
   };
 }
 
 function withCors(response, request) {
-  const origin = request.headers.get('Origin') || '*';
+  const requestOrigin = String(request.headers.get('Origin') || '').trim();
+  const allowedOrigins = String(envOriginAllowList(request) || '').trim();
+  const origin = requestOrigin && allowedOrigins
+    ? (originMatchesAllowList(requestOrigin, allowedOrigins) ? requestOrigin : '')
+    : (requestOrigin || '*');
   const h = new Headers(response.headers || {});
-  h.set('Access-Control-Allow-Origin', origin);
+  if (origin) h.set('Access-Control-Allow-Origin', origin);
   h.set('Vary', 'Origin');
   h.set('Access-Control-Allow-Methods', 'GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS');
   h.set('Access-Control-Allow-Headers', [
@@ -326,6 +370,27 @@ function withCors(response, request) {
   h.delete('alt-svc');
   h.set('Alt-Svc', 'clear');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers: h });
+}
+
+function envOriginAllowList(request) {
+  const host = String(new URL(request.url).host || '').trim().toLowerCase();
+  if (host === 'api.saddamalkadi.com') {
+    return 'https://app.saddamalkadi.com,https://saddamalkadi.com';
+  }
+  return '';
+}
+
+function originMatchesAllowList(origin, allowList) {
+  try {
+    const normalized = new URL(origin).origin;
+    return String(allowList || '')
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .some((entry) => entry === normalized);
+  } catch (_) {
+    return false;
+  }
 }
 
 async function handleGoogleAuth(request, env) {
@@ -1164,7 +1229,7 @@ async function getGoogleVerificationKeys() {
 }
 
 function buildUpgradeMailto(session, upgradeEmail) {
-  const to = encodeURIComponent(String(upgradeEmail || 'tntntt830@gmail.com').trim());
+  const to = encodeURIComponent(String(upgradeEmail || '').trim());
   const subject = encodeURIComponent(`طلب ترقية حساب - ${session.email}`);
   const body = encodeURIComponent([
     'مرحبًا،',

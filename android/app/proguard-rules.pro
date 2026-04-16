@@ -19,3 +19,14 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Capacitor and plugins rely on annotations / reflection to register bridges.
+-keep class com.getcapacitor.** { *; }
+-keep class capacitor.plugin.** { *; }
+-keep @com.getcapacitor.annotation.CapacitorPlugin class * { *; }
+-keepclassmembers class * {
+    @com.getcapacitor.annotation.PluginMethod <methods>;
+}
+
+# Keep the Android entry activity.
+-keep class com.saddamalkadi.aiworkspace.MainActivity { *; }

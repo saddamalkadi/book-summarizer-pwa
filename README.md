@@ -59,7 +59,7 @@ HOST=0.0.0.0 PORT=9090 node server.mjs
 ```
 
 الخادم يضيف:
-- `Access-Control-Allow-Origin: *` لتسهيل الوصول من المتصفحات المختلفة
+- رؤوس أمان أساسية مع خادم static محلي فقط لنسخة الإصدار
 - Security headers أساسية (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`)
 
 > ملاحظة: إعدادات جدار الحماية على نظام التشغيل/السيرفر نفسه قد تحتاج فتح المنفذ يدويًا (مثل 8080).
@@ -77,10 +77,10 @@ HOST=0.0.0.0 PORT=9090 node server.mjs
 - إضافة: دعم تحويل PDF→DOCX عبر CloudConvert Worker Endpoint اختياري من الإعدادات (بديل للتحويل المحلي).
 
 ## إعداد Gateway الصحيح
-تم تجهيز الإعدادات الافتراضية داخل التطبيق للعمل مباشرة مع بوابة API:
-- Gateway URL: `https://sadam-key.tntntt830.workers.dev`
-- Cloud PDF→Word Endpoint: `https://sadam-convert.tntntt830.workers.dev/convert/pdf-to-docx`
-- Cloud OCR Endpoint: `https://sadam-convert.tntntt830.workers.dev/ocr`
+تم تجهيز الإعدادات الافتراضية داخل التطبيق للعمل مباشرة مع بوابة API الرسمية:
+- Gateway URL: `https://api.saddamalkadi.com`
+- Cloud PDF→Word Endpoint: `https://api.saddamalkadi.com/convert/pdf-to-docx`
+- Cloud OCR Endpoint: `https://api.saddamalkadi.com/ocr`
 - Auth Mode الافتراضي: `gateway`
 
 إذا كان لديك Worker ثابت للواجهة (مثل `keys.*.workers.dev`) وWorker آخر للـ API، ضع رابط Worker الـ API في Gateway URL.

@@ -12,7 +12,7 @@ const files = [
   'manifest.webmanifest',
   'logo.svg'
 ];
-const directories = ['icons'];
+const directories = ['icons', 'downloads'];
 
 if (existsSync(webDir)) {
   rmSync(webDir, { recursive: true, force: true });
