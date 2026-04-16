@@ -938,6 +938,11 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
         ? 'هذه النسخة الرسمية مقفلة على إعدادات التشغيل المعتمدة. يمكنك مراجعة الحالة، لكن تغيير مسارات البوابة أو المفاتيح معطل في النسخة العامة.'
         : 'هذه النسخة الرسمية تستخدم إعدادات تشغيل معتمدة وثابتة. تم إخفاء تعديل مسارات البوابة والمفاتيح لتقليل الأخطاء والعبث أثناء التجربة.';
     }
+    const advanced = document.querySelector('#page-settings .settings-advanced');
+    if (advanced) {
+      advanced.style.display = locked ? 'none' : '';
+      if (locked) advanced.removeAttribute('open');
+    }
   }
 
   /** Remove legacy overflow UI (#topbarScroll clone menu): use native horizontal scroll only. */
