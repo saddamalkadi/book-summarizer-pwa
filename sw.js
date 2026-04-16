@@ -1,5 +1,5 @@
 // AI Workspace Studio - Service Worker
-const APP_VERSION = "890";
+const APP_VERSION = "891";
 const CACHE_NAME = `aistudio-cache-v${APP_VERSION}`;
 const CORE = [
   "./",
@@ -15,7 +15,7 @@ const CORE = [
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
-    await cache.addAll(CORE);
+    try { await cache.addAll(CORE); } catch (_) { /* one asset failing must not block SW install */ }
     await self.skipWaiting();
   })());
 });
@@ -32,6 +32,12 @@ self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") {
     self.skipWaiting();
   }
+  if (event.data && event.data.type === "CLEAR_CACHE") {
+    event.waitUntil((async () => {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    })());
+  }
 });
 
 async function swr(request){
@@ -47,7 +53,7 @@ async function swr(request){
 async function networkFirst(request){
   const cache = await caches.open(CACHE_NAME);
   try {
-    const res = await fetch(request);
+    const res = await fetch(request, { cache: 'no-store' });
     if (res && res.status === 200) cache.put(request, res.clone());
     return res;
   } catch (_) {
