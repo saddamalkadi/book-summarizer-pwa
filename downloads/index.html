@@ -3,13 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>تنزيل تطبيق Android - AI Workspace Studio</title>
+  <meta name="robots" content="noindex, nofollow" />
+  <title>تنزيل تطبيق AI Workspace Studio</title>
   <meta name="theme-color" content="#081121" />
   <style>
     :root{
       --bg:#081121;
       --panel:#ffffff;
-      --muted:#61708f;
+      --muted:#5f6c88;
       --text:#0d1a33;
       --line:#d9e3f5;
       --pri:#1b66ff;
@@ -27,10 +28,10 @@
       min-height:100vh;
       padding:24px;
     }
-    .wrap{max-width:1100px; margin:0 auto; display:grid; gap:18px;}
+    .wrap{max-width:840px; margin:0 auto; display:grid; gap:18px;}
     .hero{
       display:grid; gap:16px;
-      background:linear-gradient(145deg, rgba(255,255,255,.07), rgba(255,255,255,.03));
+      background:linear-gradient(145deg, rgba(255,255,255,.08), rgba(255,255,255,.03));
       border:1px solid rgba(255,255,255,.12);
       border-radius:28px;
       padding:24px;
@@ -38,10 +39,10 @@
     }
     .brand{display:flex; align-items:center; gap:14px;}
     .brand img{width:64px; height:64px; border-radius:18px; box-shadow:0 14px 30px rgba(0,0,0,.22);}
-    .brand strong{display:block; font-size:28px;}
+    .brand strong{display:block; font-size:26px;}
     .brand span{display:block; color:rgba(255,255,255,.8); margin-top:4px;}
-    .hero p{margin:0; line-height:1.9; color:rgba(255,255,255,.9);}
-    .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px;}
+    .hero p{margin:0; line-height:1.9; color:rgba(255,255,255,.92);}
+    .grid{display:grid; grid-template-columns:1fr; gap:16px;}
     .card{
       background:var(--panel);
       color:var(--text);
@@ -74,7 +75,8 @@
       border-radius:18px;
       padding:16px 18px;
       line-height:1.9;
-      color:rgba(255,255,255,.9);
+      color:rgba(255,255,255,.92);
+      font-size:14px;
     }
     a.inline{color:#fff; font-weight:1000;}
     code{
@@ -86,7 +88,7 @@
     @media (max-width:640px){
       body{padding:14px;}
       .hero,.card{border-radius:22px; padding:18px;}
-      .brand strong{font-size:24px;}
+      .brand strong{font-size:22px;}
     }
   </style>
 </head>
@@ -97,35 +99,36 @@
         <img src="../logo.svg" alt="شعار AI Workspace Studio" />
         <div>
           <strong>AI Workspace Studio</strong>
-          <span>أحدث مخرجات Android الجاهزة للتنزيل</span>
+          <span>نسخة تجربة المستخدمين قبل المتجر (Release Candidate)</span>
         </div>
       </div>
-      <p>هذه الصفحة مخصصة لتنزيل أحدث نسخة Android الجاهزة. الروابط الأساسية تعمل من نفس الموقع مباشرة، مع إبقاء روابط احتياطية من GitHub عند الحاجة.</p>
+      <p>هذه الصفحة تعرض <strong>ملف APK واحد</strong> يطابق إصدار الويب الحالي. حزمة Google Play (AAB) غير معروضة هنا؛ تُبنى داخلياً عند الحاجة للنشر على المتجر فقط.</p>
     </section>
 
     <section class="grid">
       <article class="card">
         <span class="tag">Android APK</span>
         <h2>ملف التثبيت المباشر</h2>
-        <p>استخدم هذا الملف للتثبيت المباشر على الهاتف. هذه النسخة محدثة ومبنية من نفس شِل الويب الحالي.</p>
+        <p>استخدم هذا الملف للتثبيت اليدوي على الهاتف. النسخة مبنية من نفس شفرة الويب المعتمدة في المستودع.</p>
         <ul>
-          <li>الإصدار: <code>v8.84 release</code></li>
+          <li>الإصدار: <code>v8.85 RC</code></li>
           <li>الحد الأدنى للنظام: <code>Android 7.0+</code></li>
-          <li>الأفضل للتثبيت اليدوي المباشر</li>
+          <li>نوع البناء: <code>release</code> (R8 + shrinkResources)</li>
         </ul>
         <div class="actions">
           <a class="btn primary" href="./ai-workspace-studio-latest.apk" download="ai-workspace-studio-latest.apk">تنزيل APK</a>
           <a class="btn ghost" href="https://github.com/saddamalkadi/book-summarizer-pwa/blob/main/downloads/ai-workspace-studio-latest.apk?raw=1" target="_blank" rel="noopener noreferrer">رابط احتياطي</a>
+          <a class="btn ghost" href="../">فتح نسخة الويب</a>
         </div>
-        <div class="meta">يمكنك أيضًا تنزيل ملف الإصدار المحدد باسم <code>ai-workspace-studio-v8.84-android-release.apk</code>.</div>
+        <div class="meta">اسم الإصدار المحدد: <code>ai-workspace-studio-v8.85-android-release.apk</code></div>
       </article>
     </section>
 
     <section class="note">
-      إخراج iPhone التنفيذي النهائي غير متاح من هذا الجهاز لأنه يحتاج <code>macOS + Xcode + Apple Developer</code>.
-      وحتى ذلك الوقت يمكنك استخدام
+      هذه النسخة تجريبية خاصة بالمستخدمين قبل النشر على المتجر. قد يطلب الهاتف تفعيل التثبيت من مصادر غير المتجر عند أول مرة.
+      على iPhone يمكنك استخدام
       <a class="inline" href="../">نسخة الويب المباشرة</a>
-      أو متابعة التوزيع الحالي عبر Android فقط.
+      (PWA) حتى يتوفر إخراج تنفيذي عبر App Store عند الجاهزية.
     </section>
   </div>
 </body>

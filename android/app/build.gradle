@@ -20,8 +20,8 @@ android {
         applicationId "com.saddamalkadi.aiworkspace"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 884
-        versionName "8.84.0"
+        versionCode 885
+        versionName "8.85.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -43,7 +43,8 @@ android {
         release {
             minifyEnabled true
             shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            debuggable false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             if (hasReleaseKeystore) {
                 signingConfig signingConfigs.release
             } else {
@@ -51,6 +52,18 @@ android {
                 // the standard debug keystore when no release keystore is configured (CI / OSS).
                 signingConfig signingConfigs.debug
             }
+        }
+    }
+    packagingOptions {
+        resources {
+            excludes += [
+                'META-INF/AL2.0',
+                'META-INF/LGPL2.1',
+                'META-INF/*.kotlin_module',
+                'META-INF/LICENSE*',
+                'META-INF/NOTICE*',
+                'META-INF/*.version'
+            ]
         }
     }
 }
