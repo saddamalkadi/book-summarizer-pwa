@@ -268,7 +268,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.78';
+  const WEB_RELEASE_LABEL = 'v8.79';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -4224,8 +4224,7 @@ function refreshDeepSearchBtn(){
       const minH = compact ? 38 : 44;
       const value = String(input.value || '');
       // Compact default: keep one-line height when empty/short. Grow only when needed.
-      const shouldStayCompact = !value.trim() || (!value.includes('
-') && value.length < 120);
+      const shouldStayCompact = !value.trim() || (!value.includes('\n') && value.length < 120);
       input.style.height = 'auto';
       if (shouldStayCompact){
         input.style.height = `${minH}px`;
