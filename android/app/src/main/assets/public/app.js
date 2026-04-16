@@ -268,7 +268,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.76';
+  const WEB_RELEASE_LABEL = 'v8.77';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -784,10 +784,31 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       return (
         host === 'app.saddamalkadi.com'
         || host === 'saddamalkadi.com'
+        || host.endsWith('.saddamalkadi.com')
         || /(^|\.)saddamalkadi\.github\.io$/i.test(host)
       );
     }catch(_){
       return false;
+    }
+  }
+
+  /** Remove legacy overflow UI (#topbarScroll clone menu): use native horizontal scroll only. */
+  function unwrapLegacyTopbarScroll(){
+    const topActions = document.querySelector('.topbar .topbar-actions');
+    if (!topActions) return;
+    const scroll = $('topbarScroll');
+    const moreBtn = $('topbarOverflowMenuBtn');
+    const panel = $('topbarOverflowPanel');
+    if (moreBtn) moreBtn.remove();
+    if (panel){
+      try{ panel.remove(); }catch(_){ }
+    }
+    if (scroll && scroll.parentNode === topActions){
+      const anchor = scroll.nextSibling;
+      while (scroll.firstChild){
+        topActions.insertBefore(scroll.firstChild, scroll);
+      }
+      scroll.remove();
     }
   }
 
@@ -968,6 +989,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
         host === 'api.saddamalkadi.com'
         || host === 'app.saddamalkadi.com'
         || host === 'saddamalkadi.com'
+        || host.endsWith('.saddamalkadi.com')
         || host === 'convert.saddamalkadi.com'
         || /(^|\.)saddamalkadi\.github\.io$/i.test(host)
         || /(^|\.)ai-workspace-studio\.pages\.dev$/i.test(host)
@@ -1875,7 +1897,11 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
 
     const validation = validateGatewayUrlInput(current.gatewayUrl || '', current);
     const currentGateway = normalizeEndpointUrl(current.gatewayUrl || '').replace(/\/v1\/?$/i, '');
-    const shouldRepair = !validation.ok || (isCloudflareAccessCookieError(reason) && currentGateway && currentGateway !== fallbackGateway);
+    const accessErr = isCloudflareAccessCookieError(reason);
+    // On any managed host (app + all *.saddamalkadi.com), cookie/Access errors mean the
+    // browser hit a protected origin — reset to the canonical production API worker root.
+    const shouldRepairManaged = isManagedHostedRuntime() && accessErr;
+    const shouldRepair = !validation.ok || shouldRepairManaged || (accessErr && currentGateway && currentGateway !== fallbackGateway);
     if (!shouldRepair) return null;
 
     const nextGateway = fallbackGateway;
@@ -5591,97 +5617,7 @@ async function submitUnifiedAuthEntry(){
       topActions.insertBefore(voice, $('modeOffBtn') || $('newThreadBtn') || null);
     }
 
-    if (topActions && !$('topbarScroll')){
-      const scroll = document.createElement('div');
-      scroll.id = 'topbarScroll';
-      scroll.className = 'topbar-scroll';
-      scroll.setAttribute('role', 'toolbar');
-      scroll.setAttribute('aria-label', 'أدوات سريعة');
-      // Keep #headerCollapseBtn OUTSIDE the scroll wrapper. If it sits inside #topbarScroll,
-      // `body.headerCollapsed .topbar .row > :not(#headerCollapseBtn){display:none}` hides the
-      // entire scroll region — including every other control — with no way to expand again.
-      const collapseBtn = $('headerCollapseBtn');
-      const movable = Array.from(topActions.children).filter((el) => el !== collapseBtn);
-      movable.forEach((el) => scroll.appendChild(el));
-      if (collapseBtn && collapseBtn.parentNode === topActions){
-        collapseBtn.insertAdjacentElement('afterend', scroll);
-      } else {
-        topActions.prepend(scroll);
-      }
-      const moreBtn = document.createElement('button');
-      moreBtn.type = 'button';
-      moreBtn.id = 'topbarOverflowMenuBtn';
-      moreBtn.className = 'btn ghost sm with-label';
-      moreBtn.title = 'المزيد';
-      moreBtn.setAttribute('aria-expanded', 'false');
-      moreBtn.innerHTML = '<span class="icon">⋯</span><span class="label">المزيد</span>';
-      topActions.appendChild(moreBtn);
-      let panel = $('topbarOverflowPanel');
-      if (!panel){
-        panel = document.createElement('div');
-        panel.id = 'topbarOverflowPanel';
-        panel.className = 'topbar-overflow-panel';
-        panel.setAttribute('role', 'menu');
-        panel.hidden = true;
-        document.body.appendChild(panel);
-      }
-      const mirrorIds = ['historyDrawerBtn','studyModeBtn','focusModeBtn','voiceModeBtn','headerCollapseBtn','modeDeepBtn','modeAgentBtn','webToggleBtn','modeOffBtn','newThreadBtn'];
-      const closePanel = () => {
-        panel.hidden = true;
-        moreBtn.setAttribute('aria-expanded', 'false');
-      };
-      const openPanel = () => {
-        panel.innerHTML = '';
-        mirrorIds.forEach((id) => {
-          const src = $(id);
-          // Do not skip when offsetParent is null (e.g. parent hidden during header collapse);
-          // the overflow menu is how users reach actions in that state.
-          if (!src) return;
-          const row = document.createElement('button');
-          row.type = 'button';
-          row.className = 'btn ghost sm with-label';
-          row.style.width = '100%';
-          row.style.justifyContent = 'flex-start';
-          row.innerHTML = src.innerHTML;
-          row.addEventListener('click', () => {
-            closePanel();
-            src.click();
-          });
-          panel.appendChild(row);
-        });
-        if (!panel.childElementCount){
-          const hint = document.createElement('div');
-          hint.className = 'hint';
-          hint.style.padding = '10px';
-          hint.textContent = 'لا توجد أدوات إضافية حاليًا.';
-          panel.appendChild(hint);
-        }
-        panel.style.position = 'fixed';
-        const rect = moreBtn.getBoundingClientRect();
-        const panelWidth = Math.min(320, Math.max(240, window.innerWidth - 16));
-        const rtl = document.documentElement.getAttribute('dir') === 'rtl';
-        let left = rtl ? Math.max(8, window.innerWidth - rect.right) : Math.max(8, rect.left);
-        left = Math.min(left, Math.max(8, window.innerWidth - panelWidth - 8));
-        panel.style.top = `${Math.round(rect.bottom + 6)}px`;
-        panel.style.left = `${Math.round(left)}px`;
-        panel.style.right = 'auto';
-        panel.style.width = `${panelWidth}px`;
-        panel.hidden = false;
-        moreBtn.setAttribute('aria-expanded', 'true');
-      };
-      moreBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (!panel.hidden) closePanel();
-        else openPanel();
-      });
-      document.addEventListener('click', (e) => {
-        if (panel.hidden) return;
-        if (e.target === moreBtn || moreBtn.contains(e.target) || panel.contains(e.target)) return;
-        closePanel();
-      });
-      window.addEventListener('resize', () => { if (!panel.hidden) closePanel(); });
-    }
+    unwrapLegacyTopbarScroll();
 
     const topbar = document.querySelector('.topbar');
     const statusBox = $('statusBox');
@@ -9160,7 +9096,7 @@ async function maybeUpdateThreadSummary(pid, tid){
   function getFriendlyChatError(err){
     const msg = String(err?.message || err || '').trim();
     if (!msg) return 'حدث خطأ غير معروف أثناء الدردشة.';
-    if (/no\s+(?:cookie|kookie)\s+auth\s+credential/i.test(msg)) return 'رابط البوابة الحالي يطلب مصادقة Cookies أو Cloudflare Access، بينما التطبيق يستخدم جلسة API. استخدم Gateway URL مباشرًا للـ Worker مثل sadam-key...workers.dev.';
+    if (/no\s+(?:cookie|kookie)\s+auth\s+credential/i.test(msg)) return 'تعذر الوصول إلى البوابة بهذه الإعدادات (مسار محمي أو غير صالح). تمت مزامنة رابط البوابة الإنتاجي تلقائيًا؛ إذا استمر الخطأ حدّث الصفحة ثم جرّب مرة أخرى.';
     if (/insufficient\s+(credits?|balance)|not enough credits?|quota.*exceeded|billing|payment required|exceeded your current quota|402\b/i.test(msg)) return 'نفد رصيد مزود الذكاء الاصطناعي أو تم بلوغ حد الفوترة. يلزم شحن الرصيد أو استخدام وضع مجاني/نموذج مجاني.';
     if (/unauthorized client token/i.test(msg)) return 'تم الوصول إلى Gateway، لكن Gateway Client Token غير صحيح أو مفقود.';
     if (/missing api key|gateway_missing_upstream_key/i.test(msg)) return 'تم الوصول إلى Gateway، لكن مفتاح OpenRouter غير مضبوط داخل الـ Worker.';
@@ -9176,7 +9112,7 @@ async function maybeUpdateThreadSummary(pid, tid){
     if (!msg) return 'تعذر إكمال التحويل السحابي إلى Word.';
     if (/free_mode_blocks_cloud/i.test(msg) || /الوضع المجاني يمنع استخدام التحويل السحابي/i.test(msg)) return 'الوضع المجاني يوقف التحويل السحابي. عطّل الوضع المجاني أو استخدم المسار المحلي.';
     if (/rابط تحويل pdf.*غير مضبوط|cloud pdf|pdf.*word.*غير مضبوط|endpoint.*غير مضبوط/i.test(msg)) return 'رابط التحويل السحابي PDF إلى Word غير مضبوط في الإعدادات.';
-    if (/no\s+(?:cookie|kookie)\s+auth\s+credential/i.test(msg)) return 'رابط خدمة التحويل السحابي محمي بـ Cookies أو Cloudflare Access، لذلك لا يستطيع التطبيق استخدامه. استخدم رابط Worker مباشر.';
+    if (/no\s+(?:cookie|kookie)\s+auth\s+credential/i.test(msg)) return 'تعذر الوصول إلى خدمة التحويل السحابي بهذا الرابط. راجع إعدادات رابط التحويل في الإعدادات أو حدّث الصفحة بعد المزامنة التلقائية.';
     if (/insufficient\s+(credits?|balance)|not enough credits?|quota.*exceeded|billing|payment required|402\b/i.test(msg)) return 'نفد رصيد خدمة التحويل أو رصيد المزود المرتبط بها. يلزم شحن الرصيد أو استخدام المسار المحلي.';
     if (/not_found|المسار المطلوب غير موجود/i.test(msg)) return 'رابط التحويل السحابي الحالي غير صحيح أو قديم. تم تحديث التطبيق لاستخدام المسار الصحيح؛ حدّث الصفحة أو أعد فتح التطبيق ثم جرّب مرة أخرى.';
     if (/cloudconvert_base64_limit_exceeded/i.test(msg)) return 'هذا الملف يتجاوز حد الحجم المسموح لمسار المطابقة العالية عبر CloudConvert في الخطة الحالية. استخدم ملفًا أصغر أو المسار المحلي.';
