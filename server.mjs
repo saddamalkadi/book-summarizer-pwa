@@ -2,7 +2,6 @@
 import { createServer } from 'node:http';
 import { createReadStream, existsSync, statSync, unlinkSync } from 'node:fs';
 import { extname, isAbsolute, join, normalize, relative, resolve } from 'node:path';
-import { execSync } from 'node:child_process';
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 8080);
@@ -540,19 +539,10 @@ const server = createServer(async (req, res) => {
   createReadStream(path).pipe(res);
 });
 
-let _portRetries = 0;
 server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
-    _portRetries++;
-    if (_portRetries > 3) {
-      console.log(`[server] Port ${PORT} still in use after ${_portRetries} attempts — giving up`);
-      process.exit(1);
-    }
-    console.log(`[server] Port ${PORT} in use — attempt ${_portRetries}/3, freeing port...`);
-    try {
-      execSync(`fuser -k ${PORT}/tcp 2>/dev/null || true`, { timeout: 4000, shell: '/bin/bash' });
-    } catch (_) {}
-    setTimeout(() => server.listen(PORT, HOST), 2000);
+    console.log(`[server] Port ${PORT} is already in use. Stop the running process or set a different PORT.`);
+    process.exit(1);
   } else {
     throw e;
   }

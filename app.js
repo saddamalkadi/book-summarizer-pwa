@@ -232,7 +232,7 @@
     allowCloudOcr: true,
     allowCloudPolish: true,
     googleClientId: '',
-    upgradeEmail: 'tntntt830@gmail.com',
+    upgradeEmail: '',
 
     orReferer: '',
     orTitle: 'AI Workspace Studio'
@@ -255,11 +255,12 @@
     authRequired: false,
     brandName: 'AI Workspace Studio',
     developerName: 'صدام القاضي',
-    upgradeEmail: 'tntntt830@gmail.com',
-    adminEmail: 'tntntt830@gmail.com',
+    upgradeEmail: '',
+    adminEmail: '',
     adminEnabled: false,
     adminPasswordEnabled: false,
     adminLoginMethod: 'google_only',
+    allowAabDownloads: false,
     googleClientId: '',
     clientIdConfigured: false,
     premiumEnabled: true,
@@ -5481,7 +5482,9 @@ async function submitUnifiedAuthEntry(){
   }
 
   function buildUpgradeMailto(account = getAuthState(), config = getEffectiveAuthConfig()){
-    const to = encodeURIComponent(config.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail);
+    const receiver = String(config.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail || '').trim();
+    if (!receiver) return '';
+    const to = encodeURIComponent(receiver);
     const subject = encodeURIComponent(`طلب ترقية حساب - ${account.email || 'مستخدم جديد'}`);
     const body = encodeURIComponent([
       'مرحبًا،',
@@ -5509,6 +5512,9 @@ async function submitUnifiedAuthEntry(){
         body: JSON.stringify({ appVersion: '8.0' })
       }).catch(() => null);
       const mailto = payload?.mailto || buildUpgradeMailto(account, getEffectiveAuthConfig());
+      if (!mailto) {
+        throw new Error('بريد الترقية غير مضبوط. أضف بريد الترقية من إعدادات الإدارة.');
+      }
       window.location.href = mailto;
       toast('✉️ تم تجهيز رسالة طلب الترقية');
     }catch(error){
@@ -6628,7 +6634,7 @@ async function submitUnifiedAuthEntry(){
         id: 'downloads_android',
         page: 'settings',
         title: 'تنزيل تطبيق Android والويب التقدمي',
-        body: 'يوجد قسم تنزيلات داخل الإعدادات يشير إلى ملفات APK/AAB المستضافة. يمكن تثبيت التطبيق كـ PWA من المتصفح أيضًا.',
+        body: 'يوجد قسم تنزيلات داخل الإعدادات يشير إلى ملف APK التجريبي الرسمي. يمكن تثبيت التطبيق كـ PWA من المتصفح أيضًا.',
         steps: [
           'افتح صفحة التنزيلات من الروابط داخل الإعدادات عند الحاجة.',
           'على Android: ثبّت APK عند السماح بالمصادر غير المعروفة وفق سياسة جهازك.',
@@ -11278,6 +11284,15 @@ async function runResearchAgent(topicOverride){
   }
 
 let pinOnly = false;
+
+  function getPublicReleaseVersionTag(){
+    const htmlVersion = String(document.documentElement?.dataset?.appver || '').trim();
+    if (htmlVersion) return `v${htmlVersion}`;
+    const title = String(document.title || '');
+    const match = title.match(/v(\d+(?:\.\d+){0,2})/i);
+    return match ? `v${match[1]}` : 'latest';
+  }
+
   function renderDownloads(){
     const box = $('downloadsList');
     const overview = $('downloadsOverview');
@@ -11298,7 +11313,7 @@ let pinOnly = false;
               <div style="font-weight:900;font-size:1.08em;letter-spacing:-.01em">AI Workspace Studio</div>
               <div class="hint" id="releaseVersionMeta" style="margin-top:2px">ملف APK واحد يطابق إصدار الويب الحالي، مع رابط احتياطي من GitHub.</div>
             </div>
-            <span style="flex-shrink:0;padding:3px 10px;border-radius:20px;background:var(--accent,#2563eb);color:#fff;font-size:.72em;font-weight:800">● مباشر</span>
+            <span class="app-release-pill">● مباشر</span>
           </div>
           <div class="actions" style="flex-wrap:wrap;gap:8px">
             <a class="btn" id="apkMainBtn" href="${APK_LATEST_URL}" download="AI-Workspace-Studio-latest.apk" target="_blank" rel="noopener noreferrer">⬇ تنزيل APK — Android</a>
@@ -11308,10 +11323,11 @@ let pinOnly = false;
           <div style="margin-top:10px;font-size:.8em;color:var(--muted,#888)">
             إذا تعذر التنزيل المباشر، استخدم الرابط الاحتياطي التالي:
           </div>
-          <div class="actions" style="flex-wrap:wrap;gap:8px;margin-top:8px">
+          <div class="actions app-release-actions">
             <a class="btn ghost sm" href="${APK_BACKUP_URL}" target="_blank" rel="noopener noreferrer">رابط APK الاحتياطي</a>
           </div>
-          <div class="hint" style="margin-top:10px;font-size:.78em">
+          ${aabRow}
+          <div class="hint app-release-footnote">
             Android 7.0+ • قم بتفعيل "تثبيت من مصادر غير معروفة" في الإعدادات قبل التثبيت
           </div>
         </div>`;

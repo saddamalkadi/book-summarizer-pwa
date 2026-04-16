@@ -90,11 +90,28 @@ jobs:
           echo "AAB: $(du -sh staging/ai-workspace-studio-v${VN}-android-release.aab)"
           ls -la downloads/
 
-      - name: Upload APK artifact (GitHub Actions)
+      - name: Build release APK and AAB
+        working-directory: android
+        run: ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
+
+      - name: Prepare release artifacts
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk AI-Workspace-Studio-latest.apk
+          cp android/app/build/outputs/bundle/release/app-release.aab AI-Workspace-Studio-latest.aab
+          cp AI-Workspace-Studio-latest.apk AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}.apk
+          cp AI-Workspace-Studio-latest.aab AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}.aab
+          echo "APK size: $(du -sh AI-Workspace-Studio-latest.apk)"
+          echo "AAB size: $(du -sh AI-Workspace-Studio-latest.aab)"
+
+      - name: Upload release artifacts (GitHub Actions)
         uses: actions/upload-artifact@v4
         with:
           name: AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}
-          path: AI-Workspace-Studio-latest.apk
+          path: |
+            AI-Workspace-Studio-latest.apk
+            AI-Workspace-Studio-latest.aab
+            AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}.apk
+            AI-Workspace-Studio-v${{ steps.version.outputs.version_name }}.aab
           retention-days: 30
 
       - name: Create or update GitHub Release
