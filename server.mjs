@@ -44,11 +44,12 @@ async function autoFixWorker() {
   const OR_KEY   = process.env.OPENROUTER_API_KEY;
   if (!CF_TOKEN || !OR_KEY) { console.log('[worker-fix] Skipped: missing env vars'); return; }
 
-  const CF_ACCOUNT  = 'ea4e90ec8fbd70faefdddd2153064d6f';
+  const CF_ACCOUNT  = process.env.CF_ACCOUNT_ID || 'ea4e90ec8fbd70faefdddd2153064d6f';
   // Must match production worker serving api.saddamalkadi.com.
   const WORKER_NAME = 'sadam-key';
-  const KV_NS       = '49d87e2d4989452fb3c680ad024ae5b7';
-  const ADMIN_PASS  = process.env.ADMIN_PASSWORD_REAL || 'Saddam@Admin2026!';
+  const KV_NS       = process.env.CF_KV_NAMESPACE_ID || '49d87e2d4989452fb3c680ad024ae5b7';
+  const ADMIN_PASS  = process.env.ADMIN_PASSWORD_REAL || '';
+  if (!ADMIN_PASS) { console.log('[worker-fix] Skipped: ADMIN_PASSWORD_REAL not set'); return; }
 
   try {
     // 1) Check health (with retry for edge propagation lag)

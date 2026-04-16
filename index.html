@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.83">
+<html lang="ar" dir="rtl" data-appver="8.84">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>AI Workspace Studio v8.83</title>
+    <title>AI Workspace Studio v8.84</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
   <link rel="icon" href="logo.svg" />
@@ -4393,6 +4393,267 @@ body.dark #topRuntimeBadge{
   border-color: rgba(255,255,255,.14) !important;
   background: rgba(122,162,255,.14) !important;
 }
+
+/* Dark mode: workspace hero, home cards, quick tiles, panels */
+body.dark .workspace-hero{
+  background:
+    radial-gradient(circle at top left, rgba(255,255,255,.08), transparent 30%),
+    radial-gradient(circle at bottom right, rgba(94,234,212,.12), transparent 28%),
+    linear-gradient(145deg, #060e22 0%, #12275a 48%, #1b66ff 100%) !important;
+}
+body.dark .workspace-title{color:#ecf1ff !important;}
+body.dark .workspace-summary{color:#a9b7d4 !important;}
+body.dark .wqa-btn{
+  background:#15223a !important;
+  border-color:rgba(255,255,255,.12) !important;
+  color:var(--text) !important;
+}
+body.dark .wqa-btn:hover{border-color:rgba(122,162,255,.3) !important;}
+body.dark .wqa-btn.primary{
+  background:linear-gradient(135deg,#1b66ff,#0b3fbf) !important;
+  color:#fff !important;
+  border-color:transparent !important;
+}
+body.dark .use-case-card{
+  background:#15223a !important;
+  border-color:rgba(255,255,255,.10) !important;
+}
+body.dark .use-case-card:hover{
+  background:#1a2a48 !important;
+  border-color:rgba(122,162,255,.25) !important;
+}
+body.dark .uc-title{color:var(--text) !important;}
+body.dark .uc-desc{color:var(--muted) !important;}
+body.dark .wnav-card{
+  background:rgba(255,255,255,.06) !important;
+  border-color:rgba(255,255,255,.10) !important;
+  color:var(--text) !important;
+}
+body.dark .wnav-card:hover{
+  background:rgba(122,162,255,.14) !important;
+  border-color:rgba(122,162,255,.28) !important;
+}
+body.dark .wnav-label{color:var(--text) !important;}
+body.dark .workspace-status-strip{
+  background:rgba(255,255,255,.04) !important;
+  border-color:rgba(255,255,255,.10) !important;
+  color:var(--muted) !important;
+}
+body.dark .wss-label{color:var(--text) !important;}
+body.dark .wss-value{color:#7aa2ff !important;}
+body.dark .wss-sep{color:rgba(255,255,255,.2) !important;}
+body.dark .home-card{
+  background:linear-gradient(180deg, rgba(21,34,58,.96), rgba(17,27,47,.98)) !important;
+  border-color:rgba(255,255,255,.10) !important;
+  color:var(--text) !important;
+}
+body.dark .home-card:hover{
+  border-color:rgba(122,162,255,.28) !important;
+}
+body.dark .home-card h3{color:var(--text) !important;}
+body.dark .home-card p{color:var(--muted) !important;}
+body.dark .home-card-meta{color:var(--muted) !important;}
+body.dark .home-panel{
+  background:#111b2f !important;
+  border-color:rgba(255,255,255,.10) !important;
+}
+body.dark .home-panel-head h3{color:var(--text) !important;}
+body.dark .home-panel-head p{color:var(--muted) !important;}
+body.dark .home-summary-item{
+  border-color:rgba(255,255,255,.08) !important;
+}
+body.dark .home-summary-item strong{color:var(--text) !important;}
+body.dark .home-summary-item span{color:var(--muted) !important;}
+body.dark .home-section-head h2{color:var(--text) !important;}
+body.dark .home-section-head p{color:var(--muted) !important;}
+body.dark .home-quick-tile{
+  background:#15223a !important;
+  border-color:rgba(255,255,255,.10) !important;
+}
+body.dark .home-quick-tile:hover{
+  background:#1a2a48 !important;
+  border-color:rgba(122,162,255,.25) !important;
+}
+body.dark .hq-label{color:var(--text) !important;}
+body.dark .hq-sub{color:var(--muted) !important;}
+body.dark #page-home{
+  background:#0a1120 !important;
+}
+body.dark .home-shell{
+  background:transparent !important;
+}
+
+/* Dark mode: auth gate improvements */
+body.dark .auth-card{
+  background:linear-gradient(180deg, #111b2f, #0f1828) !important;
+  border-color:rgba(255,255,255,.12) !important;
+}
+body.dark .auth-card h2{color:var(--text) !important;}
+body.dark .auth-note{color:var(--muted) !important;}
+body.dark .auth-status{
+  background:#15223a !important;
+  border-color:rgba(255,255,255,.12) !important;
+  color:var(--text) !important;
+}
+
+/* Dark mode: modal panel */
+body.dark .modal .panel{
+  background:#111b2f !important;
+  border-color:rgba(255,255,255,.12) !important;
+}
+body.dark .modal .panel .head{
+  border-color:rgba(255,255,255,.10) !important;
+  color:var(--text) !important;
+}
+body.dark .modal .panel .body{
+  color:var(--text) !important;
+}
+
+/* Dark mode: model hub */
+body.dark .model-card{
+  background:linear-gradient(180deg, #15223a, #111b2f) !important;
+  border-color:rgba(255,255,255,.10) !important;
+}
+body.dark .model-category-chip{
+  background:#15223a !important;
+  border-color:rgba(255,255,255,.10) !important;
+  color:var(--text) !important;
+}
+body.dark .model-category-chip.active{
+  background:linear-gradient(180deg,#1b66ff,#184fd6) !important;
+  color:#fff !important;
+}
+
+/* Dark mode: chatbar and composer */
+body.dark #page-chat > .chatbar{
+  background:linear-gradient(180deg, rgba(10,17,32,.92), rgba(17,27,47,.98)) !important;
+  border-top-color:rgba(255,255,255,.08) !important;
+}
+body.dark #page-chat > .composer-meta{
+  background:linear-gradient(180deg, rgba(10,17,32,.96), rgba(17,27,47,.98)) !important;
+}
+body.dark #page-chat{
+  background:linear-gradient(180deg, rgba(10,17,32,.96), rgba(17,27,47,.99)) !important;
+}
+
+/* Dark mode: empty chat state */
+body.dark .chatlog .empty-chat-state{
+  background:linear-gradient(180deg, #15223a, #111b2f) !important;
+  border-color:rgba(255,255,255,.10) !important;
+}
+body.dark .empty-chat-title{
+  background:linear-gradient(135deg, #7aa2ff, #5eead4) !important;
+  -webkit-background-clip:text !important;
+  -webkit-text-fill-color:transparent !important;
+  background-clip:text !important;
+}
+
+/* Dark mode: scrollbar */
+body.dark *{scrollbar-color: rgba(122,162,255,.25) transparent;}
+body.dark *::-webkit-scrollbar-thumb{background:rgba(122,162,255,.25);}
+body.dark *::-webkit-scrollbar-thumb:hover{background:rgba(122,162,255,.45);}
+
+/* Dark mode: settings */
+body.dark .settings-health-output{
+  background:#15223a !important;
+  border-color:rgba(255,255,255,.10) !important;
+  color:var(--text) !important;
+}
+body.dark .settings-kpi{
+  background:#15223a !important;
+  border-color:rgba(255,255,255,.10) !important;
+}
+body.dark .settings-kpi span{color:var(--muted) !important;}
+body.dark .settings-kpi strong{color:var(--text) !important;}
+body.dark .settings-advanced{
+  border-color:rgba(255,255,255,.10) !important;
+}
+body.dark .settings-advanced-toggle{
+  background:rgba(255,255,255,.04) !important;
+  color:var(--muted) !important;
+}
+body.dark .settings-advanced-body{
+  border-color:rgba(255,255,255,.08) !important;
+}
+body.dark .settings-section-label{
+  color:var(--muted) !important;
+  border-color:rgba(255,255,255,.08) !important;
+}
+
+/* Dark mode: signal cards */
+body.dark .signal-card{
+  background:#15223a !important;
+  border-color:rgba(255,255,255,.10) !important;
+}
+body.dark .signal-label{color:var(--muted) !important;}
+body.dark .signal-value{color:var(--text) !important;}
+
+/* Dark mode: prompt chips */
+body.dark .prompt-chip{
+  background:#15223a !important;
+  border-color:rgba(122,162,255,.18) !important;
+  color:var(--text) !important;
+}
+body.dark .prompt-chip:hover{
+  background:#1a2a48 !important;
+  border-color:rgba(122,162,255,.35) !important;
+}
+
+/* Dark mode: tool groups */
+body.dark #page-chat .tool-group{
+  background:linear-gradient(180deg, #15223a, #111b2f) !important;
+  border-color:rgba(255,255,255,.08) !important;
+}
+body.dark .mainToolbar .tool-group{
+  border-inline-start-color:rgba(255,255,255,.08) !important;
+}
+body.dark .tg-more-btn{
+  background:rgba(255,255,255,.06) !important;
+  border-color:rgba(255,255,255,.12) !important;
+  color:var(--muted) !important;
+}
+
+/* Dark mode: background */
+body.dark{
+  background:
+    radial-gradient(circle at top right, rgba(27,102,255,.08), transparent 32%),
+    radial-gradient(circle at top left, rgba(20,184,166,.06), transparent 28%),
+    #0a1120 !important;
+}
+body.dark::before{
+  opacity:0 !important;
+}
+
+/* Dark mode: chat onboarding */
+body.dark .chat-onboarding .ob-title{color:var(--muted) !important;}
+body.dark .chat-onboarding .ob-step{
+  background:rgba(122,162,255,.08) !important;
+  border-color:rgba(122,162,255,.18) !important;
+  color:var(--muted) !important;
+}
+
+/* Dark mode: account card/trigger */
+body.dark .account-trigger{
+  background:#15223a !important;
+  border-color:rgba(255,255,255,.12) !important;
+  color:var(--text) !important;
+}
+body.dark .account-trigger span{color:var(--muted) !important;}
+body.dark .account-summary{
+  background:#15223a !important;
+  border-color:rgba(255,255,255,.10) !important;
+}
+body.dark .account-meta span{color:var(--muted) !important;}
+
+/* Ensure topbar dark mode */
+body.dark .topbar{
+  background:linear-gradient(180deg, rgba(17,27,47,.96), rgba(10,17,32,.94)) !important;
+  border-color:rgba(255,255,255,.08) !important;
+}
+body.dark .subtopbar{
+  background:rgba(17,27,47,.92) !important;
+  border-color:rgba(255,255,255,.08) !important;
+}
 </style>
 </head>
 <body>
@@ -4447,7 +4708,7 @@ body.dark #topRuntimeBadge{
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.83</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.84</div>
       </div>
     </aside>
 
@@ -5471,7 +5732,7 @@ body.dark #topRuntimeBadge{
     })();
   </script>
 
-<script src="app.js?v=881"></script>
+<script src="app.js?v=884"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -5485,7 +5746,7 @@ body.dark #topRuntimeBadge{
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v881";
+          const CURRENT_CACHE = "aistudio-cache-v884";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -5494,7 +5755,7 @@ body.dark #topRuntimeBadge{
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=883").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=884").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

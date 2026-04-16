@@ -31,3 +31,15 @@ wrangler.convert.jsonc
 downloads/*.apk
 downloads/*.aab
 downloads/*.zip
+docs
+docs/**
+attached_assets
+attached_assets/**
+replit.md
+CODEX_HANDOFF.md
+IOS_CLOUD_BUILD.ar.md
+codemagic.yaml
+github
+github/**
+.github
+.github/**
