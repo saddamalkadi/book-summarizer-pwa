@@ -53,7 +53,7 @@ if (MODE === 'pages') {
     }
     const allowedNames = new Set([
       'ai-workspace-studio-latest.apk',
-      'ai-workspace-studio-v8.84.0-android-release.apk'
+      'ai-workspace-studio-v8.85.0-android-release.apk'
     ]);
     for (const name of readdirSync(downloadsSrc)) {
       if (!allowedNames.has(name)) continue;

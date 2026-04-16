@@ -366,7 +366,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.84';
+  const WEB_RELEASE_LABEL = 'v8.85';
   const DEFAULT_POST_LOGIN_PAGE = 'home';
 
   const UNSYNCED_STORAGE_KEYS = new Set([
@@ -1960,7 +1960,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     if (/dash\.cloudflare\.com$/.test(host) || path.includes('/workers/services/view/') || path.includes('/production/settings')){
       return {
         ok:false,
-        reason:'هذا رابط لوحة Cloudflare وليس رابط الـ Worker المباشر. استخدم Gateway URL مثل https://sadam-key...workers.dev'
+        reason:'هذا الرابط يبدو رابط لوحة تحكم وليس رابط Gateway الفعلي. استخدم رابط البوابة الرسمي المقدَّم مع النسخة.'
       };
     }
     if (/github\.io$/.test(host)){
@@ -1972,7 +1972,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     if (/(^|\/)(convert\/pdf-to-docx|pdf-to-docx|ocr)(\/|$)/.test(path)){
       return {
         ok:false,
-        reason:'هذا رابط خدمة التحويل أو OCR، وليس رابط بوابة الدردشة. استخدم Worker الدردشة مثل sadam-key...workers.dev.'
+        reason:'هذا الرابط يبدو مخصصًا لخدمة تحويل مستقلة، وليس بوابة الدردشة. استخدم رابط البوابة الرسمي المقدَّم مع النسخة.'
       };
     }
     const normalized = raw
@@ -4443,7 +4443,7 @@ function refreshDeepSearchBtn(){
       return 'هذا البريد هو بريد الإدارة. استخدم كلمة مرور الإدارة من نفس شاشة الدخول.';
     }
     if (/AUTH_ADMIN_PASSWORD_NOT_CONFIGURED|Admin password login is not configured/i.test(raw)){
-      return 'دخول الإدارة بكلمة المرور غير مفعل حاليًا على الخادم. استخدم تسجيل Google ببريد الإدارة نفسه، أو أعد ضبط APP_ADMIN_PASSWORD على Cloudflare.';
+      return 'دخول الإدارة بكلمة المرور غير مفعل حاليًا. استخدم تسجيل الدخول بحساب Google الإداري بدلًا من ذلك.';
     }
     return raw;
   }
