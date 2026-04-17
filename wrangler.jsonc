@@ -32,6 +32,7 @@
     "nodejs_compat"
   ],
   "vars": {
+    "WORKER_PUBLIC_NAME": "sadam-key",
     "OPENROUTER_TITLE": "AI Workspace Studio",
     "OPENROUTER_REFERER": "https://app.saddamalkadi.com/",
     "APP_BRAND_NAME": "AI Workspace Studio",

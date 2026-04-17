@@ -371,6 +371,7 @@ async function getWorkerHealth(env) {
       ready: configured,
       configured,
       worker: 'keys',
+      worker_public_name: String(env.WORKER_PUBLIC_NAME || '').trim() || undefined,
       upstream: 'openrouter',
       upstream_configured: upstreamConfigured,
       upstream_key_valid: upstreamKeyValid,
