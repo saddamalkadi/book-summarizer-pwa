@@ -1,4 +1,4 @@
-﻿/* AI Workspace Studio v8.95 - strategic platform skeleton (no build step) */
+﻿/* AI Workspace Studio v8.96 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -367,7 +367,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.95';
+  const WEB_RELEASE_LABEL = 'v8.96';
   const RELEASE_CHANNEL = 'rc';
   const HIDE_PUBLIC_AAB = true;
   const DISABLE_RUNTIME_ENDPOINT_EDITING_FOR_MANAGED = true;
@@ -5142,9 +5142,13 @@ function syncUnifiedAuthEntry(){
       || adminLoginMethod === 'password_or_google'
       || adminLoginMethod === 'password_only'
       || healthPasswordReady;
-    const showPassword = isAdminEntry
-      ? (managedWeb || adminPasswordServerReady)
-      : (managedWeb && adminPasswordServerReady && !remoteAdminEmail);
+    // v8.96 — Only show the password input when the server says password login is usable.
+    // Previously, showing the field on managed web while the server was "google_only" created
+    // a UX trap: users typed a password, clicked the admin button, and the click silently
+    // redirected to the Google popup. Now the input appears iff adminPasswordServerReady is
+    // true. When the server is google_only, the primary button becomes a clearly-labeled
+    // "متابعة الإدارة عبر Google" that is honest about what it will do.
+    const showPassword = isAdminEntry && adminPasswordServerReady;
     const adminGoogleOnly = isAdminEntry && !adminPasswordServerReady && adminGoogleReady;
     const label = $('authEntrySubmitLabel');
     const hint = $('authEntryModeHint');
@@ -5156,7 +5160,7 @@ function syncUnifiedAuthEntry(){
       : 'متابعة بالخطة المجانية';
     if (hint) hint.textContent = isAdminEntry
       ? (adminGoogleOnly
-        ? 'هذا الحساب يحتاج دخول الإدارة عبر Google أو كلمة المرور عندما تكون متاحة.'
+        ? 'الخادم يعرض حاليًا "google_only" لحساب الإدارة. استخدم زر Google بالأسفل، أو فعّل APP_ADMIN_PASSWORD على الـ Worker لإعادة مسار كلمة المرور.'
         : 'هذا الحساب يحتاج كلمة مرور الإدارة أو Google عندما تكون متاحة.')
       : 'أي بريد شخصي صالح يفتح لك الخطة المجانية فورًا، ويمكنك الترقية لاحقًا داخل التطبيق.';
     if ($('authCurrentPlanPill')){
@@ -5564,15 +5568,25 @@ async function submitUnifiedAuthEntry(){
       isAdminEntry = adminEmail
         ? (!!email && email === adminEmail)
         : (adminAllowsPassword && !!password);
+      // v8.96 — if the server is currently google_only for admin and the user is on the admin
+      // email, the submit button's LABEL already reads "متابعة الإدارة عبر Google" (set by
+      // syncUnifiedAuthEntry). In that state, take the explicit Google path — but only when
+      // password login is genuinely not available. If password is usable, always prefer it.
+      if (isAdminEntry && !adminAllowsPassword && adminGoogleReady){
+        setAuthGateStatus('جارٍ فتح تسجيل Google لحساب الإدارة...', 'busy');
+        await openGoogleAuthInBrowser();
+        return;
+      }
       let payload = null;
       if (isAdminEntry){
-        if (!adminAllowsPassword && adminGoogleReady){
-          setAuthGateStatus('هذا الحساب يحتاج مسار دخول الإدارة المناسب. جارٍ فتح Google...', 'busy');
-          await openGoogleAuthInBrowser();
-          return;
-        }
+        // v8.96 — never silently redirect an admin-password click into the Google popup.
+        // If the user typed a password, always attempt POST /auth/login so an honest
+        // 503 AUTH_ADMIN_PASSWORD_NOT_CONFIGURED surfaces as an inline error the admin
+        // can act on, instead of an auth-bridge popup that looks like the wrong thing.
         if (!password){
-          if (adminGoogleReady){
+          if (!adminAllowsPassword && adminGoogleReady){
+            setAuthGateStatus('تسجيل الدخول الإداري بكلمة المرور غير مُفعَّل حاليًا على الخادم. استخدم زر Google بالأسفل أو فعّل APP_ADMIN_PASSWORD.', 'error');
+          } else if (adminGoogleReady){
             setAuthGateStatus('هذا الحساب يحتاج كلمة المرور أو Google حسب إعدادات الإدارة.', 'error');
           } else {
             setAuthGateStatus('هذا الحساب يحتاج كلمة مرور الإدارة للمتابعة.', 'error');
@@ -5587,9 +5601,9 @@ async function submitUnifiedAuthEntry(){
           });
         }catch(error){
           const message = sanitizeAuthErrorMessage(error?.message || error || '');
-          if (/AUTH_ADMIN_PASSWORD_NOT_CONFIGURED|Admin password login is not configured/i.test(message) && adminGoogleReady){
-            setAuthGateStatus('الخادم يطلب استخدام Google لهذا الحساب الإداري حاليًا. جارٍ فتح الشاشة الوسيطة...', 'busy');
-            await openGoogleAuthInBrowser();
+          if (/AUTH_ADMIN_PASSWORD_NOT_CONFIGURED|Admin password login is not configured/i.test(message)){
+            // Keep the user on the password path with an actionable message — do NOT open the Google popup.
+            setAuthGateStatus('تسجيل الدخول الإداري بكلمة المرور غير مُفعَّل حاليًا على الخادم (APP_ADMIN_PASSWORD غير مضبوط). اضبط القيمة في إعدادات الـ Worker ثم أعد المحاولة، أو استخدم زر Google بالأسفل إن أردت.', 'error');
             return;
           }
           throw error;
