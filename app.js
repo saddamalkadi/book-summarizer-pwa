@@ -1,4 +1,4 @@
-﻿/* AI Workspace Studio v8.97 - strategic platform skeleton (no build step) */
+﻿/* AI Workspace Studio v8.98 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -367,7 +367,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.97';
+  const WEB_RELEASE_LABEL = 'v8.98';
   const RELEASE_CHANNEL = 'rc';
   const HIDE_PUBLIC_AAB = true;
   const DISABLE_RUNTIME_ENDPOINT_EDITING_FOR_MANAGED = true;

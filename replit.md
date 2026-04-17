@@ -22,19 +22,18 @@ PORT=8080 node server.mjs
 
 The server listens on `0.0.0.0:$PORT` and serves the repository as a static site.
 
-## Environment variables (optional)
+## Environment variables
 
-The local server never writes anything by default. A few optional variables unlock advanced developer-only workflows:
+The local `server.mjs` is a pure static file + `/proxy/tts` server. It never writes to Cloudflare anymore.
 
-| Variable | Purpose |
-|---------|---------|
-| `AUTO_FIX_WORKER` | When set to `true`, enables the opt-in helper that patches the Cloudflare Worker using the variables below. Off by default. |
-| `CF_API_TOKEN` | Cloudflare API token with Workers + KV permissions. Only used when `AUTO_FIX_WORKER=true`. |
-| `CF_ACCOUNT_ID`, `CF_KV_NS`, `CF_WORKER_NAME` | Cloudflare account identifiers used by the opt-in helper. |
-| `OPENROUTER_API_KEY` | OpenRouter API key used by the opt-in helper only. Never shipped in the client. |
-| `ADMIN_PASSWORD_REAL` | Admin password used by the opt-in helper only. Never hardcoded. |
+The legacy `AUTO_FIX_WORKER` / `CF_API_TOKEN` / `ADMIN_PASSWORD_REAL` code path was removed in v8.98 because it overwrote production Worker bindings on every process start and every 5 minutes, causing `APP_ADMIN_PASSWORD` and `OPENROUTER_API_KEY` to oscillate between good and dropped states. Setting `AUTO_FIX_WORKER=true` is now a no-op and prints a warning.
 
-No secret has a hardcoded fallback inside the repository. If the required variables are missing the helper simply exits silently.
+**Production deploys and secret rotations** are handled exclusively by:
+
+- `wrangler deploy --config wrangler.jsonc` for the Worker code.
+- `wrangler secret put APP_ADMIN_PASSWORD --name sadam-key` and `wrangler secret put OPENROUTER_API_KEY --name sadam-key` for secret rotation.
+- `scripts/rotate-production-secrets.sh` — one-shot script that does all of the above and validates live endpoints.
+- `.github/workflows/rotate-worker-secrets.yml` — CI equivalent, triggered via `workflow_dispatch` or by touching `.github/rotate-trigger`.
 
 ## Release pipeline
 

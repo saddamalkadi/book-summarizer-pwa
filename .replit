@@ -1,4 +1,22 @@
-modules = ["nodejs-20", "web", "swift-5.8", "java-graalvm22.3", "ruby-3.2"]
+# Replit config NEUTRALIZED as of v8.98.
+#
+# This file used to auto-start `node server.mjs` whose autoFixWorker() path would
+# mutate Cloudflare Worker bindings (OPENROUTER_API_KEY, APP_ADMIN_PASSWORD) on
+# every start + every 5 minutes. That autoFixWorker code is now removed from
+# server.mjs (v8.98), but to make absolutely certain the Replit VM stops running
+# the Node server altogether — and therefore stops acting as a production
+# deployer — we replaced the "Start application" task and the `[deployment] run`
+# command with harmless no-ops that print a message and exit.
+#
+# Production deploys and secret rotations are now handled EXCLUSIVELY by:
+#   - `wrangler deploy --config wrangler.jsonc` + `wrangler secret put ...`
+#   - `scripts/rotate-production-secrets.sh`
+#   - GitHub Actions workflow `Rotate Worker Secrets and Verify`.
+#
+# If you really need a local dev server, run `node server.mjs` manually — it is
+# now a pure static-asset server and cannot touch Cloudflare.
+modules = ["nodejs-20"]
+
 [agent]
 expertMode = true
 
@@ -15,24 +33,19 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Start application"
+args = "No-op (production deploys are not handled from Replit)"
 
 [[workflows.workflow]]
-name = "Start application"
+name = "No-op (production deploys are not handled from Replit)"
 author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=5000 node server.mjs"
-waitForPort = 5000
+args = "echo 'Replit auto-start is disabled as of v8.98. Production deploys/secrets are handled via wrangler or GitHub Actions only. Run `node server.mjs` manually if you need a local dev server.' && sleep 2"
 
 [workflows.workflow.metadata]
 outputType = "webview"
 
-[[ports]]
-localPort = 5000
-externalPort = 80
-
 [deployment]
 deploymentTarget = "autoscale"
-run = ["node", "server.mjs"]
+run = ["sh", "-c", "echo 'Replit production deployments are disabled as of v8.98. Use wrangler or GitHub Actions to deploy the Cloudflare Worker.' && sleep 5"]
