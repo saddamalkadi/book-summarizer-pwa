@@ -1,2 +1,1 @@
-v8.98 rotate: 20260417T200111Z
-v8.98 rotate retrigger: 20260418T012000Z wrangler@4 with public error dump
+v8.98 rotate retrigger 3: expose stderr as annotations 2026-04-18T01:18:07.1018074+03:00
