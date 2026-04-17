@@ -20,12 +20,12 @@ export default {
       const url = new URL(request.url);
 
       if (url.pathname === '/health') {
-        const health = getWorkerHealth(env);
+        const health = await getWorkerHealth(env);
         return withCors(jsonResponse(health.body, health.status), request);
       }
 
       if (url.pathname === '/auth/config' && request.method === 'GET') {
-        return withCors(jsonResponse(getPublicAuthConfig(env), 200), request);
+        return withCors(jsonResponse(await getPublicAuthConfig(env), 200), request);
       }
 
       if (url.pathname === '/auth/google' && request.method === 'POST') {
@@ -234,11 +234,29 @@ function getAdminPassword(env) {
   return String(env.APP_ADMIN_PASSWORD || env.ADMIN_PASSWORD || '').trim();
 }
 
-function getPublicAuthConfig(env) {
+/**
+ * Admin-password lookup that also honors a KV-stored rotation at `_config:admin_password`.
+ * This keeps `/auth/config` + `/health` self-consistent with the actual login handler
+ * even when the password was rotated via KV (instead of re-deploying vars).
+ */
+async function getAdminPasswordWithKv(env) {
+  const direct = getAdminPassword(env);
+  if (direct) return direct;
+  try {
+    if (env && env.USER_DATA && typeof env.USER_DATA.get === 'function') {
+      const kv = await env.USER_DATA.get('_config:admin_password');
+      if (kv && String(kv).trim()) return String(kv).trim();
+    }
+  } catch (_) {}
+  return '';
+}
+
+async function getPublicAuthConfig(env) {
   const googleClientId = String(env.GOOGLE_CLIENT_ID_WEB || env.GOOGLE_CLIENT_ID || '').trim();
   const authRequired = String(env.AUTH_REQUIRE_LOGIN || 'true').trim().toLowerCase() !== 'false';
   const adminEmail = getAdminEmail(env);
-  const adminPasswordEnabled = !!getAdminPassword(env);
+  // Honor KV-rotated admin password so the public flag stays truthful after rotations.
+  const adminPasswordEnabled = !!(await getAdminPasswordWithKv(env));
   const adminGoogleEnabled = !!adminEmail && !!googleClientId;
   const adminEnabled = adminPasswordEnabled || adminGoogleEnabled;
   const allowAabDownloads = String(env.ALLOW_PUBLIC_AAB_DOWNLOADS || '').trim().toLowerCase() === 'true';
@@ -249,6 +267,7 @@ function getPublicAuthConfig(env) {
     premiumEnabled: true,
     brandName: String(env.APP_BRAND_NAME || 'AI Workspace Studio').trim(),
     adminEnabled,
+    adminEmail,
     adminPasswordEnabled,
     adminLoginMethod: adminPasswordEnabled
       ? (adminGoogleEnabled ? 'password_or_google' : 'password_only')
@@ -268,13 +287,13 @@ function getPublicAuthConfig(env) {
   };
 }
 
-function getWorkerHealth(env) {
+async function getWorkerHealth(env) {
   const upstreamConfigured = !!getServerKey(env);
   const clientTokenRequired = !!String(env.GATEWAY_CLIENT_TOKEN || '').trim();
-  const authConfig = getPublicAuthConfig(env);
+  const authConfig = await getPublicAuthConfig(env);
   const hasSessionSecret = getSessionSecret(env).length >= 16;
   const hasUpgradeSecret = getUpgradeSecret(env).length >= 16;
-  const adminPasswordReady = !!getAdminPassword(env);
+  const adminPasswordReady = !!(await getAdminPasswordWithKv(env));
   const adminGoogleReady = !!getAdminEmail(env) && authConfig.clientIdConfigured;
   const adminLoginReady = adminPasswordReady || adminGoogleReady;
   const cloudStorageReady = !!getUserDataStore(env);
@@ -419,7 +438,7 @@ async function handlePasswordLogin(request, env) {
     const email = String(body?.email || '').trim().toLowerCase();
     const password = String(body?.password || '').trim();
     const adminEmail = getAdminEmail(env);
-    const adminPassword = getAdminPassword(env);
+    const adminPassword = await getAdminPasswordWithKv(env);
 
     if (!email || !password) {
       return jsonResponse({
@@ -475,7 +494,7 @@ async function handleEmailRegistration(request, env) {
     }
 
     if (email === adminEmail) {
-      const authConfig = getPublicAuthConfig(env);
+      const authConfig = await getPublicAuthConfig(env);
       const adminGoogleOnly = authConfig.adminEnabled && !authConfig.adminPasswordEnabled && !!authConfig.googleClientId;
       return jsonResponse({
         error: adminGoogleOnly
@@ -829,7 +848,6 @@ async function handleVoiceSynthesis(request, env) {
 async function handleUpgradeRequest(request, env) {
   try {
     const session = await requireSession(request, env);
-    const config = getPublicAuthConfig(env);
     const mailto = buildUpgradeMailto(session, String(env.APP_UPGRADE_EMAIL || ''));
     return jsonResponse({
       ok: true,

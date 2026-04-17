@@ -1,4 +1,4 @@
-﻿/* AI Workspace Studio v8.93 - strategic platform skeleton (no build step) */
+﻿/* AI Workspace Studio v8.94 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -367,7 +367,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.93';
+  const WEB_RELEASE_LABEL = 'v8.94';
   const RELEASE_CHANNEL = 'rc';
   const HIDE_PUBLIC_AAB = true;
   const DISABLE_RUNTIME_ENDPOINT_EDITING_FOR_MANAGED = true;
@@ -933,18 +933,93 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     const topActions = document.querySelector('.topbar .topbar-actions');
     if (!topActions) return;
     const scroll = $('topbarScroll');
-    const moreBtn = $('topbarOverflowMenuBtn');
-    const panel = $('topbarOverflowPanel');
-    if (moreBtn) moreBtn.remove();
-    if (panel){
-      try{ panel.remove(); }catch(_){ }
-    }
     if (scroll && scroll.parentNode === topActions){
       while (scroll.firstChild){
         topActions.insertBefore(scroll.firstChild, scroll);
       }
       scroll.remove();
     }
+  }
+
+  /**
+   * v8.94 — visible-overflow topbar.
+   * Keeps the horizontal scrolling strip usable AND exposes every toolbar action
+   * through a pinned "⋯" dropdown so nothing ever becomes silently unreachable,
+   * even when the strip overflows or labels truncate on narrow screens.
+   */
+  function setupTopbarOverflowMenu(){
+    const actions = document.getElementById('topbarActions');
+    const trigger = document.getElementById('topbarOverflowBtn');
+    const panel = document.getElementById('topbarOverflowPanel');
+    if (!actions || !trigger || !panel) return;
+    if (trigger.dataset.topbarMenuBound === '1') { rebuildTopbarOverflowPanel(); return; }
+    trigger.dataset.topbarMenuBound = '1';
+
+    const closePanel = () => {
+      panel.classList.remove('show');
+      trigger.setAttribute('aria-expanded', 'false');
+    };
+    const openPanel = () => {
+      rebuildTopbarOverflowPanel();
+      panel.classList.add('show');
+      trigger.setAttribute('aria-expanded', 'true');
+    };
+    trigger.addEventListener('click', (evt) => {
+      evt.preventDefault();
+      evt.stopPropagation();
+      if (panel.classList.contains('show')) closePanel();
+      else openPanel();
+    });
+    document.addEventListener('click', (evt) => {
+      if (!panel.classList.contains('show')) return;
+      if (evt.target === trigger || trigger.contains(evt.target)) return;
+      if (panel.contains(evt.target)) return;
+      closePanel();
+    });
+    document.addEventListener('keydown', (evt) => {
+      if (evt.key === 'Escape' && panel.classList.contains('show')) closePanel();
+    });
+    // Rebuild the panel whenever the action strip changes so new buttons (history/study/etc.)
+    // are always reachable immediately.
+    const observer = new MutationObserver(() => rebuildTopbarOverflowPanel());
+    observer.observe(actions, { childList: true, subtree: false });
+    window.addEventListener('resize', () => { if (panel.classList.contains('show')) rebuildTopbarOverflowPanel(); });
+    rebuildTopbarOverflowPanel();
+  }
+
+  function rebuildTopbarOverflowPanel(){
+    const actions = document.getElementById('topbarActions');
+    const panel = document.getElementById('topbarOverflowPanel');
+    if (!actions || !panel) return;
+    panel.innerHTML = '';
+    const buttons = Array.from(actions.children).filter((el) => el && el.tagName === 'BUTTON');
+    if (buttons.length === 0) return;
+    buttons.forEach((btn) => {
+      const iconNode = btn.querySelector('.icon');
+      const labelNode = btn.querySelector('.label');
+      const rawLabel = (labelNode?.textContent || btn.getAttribute('aria-label') || btn.title || btn.textContent || '').trim();
+      const icon = (iconNode?.textContent || '').trim();
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'topbar-overflow-item';
+      item.setAttribute('role', 'menuitem');
+      item.innerHTML = `<span class="icon" aria-hidden="true">${icon || '•'}</span><span class="label">${rawLabel || '—'}</span>`;
+      if (btn.classList.contains('active') || btn.getAttribute('aria-pressed') === 'true') {
+        item.dataset.active = 'true';
+      }
+      if (btn.disabled) {
+        item.disabled = true;
+      }
+      item.addEventListener('click', (evt) => {
+        evt.preventDefault();
+        evt.stopPropagation();
+        panel.classList.remove('show');
+        const trigger = document.getElementById('topbarOverflowBtn');
+        if (trigger) trigger.setAttribute('aria-expanded', 'false');
+        try { btn.click(); } catch (_) {}
+      });
+      panel.appendChild(item);
+    });
   }
 
   function alignManagedRuntimeSettings(){
@@ -5025,22 +5100,27 @@ function refreshDeepSearchBtn(){
 function syncUnifiedAuthEntry(){
     const config = sanitizePublicAuthConfig(getEffectiveAuthConfig());
     const email = String($('authEntryEmail')?.value || '').trim().toLowerCase();
-    const isAdminEntry = !!email && email === String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
+    const remoteAdminEmail = String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
+    const isAdminEntry = !!email && !!remoteAdminEmail && email === remoteAdminEmail;
     const adminPasswordEnabled = config.adminPasswordEnabled === true;
     const adminLoginMethod = String(config.adminLoginMethod || '').trim().toLowerCase();
     const healthPasswordReady = AUTH_RUNTIME.authHealth?.admin_password_ready === true;
     const adminGoogleReady = !!getAuthGoogleClientId();
-    // Web regression guard: the admin password input must remain visible on the official web app
-    // even when admin is currently "google_only" (so admins can see the option/state clearly).
-    const webForceAdminPasswordVisible = isAdminEntry && !isNativePlatform() && isManagedHostedRuntime();
-    const showPassword = isAdminEntry && (
-      webForceAdminPasswordVisible
-      || adminPasswordEnabled
+    const managedWeb = !isNativePlatform() && isManagedHostedRuntime();
+    /**
+     * v8.94 — When the backend has an admin email configured but the client doesn't yet know it
+     * (e.g. older worker that doesn't surface adminEmail, or a transient config fetch failure),
+     * keep the admin password field reachable on the official managed web + native shells so an
+     * admin can always paste their credentials. The worker still rejects wrong emails.
+     */
+    const adminPasswordServerReady = adminPasswordEnabled
       || adminLoginMethod === 'password_or_google'
       || adminLoginMethod === 'password_only'
-      || healthPasswordReady
-    );
-    const adminGoogleOnly = isAdminEntry && !showPassword && adminGoogleReady;
+      || healthPasswordReady;
+    const showPassword = isAdminEntry
+      ? (managedWeb || adminPasswordServerReady)
+      : (managedWeb && adminPasswordServerReady && !remoteAdminEmail);
+    const adminGoogleOnly = isAdminEntry && !adminPasswordServerReady && adminGoogleReady;
     const label = $('authEntrySubmitLabel');
     const hint = $('authEntryModeHint');
     const passwordLabel = $('authEntryPasswordLabel');
@@ -5447,13 +5527,18 @@ async function submitUnifiedAuthEntry(){
     try{
       const config = sanitizePublicAuthConfig(await loadRemoteAuthConfig(true).catch(() => getEffectiveAuthConfig()));
       const adminEmail = String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
-      isAdminEntry = !!email && email === adminEmail;
       const adminPasswordEnabled = config.adminPasswordEnabled === true;
       const adminLoginMethod = String(config.adminLoginMethod || '').trim().toLowerCase();
       const adminAllowsPassword = adminPasswordEnabled
         || adminLoginMethod === 'password_or_google'
         || adminLoginMethod === 'password_only';
       const adminGoogleReady = !!String(config.googleClientId || '').trim();
+      // v8.94 — if the admin email is known, match it; otherwise, any password-bearing submission
+      // on a managed/admin-capable runtime is treated as an admin-login attempt. The worker is the
+      // final authority and will reject non-admin email/password pairs.
+      isAdminEntry = adminEmail
+        ? (!!email && email === adminEmail)
+        : (adminAllowsPassword && !!password);
       let payload = null;
       if (isAdminEntry){
         if (!adminAllowsPassword && adminGoogleReady){
@@ -5823,6 +5908,7 @@ async function submitUnifiedAuthEntry(){
     }
 
     unwrapLegacyTopbarScroll();
+    setupTopbarOverflowMenu();
 
     const topbar = document.querySelector('.topbar');
     const statusBox = $('statusBox');
