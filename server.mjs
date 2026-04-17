@@ -338,6 +338,16 @@ async function handleGoogleTtsProxy(request){
   }
 }
 autoFixWorker();
+// Re-run the self-heal every 5 minutes so if another process redeploys the worker
+// without APP_ADMIN_PASSWORD / OPENROUTER_API_KEY bindings, we restore them
+// promptly without waiting for a server restart. The function itself is a no-op
+// when the live worker is fully healthy (see the early-exit in autoFixWorker),
+// so this does NOT cause any churn when everything is green.
+if (String(process.env.AUTO_FIX_WORKER || '').toLowerCase() === 'true') {
+  setInterval(() => {
+    autoFixWorker().catch(() => null);
+  }, 5 * 60 * 1000);
+}
 // ──────────────────────────────────────────────────────────────────────────
 
 const MIME = {
