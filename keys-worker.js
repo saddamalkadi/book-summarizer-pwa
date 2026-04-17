@@ -327,12 +327,16 @@ async function probeUpstreamKey(env) {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 2500);
+    const referer = String(env.OPENROUTER_REFERER || 'https://app.saddamalkadi.com/').trim() || 'https://app.saddamalkadi.com/';
+    const title = String(env.OPENROUTER_TITLE || 'AI Workspace Studio').trim() || 'AI Workspace Studio';
     const resp = await fetch('https://openrouter.ai/api/v1/credits', {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${key}`,
-        'HTTP-Referer': env.OPENROUTER_REFERER || 'https://app.saddamalkadi.com/',
-        'X-Title': env.OPENROUTER_TITLE || 'AI Workspace Studio'
+        // OpenRouter accepts standard Referer; some stacks also expect HTTP-Referer — send both.
+        'Referer': referer,
+        'HTTP-Referer': referer,
+        'X-Title': title
       },
       signal: controller.signal
     }).catch(() => null);
@@ -1077,7 +1081,9 @@ async function handleGateway(request, env, url) {
   const headers = new Headers(request.headers);
   headers.set('Authorization', authHeader);
   headers.set('Host', 'openrouter.ai');
-  headers.set('HTTP-Referer', env.OPENROUTER_REFERER || url.origin);
+  const referer = String(env.OPENROUTER_REFERER || url.origin || 'https://app.saddamalkadi.com/').trim() || 'https://app.saddamalkadi.com/';
+  headers.set('Referer', referer);
+  headers.set('HTTP-Referer', referer);
   headers.set('X-Title', env.OPENROUTER_TITLE || 'AI Workspace Studio');
   headers.delete('X-Client-Token');
   headers.delete('X-App-Session');
