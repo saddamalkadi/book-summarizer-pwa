@@ -36,6 +36,10 @@ export default {
         return withCors(await handlePasswordLogin(request, env), request);
       }
 
+      if (url.pathname === '/auth/diagnose' && request.method === 'POST') {
+        return withCors(await handleAdminPasswordDiagnose(request, env), request);
+      }
+
       if (url.pathname === '/auth/register' && request.method === 'POST') {
         return withCors(await handleEmailRegistration(request, env), request);
       }
@@ -230,8 +234,24 @@ function getAdminEmail(env) {
   return String(env.APP_ADMIN_EMAIL || env.ADMIN_EMAIL || '').trim().toLowerCase();
 }
 
+/**
+ * Normalize secret-ish strings so Dashboard/KV/Wrangler-provided values behave
+ * identically to what the user actually types. Strip leading/trailing whitespace
+ * INCLUDING invisible Unicode that tools commonly append (BOM, NBSP, zero-width,
+ * CR/LF). Does not touch the middle of the value.
+ */
+function normalizeSecret(raw) {
+  if (raw === null || raw === undefined) return '';
+  let s = String(raw);
+  // Strip BOM if present at start
+  if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1);
+  // Trim ASCII whitespace + common invisible Unicode on both sides
+  // (NBSP \u00A0, ZWSP \u200B, ZWNJ \u200C, ZWJ \u200D, LRM \u200E, RLM \u200F, BOM \uFEFF).
+  return s.replace(/^[\s\u00A0\u200B\u200C\u200D\u200E\u200F\uFEFF]+|[\s\u00A0\u200B\u200C\u200D\u200E\u200F\uFEFF]+$/g, '');
+}
+
 function getAdminPassword(env) {
-  return String(env.APP_ADMIN_PASSWORD || env.ADMIN_PASSWORD || '').trim();
+  return normalizeSecret(env.APP_ADMIN_PASSWORD || env.ADMIN_PASSWORD || '');
 }
 
 /**
@@ -245,7 +265,8 @@ async function getAdminPasswordWithKv(env) {
   try {
     if (env && env.USER_DATA && typeof env.USER_DATA.get === 'function') {
       const kv = await env.USER_DATA.get('_config:admin_password');
-      if (kv && String(kv).trim()) return String(kv).trim();
+      const normalized = normalizeSecret(kv || '');
+      if (normalized) return normalized;
     }
   } catch (_) {}
   return '';
@@ -287,6 +308,43 @@ async function getPublicAuthConfig(env) {
   };
 }
 
+/**
+ * Ping OpenRouter's /credits endpoint with the server key to verify it is still
+ * accepted. Cached in-module per worker isolate for 60s to avoid hitting the
+ * upstream on every health request. Never blocks health beyond ~2s.
+ */
+let UPSTREAM_KEY_PROBE = { checkedAt: 0, ok: null, status: 0 };
+async function probeUpstreamKey(env) {
+  const key = getServerKey(env);
+  if (!key) {
+    UPSTREAM_KEY_PROBE = { checkedAt: Date.now(), ok: false, status: 0 };
+    return UPSTREAM_KEY_PROBE;
+  }
+  const now = Date.now();
+  if (now - UPSTREAM_KEY_PROBE.checkedAt < 60_000 && UPSTREAM_KEY_PROBE.ok !== null) {
+    return UPSTREAM_KEY_PROBE;
+  }
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2500);
+    const resp = await fetch('https://openrouter.ai/api/v1/credits', {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'HTTP-Referer': env.OPENROUTER_REFERER || 'https://app.saddamalkadi.com/',
+        'X-Title': env.OPENROUTER_TITLE || 'AI Workspace Studio'
+      },
+      signal: controller.signal
+    }).catch(() => null);
+    clearTimeout(timer);
+    const status = resp ? resp.status : 0;
+    UPSTREAM_KEY_PROBE = { checkedAt: now, ok: status >= 200 && status < 300, status };
+  } catch (_) {
+    UPSTREAM_KEY_PROBE = { checkedAt: now, ok: false, status: 0 };
+  }
+  return UPSTREAM_KEY_PROBE;
+}
+
 async function getWorkerHealth(env) {
   const upstreamConfigured = !!getServerKey(env);
   const clientTokenRequired = !!String(env.GATEWAY_CLIENT_TOKEN || '').trim();
@@ -299,6 +357,8 @@ async function getWorkerHealth(env) {
   const cloudStorageReady = !!getUserDataStore(env);
   const voice = getVoiceApiConfig(env);
   const convertReady = !!env.CONVERT && typeof env.CONVERT.fetch === 'function';
+  const keyProbe = upstreamConfigured ? await probeUpstreamKey(env) : { ok: false, status: 0 };
+  const upstreamKeyValid = !!keyProbe.ok;
   const configured = upstreamConfigured || authConfig.clientIdConfigured || adminLoginReady || cloudStorageReady || voice.ready || convertReady;
   return {
     status: configured ? 200 : 503,
@@ -309,6 +369,8 @@ async function getWorkerHealth(env) {
       worker: 'keys',
       upstream: 'openrouter',
       upstream_configured: upstreamConfigured,
+      upstream_key_valid: upstreamKeyValid,
+      upstream_status: keyProbe.status || 0,
       client_token_required: clientTokenRequired,
       auth_required: authConfig.authRequired,
       google_client_configured: authConfig.clientIdConfigured,
@@ -436,11 +498,12 @@ async function handlePasswordLogin(request, env) {
   try {
     const body = await parseJson(request);
     const email = String(body?.email || '').trim().toLowerCase();
-    const password = String(body?.password || '').trim();
+    const passwordRaw = String(body?.password || '');
+    const passwordNormalized = normalizeSecret(passwordRaw);
     const adminEmail = getAdminEmail(env);
     const adminPassword = await getAdminPasswordWithKv(env);
 
-    if (!email || !password) {
+    if (!email || !passwordNormalized) {
       return jsonResponse({
         error: 'Email and password are required.',
         code: 'AUTH_LOGIN_REQUIRED_FIELDS'
@@ -454,7 +517,14 @@ async function handlePasswordLogin(request, env) {
       }, 503);
     }
 
-    if (email !== adminEmail || !timingSafeEqual(password, adminPassword)) {
+    // Compare both the user-normalized value and the raw typed value against the stored password.
+    // This absorbs invisible characters on either side without ever accepting an actual mismatch.
+    const matches = email === adminEmail && (
+      timingSafeEqual(passwordNormalized, adminPassword)
+      || timingSafeEqual(passwordRaw, adminPassword)
+      || timingSafeEqual(passwordRaw.trim(), adminPassword)
+    );
+    if (!matches) {
       return jsonResponse({
         error: 'Invalid admin credentials.',
         code: 'AUTH_INVALID_ADMIN_CREDENTIALS'
@@ -475,6 +545,46 @@ async function handlePasswordLogin(request, env) {
       error: String(error?.message || error || 'Admin login failed.'),
       code: 'AUTH_LOGIN_FAILED'
     }, 401);
+  }
+}
+
+/**
+ * Privacy-safe admin password diagnostic: returns only structural facts about the
+ * stored password vs the typed password. Never echoes either value. Gated on the
+ * admin email so arbitrary users can't profile the secret.
+ */
+async function handleAdminPasswordDiagnose(request, env) {
+  try {
+    const body = await parseJson(request);
+    const email = String(body?.email || '').trim().toLowerCase();
+    const passwordRaw = String(body?.password || '');
+    const adminEmail = getAdminEmail(env);
+    if (!adminEmail || email !== adminEmail) {
+      return jsonResponse({ error: 'Not authorized.', code: 'AUTH_DIAG_NOT_ADMIN' }, 401);
+    }
+    const stored = await getAdminPasswordWithKv(env);
+    const directEnv = normalizeSecret(env.APP_ADMIN_PASSWORD || env.ADMIN_PASSWORD || '');
+    const source = directEnv
+      ? 'worker_var'
+      : (stored ? 'kv_config' : 'none');
+    const typedNorm = normalizeSecret(passwordRaw);
+    const info = {
+      ok: true,
+      source,
+      storedLength: stored ? stored.length : 0,
+      typedRawLength: passwordRaw.length,
+      typedNormalizedLength: typedNorm.length,
+      typedHadInvisibleEdges: passwordRaw !== typedNorm,
+      exactMatchRaw: stored && timingSafeEqual(passwordRaw, stored),
+      exactMatchTrim: stored && timingSafeEqual(typedNorm, stored),
+      exactMatchStrTrim: stored && timingSafeEqual(passwordRaw.trim(), stored)
+    };
+    return jsonResponse(info, 200);
+  } catch (error) {
+    return jsonResponse({
+      error: String(error?.message || error || 'Diagnose failed.'),
+      code: 'AUTH_DIAG_FAILED'
+    }, 400);
   }
 }
 
@@ -1001,10 +1111,19 @@ async function handleGateway(request, env, url) {
       raw ||
       `OpenRouter upstream error (HTTP ${upstreamResp.status})`
     );
+    // Special-case OpenRouter's "User not found" / 401 responses so the UI can show a
+    // clear, non-generic message and the admin knows to rotate the server key.
+    const isInvalidKey = upstreamResp.status === 401 && (
+      /user not found/i.test(upstreamMessage) || /invalid.*(api|key)/i.test(upstreamMessage)
+    );
+    const friendly = isInvalidKey
+      ? 'بوابة OpenRouter رفضت المفتاح الحالي (غير صالح أو تم إبطاله). يرجى تدوير OPENROUTER_API_KEY في إعدادات الخادم ثم إعادة المحاولة.'
+      : upstreamMessage;
     return withCors(jsonResponse({
-      error: upstreamMessage,
-      code: `GATEWAY_UPSTREAM_${upstreamResp.status}`,
-      upstream_status: upstreamResp.status
+      error: friendly,
+      code: isInvalidKey ? 'GATEWAY_UPSTREAM_INVALID_KEY' : `GATEWAY_UPSTREAM_${upstreamResp.status}`,
+      upstream_status: upstreamResp.status,
+      requires_key_rotation: isInvalidKey || undefined
     }, upstreamResp.status), request);
   }
 

@@ -157,6 +157,205 @@
       color: var(--muted) !important;
     }
 
+    /* v8.95 — Dark-mode readability sweep for every light-surface card. */
+    body.dark .home-card,
+    body.dark .home-panel,
+    body.dark .home-quick-tile,
+    body.dark .home-summary-item,
+    body.dark .home-hero,
+    body.dark .strategic-card,
+    body.dark .settings-overview-card,
+    body.dark .thread-card,
+    body.dark .auth-card,
+    body.dark .auth-hero,
+    body.dark .model-card,
+    body.dark .signal-card,
+    body.dark .guide-block,
+    body.dark .knowledge-card,
+    body.dark .project-card,
+    body.dark .transcribe-lab,
+    body.dark .empty-chat-card,
+    body.dark .dashboard-card,
+    body.dark .tool-group,
+    body.dark .mainToolbar .tool-group,
+    body.dark .wqa-btn,
+    body.dark .wnav-card,
+    body.dark .use-case-card,
+    body.dark .workspace-status-strip,
+    body.dark .upgrade-inline,
+    body.dark .home-tile,
+    body.dark .session-card,
+    body.dark .modes-card,
+    body.dark .quick-action-card{
+      background: linear-gradient(180deg, rgba(21,34,58,.96), rgba(17,27,47,.98)) !important;
+      border-color: rgba(255,255,255,.10) !important;
+      color: var(--text) !important;
+      box-shadow: 0 10px 24px rgba(0,0,0,.38) !important;
+    }
+    body.dark .home-card h3,
+    body.dark .home-panel-head h3,
+    body.dark .home-summary-item strong,
+    body.dark .home-card-meta,
+    body.dark .home-quick-tile,
+    body.dark .thread-card-title,
+    body.dark .signal-label,
+    body.dark .signal-value,
+    body.dark .auth-card h2,
+    body.dark .auth-title,
+    body.dark .auth-hero .sub,
+    body.dark .auth-hero .name,
+    body.dark .strategic-card h3,
+    body.dark .dashboard-card h3,
+    body.dark .tool-group-title,
+    body.dark .wqa-btn,
+    body.dark .wnav-card,
+    body.dark .use-case-card,
+    body.dark .use-case-card strong,
+    body.dark .wqa-btn strong,
+    body.dark .wnav-card strong,
+    body.dark .workspace-status-strip,
+    body.dark .workspace-status-strip strong{
+      color: var(--text) !important;
+    }
+    body.dark .wqa-btn span:not(:first-child),
+    body.dark .wnav-card span:not(:first-child),
+    body.dark .use-case-card span:not(:first-child){
+      color: var(--text-subtle, #c9d6f2) !important;
+    }
+    body.dark .home-card p,
+    body.dark .home-panel-head p,
+    body.dark .home-summary-item span,
+    body.dark .home-quick-tile .hq-sub,
+    body.dark .strategic-card p,
+    body.dark .auth-card .hint,
+    body.dark .auth-copy,
+    body.dark .thread-card-preview,
+    body.dark .thread-card-meta,
+    body.dark .signal-hint,
+    body.dark .signal-note{
+      color: var(--text-subtle, #c9d6f2) !important;
+    }
+    body.dark .home-card-icon{
+      background: linear-gradient(135deg, rgba(122,162,255,.25), rgba(20,184,166,.18)) !important;
+      color: #eef4ff !important;
+    }
+    body.dark .home-card:hover,
+    body.dark .home-quick-tile:hover,
+    body.dark .strategic-card:hover,
+    body.dark .thread-card:hover{
+      border-color: rgba(122,162,255,.45) !important;
+      box-shadow: 0 14px 30px rgba(0,0,0,.45), 0 0 0 1px rgba(122,162,255,.22) inset !important;
+    }
+    body.dark .plan-pill,
+    body.dark .auth-path-pill,
+    body.dark .tag{
+      background: rgba(122,162,255,.14) !important;
+      border-color: rgba(122,162,255,.26) !important;
+      color: var(--text) !important;
+    }
+    body.dark .btn.ghost{
+      background: rgba(255,255,255,.06) !important;
+      color: var(--text) !important;
+      border-color: rgba(255,255,255,.12) !important;
+    }
+    body.dark .btn.dark{
+      background: #7aa2ff !important;
+      color: #08101f !important;
+    }
+    body.dark .auth-status[data-tone="info"],
+    body.dark .auth-status{
+      background: #15223a !important;
+      color: var(--text) !important;
+      border-color: rgba(255,255,255,.12) !important;
+    }
+    body.dark .auth-status[data-tone="error"]{
+      background: rgba(239,68,68,.16) !important;
+      color: #ffd7d7 !important;
+      border-color: rgba(239,68,68,.36) !important;
+    }
+    body.dark input,
+    body.dark textarea,
+    body.dark select{
+      background: #15223a !important;
+      color: var(--text) !important;
+      border-color: rgba(255,255,255,.14) !important;
+    }
+    body.dark input::placeholder,
+    body.dark textarea::placeholder{
+      color: rgba(201,214,242,.55) !important;
+    }
+    body.dark .chatbar{
+      background: transparent !important;
+    }
+    body.dark .chatlog{
+      background: #0f1a2e !important;
+    }
+    body.dark .bubble{
+      background: #15223a !important;
+      color: var(--text) !important;
+      border-color: rgba(255,255,255,.08) !important;
+    }
+    body.dark .bubble.user{
+      background: linear-gradient(145deg,#1a3a66,#224a7f) !important;
+      color: var(--text) !important;
+    }
+    body.dark .bubble .actions .btn{
+      background: rgba(255,255,255,.08) !important;
+      color: var(--text) !important;
+      border-color: rgba(255,255,255,.12) !important;
+    }
+    body.dark .subtopbar{
+      background: linear-gradient(180deg, rgba(21,34,58,.96), rgba(17,27,47,.92)) !important;
+      border-color: rgba(255,255,255,.08) !important;
+      color: var(--text) !important;
+    }
+    body.dark .subtopbar .btn{ color: var(--text) !important; }
+    body.dark .divider{ border-color: rgba(255,255,255,.12) !important; }
+    body.dark .empty-chat-state,
+    body.dark .chatlog .empty-chat-state{
+      background: linear-gradient(180deg, rgba(21,34,58,.92), rgba(17,27,47,.98)) !important;
+      border-color: rgba(255,255,255,.10) !important;
+      color: var(--text) !important;
+      box-shadow: 0 12px 26px rgba(0,0,0,.36) !important;
+    }
+    body.dark .empty-chat-title{ color: var(--text) !important; }
+    body.dark .empty-chat-text{ color: var(--text-subtle, #c9d6f2) !important; }
+    body.dark .strategic-strip{
+      background: linear-gradient(180deg, rgba(21,34,58,.0), rgba(17,27,47,0)) !important;
+    }
+    body.dark .quick-prompt-btn{
+      background: rgba(122,162,255,.12) !important;
+      color: var(--text) !important;
+      border-color: rgba(122,162,255,.28) !important;
+      box-shadow: 0 6px 16px rgba(0,0,0,.28) !important;
+    }
+    body.dark .quick-prompt-btn:hover{
+      background: rgba(122,162,255,.22) !important;
+      border-color: rgba(122,162,255,.42) !important;
+    }
+    body.dark .settings-kpi,
+    body.dark .settings-health-output{
+      background: linear-gradient(180deg, rgba(21,34,58,.92), rgba(17,27,47,.98)) !important;
+      color: var(--text) !important;
+      border-color: rgba(255,255,255,.10) !important;
+    }
+    body.dark .settings-kpi strong{ color: var(--text) !important; }
+    body.dark .settings-kpi span{ color: var(--text-subtle, #c9d6f2) !important; }
+    body.dark .settings-health-output{ color: var(--text-subtle, #c9d6f2) !important; }
+
+    /* Generic safety net: any explicitly-white card background falls back to dark surface */
+    body.dark [style*="background:#fff"],
+    body.dark [style*="background: #fff"],
+    body.dark [style*="background-color:#fff"],
+    body.dark [style*="background-color: #fff"]{
+      background: rgba(21,34,58,.92) !important;
+      color: var(--text) !important;
+    }
+    body.dark .brand-identity .name{ color: var(--text) !important; }
+    body.dark .brand-identity .sub{ color: var(--text-subtle, #c9d6f2) !important; }
+    body.dark .navbtn-icon,
+    body.dark .navbtn-label{ color: #eef4ff !important; }
+
     *{
       scrollbar-width: thin;
       scrollbar-color: #8aa8ff #eef2ff;
@@ -4672,7 +4871,7 @@ body.dark *::-webkit-scrollbar-thumb:hover{
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.94</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.95</div>
       </div>
     </aside>
 
@@ -5701,7 +5900,7 @@ body.dark *::-webkit-scrollbar-thumb:hover{
     })();
   </script>
 
-<script src="app.js?v=894"></script>
+<script src="app.js?v=895"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -5724,7 +5923,7 @@ body.dark *::-webkit-scrollbar-thumb:hover{
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=894").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=895").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

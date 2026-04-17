@@ -1,7 +1,7 @@
 import { chromium, devices } from 'playwright';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:5001/';
-const EXPECTED_VERSION = process.env.EXPECTED_VERSION || '8.94';
+const EXPECTED_VERSION = process.env.EXPECTED_VERSION || '8.95';
 const issues = [];
 
 function log(...args) { console.log('[smoke]', ...args); }

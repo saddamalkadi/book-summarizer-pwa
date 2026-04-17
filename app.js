@@ -1,4 +1,4 @@
-﻿/* AI Workspace Studio v8.94 - strategic platform skeleton (no build step) */
+﻿/* AI Workspace Studio v8.95 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -367,7 +367,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.94';
+  const WEB_RELEASE_LABEL = 'v8.95';
   const RELEASE_CHANNEL = 'rc';
   const HIDE_PUBLIC_AAB = true;
   const DISABLE_RUNTIME_ENDPOINT_EDITING_FOR_MANAGED = true;
@@ -1399,10 +1399,35 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       const raw = await response.text();
       const parsed = raw ? JSON.parse(raw) : null;
       AUTH_RUNTIME.authHealth = parsed && typeof parsed === 'object' ? parsed : null;
+      try { renderGatewayKeyAlert(AUTH_RUNTIME.authHealth); } catch (_) {}
       return AUTH_RUNTIME.authHealth;
     }catch(_){
       AUTH_RUNTIME.authHealth = null;
+      try { renderGatewayKeyAlert(null); } catch (_) {}
       return null;
+    }
+  }
+
+  /**
+   * v8.95 — When /health reports upstream_key_valid=false (or explicit invalid-key
+   * gateway errors), show a prominent banner above the app shell so the admin knows
+   * OpenRouter has rejected the server key and users know chat is expected to fail
+   * until it's rotated. Non-blocking: does not gate the UI.
+   */
+  function renderGatewayKeyAlert(health){
+    const invalid = health && health.upstream_configured === true && health.upstream_key_valid === false;
+    let bar = document.getElementById('gatewayKeyAlert');
+    if (!invalid){
+      if (bar) bar.remove();
+      return;
+    }
+    if (!bar){
+      bar = document.createElement('div');
+      bar.id = 'gatewayKeyAlert';
+      bar.setAttribute('role', 'alert');
+      bar.style.cssText = 'position:sticky;top:0;z-index:70;padding:10px 14px;background:linear-gradient(90deg,#b91c1c,#ef4444);color:#fff;font-weight:900;font-size:13px;text-align:center;box-shadow:0 4px 14px rgba(0,0,0,.18);';
+      bar.innerHTML = '<span style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center">⚠️ <span>مفتاح OpenRouter على الخادم غير صالح أو تم إبطاله — الدردشة لن تعمل حتى يتم تدوير OPENROUTER_API_KEY في الـ Worker.</span></span>';
+      document.body.insertBefore(bar, document.body.firstChild);
     }
   }
 
@@ -9422,6 +9447,9 @@ async function maybeUpdateThreadSummary(pid, tid){
     if (/insufficient\s+(credits?|balance)|not enough credits?|quota.*exceeded|billing|payment required|exceeded your current quota|402\b/i.test(msg)) return 'نفد رصيد مزود الذكاء الاصطناعي أو تم بلوغ حد الفوترة. يلزم شحن الرصيد أو استخدام وضع مجاني/نموذج مجاني.';
     if (/unauthorized client token/i.test(msg)) return 'تم الوصول إلى Gateway، لكن Gateway Client Token غير صحيح أو مفقود.';
     if (/missing api key|gateway_missing_upstream_key/i.test(msg)) return 'تم الوصول إلى Gateway، لكن مفتاح OpenRouter غير مضبوط داخل الـ Worker.';
+    // v8.95 — surface invalid/revoked server-key clearly so the admin can rotate it rather than seeing a generic banner.
+    if (/gateway_upstream_invalid_key|user not found/i.test(msg) || /بوابة OpenRouter رفضت المفتاح/i.test(msg))
+      return 'مفتاح OpenRouter على الخادم غير صالح أو تم إبطاله. يلزم تدوير OPENROUTER_API_KEY في إعدادات الـ Worker ثم إعادة المحاولة.';
     if (/failed to fetch|networkerror|load failed|network request failed|cors/i.test(msg)) return 'تعذر الوصول إلى خدمة الدردشة. تحقق من رابط البوابة أو CORS أو الاتصال.';
     if (/stream_empty_response|empty_assistant_response|unrecognized_assistant_response/i.test(msg)) return 'تم الاتصال بالمزوّد لكن الرد رجع فارغًا أو بصيغة غير متوقعة.';
     if (/missing authentication/i.test(msg)) return 'ضع مفتاح API الصحيح ثم احفظ الإعدادات.';
