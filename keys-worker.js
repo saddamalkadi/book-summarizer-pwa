@@ -129,12 +129,8 @@ function jsonResponse(payload, status = 200) {
 }
 
 function getServerKey(env) {
-  return (
-    env.OPENROUTER_API_KEY ||
-    env.OPEN_ROUTER_API_KEY ||
-    env.OPENROUTER_KEY ||
-    ''
-  ).trim();
+  const raw = env.OPENROUTER_API_KEY || env.OPEN_ROUTER_API_KEY || env.OPENROUTER_KEY || '';
+  return normalizeSecret(typeof raw === 'string' ? raw : String(raw));
 }
 
 function getVoiceApiConfig(env) {
