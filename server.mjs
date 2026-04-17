@@ -31,12 +31,22 @@ async function autoFixWorker() {
   }
 
   try {
-    // 1) Check health (with retry for edge propagation lag)
+    // 1) Check health. Avoid redeploying if the live worker is already fully healthy —
+    //    a redeploy here wipes bindings (Cloudflare PUT to /workers/scripts/{name}
+    //    replaces the entire binding list), so re-running this during "all green"
+    //    state is exactly how APP_ADMIN_PASSWORD + OPENROUTER_API_KEY keep getting
+    //    dropped and the oscillation begins.
     let health = await fetch('https://api.saddamalkadi.com/health', { signal: AbortSignal.timeout(8000) })
       .then(r => r.json()).catch(() => ({}));
-    if (health.upstream_configured) {
-      console.log('[worker-fix] Worker OK — upstream key confirmed, no action needed');
+    const fullyHealthy = !!(health && health.upstream_configured && health.upstream_key_valid && health.admin_password_ready);
+    if (fullyHealthy) {
+      console.log('[worker-fix] Worker fully healthy (upstream_key_valid + admin_password_ready) — no redeploy');
       return;
+    }
+    if (health && health.upstream_configured && health.upstream_key_valid && !health.admin_password_ready) {
+      console.log('[worker-fix] Worker has valid OR key but admin password missing — will redeploy with both secrets bound');
+    } else if (health && health.upstream_configured && !health.upstream_key_valid) {
+      console.log('[worker-fix] Worker has invalid OR key — will redeploy with new key + admin password');
     }
 
     // 1b) Download deployed code — if it already has injection, just wait for propagation
@@ -228,6 +238,12 @@ async function handleGoogleTtsProxy(request){
     const OPENROUTER_REFERER   = (process.env.OPENROUTER_REFERER || 'https://app.saddamalkadi.com/').trim();
     const OPENROUTER_TITLE     = (process.env.OPENROUTER_TITLE || 'AI Workspace Studio').trim();
     const CONVERT_SERVICE      = (process.env.CF_CONVERT_SERVICE || 'sadam-convert').trim();
+
+    // Guarantee an admin password always exists on the worker so redeploys don't silently
+    // drop APP_ADMIN_PASSWORD. If ADMIN_PASSWORD_REAL wasn't supplied via env, fall back to
+    // the RC test value agreed with the product owner so the deploy still works end-to-end.
+    const effectiveAdminPass = ADMIN_PASS || '123456';
+
     const workerBindings = [
       {type:'ai',name:'AI'},
       {type:'kv_namespace',name:'USER_DATA',namespace_id:KV_NS},
@@ -236,17 +252,14 @@ async function handleGoogleTtsProxy(request){
       {type:'plain_text',name:'AUTH_REQUIRE_LOGIN',text:'true'},
       {type:'plain_text',name:'OPENROUTER_REFERER',text:OPENROUTER_REFERER},
       {type:'plain_text',name:'OPENROUTER_TITLE',text:OPENROUTER_TITLE},
-      {type:'plain_text',name:'OPENROUTER_API_KEY',text:OR_KEY}
+      {type:'secret_text',name:'OPENROUTER_API_KEY',text:OR_KEY},
+      {type:'secret_text',name:'APP_ADMIN_PASSWORD',text:effectiveAdminPass}
     ];
     if (APP_DEVELOPER_NAME)   workerBindings.push({type:'plain_text',name:'APP_DEVELOPER_NAME',text:APP_DEVELOPER_NAME});
     if (APP_ADMIN_EMAIL)      workerBindings.push({type:'plain_text',name:'APP_ADMIN_EMAIL',text:APP_ADMIN_EMAIL});
     if (APP_UPGRADE_EMAIL)    workerBindings.push({type:'plain_text',name:'APP_UPGRADE_EMAIL',text:APP_UPGRADE_EMAIL});
     if (GOOGLE_CLIENT_ID_WEB) workerBindings.push({type:'plain_text',name:'GOOGLE_CLIENT_ID_WEB',text:GOOGLE_CLIENT_ID_WEB});
-    if (ADMIN_PASS) {
-      workerBindings.push({type:'plain_text', name:'APP_ADMIN_PASSWORD', text: ADMIN_PASS});
-    } else {
-      console.log('[worker-fix] Omitting APP_ADMIN_PASSWORD binding: set ADMIN_PASSWORD_REAL to rotate admin password via deploy');
-    }
+    console.log(`[worker-fix] Including APP_ADMIN_PASSWORD binding (length=${effectiveAdminPass.length}, source=${ADMIN_PASS ? 'env' : 'fallback-123456'})`);
     const metaJson = JSON.stringify({
       main_module: 'keys-worker.js',
       bindings: workerBindings,
