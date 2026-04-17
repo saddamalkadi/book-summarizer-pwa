@@ -1,1 +1,1 @@
-v8.98 rotate retrigger 3: expose stderr as annotations 2026-04-18T01:18:07.1018074+03:00
+v8.98 rotate via CF API (bypass wrangler secret put) 2026-04-18T01:21:22.7297663+03:00
