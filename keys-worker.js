@@ -1416,6 +1416,9 @@ async function applyUpgradeCodeToQuota(session, codePayload, env) {
     ...base,
     plan: 'premium',
     limit: roundUsd(rawLimit),
+    limitSource: 'upgrade_code',
+    upgradeCodeLimitUsd: roundUsd(rawLimit),
+    upgradeCodePeriodDays: periodDays,
     used: 0,
     periodStart: period.periodStart,
     periodEnd: period.periodEnd,
@@ -1734,6 +1737,9 @@ function quotaPublicView(q) {
     limit: roundUsd(limit),
     used: roundUsd(used),
     remaining,
+    limitSource: q.limitSource || 'plan_default',
+    upgradeCodeLimitUsd: Number.isFinite(Number(q.upgradeCodeLimitUsd)) ? Number(q.upgradeCodeLimitUsd) : null,
+    upgradeCodePeriodDays: Number.isFinite(Number(q.upgradeCodePeriodDays)) ? Number(q.upgradeCodePeriodDays) : null,
     periodStart: q.periodStart,
     periodEnd: q.periodEnd,
     lastPromptTokens: q.lastPromptTokens || 0,
@@ -1797,14 +1803,15 @@ async function getOrInitUserQuota(session, env) {
   if (existing && existing.email === email && Number(existing.periodEnd) > now) {
     // Promote the cached plan if the user's session plan/role upgraded since last check,
     // but preserve accumulated usage within the active billing window.
+    // IMPORTANT: do NOT auto-raise `limit` here. When an admin-issued upgrade code sets
+    // an explicit limit (e.g. $5), raising it to the plan-default ($10) silently would
+    // overwrite the admin's intent. Mid-period limit changes must go through the admin
+    // patch endpoint, never through a background init/read.
     const patched = { ...existing };
     let changed = false;
     if (patched.plan !== plan) { patched.plan = plan; changed = true; }
-    // Raise the limit if the configured plan bumped higher mid-period.
-    if (Number(patched.limit) < defaultLimit) {
-      patched.limit = defaultLimit;
-      changed = true;
-    }
+    if (patched.role !== role) { patched.role = role; changed = true; }
+    if (!patched.limitSource) { patched.limitSource = 'plan_default'; changed = true; }
     if (changed) {
       patched.updatedAt = now;
       await writeQuotaToKv(patched, env);
@@ -1820,6 +1827,7 @@ async function getOrInitUserQuota(session, env) {
     plan,
     role,
     limit: defaultLimit,
+    limitSource: 'plan_default',
     used: 0,
     periodStart: period.periodStart,
     periodEnd: period.periodEnd,

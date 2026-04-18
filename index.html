@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="9.1">
+<html lang="ar" dir="rtl" data-appver="9.2">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -946,28 +946,10 @@
       flex: 1 1 auto;
       min-width: 0;
     }
-    .chatbar-mode{
-      display:flex;
-      gap:6px;
-      padding: 2px;
-      border-radius: 14px;
-      border: 1px solid rgba(12,18,32,.08);
-      background: rgba(255,255,255,.8);
-      flex: 0 0 auto;
-    }
-    .chatbar-mode .btn.sm{
-      min-height: 32px;
-      height: 32px;
-      padding: 0 10px;
-      font-weight: 1000;
-    }
-    .chatbar-mode .btn.active{
-      background: rgba(37,99,235,.14);
-      border: 1px solid rgba(37,99,235,.22);
-      color: #1d4ed8;
-    }
-    body:not(.composer-multi) #chatInputMultiBtn{ opacity: .9; }
-    body.composer-multi #chatInputSingleBtn{ opacity: .9; }
+    /* `.chatbar-mode` (سطر / فقرة) was removed in v9.2 — smart Enter handles
+     * single vs multi line implicitly. The class is kept here as a no-op shim
+     * so any cached stylesheet references don't break. */
+    .chatbar-mode{ display: none !important; }
     #chatInput{
       border: 0 !important;
       background: transparent !important;
@@ -5031,28 +5013,12 @@ body.dark *::-webkit-scrollbar-thumb:hover{
 }
 
 /* ========== Live Voice Conversation Mode (v9) ========== */
-#liveVoiceOpenBtn{
-  position: fixed;
-  bottom: 20px;
-  inset-inline-end: 20px;
-  z-index: 60;
-  width: 54px;
-  height: 54px;
-  border-radius: 50%;
-  border: 0;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: 22px;
-  background: linear-gradient(135deg, #7aa2ff 0%, #5478ff 100%);
-  box-shadow: 0 10px 28px rgba(84,120,255,.45), 0 2px 6px rgba(15,23,42,.18);
-  transition: transform .18s ease, box-shadow .18s ease;
-}
-#liveVoiceOpenBtn:hover{ transform: translateY(-2px); box-shadow: 0 14px 34px rgba(84,120,255,.55); }
-#liveVoiceOpenBtn:focus-visible{ outline: 3px solid #cfd9ff; outline-offset: 3px; }
-body.live-voice-hidden #liveVoiceOpenBtn{ display: none; }
+/* The floating launcher was replaced in v9.2 by an inline composer button
+ * (`#composerLiveVoiceBtn`). We keep the element in the DOM for backwards
+ * compatibility (older cached shells) but hide it visually. */
+#liveVoiceOpenBtn{ display: none !important; }
+#composerLiveVoiceBtn{ font-size: 18px; }
+#composerLiveVoiceBtn.is-active{ background: linear-gradient(135deg,#7aa2ff 0%,#5478ff 100%); color:#fff; box-shadow: 0 6px 14px rgba(84,120,255,.35); }
 
 #liveVoiceOverlay{
   position: fixed;
@@ -5554,14 +5520,11 @@ body.live-voice-hidden #liveVoiceOpenBtn{ display: none; }
           <div class="chatbar">
             <input id="chatAttachFiles" type="file" multiple hidden accept="*/*" aria-label="اختيار ملفات للإرفاق" />
             <div class="chatbar-composer-cluster" id="chatComposerCluster" aria-label="حقل الرسالة والمرفقات">
-              <div class="chatbar-mode" aria-label="وضع الكتابة">
-                <button class="btn ghost sm" id="chatInputSingleBtn" type="button" aria-label="وضع سطر واحد" title="سطر واحد">سطر</button>
-                <button class="btn ghost sm" id="chatInputMultiBtn" type="button" aria-label="وضع متعدد الأسطر" title="متعدد الأسطر">فقرة</button>
-              </div>
               <button class="btn ghost" id="chatAttachBtn" type="button" title="إرفاق ملف أو صورة" aria-label="إرفاق ملف أو صورة">📎</button>
-              <textarea id="chatInput" dir="auto" rows="1" placeholder="رسالتك أو سؤالك… (Enter للإرسال، Shift+Enter لسطر جديد)" aria-label="حقل إدخال الرسالة"></textarea>
+              <textarea id="chatInput" dir="auto" rows="2" placeholder="رسالتك أو سؤالك… (Enter للإرسال، Shift+Enter لسطر جديد)" aria-label="حقل إدخال الرسالة"></textarea>
             </div>
-            <button class="btn ghost" id="regenBtn" type="button" title="إعادة توليد الإجابة" aria-label="إعادة توليد">↺</button>
+            <button class="btn ghost icon" id="composerLiveVoiceBtn" type="button" title="محادثة صوتية مباشرة" aria-label="فتح محادثة صوتية مباشرة">🎙️</button>
+            <button class="btn ghost icon" id="regenBtn" type="button" title="إعادة توليد/إعادة إرسال" aria-label="إعادة توليد أو إعادة إرسال">↺</button>
             <button class="btn danger icon" id="stopBtn" type="button" style="display:none" title="إيقاف التوليد" aria-label="إيقاف التوليد">⏹</button>
             <button class="btn dark icon" id="sendBtn" type="button" title="إرسال الرسالة" aria-label="إرسال">▶</button>
           </div>
@@ -6252,7 +6215,7 @@ body.live-voice-hidden #liveVoiceOpenBtn{ display: none; }
   <p class="lv-hint">اتكلم وسأستمع لحظيًا، ثم سأرد بجُمل قصيرة. تكلّم فوق صوتي لمقاطعتي.</p>
 </div>
 
-<script src="app.js?v=910"></script>
+<script src="app.js?v=920"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -6275,7 +6238,7 @@ body.live-voice-hidden #liveVoiceOpenBtn{ display: none; }
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=910").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=920").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

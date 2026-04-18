@@ -4551,6 +4551,7 @@ function refreshDeepSearchBtn(){
     const chatbar = document.querySelector('#page-chat .chatbar');
     if (!chatbar) return;
     const voiceBtn = $('voiceInputBtn');
+    const liveVoiceBtn = $('composerLiveVoiceBtn');
     const sendBtn = $('sendBtn');
     const stopBtn = $('stopBtn');
     const regenBtn = $('regenBtn');
@@ -4563,14 +4564,22 @@ function refreshDeepSearchBtn(){
     if (input.parentElement !== cluster) cluster.appendChild(input);
     if (cluster.parentElement !== chatbar) chatbar.prepend(cluster);
 
-    /* RTL visual order from right: send/stop -> voice -> input cluster -> regenerate. */
-    if (voiceBtn && voiceBtn.parentElement !== chatbar) chatbar.appendChild(voiceBtn);
-    if (sendBtn && sendBtn.parentElement !== chatbar) chatbar.appendChild(sendBtn);
+    /* RTL visual order from right → left:
+     *   [send] [stop] [voiceInput(dictation)] [composerCluster] [liveVoice] [regenerate]
+     * In the underlying DOM (LTR source order) this means:
+     *   send (DOM first)  →  regen (DOM last).                                      */
     if (sendBtn) chatbar.prepend(sendBtn);
-    if (stopBtn && stopBtn.parentElement !== chatbar) chatbar.appendChild(stopBtn);
-    if (stopBtn && sendBtn && sendBtn.parentElement === chatbar) chatbar.insertBefore(stopBtn, sendBtn.nextSibling);
-    if (voiceBtn && voiceBtn.parentElement === chatbar) chatbar.insertBefore(voiceBtn, cluster);
-    if (regenBtn && regenBtn.parentElement !== chatbar) chatbar.appendChild(regenBtn);
+    if (stopBtn && sendBtn) chatbar.insertBefore(stopBtn, sendBtn.nextSibling);
+    if (voiceBtn) {
+      const anchor = stopBtn && stopBtn.parentElement === chatbar ? stopBtn.nextSibling
+        : (sendBtn && sendBtn.parentElement === chatbar ? sendBtn.nextSibling : cluster);
+      chatbar.insertBefore(voiceBtn, anchor || cluster);
+    }
+    if (cluster.parentElement === chatbar) {
+      const anchor = voiceBtn && voiceBtn.parentElement === chatbar ? voiceBtn.nextSibling : cluster;
+      if (anchor !== cluster) chatbar.insertBefore(cluster, anchor);
+    }
+    if (liveVoiceBtn) chatbar.insertBefore(liveVoiceBtn, cluster.nextSibling);
     if (regenBtn) chatbar.appendChild(regenBtn);
   }
 
@@ -12928,9 +12937,26 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
         scheduleShellLayoutRefresh();
       }, 120);
     }, true);
+    // Composer mode buttons (سطر / فقرة) were removed in v9.2 to free up space on
+    // mobile/APK. We now default to smart multi-line mode and rely on:
+    //   - Enter  → send
+    //   - Shift+Enter → newline
+    // The DOM IDs may still be referenced elsewhere defensively, so only wire them
+    // if they happen to be present (e.g. in older cached shells).
     $('chatInputSingleBtn')?.addEventListener('click', () => setComposerMode('single'));
     $('chatInputMultiBtn')?.addEventListener('click', () => setComposerMode('multi'));
-    setComposerMode(getComposerMode());
+    setComposerMode('single');
+
+    // Inline live voice button in the composer row — opens the full-screen live
+    // conversation overlay. Clicked synchronously so we can unlock audio inside
+    // the gesture.
+    $('composerLiveVoiceBtn')?.addEventListener('click', () => {
+      try { unlockLiveVoiceAudio(); } catch (_) {}
+      try {
+        if (typeof LIVE_VOICE !== 'undefined' && LIVE_VOICE.active) { stopLiveVoiceMode(); return; }
+      } catch (_) {}
+      try { void startLiveVoiceMode(); } catch (_) {}
+    });
 
     $('chatInput').addEventListener('keydown', (e) => {
       const input = $('chatInput');
@@ -13647,60 +13673,136 @@ ${e?.message||e}`, false);
     });
   }
 
+  /**
+   * Hierarchical Android back button handler.
+   *
+   * Priority (top to bottom — first match wins and we return immediately):
+   *   1. Live voice overlay open            → close it.
+   *   2. Exit confirmation modal open       → press "No" (cancel) instead of re-asking.
+   *   3. Any other visible modal            → close top-most.
+   *   4. Thread drawer / sidebar open       → close it.
+   *   5. Visible auth gate (non-root)       → close it (covers the "upgrade code" modal, etc.).
+   *   6. Any `.floating-panel.open`, `.drawer.open`, `[data-open="true"]` surface → close it.
+   *   7. Inside a secondary workspace page  → navigate back to chat.
+   *   8. At root chat page                  → show the "press back again to exit" toast.
+   *      A second back press within BACK_EXIT_DOUBLE_TAP_MS shows the exit confirmation.
+   *
+   * Guarantees:
+   *   - Never shows the exit confirmation on the FIRST back press from a non-root state.
+   *   - Always flushes state before exit (via `requestExitApp`).
+   */
+  const BACK_EXIT_DOUBLE_TAP_MS = 2200;
+  let BACK_LAST_ROOT_PRESS = 0;
+
+  function isBackSidebarOpen(){
+    if (document.body.classList.contains('sidebar-open')) return true;
+    if (document.body.classList.contains('threads-open')) return true;
+    if (document.getElementById('threadDrawer')?.classList?.contains?.('open')) return true;
+    if (document.querySelector('.side.open, .sidebar.open, [data-sidebar-open="true"]')) return true;
+    return false;
+  }
+
+  function closeBackSidebar(){
+    document.body.classList.remove('sidebar-open');
+    document.body.classList.remove('threads-open');
+    document.querySelectorAll('.side.open, .sidebar.open, .thread-drawer.open').forEach((el) => {
+      el.classList.remove('open');
+    });
+    document.querySelectorAll('[data-sidebar-open="true"]').forEach((el) => {
+      el.setAttribute('data-sidebar-open', 'false');
+    });
+  }
+
+  function activeBackPageId(){
+    const candidates = [
+      'main section.page.active',
+      '.workspace-page.active',
+      'section.page.active',
+      'main > .page.active'
+    ];
+    for (const sel of candidates) {
+      const el = document.querySelector(sel);
+      if (el && el.id) return el.id;
+    }
+    return '';
+  }
+
   async function handleAndroidBackPress(){
-    // 1) Live voice overlay
+    // 1) Live voice overlay has priority over everything.
     try {
       const overlay = document.getElementById('liveVoiceOverlay');
-      if (overlay && overlay.classList.contains('live-voice-active')) {
+      if (overlay && (overlay.classList.contains('live-voice-active') || overlay.getAttribute('aria-hidden') === 'false')) {
         try { stopLiveVoiceMode(); } catch (_) {}
+        BACK_LAST_ROOT_PRESS = 0;
         return;
       }
     } catch (_) {}
 
-    // 2) Close top-most visible modal (skip the exit modal itself so the back
-    //    press effectively cancels the confirmation).
+    // 2) Exit confirmation already open → cancel it instead of stacking another one.
     try {
-      const openModals = Array.from(document.querySelectorAll('.modal.show'));
+      const exitOpen = document.getElementById('exitAppModal');
+      if (exitOpen && exitOpen.classList.contains('show')) {
+        const no = document.getElementById('exitAppNoBtn');
+        try { no?.click?.(); } catch (_) {}
+        BACK_LAST_ROOT_PRESS = 0;
+        return;
+      }
+    } catch (_) {}
+
+    // 3) Any other visible modal → close top-most.
+    try {
+      const openModals = Array.from(document.querySelectorAll('.modal.show, .modal[aria-hidden="false"]'));
       const dismissable = openModals.filter((m) => m.id !== 'exitAppModal');
       if (dismissable.length) {
         const top = dismissable[dismissable.length - 1];
         top.classList.remove('show');
         top.setAttribute('aria-hidden', 'true');
-        // If a "close" button exists, also click it to run any per-modal cleanup.
         const closer = top.querySelector('[data-close], .modal-close, [aria-label="إغلاق"], [aria-label="Close"]');
         try { closer?.click?.(); } catch (_) {}
-        return;
-      }
-      const exitOpen = document.getElementById('exitAppModal');
-      if (exitOpen && exitOpen.classList.contains('show')) {
-        const no = document.getElementById('exitAppNoBtn');
-        try { no?.click?.(); } catch (_) {}
+        BACK_LAST_ROOT_PRESS = 0;
         return;
       }
     } catch (_) {}
 
-    // 3) Close side drawer / auth gate / any z-index overlay with [data-dismiss-on-back="true"].
+    // 4) Sidebar / thread drawer.
     try {
-      const drawer = document.querySelector('[data-sidebar-open="true"], .side.open, body.sidebar-open .side');
-      if (drawer && document.body.classList.contains('sidebar-open')){
-        document.body.classList.remove('sidebar-open');
-        drawer.classList?.remove?.('open');
+      if (isBackSidebarOpen()) {
+        closeBackSidebar();
+        BACK_LAST_ROOT_PRESS = 0;
         return;
       }
     } catch (_) {}
 
-    // 4) Return to main chat if we're on a secondary page.
+    // 5) Other generic overlays (settings drawer, floating panels, etc.).
     try {
-      const activeSection = document.querySelector('main > section.page.active, .workspace-page.active');
-      const activeId = activeSection?.id || '';
-      const chatIds = ['page-chat', 'workspace-chat', 'chat-page', 'page-home'];
-      if (activeId && !chatIds.includes(activeId) && typeof openWorkspacePage === 'function') {
-        try { openWorkspacePage('chat'); return; } catch (_) { /* fallthrough */ }
+      const overlay = document.querySelector('.floating-panel.open, .drawer.open, [data-open="true"], .panel-overlay.show');
+      if (overlay) {
+        overlay.classList.remove('open');
+        overlay.classList.remove('show');
+        overlay.setAttribute('data-open', 'false');
+        BACK_LAST_ROOT_PRESS = 0;
+        return;
       }
     } catch (_) {}
 
-    // 5) Exit flow — save + confirm + exit.
-    await confirmExitWithSave();
+    // 6) On a secondary workspace page → return to chat.
+    try {
+      const activeId = activeBackPageId();
+      const chatIds = new Set(['page-chat', 'workspace-chat', 'chat-page', 'page-home', '']);
+      if (activeId && !chatIds.has(activeId) && typeof openWorkspacePage === 'function') {
+        try { openWorkspacePage('chat'); BACK_LAST_ROOT_PRESS = 0; return; } catch (_) { /* fallthrough */ }
+      }
+    } catch (_) {}
+
+    // 7) At root chat page. First press → hint toast; second within window → confirm exit.
+    const now = Date.now();
+    if (BACK_LAST_ROOT_PRESS && (now - BACK_LAST_ROOT_PRESS) < BACK_EXIT_DOUBLE_TAP_MS) {
+      BACK_LAST_ROOT_PRESS = 0;
+      await confirmExitWithSave();
+      return;
+    }
+    BACK_LAST_ROOT_PRESS = now;
+    try { if (typeof toast === 'function') toast('اضغط الرجوع مرة أخرى للخروج من التطبيق', 2000); } catch (_) {}
   }
 
   async function confirmExitWithSave(){
@@ -13757,10 +13859,30 @@ ${e?.message||e}`, false);
     });
   }
 
+  function ensureLiveVoiceAudioContext(){
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      if (!LIVE_VOICE.audioCtx) {
+        const ctx = new AC();
+        LIVE_VOICE.audioCtx = ctx;
+      }
+      if (LIVE_VOICE.audioCtx.state === 'suspended') {
+        try { LIVE_VOICE.audioCtx.resume(); } catch (_) {}
+      }
+      return LIVE_VOICE.audioCtx;
+    } catch (_) { return null; }
+  }
+
   function unlockLiveVoiceAudio(){
+    // Must run synchronously inside a user gesture on iOS/Android WebViews. Plays a
+    // tiny silent buffer through both HTMLAudioElement AND Web Audio so both playback
+    // paths are unlocked — the live voice session uses Web Audio for TTS (see
+    // `playLiveVoiceBuffer`) because `<audio>` elements are flakey on Android WebView
+    // once a mic stream is active (Android switches audio mode to MODE_IN_COMMUNICATION
+    // and silently re-routes `<audio>` to the earpiece).
     if (LIVE_VOICE.audioUnlocked) return;
     try {
-      // 1) Silent HTMLAudioElement play — satisfies Safari/iOS gesture gate.
       const silent = new Audio(
         'data:audio/mpeg;base64,SUQzBAAAAAABEVRYWFgAAAAtAAADY29tbWVudABCaWdTb3VuZEJhbmsuY29tIC8gTGFTb25vdGhlcXVlLm9yZwBURU5DAAAAHQAAA1N3aXRjaCBQbHVzIMKpIE5DSCBTb2Z0d2FyZQBUSVQyAAAABgAAAzIyMzUAVFNTRQAAAA8AAANMYXZmNTcuODMuMTAwAAAAAAAAAAAAAAD/80DEAAAAA0gAAAAATEFNRTMuMTAwVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MkxAAAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV/+MYxAAAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MUxAAAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV'
       );
@@ -13771,15 +13893,17 @@ ${e?.message||e}`, false);
       LIVE_VOICE.unlockPlayer = silent;
     } catch (_) {}
     try {
-      // 2) AudioContext resume — some WebViews require this specifically for <audio>
-      //    elements to not be throttled.
-      const AC = window.AudioContext || window.webkitAudioContext;
-      if (AC && !LIVE_VOICE.audioCtx) {
-        const ctx = new AC();
-        if (ctx.state === 'suspended') { try { ctx.resume(); } catch (_) {} }
-        LIVE_VOICE.audioCtx = ctx;
-      } else if (LIVE_VOICE.audioCtx && LIVE_VOICE.audioCtx.state === 'suspended') {
-        try { LIVE_VOICE.audioCtx.resume(); } catch (_) {}
+      const ctx = ensureLiveVoiceAudioContext();
+      if (ctx) {
+        // Pump a 10ms silent buffer through Web Audio so decodeAudioData + playback
+        // is unlocked for the rest of the session.
+        try {
+          const buf = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * 0.01)), ctx.sampleRate);
+          const src = ctx.createBufferSource();
+          src.buffer = buf;
+          src.connect(ctx.destination);
+          src.start(0);
+        } catch (_) {}
       }
     } catch (_) {}
     LIVE_VOICE.audioUnlocked = true;
@@ -13803,41 +13927,69 @@ ${e?.message||e}`, false);
     } catch (_) { persona = null; }
     LIVE_VOICE.persona = persona || getDefaultLiveVoicePersona();
 
-    // On Android APK (Capacitor), pre-warm the RECORD_AUDIO runtime permission via the
-    // native SpeechRecognition plugin if available. The native plugin's prompt flow is
-    // the same one the dictation button uses, so if dictation works the live voice
-    // session must not show a false "denied" message. This also covers the case where
-    // the WebView's getUserMedia would otherwise reject before any OS dialog appears.
-    try {
-      if (typeof isNativeAndroidPlatform === 'function' && isNativeAndroidPlatform()) {
+    // On Android APK (Capacitor), explicitly drive the native runtime RECORD_AUDIO
+    // permission dialog before touching getUserMedia. We have to do this even when the
+    // "granted" dictation flow worked in a previous session, because Capacitor's
+    // WebView caches permission state per-process and the new live-voice path uses a
+    // different request origin (getUserMedia) from the native SpeechRecognition plugin.
+    const onNativeAndroid = typeof isNativeAndroidPlatform === 'function' && isNativeAndroidPlatform();
+    if (onNativeAndroid) {
+      try {
         const nativePlugin = typeof getNativeSpeechRecognitionPlugin === 'function'
           ? getNativeSpeechRecognitionPlugin()
           : null;
         if (nativePlugin && typeof ensureNativeSpeechRecognitionPermission === 'function') {
           await ensureNativeSpeechRecognitionPermission(nativePlugin);
         }
-      }
-    } catch (_) { /* permission priming is best-effort */ }
+      } catch (_) { /* permission priming is best-effort */ }
+    }
 
-    // Grab mic. If denied, show a clear prompt and bail out cleanly.
-    let stream;
+    // Grab mic with one-shot retry. On Android WebView, the first getUserMedia attempt
+    // can race the native permission grant propagation and fail with "NotAllowedError"
+    // even though RECORD_AUDIO is actually granted. A 400ms retry closes that race.
+    let stream = null;
+    let lastMicError = null;
     LIVE_VOICE.micErrorKind = '';
-    try {
-      if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
-        LIVE_VOICE.micErrorKind = 'unsupported';
-        throw new Error('متصفح هذا الجهاز لا يدعم التقاط الصوت مباشرة.');
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+      LIVE_VOICE.micErrorKind = 'unsupported';
+      const msg = buildLiveVoiceMicErrorMessage('unsupported', null);
+      toast?.(msg); setLiveVoiceStatus?.(msg);
+      return;
+    }
+    const micConstraints = {
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: 1
       }
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          channelCount: 1
+    };
+    const maxAttempts = onNativeAndroid ? 3 : 1;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(micConstraints);
+        break;
+      } catch (err) {
+        lastMicError = err;
+        const kind = classifyLiveVoiceMicError(err);
+        console.warn(`[live-voice] getUserMedia attempt ${attempt + 1}/${maxAttempts} failed:`, kind, err?.name, err?.message);
+        if (attempt < maxAttempts - 1 && (kind === 'permission_denied' || kind === 'capture_failed' || kind === 'session_init_failed')) {
+          // Re-prime permission and wait a bit for the native grant to propagate.
+          if (onNativeAndroid) {
+            try {
+              const nativePlugin = getNativeSpeechRecognitionPlugin?.();
+              if (nativePlugin) await ensureNativeSpeechRecognitionPermission(nativePlugin);
+            } catch (_) {}
+          }
+          await new Promise((r) => window.setTimeout(r, 400));
+          continue;
         }
-      });
-    } catch (err) {
-      LIVE_VOICE.micErrorKind = classifyLiveVoiceMicError(err);
-      const msg = buildLiveVoiceMicErrorMessage(LIVE_VOICE.micErrorKind, err);
+        break;
+      }
+    }
+    if (!stream) {
+      LIVE_VOICE.micErrorKind = classifyLiveVoiceMicError(lastMicError);
+      const msg = buildLiveVoiceMicErrorMessage(LIVE_VOICE.micErrorKind, lastMicError);
       toast?.(msg);
       setLiveVoiceStatus?.(msg);
       return;
@@ -14160,7 +14312,95 @@ ${e?.message||e}`, false);
     }
   }
 
-  function playLiveVoiceBlob(blob, persona){
+  /**
+   * Play a TTS audio blob. Strategy, in order:
+   *   1) Web Audio: decodeAudioData + AudioBufferSourceNode → AudioContext.destination.
+   *      Most reliable on Android WebView where `<audio>` elements silently fail once
+   *      a mic MediaStream is active.
+   *   2) HTMLAudioElement with blob URL.
+   *   3) HTMLAudioElement with base64 data URL (for WebViews that reject blob URLs).
+   *
+   * The returned promise resolves `true` if audio was heard (ended naturally OR the
+   * user barged-in), `false` if every path failed.
+   */
+  async function playLiveVoiceBlob(blob, persona){
+    try { unlockLiveVoiceAudio(); } catch (_) {}
+    // Path 1: Web Audio (primary)
+    try {
+      const ctx = ensureLiveVoiceAudioContext();
+      if (ctx) {
+        if (ctx.state === 'suspended') { try { await ctx.resume(); } catch (_) {} }
+        const arrayBuffer = await blob.arrayBuffer();
+        const decoded = await new Promise((res, rej) => {
+          try {
+            const p = ctx.decodeAudioData(arrayBuffer.slice(0), res, rej);
+            if (p && typeof p.then === 'function') p.then(res, rej);
+          } catch (err) { rej(err); }
+        }).catch(() => null);
+        if (decoded) {
+          const ok = await playLiveVoiceBuffer(ctx, decoded, persona);
+          if (ok) return true;
+        }
+      }
+    } catch (_) { /* fall through to HTMLAudio */ }
+    // Path 2 & 3: HTMLAudioElement
+    return playLiveVoiceBlobHtml(blob, persona);
+  }
+
+  function playLiveVoiceBuffer(ctx, audioBuffer, persona){
+    return new Promise((resolve) => {
+      let resolved = false;
+      let bargeTimer = 0;
+      const source = ctx.createBufferSource();
+      source.buffer = audioBuffer;
+      const gain = ctx.createGain();
+      gain.gain.value = 1.0;
+      source.connect(gain);
+      gain.connect(ctx.destination);
+
+      const finalize = (ok) => {
+        if (resolved) return;
+        resolved = true;
+        if (bargeTimer) { try { window.clearInterval(bargeTimer); } catch (_) {} bargeTimer = 0; }
+        try { source.onended = null; } catch (_) {}
+        try { source.stop(); } catch (_) {}
+        if (LIVE_VOICE.currentAudio === source) LIVE_VOICE.currentAudio = null;
+        resolve(!!ok);
+      };
+
+      const bargeCfg = persona?.barge || {};
+      const bargeThreshold = Number(bargeCfg.micRmsThreshold || 0.04);
+      const analyser = LIVE_VOICE.analyser;
+      if (analyser && bargeCfg.enabled !== false) {
+        const buf = new Float32Array(analyser.fftSize);
+        // Wait 300ms after playback starts before arming barge-in so our own TTS
+        // output (bleeding into the mic via speaker feedback) doesn't self-interrupt.
+        const armAt = Date.now() + 300;
+        bargeTimer = window.setInterval(() => {
+          if (Date.now() < armAt) return;
+          try {
+            analyser.getFloatTimeDomainData(buf);
+            let sum = 0;
+            for (let i = 0; i < buf.length; i += 1) sum += buf[i] * buf[i];
+            const rms = Math.sqrt(sum / buf.length);
+            if (rms > bargeThreshold) {
+              LIVE_VOICE.lastBargeAt = Date.now();
+              LIVE_VOICE.interruptRequested = true;
+              finalize(true);
+            }
+          } catch (_) {}
+        }, 85);
+      }
+
+      source.onended = () => finalize(true);
+      try {
+        source.start(0);
+        LIVE_VOICE.currentAudio = source;
+      } catch (_) { finalize(false); }
+    });
+  }
+
+  function playLiveVoiceBlobHtml(blob, persona){
     return new Promise((resolve) => {
       let audio = null;
       let objectUrl = '';
@@ -14187,7 +14427,9 @@ ${e?.message||e}`, false);
         const analyser = LIVE_VOICE.analyser;
         if (!analyser || bargeCfg.enabled === false) return;
         const buf = new Float32Array(analyser.fftSize);
+        const armAt = Date.now() + 300;
         bargeTimer = window.setInterval(() => {
+          if (Date.now() < armAt) return;
           try {
             analyser.getFloatTimeDomainData(buf);
             let sum = 0;
@@ -14207,8 +14449,8 @@ ${e?.message||e}`, false);
         audio = new Audio();
         audio.preload = 'auto';
         audio.setAttribute('playsinline', 'true');
-        audio.crossOrigin = 'anonymous';
         audio.src = src;
+        audio.volume = 1.0;
         LIVE_VOICE.currentAudio = audio;
         audio.onended = () => finalize(true);
         audio.onerror = () => {
@@ -14244,8 +14486,6 @@ ${e?.message||e}`, false);
 
       (async () => {
         try { objectUrl = URL.createObjectURL(blob); } catch (_) { objectUrl = ''; }
-        // Prepare a base64 data-URL fallback so WebViews that refuse blob URLs can
-        // still play the clip.
         try {
           const buffer = await blob.arrayBuffer();
           const bytes = new Uint8Array(buffer);
