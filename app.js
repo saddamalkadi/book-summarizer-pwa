@@ -77,7 +77,24 @@
     }catch(_){ return fallback; }
   }
   function saveJSON(key, val){
-    try{ localStorage.setItem(key, JSON.stringify(val)); }catch(_){}
+    // v9.6 — surface quota failures instead of swallowing them silently.
+    // Quota-exceeded saves were the hidden reason threads/downloads appeared
+    // to "lose their previews" on reload: the write failed, so the next
+    // load restored the stale copy without the newly-attached dataUrl.
+    try{
+      localStorage.setItem(key, JSON.stringify(val));
+      return true;
+    }catch(err){
+      const name = err?.name || '';
+      const code = err?.code || 0;
+      const isQuota = name === 'QuotaExceededError' || code === 22 || /quota/i.test(String(err?.message || ''));
+      try{
+        console.error('[storage]', isQuota ? 'quota_exceeded' : 'set_failed', {
+          key, name, code, message: err?.message || String(err || '')
+        });
+      }catch(_){ /* never throw from logging */ }
+      return false;
+    }
   }
 
 
@@ -8697,18 +8714,56 @@ async function fileToText(file){
     return `${(value / (1024 * 1024)).toFixed(value >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
   }
   const downloadPreviewUrlCache = new Map();
+  // v9.6 — Prefer stable data URLs over blob: URLs for chat-bubble
+  // previews. Blob URLs live only for the current document, so after a
+  // reload the cached URL is gone. Data URLs are serializable and work
+  // identically across web + APK WebView. We keep the blob fallback for
+  // very large base64 payloads (to avoid rebuilding the dataURL string
+  // on every render), and still cache them in-memory for the session.
   function getDownloadPreviewUrl(entry){
     const normalized = normalizeDownloadEntry(entry);
-    if (normalized.url && /^(https?:|data:|blob:)/i.test(normalized.url)) return normalized.url;
+    if (normalized.url && /^(https?:|data:|blob:)/i.test(normalized.url)){
+      logPreviewEvent('download_preview_direct', {
+        id: normalized.id, scheme: normalized.url.slice(0, 8)
+      });
+      return normalized.url;
+    }
+    if (normalized.encoding === 'dataurl' && /^data:/i.test(normalized.content || '')){
+      logPreviewEvent('download_preview_dataurl', { id: normalized.id });
+      return normalized.content;
+    }
     const cacheKey = String(normalized.id || normalized.fingerprint || '');
-    if (!cacheKey) return '';
+    if (!cacheKey){
+      logPreviewError('download_preview_no_cache_key', new Error('no_cache_key'), {});
+      return '';
+    }
     const cached = downloadPreviewUrlCache.get(cacheKey);
     if (cached) return cached;
+    // For base64 entries, emit a data URL directly. This survives reload
+    // and is the most reliable preview source for APK WebView which
+    // sometimes refuses blob: URLs in <img>/<video>/<iframe> tags.
+    if (normalized.encoding === 'base64' && normalized.content){
+      try{
+        const approxBytes = Math.floor(String(normalized.content || '').length * 3 / 4);
+        if (approxBytes <= 2 * 1024 * 1024){
+          const dataUrl = `data:${normalized.mime || 'application/octet-stream'};base64,${normalized.content}`;
+          downloadPreviewUrlCache.set(cacheKey, dataUrl);
+          logPreviewEvent('download_preview_base64_inline', {
+            id: normalized.id, bytes: approxBytes
+          });
+          return dataUrl;
+        }
+      }catch(err){
+        logPreviewError('download_preview_base64_inline_failed', err, { id: normalized.id });
+      }
+    }
     try{
       const url = URL.createObjectURL(buildBlobFromDownload(normalized));
       downloadPreviewUrlCache.set(cacheKey, url);
+      logPreviewEvent('download_preview_blob_url', { id: normalized.id, encoding: normalized.encoding });
       return url;
-    }catch(_){
+    }catch(err){
+      logPreviewError('download_preview_blob_failed', err, { id: normalized.id, encoding: normalized.encoding });
       return '';
     }
   }
@@ -8738,37 +8793,106 @@ async function fileToText(file){
     const preview = text.length > 1400 ? `${text.slice(0, 1400)}\n...` : text;
     return `<div class="assistant-preview assistant-preview--text"><pre>${escapeHtml(preview)}</pre></div>`;
   }
+  // v9.6 — rich file-card fallback for downloads that have no inline
+  // preview path (APK WebView that can't iframe PDF, Office files without
+  // an https: URL, or previews that failed to build for any reason).
+  // Before v9.6 these returned an empty string, leaving the card with
+  // only a tiny text link — which was the exact visual the user
+  // interpreted as "files aren't being rendered in chat".
+  function renderAssistantDownloadFileCard(normalized, reason){
+    const mime = String(normalized?.mime || '').toLowerCase();
+    const icon = attachmentKindIcon(mime);
+    const sizeBytes = estimateDownloadBytes(normalized);
+    const metaBits = [];
+    if (mime) metaBits.push(escapeHtml(mime));
+    if (sizeBytes > 0) metaBits.push(escapeHtml(formatCompactBytes(sizeBytes)));
+    else if (normalized?.encoding === 'url') metaBits.push('رابط مباشر');
+    const note = reason
+      ? `<span class="assistant-preview-card-note">${escapeHtml(reason)}</span>`
+      : '';
+    logPreviewEvent('download_card_fallback', {
+      id: normalized?.id, mime, reason: reason || 'native_unsupported'
+    });
+    return `<div class="assistant-preview assistant-preview--card">`
+      + `<span class="assistant-preview-card-icon" aria-hidden="true">${icon}</span>`
+      + `<span class="assistant-preview-card-body">`
+        + `<span class="assistant-preview-card-name">${escapeHtml(normalized?.name || 'ملف')}</span>`
+        + `<span class="assistant-preview-card-meta">${metaBits.join(' • ') || 'ملف جاهز للتنزيل'}</span>`
+        + note
+      + `</span>`
+      + `</div>`;
+  }
+
   function renderAssistantDownloadPreview(entry){
     const normalized = normalizeDownloadEntry(entry);
     const mime = String(normalized.mime || '').toLowerCase();
     const name = String(normalized.name || '').toLowerCase();
-    if (/^image\//i.test(mime)){
-      const src = getDownloadPreviewUrl(normalized);
-      return src ? `<div class="assistant-preview assistant-preview--media"><img class="assistant-preview-media" loading="lazy" alt="${escapeHtml(normalized.name)}" src="${escapeHtml(src)}" /></div>` : '';
+    logPreviewEvent('render_assistant_download', {
+      id: normalized.id, name: normalized.name, mime, encoding: normalized.encoding
+    });
+    try{
+      if (/^image\//i.test(mime)){
+        const src = getDownloadPreviewUrl(normalized);
+        if (src){
+          return `<div class="assistant-preview assistant-preview--media">`
+            + `<img class="assistant-preview-media" loading="lazy" alt="${escapeHtml(normalized.name)}" src="${escapeHtml(src)}" />`
+            + `</div>`;
+        }
+        return renderAssistantDownloadFileCard(normalized, 'تعذر توليد معاينة الصورة — استخدم زر التنزيل');
+      }
+      if (/^video\//i.test(mime)){
+        const src = getDownloadPreviewUrl(normalized);
+        if (src){
+          return `<div class="assistant-preview assistant-preview--media">`
+            + `<video class="assistant-preview-media" controls preload="metadata" src="${escapeHtml(src)}"></video>`
+            + `</div>`;
+        }
+        return renderAssistantDownloadFileCard(normalized, 'تعذر توليد معاينة الفيديو — استخدم زر التنزيل');
+      }
+      if (/^audio\//i.test(mime)){
+        const src = getDownloadPreviewUrl(normalized);
+        if (src){
+          return `<div class="assistant-preview assistant-preview--audio">`
+            + `<audio controls preload="metadata" src="${escapeHtml(src)}"></audio>`
+            + `</div>`;
+        }
+        return renderAssistantDownloadFileCard(normalized, 'تعذر توليد معاينة الصوت — استخدم زر التنزيل');
+      }
+      if (mime === 'application/pdf' || /\.pdf$/i.test(name)){
+        const src = getDownloadPreviewUrl(normalized);
+        // Inline PDF iframes frequently fail inside Android WebView — fall
+        // back to the rich card there so the user at least sees the file.
+        const isNative = (typeof isNativePlatform === 'function' && isNativePlatform());
+        if (src && !isNative){
+          return `<div class="assistant-preview assistant-preview--frame">`
+            + `<iframe class="assistant-preview-frame" loading="lazy" referrerpolicy="no-referrer" src="${escapeHtml(src)}#view=FitH"></iframe>`
+            + `</div>`;
+        }
+        return renderAssistantDownloadFileCard(normalized, isNative
+          ? 'معاينة PDF متاحة بعد التنزيل/الفتح على الجهاز'
+          : 'معاينة PDF غير متاحة الآن — استخدم زر التنزيل');
+      }
+      if (isWordDocumentMime(mime) && normalized.encoding !== 'url'){
+        return `<div class="assistant-preview assistant-preview--docx" data-docx-preview-id="${escapeHtml(normalized.id)}">جارٍ تجهيز معاينة Word داخل الدردشة...</div>`;
+      }
+      if (isOfficeDocumentMime(mime) && normalized.url){
+        const viewerUrl = buildOfficeViewerUrl(normalized.url);
+        if (viewerUrl){
+          return `<div class="assistant-preview assistant-preview--frame">`
+            + `<iframe class="assistant-preview-frame" loading="lazy" referrerpolicy="no-referrer" src="${escapeHtml(viewerUrl)}"></iframe>`
+            + `</div>`;
+        }
+        return renderAssistantDownloadFileCard(normalized, 'لا يمكن المعاينة داخل الرسالة — استخدم زر التنزيل');
+      }
+      if (/^text\//i.test(mime) || /(json|xml|markdown|csv)/i.test(mime)){
+        const textPreview = renderAssistantTextPreview(normalized);
+        return textPreview || renderAssistantDownloadFileCard(normalized, '');
+      }
+      return renderAssistantDownloadFileCard(normalized, '');
+    }catch(err){
+      logPreviewError('render_assistant_download_failed', err, { id: normalized.id, mime });
+      return renderAssistantDownloadFileCard(normalized, 'تعذر تجهيز المعاينة — استخدم زر التنزيل');
     }
-    if (/^video\//i.test(mime)){
-      const src = getDownloadPreviewUrl(normalized);
-      return src ? `<div class="assistant-preview assistant-preview--media"><video class="assistant-preview-media" controls preload="metadata" src="${escapeHtml(src)}"></video></div>` : '';
-    }
-    if (/^audio\//i.test(mime)){
-      const src = getDownloadPreviewUrl(normalized);
-      return src ? `<div class="assistant-preview assistant-preview--audio"><audio controls preload="metadata" src="${escapeHtml(src)}"></audio></div>` : '';
-    }
-    if (mime === 'application/pdf' || /\.pdf$/i.test(name)){
-      const src = getDownloadPreviewUrl(normalized);
-      return src ? `<div class="assistant-preview assistant-preview--frame"><iframe class="assistant-preview-frame" loading="lazy" referrerpolicy="no-referrer" src="${escapeHtml(src)}#view=FitH"></iframe></div>` : '';
-    }
-    if (isWordDocumentMime(mime) && normalized.encoding !== 'url'){
-      return `<div class="assistant-preview assistant-preview--docx" data-docx-preview-id="${escapeHtml(normalized.id)}">جارٍ تجهيز معاينة Word داخل الدردشة...</div>`;
-    }
-    if (isOfficeDocumentMime(mime) && normalized.url){
-      const viewerUrl = buildOfficeViewerUrl(normalized.url);
-      return viewerUrl ? `<div class="assistant-preview assistant-preview--frame"><iframe class="assistant-preview-frame" loading="lazy" referrerpolicy="no-referrer" src="${escapeHtml(viewerUrl)}"></iframe></div>` : '';
-    }
-    if (/^text\//i.test(mime) || /(json|xml|markdown|csv)/i.test(mime)){
-      return renderAssistantTextPreview(normalized);
-    }
-    return '';
   }
   async function bindAssistantDocxPreviews(scope){
     const nodes = scope?.querySelectorAll?.('[data-docx-preview-id]') || [];
@@ -9844,24 +9968,186 @@ async function maybeUpdateThreadSummary(pid, tid){
   }
 
   const MAX_CHAT_INLINE_MEDIA_BYTES = 4 * 1024 * 1024;
+  // v9.6 — target for the downscaled thumbnail we keep inline in message
+  // history when the original image is too large to persist as a full
+  // dataURL. 220 KB keeps a HiDPI-readable preview while leaving plenty of
+  // headroom in localStorage for a long conversation.
+  const INLINE_IMAGE_THUMBNAIL_BUDGET = 220 * 1024;
+  const INLINE_IMAGE_THUMBNAIL_MAX_DIM = 1024;
 
+  // v9.6 — structured logging for the preview/render pipeline so web and
+  // APK failures can be traced with the same [preview] tag. Mirrors the
+  // [attach] / [download] / [livevoice] contracts already used by the app.
+  function logPreviewEvent(stage, extra){
+    try{
+      const platform = (typeof isNativePlatform === 'function' && isNativePlatform())
+        ? ((typeof getCapacitorPlatform === 'function' && getCapacitorPlatform()) || 'native')
+        : 'web';
+      console.info('[preview]', stage, Object.assign({ platform, ts: Date.now() }, extra || {}));
+    }catch(_){ /* never throw from logging */ }
+  }
+  function logPreviewError(stage, err, extra){
+    try{
+      const platform = (typeof isNativePlatform === 'function' && isNativePlatform())
+        ? ((typeof getCapacitorPlatform === 'function' && getCapacitorPlatform()) || 'native')
+        : 'web';
+      console.error('[preview:error]', stage, {
+        platform,
+        name: err?.name || '',
+        message: err?.message || String(err || ''),
+        ...extra
+      });
+    }catch(_){ /* never throw from logging */ }
+  }
+
+  // v9.6 — Downscale a data URL via <canvas> to a thumbnail that survives
+  // localStorage persistence. We ONLY use this for images that are too
+  // large to embed at full resolution inside the thread state. Without
+  // this, modern phone photos (5-10 MB dataURLs) were silently dropped in
+  // snapshotAttachmentsForMessage, which is why users reported "images
+  // never show up in chat" on both web and APK.
+  function downscaleImageDataUrlSync(dataUrl, maxDim, quality){
+    return new Promise((resolve) => {
+      try{
+        if (!dataUrl || !/^data:image\//i.test(dataUrl)){
+          resolve('');
+          return;
+        }
+        const img = new Image();
+        img.onload = () => {
+          try{
+            const ratio = Math.min(1, Number(maxDim) / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+            const targetW = Math.max(1, Math.round((img.naturalWidth || 1) * ratio));
+            const targetH = Math.max(1, Math.round((img.naturalHeight || 1) * ratio));
+            const canvas = document.createElement('canvas');
+            canvas.width = targetW;
+            canvas.height = targetH;
+            const ctx = canvas.getContext('2d');
+            if (!ctx){
+              resolve('');
+              return;
+            }
+            ctx.drawImage(img, 0, 0, targetW, targetH);
+            const out = canvas.toDataURL('image/jpeg', Number(quality) || 0.72);
+            resolve(typeof out === 'string' ? out : '');
+          }catch(err){
+            logPreviewError('thumbnail_draw', err, { maxDim });
+            resolve('');
+          }
+        };
+        img.onerror = () => {
+          logPreviewError('thumbnail_image_load', new Error('image_decode_failed'), { maxDim });
+          resolve('');
+        };
+        img.src = dataUrl;
+      }catch(err){
+        logPreviewError('thumbnail_boot', err, { maxDim });
+        resolve('');
+      }
+    });
+  }
+
+  // v9.6 — pending synchronous hook: when the composer send flow needs a
+  // snapshot IMMEDIATELY for state-persistence, we may want to defer the
+  // downscale step asynchronously. In the send flow we call the async
+  // snapshot below; the synchronous snapshot stays as a cheap fallback.
   function snapshotAttachmentsForMessage(list){
     const arr = Array.isArray(list) ? list : [];
     return arr.map((a) => {
       const kind = String(a?.kind || '').toLowerCase();
       let dataUrl = String(a?.dataUrl || '').trim();
+      let dataUrlReduced = false;
       if (dataUrl && (kind === 'image' || kind === 'video' || kind === 'audio')){
         const approxBytes = Math.floor(dataUrl.length * 0.75);
-        if (approxBytes > MAX_CHAT_INLINE_MEDIA_BYTES) dataUrl = '';
+        if (approxBytes > MAX_CHAT_INLINE_MEDIA_BYTES){
+          dataUrl = '';
+          dataUrlReduced = true;
+        }
       }
-      return {
+      const snapshot = {
         name: String(a?.name || 'مرفق'),
         kind,
         type: String(a?.type || ''),
         size: Number(a?.size || 0),
-        dataUrl
+        dataUrl,
+        hasText: !!a?.hasText,
+        extractionMode: String(a?.extractionMode || ''),
+        previewStatus: dataUrl
+          ? 'inline'
+          : (dataUrlReduced ? 'oversized_card' : 'card_only')
       };
+      logPreviewEvent('snapshot_sync', {
+        name: snapshot.name,
+        kind: snapshot.kind,
+        size: snapshot.size,
+        hasDataUrl: !!snapshot.dataUrl,
+        status: snapshot.previewStatus
+      });
+      return snapshot;
     });
+  }
+
+  // v9.6 — Async variant: when the source image is oversized we try to
+  // downscale it into a thumbnail we can actually persist. Falls back to
+  // the plain snapshot entry if the downscale fails so the UI never ends
+  // up without a card.
+  async function snapshotAttachmentsForMessageAsync(list){
+    const arr = Array.isArray(list) ? list : [];
+    const out = [];
+    for (const a of arr){
+      const kind = String(a?.kind || '').toLowerCase();
+      let dataUrl = String(a?.dataUrl || '').trim();
+      let previewStatus = 'card_only';
+      if (dataUrl && (kind === 'image' || kind === 'video' || kind === 'audio')){
+        const approxBytes = Math.floor(dataUrl.length * 0.75);
+        if (approxBytes > MAX_CHAT_INLINE_MEDIA_BYTES){
+          if (kind === 'image'){
+            // Try to produce a thumbnail so the chat bubble still has a
+            // visible preview after the message is persisted.
+            const thumb = await downscaleImageDataUrlSync(dataUrl, INLINE_IMAGE_THUMBNAIL_MAX_DIM, 0.72);
+            if (thumb && Math.floor(thumb.length * 0.75) <= INLINE_IMAGE_THUMBNAIL_BUDGET * 2){
+              dataUrl = thumb;
+              previewStatus = 'inline_thumbnail';
+              logPreviewEvent('snapshot_thumbnail', {
+                name: a?.name || '',
+                originalBytes: approxBytes,
+                thumbnailBytes: Math.floor(thumb.length * 0.75)
+              });
+            } else {
+              dataUrl = '';
+              previewStatus = 'oversized_card';
+              logPreviewEvent('snapshot_oversized_drop', {
+                name: a?.name || '',
+                originalBytes: approxBytes
+              });
+            }
+          } else {
+            dataUrl = '';
+            previewStatus = 'oversized_card';
+            logPreviewEvent('snapshot_oversized_drop_media', {
+              name: a?.name || '',
+              kind,
+              originalBytes: approxBytes
+            });
+          }
+        } else {
+          previewStatus = 'inline';
+        }
+      } else if (dataUrl){
+        previewStatus = 'inline';
+      }
+      out.push({
+        name: String(a?.name || 'مرفق'),
+        kind,
+        type: String(a?.type || ''),
+        size: Number(a?.size || 0),
+        dataUrl,
+        hasText: !!a?.hasText,
+        extractionMode: String(a?.extractionMode || ''),
+        previewStatus
+      });
+    }
+    return out;
   }
 
   function buildAttachmentsBlock(settings){
@@ -10121,24 +10407,75 @@ ${clip}` });
       </div>`;
   }
 
+  // v9.6 — icon/emoji per attachment kind. Keeps the file card
+  // recognizable even when no inline preview is possible (PDF, DOCX,
+  // oversized images, etc.) so the bubble always shows SOMETHING.
+  function attachmentKindIcon(kindOrMime){
+    const value = String(kindOrMime || '').toLowerCase();
+    if (value === 'image' || /^image\//.test(value)) return '🖼️';
+    if (value === 'video' || /^video\//.test(value)) return '🎬';
+    if (value === 'audio' || /^audio\//.test(value)) return '🎵';
+    if (value === 'pdf' || /\/pdf$/.test(value)) return '📕';
+    if (value === 'docx' || /wordprocessingml|msword/.test(value)) return '📝';
+    if (value === 'presentation' || /presentationml|ms-powerpoint/.test(value)) return '📊';
+    if (value === 'spreadsheet' || /spreadsheetml|ms-excel/.test(value)) return '📈';
+    if (value === 'archive' || /zip|rar|7z|tar|gzip/.test(value)) return '🗜️';
+    if (value === 'text' || /^text\//.test(value) || /(json|xml|javascript|markdown|csv)/.test(value)) return '📄';
+    return '📎';
+  }
+
   function renderUserAttachmentPreviewsHtml(previews){
     const list = Array.isArray(previews) ? previews : [];
     if (!list.length) return '';
     const blocks = list.map((p) => {
-      const name = escapeHtml(p.name || 'مرفق');
-      const kind = String(p.kind || '').toLowerCase();
-      const src = String(p.dataUrl || '').trim();
+      const name = escapeHtml(p?.name || 'مرفق');
+      const kind = String(p?.kind || '').toLowerCase();
+      const src = String(p?.dataUrl || '').trim();
+      const sizeLabel = p?.size ? formatCompactBytes(p.size) : '';
+      const kindLabel = formatAttachmentKindLabel(p);
+      const status = String(p?.previewStatus || (src ? 'inline' : 'card_only'));
+      const isThumbnail = status === 'inline_thumbnail';
+      logPreviewEvent('render_user_attachment', {
+        name: p?.name || '',
+        kind,
+        size: p?.size || 0,
+        hasSrc: !!src,
+        status
+      });
       if (kind === 'image' && src){
-        return `<div class="chat-inline-media chat-inline-media--dark"><img class="chat-inline-media-el" loading="lazy" alt="${name}" src="${escapeHtml(src)}" /></div>`;
+        const thumbBadge = isThumbnail
+          ? '<span class="chat-inline-media-badge">معاينة مصغّرة</span>'
+          : '';
+        return `<div class="chat-inline-media chat-inline-media--dark">`
+          + `<img class="chat-inline-media-el" loading="lazy" alt="${name}" src="${escapeHtml(src)}" />`
+          + thumbBadge
+          + `</div>`;
       }
       if (kind === 'video' && src){
-        return `<div class="chat-inline-media chat-inline-media--dark"><video class="chat-inline-media-el" controls playsinline preload="metadata" src="${escapeHtml(src)}"></video></div>`;
+        return `<div class="chat-inline-media chat-inline-media--dark">`
+          + `<video class="chat-inline-media-el" controls playsinline preload="metadata" src="${escapeHtml(src)}"></video>`
+          + `</div>`;
       }
       if (kind === 'audio' && src){
-        return `<div class="chat-inline-media chat-inline-media--audio"><audio controls preload="metadata" src="${escapeHtml(src)}"></audio></div>`;
+        return `<div class="chat-inline-media chat-inline-media--audio">`
+          + `<audio controls preload="metadata" src="${escapeHtml(src)}"></audio>`
+          + `</div>`;
       }
-      const meta = `${escapeHtml(formatAttachmentKindLabel(p))}${p.size ? ` • ${escapeHtml(formatCompactBytes(p.size))}` : ''}`;
-      return `<div class="chat-inline-file-card"><span class="chat-inline-file-name">${name}</span><span class="chat-inline-file-meta">${meta}</span></div>`;
+      const iconChar = attachmentKindIcon(kind || p?.type || '');
+      const metaBits = [escapeHtml(kindLabel)];
+      if (sizeLabel) metaBits.push(escapeHtml(sizeLabel));
+      if (p?.extractionMode) metaBits.push(escapeHtml(String(p.extractionMode)));
+      const fallbackNote = (kind === 'image' && !src)
+        ? '<span class="chat-inline-file-tag chat-inline-file-tag--warn">الصورة كبيرة — تم الاكتفاء ببطاقة المرفق</span>'
+        : '';
+      return `<div class="chat-inline-file-card chat-inline-file-card--rich">`
+        + `<span class="chat-inline-file-icon" aria-hidden="true">${iconChar}</span>`
+        + `<span class="chat-inline-file-body">`
+          + `<span class="chat-inline-file-name">${name}</span>`
+          + `<span class="chat-inline-file-meta">${metaBits.join(' • ')}</span>`
+          + fallbackNote
+        + `</span>`
+        + `</div>`;
     });
     return `<div class="chat-user-attachments">${blocks.join('')}</div>`;
   }
@@ -11143,11 +11480,43 @@ ${clip}` });
     return s.slice(0, Math.floor(limit*0.55)) + "\n...\n" + s.slice(-Math.floor(limit*0.45));
   }
 
+  // v9.6 — Normalize any legacy/partial attachmentPreviews shapes so
+  // renderers never trip over missing fields after a restore/reload.
+  // Older threads (pre-9.6) may have stored entries without a
+  // `previewStatus`, which is fine — we just derive it here.
+  function hydrateAttachmentPreviewsInPlace(message){
+    if (!message || message.role !== 'user') return;
+    const list = Array.isArray(message.attachmentPreviews) ? message.attachmentPreviews : null;
+    if (!list || !list.length) return;
+    let changed = false;
+    for (const preview of list){
+      if (!preview || typeof preview !== 'object') continue;
+      if (!preview.kind && preview.type){
+        const inferred = String(preview.type || '').toLowerCase().split('/', 1)[0];
+        preview.kind = inferred || 'file';
+        changed = true;
+      }
+      if (!preview.previewStatus){
+        const src = String(preview.dataUrl || '').trim();
+        preview.previewStatus = src ? 'inline' : 'card_only';
+        changed = true;
+      }
+    }
+    if (changed){
+      logPreviewEvent('hydrate_message_previews', {
+        mid: message.id || '', count: list.length
+      });
+    }
+  }
+
   function renderChat(){
     const log = $('chatLog');
     if (!log) return;
     const thread = getCurThread();
     const msgs = thread.messages || [];
+    // v9.6 — hydrate legacy/partial attachmentPreviews so a message
+    // restored from localStorage still renders full cards and images.
+    try { msgs.forEach(hydrateAttachmentPreviewsInPlace); } catch(_) {}
     log.innerHTML = '';
 
     if (!msgs.length){
@@ -11598,7 +11967,15 @@ function updateChips(){
       ensureThreadTitleFromMessage(thread, originalText);
     }
     if (attachmentsForRequest.length){
-      uMsg.attachmentPreviews = snapshotAttachmentsForMessage(attachmentsForRequest);
+      // v9.6 — async snapshot so oversized images become an inline
+      // thumbnail rather than being silently dropped (was the single
+      // biggest reason users reported images "never showing up" in chat).
+      try{
+        uMsg.attachmentPreviews = await snapshotAttachmentsForMessageAsync(attachmentsForRequest);
+      }catch(snapErr){
+        logPreviewError('snapshot_async_failed', snapErr, { count: attachmentsForRequest.length });
+        uMsg.attachmentPreviews = snapshotAttachmentsForMessage(attachmentsForRequest);
+      }
     }
     thread.updatedAt = nowTs();
     threads[idx] = thread;

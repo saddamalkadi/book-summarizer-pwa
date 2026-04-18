@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="9.5">
+<html lang="ar" dir="rtl" data-appver="9.6">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -2081,6 +2081,109 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       border-radius:14px;
       border:1px solid rgba(10,20,60,.1);
       background:linear-gradient(180deg,rgba(255,255,255,.92),rgba(248,251,255,.96));
+    }
+    .chat-inline-file-card--rich{
+      flex-direction:row;
+      align-items:center;
+      gap:12px;
+    }
+    .chat-inline-file-icon{
+      font-size:28px;
+      line-height:1;
+      flex-shrink:0;
+      width:44px;
+      height:44px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      border-radius:12px;
+      background:rgba(15,23,42,.06);
+    }
+    .bubble.user .chat-inline-file-icon{
+      background:rgba(255,255,255,.14);
+    }
+    .chat-inline-file-body{
+      display:flex;
+      flex-direction:column;
+      gap:2px;
+      flex:1;
+      min-width:0;
+    }
+    .chat-inline-file-tag{
+      display:inline-block;
+      margin-top:4px;
+      padding:3px 8px;
+      font-size:11px;
+      font-weight:800;
+      border-radius:999px;
+      background:rgba(59,130,246,.12);
+      color:#1d4ed8;
+    }
+    .chat-inline-file-tag--warn{
+      background:rgba(234,179,8,.14);
+      color:#92580b;
+    }
+    .bubble.user .chat-inline-file-tag{
+      background:rgba(255,255,255,.22);
+      color:#fff;
+    }
+    .chat-inline-media-badge{
+      position:absolute;
+      inset-inline-end:8px;
+      inset-block-end:8px;
+      padding:4px 8px;
+      font-size:11px;
+      font-weight:800;
+      color:#fff;
+      background:rgba(15,23,42,.68);
+      border-radius:999px;
+      pointer-events:none;
+    }
+    .chat-inline-media{
+      position:relative;
+    }
+    .assistant-preview--card{
+      display:flex;
+      align-items:center;
+      gap:14px;
+      padding:14px 16px;
+      background:linear-gradient(180deg,#f8fbff,#ffffff);
+    }
+    .assistant-preview-card-icon{
+      font-size:30px;
+      line-height:1;
+      flex-shrink:0;
+      width:52px;
+      height:52px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      border-radius:14px;
+      background:rgba(15,23,42,.06);
+    }
+    .assistant-preview-card-body{
+      display:flex;
+      flex-direction:column;
+      gap:3px;
+      flex:1;
+      min-width:0;
+    }
+    .assistant-preview-card-name{
+      font-weight:900;
+      font-size:15px;
+      color:#111827;
+      word-break:break-word;
+    }
+    .assistant-preview-card-meta{
+      font-size:12px;
+      font-weight:700;
+      color:#4b5563;
+    }
+    .assistant-preview-card-note{
+      font-size:12px;
+      font-weight:700;
+      color:#92580b;
+      margin-top:2px;
     }
     .bubble.user .chat-inline-file-card{
       border-color:rgba(255,255,255,.2);
@@ -5015,12 +5118,30 @@ body.dark .assistant-preview{
 }
 body.dark .assistant-preview--audio,
 body.dark .assistant-preview--text,
-body.dark .assistant-preview--docx{
+body.dark .assistant-preview--docx,
+body.dark .assistant-preview--card{
   background: linear-gradient(180deg, rgba(21,34,58,.98), rgba(17,27,47,.98)) !important;
   color: var(--text) !important;
 }
+body.dark .assistant-preview-card-icon{
+  background: rgba(255,255,255,.1) !important;
+}
+body.dark .assistant-preview-card-name{ color: var(--text) !important; }
+body.dark .assistant-preview-card-meta{ color: var(--muted) !important; }
+body.dark .assistant-preview-card-note{ color: #fbbf24 !important; }
 body.dark .assistant-preview-empty{
   color: var(--muted) !important;
+}
+body.dark .chat-inline-file-card{
+  background: linear-gradient(180deg, rgba(21,34,58,.98), rgba(17,27,47,.98)) !important;
+  border-color: rgba(255,255,255,.12) !important;
+}
+body.dark .chat-inline-file-icon{
+  background: rgba(255,255,255,.1) !important;
+}
+body.dark .chat-inline-file-tag--warn{
+  color: #fcd34d !important;
+  background: rgba(250,204,21,.18) !important;
 }
 body.dark .assistant-download-link{
   background: linear-gradient(180deg, rgba(21,34,58,.98), rgba(17,27,47,.98)) !important;
@@ -6270,7 +6391,7 @@ body.dark *::-webkit-scrollbar-thumb:hover{
   <p class="lv-hint">اتكلم وسأستمع لحظيًا، ثم سأرد بجُمل قصيرة. تكلّم فوق صوتي لمقاطعتي.</p>
 </div>
 
-<script src="app.js?v=950"></script>
+<script src="app.js?v=960"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -6293,7 +6414,7 @@ body.dark *::-webkit-scrollbar-thumb:hover{
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=950").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=960").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

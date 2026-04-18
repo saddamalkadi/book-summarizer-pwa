@@ -1,1 +1,1 @@
-v9.5 hotfix rotate — re-heal OPENROUTER_API_KEY + APP_ADMIN_PASSWORD (production incident 2026-04-18T10:30:00Z, admin password / gateway / upstream key all failing live)
+v9.6 preview-incident rotate — re-heal OPENROUTER_API_KEY + APP_ADMIN_PASSWORD after Workers Builds auto-redeploy rebound the wrong admin password (stored length 12 instead of 6) (incident 2026-04-18T12:00:00Z)
