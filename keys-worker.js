@@ -1764,18 +1764,66 @@ function quotaAsCreditsPayload(q) {
   };
 }
 
+// Cloudflare KV has eventual consistency (up to ~60s) across edges. For the quota
+// doc, that's fatal: a user activates a $5 upgrade code on edge A, then the next
+// `/me/quota` read hits edge B, gets the stale null/old doc, and `getOrInitUserQuota`
+// over-writes with a fresh plan-default ($10). To paper over this window we mirror
+// every write to the per-edge Cache API (`caches.default`) and consult it before
+// the KV read. This is strong read-after-write consistency within the same edge
+// and greatly reduces the likelihood of a stale KV-only read.
+function quotaCacheRequest(email) {
+  const key = `quota:${String(email || '').trim().toLowerCase()}`;
+  return new Request(`https://aistudio.internal.cache/${encodeURIComponent(key)}`);
+}
+
+async function readQuotaFromCache(email) {
+  try {
+    const resp = await caches.default.match(quotaCacheRequest(email));
+    if (!resp) return null;
+    const data = await resp.json();
+    if (data && typeof data === 'object' && data.email) return data;
+  } catch (_) {}
+  return null;
+}
+
+async function writeQuotaToCache(q) {
+  try {
+    const body = JSON.stringify(q);
+    // 300s TTL — long enough to dominate KV's ~60s eventual-consistency window but
+    // short enough that admin quota patches applied in the Cloudflare dashboard or
+    // via /admin/users/quota become visible quickly.
+    const resp = new Response(body, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'max-age=300'
+      }
+    });
+    await caches.default.put(quotaCacheRequest(q.email), resp);
+  } catch (_) { /* cache writes are best-effort */ }
+}
+
 async function readQuotaFromKv(email, env) {
+  // Cache-first: avoids the KV eventual-consistency window right after a write.
+  const cached = await readQuotaFromCache(email);
+  if (cached) return cached;
   const store = getUserDataStore(env);
   if (!store || typeof store.get !== 'function') return null;
   try {
     const raw = await store.get(QUOTA_KV_PREFIX + email, { type: 'json' });
-    if (raw && typeof raw === 'object') return raw;
+    if (raw && typeof raw === 'object') {
+      // Warm the cache so subsequent reads on this edge are immediate.
+      await writeQuotaToCache(raw);
+      return raw;
+    }
   } catch (_) {}
   return null;
 }
 
 async function writeQuotaToKv(q, env) {
   const store = getUserDataStore(env);
+  // Always write to the per-edge cache first — even if KV is unavailable this keeps
+  // the quota visible within the same edge until the next full write succeeds.
+  await writeQuotaToCache(q);
   if (!store || typeof store.put !== 'function') return false;
   try {
     await store.put(QUOTA_KV_PREFIX + q.email, JSON.stringify(q));
