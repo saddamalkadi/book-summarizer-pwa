@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="9.4">
+<html lang="ar" dir="rtl" data-appver="9.5">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -6270,7 +6270,7 @@ body.dark *::-webkit-scrollbar-thumb:hover{
   <p class="lv-hint">اتكلم وسأستمع لحظيًا، ثم سأرد بجُمل قصيرة. تكلّم فوق صوتي لمقاطعتي.</p>
 </div>
 
-<script src="app.js?v=940"></script>
+<script src="app.js?v=950"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -6293,7 +6293,7 @@ body.dark *::-webkit-scrollbar-thumb:hover{
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=940").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=950").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

@@ -1,19 +1,30 @@
 package com.saddamalkadi.aiworkspace;
 
 import android.Manifest;
+import android.app.DownloadManager;
+import android.content.ActivityNotFoundException;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.MediaStore;
+import android.util.Base64;
 import android.util.Log;
 import android.webkit.ConsoleMessage;
+import android.webkit.DownloadListener;
+import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
+import android.webkit.URLUtil;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.widget.Toast;
 
 import androidx.activity.result.ActivityResult;
 import androidx.activity.result.ActivityResultCallback;
@@ -25,8 +36,10 @@ import androidx.core.content.FileProvider;
 import com.getcapacitor.BridgeActivity;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Main activity for the Capacitor-hosted WebView.
@@ -109,6 +122,27 @@ public class MainActivity extends BridgeActivity {
                 settings.setDomStorageEnabled(true);
                 settings.setAllowFileAccess(true);
                 settings.setAllowContentAccess(true);
+
+                // v9.5 — Native download bridge. Android WebView silently
+                // drops <a href="blob:..."> / <a href="data:..."> downloads,
+                // and ignores the `download` attribute in most versions. We
+                // expose a JavascriptInterface so the web layer can push a
+                // base64 payload into the native side, where we write it to
+                // the app's external files dir and launch a chooser so the
+                // user can open, share, or save it from a real content URI.
+                webView.addJavascriptInterface(new AndroidDownloadBridge(), "AndroidDownloadBridge");
+
+                // Secondary safety net: if the web layer ever triggers a
+                // real http(s) download (e.g. a direct href), hand it off
+                // to the system DownloadManager so the user sees the normal
+                // download notification instead of a silent no-op.
+                webView.setDownloadListener(new DownloadListener() {
+                    @Override
+                    public void onDownloadStart(String url, String userAgent, String contentDisposition,
+                                                String mimetype, long contentLength) {
+                        handleWebViewDownload(url, userAgent, contentDisposition, mimetype);
+                    }
+                });
 
                 webView.setWebChromeClient(new WebChromeClient() {
                     @Override
@@ -481,5 +515,300 @@ public class MainActivity extends BridgeActivity {
             case "zip": return "application/zip";
             default: return null;
         }
+    }
+
+    // =========================================================================
+    // v9.5 — Artifact download bridge (blob/data URLs → real files)
+    // =========================================================================
+
+    /** Called from {@link WebView#setDownloadListener}. Hands off http(s)
+     *  URLs to the system DownloadManager; blob/data URLs are intentionally
+     *  routed through the AndroidDownloadBridge from JavaScript instead. */
+    private void handleWebViewDownload(String url, String userAgent, String contentDisposition,
+                                       String mimetype) {
+        try {
+            if (url == null || url.isEmpty()) return;
+            if (url.startsWith("blob:") || url.startsWith("data:")) {
+                Log.i(TAG, "download_listener_skip scheme=" + url.substring(0, Math.min(url.length(), 12))
+                        + " (handled via AndroidDownloadBridge)");
+                return;
+            }
+            String guessed = URLUtil.guessFileName(url, contentDisposition, mimetype);
+            DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url));
+            req.setMimeType(mimetype);
+            if (userAgent != null) req.addRequestHeader("User-Agent", userAgent);
+            req.setTitle(guessed);
+            req.setDescription("AI Workspace Studio");
+            req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+            req.setDestinationInExternalFilesDir(MainActivity.this,
+                    Environment.DIRECTORY_DOWNLOADS, guessed);
+            req.allowScanningByMediaScanner();
+            DownloadManager dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+            if (dm == null) {
+                Log.w(TAG, "download_listener_no_service");
+                return;
+            }
+            dm.enqueue(req);
+            Log.i(TAG, "download_listener_enqueued name=" + guessed + " mime=" + mimetype);
+            runOnUiThread(() -> Toast.makeText(MainActivity.this,
+                    "جارٍ تنزيل: " + guessed, Toast.LENGTH_SHORT).show());
+        } catch (Throwable t) {
+            Log.e(TAG, "download_listener_failed", t);
+        }
+    }
+
+    /**
+     * JavaScript bridge for persisting artifact blobs to real files.
+     * Call pattern from JS:
+     *   window.AndroidDownloadBridge.saveBase64(fileName, mimeType, base64);
+     * The method writes the payload to the app's external files directory
+     * under Download/, then fires a chooser so the user can open or share
+     * it. Returns a JSON-encoded status so callers can distinguish between
+     * "saved and opened", "saved only", and "failed".
+     */
+    public class AndroidDownloadBridge {
+        @JavascriptInterface
+        public String saveBase64(String fileName, String mimeType, String base64) {
+            String safeName = sanitizeFileName(fileName);
+            String effectiveMime = (mimeType == null || mimeType.isEmpty())
+                    ? guessMimeFromName(safeName)
+                    : mimeType;
+            try {
+                if (base64 == null || base64.isEmpty()) {
+                    return statusJson("error", safeName, null, "empty_payload");
+                }
+                String cleaned = base64;
+                // Accept full data URLs like "data:application/pdf;base64,AAAA..."
+                int comma = cleaned.indexOf(',');
+                if (cleaned.startsWith("data:") && comma > 0) {
+                    cleaned = cleaned.substring(comma + 1);
+                }
+                byte[] bytes;
+                try {
+                    bytes = Base64.decode(cleaned, Base64.DEFAULT);
+                } catch (IllegalArgumentException ex) {
+                    Log.e(TAG, "download_bridge_base64_error", ex);
+                    return statusJson("error", safeName, null, "bad_base64");
+                }
+                File dir = new File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "");
+                if (dir != null && !dir.exists() && !dir.mkdirs()) {
+                    Log.w(TAG, "download_bridge_dir_create_failed: " + dir.getAbsolutePath());
+                }
+                if (dir == null) {
+                    return statusJson("error", safeName, null, "no_external_dir");
+                }
+                File out = uniqueFile(dir, safeName);
+                try (FileOutputStream fos = new FileOutputStream(out)) {
+                    fos.write(bytes);
+                    fos.flush();
+                }
+                String authority = getPackageName() + ".fileprovider";
+                Uri contentUri = FileProvider.getUriForFile(MainActivity.this, authority, out);
+                boolean opened = tryOpenFile(contentUri, effectiveMime, out.getName());
+                Log.i(TAG, "download_bridge_saved name=" + out.getName()
+                        + " mime=" + effectiveMime
+                        + " bytes=" + bytes.length
+                        + " opened=" + opened);
+                runOnUiThread(() -> Toast.makeText(MainActivity.this,
+                        opened ? "تم حفظ: " + out.getName() + " — افتح لمشاركته"
+                               : "تم حفظ: " + out.getName() + " في مجلد التطبيق",
+                        Toast.LENGTH_LONG).show());
+                return statusJson(opened ? "saved_and_opened" : "saved", out.getName(),
+                        out.getAbsolutePath(), null);
+            } catch (Throwable t) {
+                Log.e(TAG, "download_bridge_failed", t);
+                return statusJson("error", safeName, null, String.valueOf(t.getMessage()));
+            }
+        }
+
+        /** Convenience entry point that skips the chooser, e.g. when the JS
+         *  layer just wants the file on disk (history replay, batch save). */
+        @JavascriptInterface
+        public String saveBase64Silent(String fileName, String mimeType, String base64) {
+            // Same pipeline but without firing ACTION_VIEW afterwards.
+            try {
+                String safeName = sanitizeFileName(fileName);
+                String effectiveMime = (mimeType == null || mimeType.isEmpty())
+                        ? guessMimeFromName(safeName)
+                        : mimeType;
+                if (base64 == null || base64.isEmpty()) {
+                    return statusJson("error", safeName, null, "empty_payload");
+                }
+                String cleaned = base64;
+                int comma = cleaned.indexOf(',');
+                if (cleaned.startsWith("data:") && comma > 0) {
+                    cleaned = cleaned.substring(comma + 1);
+                }
+                byte[] bytes = Base64.decode(cleaned, Base64.DEFAULT);
+                File dir = new File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "");
+                if (dir != null && !dir.exists()) //noinspection ResultOfMethodCallIgnored
+                    dir.mkdirs();
+                File out = uniqueFile(dir, safeName);
+                try (FileOutputStream fos = new FileOutputStream(out)) {
+                    fos.write(bytes);
+                    fos.flush();
+                }
+                Log.i(TAG, "download_bridge_saved_silent name=" + out.getName()
+                        + " mime=" + effectiveMime + " bytes=" + bytes.length);
+                return statusJson("saved", out.getName(), out.getAbsolutePath(), null);
+            } catch (Throwable t) {
+                Log.e(TAG, "download_bridge_saved_silent_failed", t);
+                return statusJson("error", fileName, null, String.valueOf(t.getMessage()));
+            }
+        }
+
+        /** Explicitly open an already-saved file from the bridge directory. */
+        @JavascriptInterface
+        public String openSaved(String fileName, String mimeType) {
+            try {
+                String safeName = sanitizeFileName(fileName);
+                File dir = new File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "");
+                File out = new File(dir, safeName);
+                if (!out.exists()) return statusJson("error", safeName, null, "not_found");
+                String authority = getPackageName() + ".fileprovider";
+                Uri uri = FileProvider.getUriForFile(MainActivity.this, authority, out);
+                String mime = (mimeType == null || mimeType.isEmpty())
+                        ? guessMimeFromName(safeName)
+                        : mimeType;
+                boolean opened = tryOpenFile(uri, mime, safeName);
+                return statusJson(opened ? "opened" : "error", safeName, out.getAbsolutePath(),
+                        opened ? null : "no_viewer");
+            } catch (Throwable t) {
+                Log.e(TAG, "download_bridge_open_failed", t);
+                return statusJson("error", fileName, null, String.valueOf(t.getMessage()));
+            }
+        }
+
+        @JavascriptInterface
+        public boolean isAvailable() {
+            return true;
+        }
+    }
+
+    private boolean tryOpenFile(Uri contentUri, String mime, String displayName) {
+        // JavascriptInterface methods run on a background thread, so this
+        // helper is often called off-main. We still want to know whether a
+        // viewer was dispatched, so we block on the main thread only long
+        // enough to run the try/catch and return the actual result.
+        final boolean[] ok = { false };
+        Runnable task = () -> {
+            try {
+                Intent view = new Intent(Intent.ACTION_VIEW);
+                view.setDataAndType(contentUri, mime);
+                view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        | Intent.FLAG_ACTIVITY_NEW_TASK);
+                Intent chooser = Intent.createChooser(view, "فتح " + displayName);
+                chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                try {
+                    startActivity(chooser);
+                    ok[0] = true;
+                    return;
+                } catch (ActivityNotFoundException nf) {
+                    Log.w(TAG, "download_bridge_no_view_app mime=" + mime);
+                }
+                // Fallback: share sheet
+                Intent share = new Intent(Intent.ACTION_SEND);
+                share.setType(mime);
+                share.putExtra(Intent.EXTRA_STREAM, contentUri);
+                share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        | Intent.FLAG_ACTIVITY_NEW_TASK);
+                Intent shareChooser = Intent.createChooser(share, "مشاركة " + displayName);
+                shareChooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                try {
+                    startActivity(shareChooser);
+                    ok[0] = true;
+                } catch (Throwable t) {
+                    Log.w(TAG, "download_bridge_share_failed", t);
+                }
+            } catch (Throwable t) {
+                Log.e(TAG, "download_bridge_open_unexpected", t);
+            }
+        };
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            task.run();
+        } else {
+            final Object latch = new Object();
+            final boolean[] done = { false };
+            new Handler(Looper.getMainLooper()).post(() -> {
+                try { task.run(); }
+                finally {
+                    synchronized (latch) { done[0] = true; latch.notifyAll(); }
+                }
+            });
+            synchronized (latch) {
+                long deadline = System.currentTimeMillis() + 1200;
+                while (!done[0]) {
+                    long remaining = deadline - System.currentTimeMillis();
+                    if (remaining <= 0) break;
+                    try { latch.wait(remaining); }
+                    catch (InterruptedException ignored) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+        }
+        return ok[0];
+    }
+
+    private String sanitizeFileName(String raw) {
+        String name = raw == null ? "" : raw.trim();
+        if (name.isEmpty()) name = "download-" + System.currentTimeMillis();
+        // Strip path separators and characters that Android refuses.
+        name = name.replaceAll("[\\\\/:*?\"<>|]", "_");
+        if (name.length() > 160) name = name.substring(0, 160);
+        return name;
+    }
+
+    private File uniqueFile(File dir, String name) {
+        File candidate = new File(dir, name);
+        if (!candidate.exists()) return candidate;
+        int dot = name.lastIndexOf('.');
+        String base = dot >= 0 ? name.substring(0, dot) : name;
+        String ext = dot >= 0 ? name.substring(dot) : "";
+        for (int i = 1; i < 1000; i++) {
+            File tryFile = new File(dir, base + " (" + i + ")" + ext);
+            if (!tryFile.exists()) return tryFile;
+        }
+        // Fall back to a timestamped name.
+        return new File(dir, base + "-" + System.currentTimeMillis() + ext);
+    }
+
+    private String guessMimeFromName(String name) {
+        if (name == null) return "application/octet-stream";
+        int dot = name.lastIndexOf('.');
+        if (dot < 0) return "application/octet-stream";
+        String mime = extensionToMime(name.substring(dot + 1).toLowerCase(Locale.ROOT));
+        return mime != null ? mime : "application/octet-stream";
+    }
+
+    private String statusJson(String status, String name, String path, String error) {
+        StringBuilder sb = new StringBuilder();
+        sb.append('{');
+        sb.append("\"status\":\"").append(escapeJson(status)).append('"');
+        if (name != null) sb.append(",\"name\":\"").append(escapeJson(name)).append('"');
+        if (path != null) sb.append(",\"path\":\"").append(escapeJson(path)).append('"');
+        if (error != null) sb.append(",\"error\":\"").append(escapeJson(error)).append('"');
+        sb.append('}');
+        return sb.toString();
+    }
+
+    private String escapeJson(String raw) {
+        if (raw == null) return "";
+        StringBuilder sb = new StringBuilder(raw.length() + 8);
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            switch (c) {
+                case '"': sb.append("\\\""); break;
+                case '\\': sb.append("\\\\"); break;
+                case '\n': sb.append("\\n"); break;
+                case '\r': sb.append("\\r"); break;
+                case '\t': sb.append("\\t"); break;
+                default:
+                    if (c < 0x20) sb.append(String.format(Locale.ROOT, "\\u%04x", (int) c));
+                    else sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 }

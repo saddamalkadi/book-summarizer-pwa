@@ -8555,6 +8555,16 @@ async function fileToText(file){
     const normalized = normalizeDownloadEntry(entry);
     if (!normalized.url) return false;
     if (/^data:/i.test(normalized.url)){
+      // v9.5 — APK WebView ignores <a download> for data: URLs. Push
+      // through the native bridge so the file actually lands on disk.
+      if (isAndroidDownloadBridgeAvailable()) {
+        const result = await saveDataUrlViaAndroidBridge(normalized.name, normalized.url, normalized.mime);
+        if (result.ok) return true;
+        logDownloadError('url_entry_bridge_failed', new Error(result.reason || 'bridge_error'), {
+          name: normalized.name
+        });
+        // Fall through to the anchor attempt below (browser build).
+      }
       const anchor = document.createElement('a');
       anchor.href = normalized.url;
       anchor.download = normalized.name;
@@ -8600,7 +8610,47 @@ async function fileToText(file){
   function downloadStoredItemInGesture(downloadId){
     const entry = resolveDownloadEntry(downloadId);
     if (!entry) return false;
-    // Keep downloads inside a direct user gesture chain (Android/desktop mobile browsers block async downloads).
+    // v9.5 — On APK, send the payload through the native download bridge
+    // so tapping a file card actually produces a real file + chooser
+    // instead of a silent blob:// navigation attempt.
+    if (isAndroidDownloadBridgeAvailable()) {
+      const normalized = normalizeDownloadEntry(entry);
+      try{
+        if (normalized.encoding === 'url' && normalized.url && /^data:/i.test(normalized.url)) {
+          saveDataUrlViaAndroidBridge(normalized.name, normalized.url, normalized.mime)
+            .catch((err) => logDownloadError('gesture_dataurl_bridge', err, { name: normalized.name }));
+          return true;
+        }
+        if (normalized.encoding === 'url' && normalized.url) {
+          // Remote URL: ask the system to handle it (browser/DownloadManager).
+          // We do NOT try to fetch+base64 here because many artifact URLs are
+          // cross-origin and the bridge call is best when WE own the bytes.
+          try{
+            const anchor = document.createElement('a');
+            anchor.href = normalized.url;
+            anchor.rel = 'noopener noreferrer';
+            anchor.target = '_blank';
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+          }catch(_){
+            try{ window.open(normalized.url, '_blank', 'noopener'); }catch(__){}
+          }
+          return true;
+        }
+        // base64 / dataurl / text → build blob and push to bridge.
+        const blob = buildBlobFromDownload(normalized);
+        saveBlobViaAndroidBridge(normalized.name, blob)
+          .catch((err) => logDownloadError('gesture_blob_bridge', err, { name: normalized.name }));
+        return true;
+      }catch(err){
+        logDownloadError('gesture_bridge_setup', err, { name: normalized.name });
+        return false;
+      }
+    }
+
+    // Browser / PWA path (unchanged). Keep downloads inside a direct user
+    // gesture chain — Android mobile browsers block async downloads.
     if (entry.encoding === 'url' && entry.url){
       const normalized = normalizeDownloadEntry(entry);
       try{
@@ -8608,7 +8658,6 @@ async function fileToText(file){
         anchor.href = normalized.url;
         anchor.rel = 'noopener noreferrer';
         anchor.target = '_blank';
-        // Only set download attribute for same-origin / data URLs (cross-origin often ignores it).
         if (/^data:/i.test(normalized.url)) anchor.download = normalized.name;
         document.body.appendChild(anchor);
         anchor.click();
@@ -8747,9 +8796,155 @@ async function fileToText(file){
     }
   }
 
+  // ---------------------------------------------------------------------
+  //  v9.5 — Native Android download bridge
+  //
+  //  Android WebView silently drops both `<a href="blob:…" download>` and
+  //  `<a href="data:…" download>` clicks: the download attribute is ignored
+  //  and the WebView has no registered handler for the blob/data scheme, so
+  //  the user gets no feedback at all. Our MainActivity exposes a
+  //  JavascriptInterface (`window.AndroidDownloadBridge`) that accepts a
+  //  base64 payload, writes a real file to the app's external files dir,
+  //  then launches an ACTION_VIEW chooser so the user can open or share it.
+  //
+  //  We only route through the bridge when it is available (APK build);
+  //  the browser / PWA path is unchanged.
+  // ---------------------------------------------------------------------
+  function isAndroidDownloadBridgeAvailable(){
+    try{
+      return !!(window.AndroidDownloadBridge
+        && typeof window.AndroidDownloadBridge.saveBase64 === 'function');
+    }catch(_){ return false; }
+  }
+
+  function logDownloadEvent(stage, extra){
+    try{
+      console.info(`[download] ${stage}`, Object.assign({
+        platform: (navigator.userAgent || '').slice(0, 160),
+        bridge: isAndroidDownloadBridgeAvailable()
+      }, extra || {}));
+    }catch(_){ }
+  }
+  function logDownloadError(stage, err, extra){
+    try{
+      console.error(`[download] ${stage}`, Object.assign({
+        platform: (navigator.userAgent || '').slice(0, 160),
+        bridge: isAndroidDownloadBridgeAvailable(),
+        errName: err?.name,
+        errMessage: err?.message || String(err || '')
+      }, extra || {}));
+    }catch(_){ }
+  }
+
+  function blobToBase64(blob){
+    return new Promise((resolve, reject) => {
+      if (!(blob instanceof Blob)) {
+        reject(new Error('not_a_blob'));
+        return;
+      }
+      const reader = new FileReader();
+      reader.onerror = () => reject(reader.error || new Error('filereader_error'));
+      reader.onload = () => {
+        try{
+          const raw = String(reader.result || '');
+          const comma = raw.indexOf(',');
+          resolve(comma >= 0 ? raw.slice(comma + 1) : raw);
+        }catch(err){ reject(err); }
+      };
+      try{ reader.readAsDataURL(blob); }
+      catch(err){ reject(err); }
+    });
+  }
+
+  async function saveBlobViaAndroidBridge(filename, blob){
+    if (!isAndroidDownloadBridgeAvailable()) return { ok: false, reason: 'bridge_unavailable' };
+    const safeName = String(filename || 'download').trim() || 'download';
+    const safeBlob = (blob instanceof Blob) ? blob : new Blob([blob], { type: 'application/octet-stream' });
+    const mime = String(safeBlob.type || 'application/octet-stream');
+    try{
+      logDownloadEvent('bridge_begin', { name: safeName, mime, size: safeBlob.size });
+      const base64 = await blobToBase64(safeBlob);
+      const raw = window.AndroidDownloadBridge.saveBase64(safeName, mime, base64);
+      let parsed = null;
+      try{ parsed = raw ? JSON.parse(String(raw)) : null; }catch(_){ parsed = null; }
+      const status = parsed?.status || 'unknown';
+      logDownloadEvent('bridge_result', { name: safeName, status, error: parsed?.error || null });
+      if (status === 'saved_and_opened') {
+        toast(`✅ تم حفظ "${parsed?.name || safeName}" وتم فتح نافذة المشاركة.`);
+      } else if (status === 'saved') {
+        toast(`💾 تم حفظ "${parsed?.name || safeName}" داخل ذاكرة التطبيق.`);
+      } else {
+        toast(`⚠️ تعذر حفظ الملف داخل التطبيق (${parsed?.error || 'bridge_error'}).`);
+        return { ok: false, reason: parsed?.error || 'bridge_error', status };
+      }
+      return { ok: true, status, name: parsed?.name || safeName, path: parsed?.path || '' };
+    }catch(err){
+      logDownloadError('bridge_exception', err, { name: safeName });
+      toast(`⚠️ تعذر استدعاء جسر التنزيل: ${err?.message || err}`);
+      return { ok: false, reason: err?.message || 'bridge_exception' };
+    }
+  }
+
+  async function saveDataUrlViaAndroidBridge(filename, dataUrl, mimeHint){
+    if (!isAndroidDownloadBridgeAvailable()) return { ok: false, reason: 'bridge_unavailable' };
+    const raw = String(dataUrl || '').trim();
+    if (!/^data:/i.test(raw)) return { ok: false, reason: 'not_a_data_url' };
+    const comma = raw.indexOf(',');
+    const meta = raw.slice(5, comma);
+    const payload = raw.slice(comma + 1);
+    const isBase64 = /;base64/i.test(meta);
+    const mime = mimeHint || meta.replace(/;base64/i, '').trim() || 'application/octet-stream';
+    let base64 = '';
+    try{
+      if (isBase64) base64 = payload;
+      else {
+        const bytes = new TextEncoder().encode(decodeURIComponent(payload));
+        let binary = '';
+        for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+        base64 = btoa(binary);
+      }
+    }catch(err){
+      logDownloadError('bridge_dataurl_decode', err);
+      return { ok: false, reason: 'dataurl_decode_failed' };
+    }
+    try{
+      const result = window.AndroidDownloadBridge.saveBase64(
+        String(filename || 'download').trim() || 'download', mime, base64);
+      let parsed = null;
+      try{ parsed = result ? JSON.parse(String(result)) : null; }catch(_){ parsed = null; }
+      const status = parsed?.status || 'unknown';
+      if (status === 'saved_and_opened') {
+        toast(`✅ تم حفظ "${parsed?.name || filename}" وتم فتح نافذة المشاركة.`);
+      } else if (status === 'saved') {
+        toast(`💾 تم حفظ "${parsed?.name || filename}" داخل ذاكرة التطبيق.`);
+      } else {
+        toast(`⚠️ تعذر حفظ الملف داخل التطبيق (${parsed?.error || 'bridge_error'}).`);
+        return { ok: false, reason: parsed?.error || 'bridge_error', status };
+      }
+      return { ok: true, status, name: parsed?.name || filename, path: parsed?.path || '' };
+    }catch(err){
+      logDownloadError('bridge_dataurl_exception', err);
+      return { ok: false, reason: err?.message || 'bridge_exception' };
+    }
+  }
+
   function downloadBlob(filename, blob){
     const safeName = String(filename || 'download').trim() || 'download';
     const safeBlob = (blob instanceof Blob) ? blob : new Blob([blob], { type: 'application/octet-stream' });
+
+    // v9.5 — APK fast path: push the bytes through the Java bridge so the
+    // user gets a real file on disk + system chooser instead of a silent
+    // no-op. We intentionally fire-and-forget so callers that rely on
+    // downloadBlob() being synchronous (buttons inside a user gesture)
+    // still return immediately.
+    if (isAndroidDownloadBridgeAvailable()) {
+      logDownloadEvent('route_bridge', { name: safeName, size: safeBlob.size, mime: safeBlob.type });
+      saveBlobViaAndroidBridge(safeName, safeBlob).catch((err) => {
+        logDownloadError('bridge_fire_and_forget', err, { name: safeName });
+      });
+      return;
+    }
+
     const url = URL.createObjectURL(safeBlob);
     const isCoarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
     const isNarrow = typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 980px)').matches;
@@ -14842,8 +15037,16 @@ ${e?.message||e}`, false);
         return 'هذه البيئة لا تدعم التقاط الصوت في الجلسة الحية.';
       case 'stt_empty':
         return 'لم يلتقط الخادم أي كلام واضح. ابدأ الحديث بصوت أعلى قليلًا.';
+      case 'stt_server_not_configured':
+        return 'خدمة تفريغ الصوت غير مفعّلة على الخادم حاليًا. أعد المحاولة بعد قليل.';
+      case 'stt_server_unauthorized':
+        return 'انتهت جلستك على الخادم — سجّل الدخول مجددًا ثم أعد فتح الجلسة الصوتية.';
+      case 'stt_server_network':
+        return `تعذّر الاتصال بخدمة تفريغ الصوت على الخادم.${tail}`;
+      case 'stt_server_failed_no_browser':
+        return `تعذّر تفريغ الصوت عبر الخادم، والمتصفح الحالي لا يدعم التعرّف الصوتي كبديل.${tail}`;
       case 'stt_failed_all':
-        return `تعذّر تحويل الكلام إلى نص من كل المصادر (متصفح + خادم).${tail}`;
+        return `تعذّر تحويل الكلام إلى نص من كل المصادر (خادم + متصفح). تحقق من اتصالك وأعد المحاولة.${tail}`;
       case 'stt_network':
         return `تعذّر الاتصال بخدمة تفريغ الصوت.${tail}`;
       case 'tts_network':
@@ -14997,10 +15200,19 @@ ${e?.message||e}`, false);
     const transcript = String(sttResult?.text || '').trim();
     if (!transcript) {
       const stageErr = sttResult?.error || new Error('stt_empty');
-      const kind = sttResult?.error ? 'stt_failed_all' : 'stt_empty';
+      // v9.5 — use the precise kind embedded in the error's message
+      // (stt_server_not_configured / stt_server_network / stt_empty …)
+      // so the UI reflects the actual failing path. Fallback to the
+      // legacy generic label only when nothing was captured.
+      let kind = String(stageErr?.message || '').trim();
+      if (!/^stt_/.test(kind)) kind = sttResult?.error ? 'stt_failed_all' : 'stt_empty';
       const msg = buildLiveVoiceMicErrorMessage(kind, stageErr, 'stt_transcription');
       setLiveVoiceStatus(msg);
-      liveVoiceLogError('stt_transcription', stageErr, { method: sttResult?.method || 'none', kind });
+      liveVoiceLogError('stt_transcription', stageErr, {
+        method: sttResult?.method || 'none',
+        kind,
+        diag: sttResult?.diag || stageErr?.diag || null
+      });
       window.setTimeout(() => { if (LIVE_VOICE.active) startLiveVoiceTurn(); }, 900);
       return;
     }
@@ -15494,6 +15706,11 @@ ${e?.message||e}`, false);
   async function transcribeLiveVoiceBlob(blob){
     LIVE_VOICE.sttMethod = '';
     setLiveVoiceStage('stt_transcription');
+    // v9.5 — Track per-source failure reasons so the UI can tell the user
+    // exactly which side broke (server config, server 401, empty result,
+    // browser SR unavailable, browser SR error) rather than a single
+    // generic "server+browser" message.
+    const diag = { cloud: null, cloudStatus: null, browser: null, browserSupport: 'unknown' };
     // Primary: cloud STT
     try {
       const cloud = await transcribeAudioBlobByCloud(blob);
@@ -15501,49 +15718,78 @@ ${e?.message||e}`, false);
       if (text) {
         LIVE_VOICE.sttMethod = 'cloud';
         liveVoiceLog('stt_transcription_ok', { method: 'cloud', chars: text.length });
-        return { text, method: 'cloud', error: null };
+        return { text, method: 'cloud', error: null, diag };
       }
-      // Cloud returned empty — record and fall through to browser SR.
+      diag.cloud = 'empty';
       liveVoiceLog('stt_transcription_empty', { method: 'cloud' });
     } catch (err) {
-      liveVoiceLogError('stt_transcription', err, { method: 'cloud' });
+      const raw = String(err?.message || err || '');
+      const m = raw.match(/\b(\d{3})\b/);
+      if (m) diag.cloudStatus = Number(m[1]);
+      if (/VOICE_STT_NOT_CONFIGURED/i.test(raw)) diag.cloud = 'not_configured';
+      else if (/AUTH_SESSION_REQUIRED|401/i.test(raw)) diag.cloud = 'unauthorized';
+      else if (/5\d\d|fetch|network/i.test(raw)) diag.cloud = 'network';
+      else diag.cloud = raw.slice(0, 160) || 'unknown';
+      liveVoiceLogError('stt_transcription', err, { method: 'cloud', diagCloud: diag.cloud });
     }
-    // Secondary: browser SR (if available). This re-opens the mic for a short
-    // live listen — NOT a re-play of the recorded blob, which the Web Speech API
-    // doesn't support. We only do this if we're still active.
+    // Secondary: browser SR (if available). This re-opens the mic for a
+    // short live listen — NOT a replay of the recorded blob, which the Web
+    // Speech API doesn't support. We only do this if we're still active.
     try {
       const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (Ctor && LIVE_VOICE.active) {
+      if (!Ctor) {
+        diag.browserSupport = 'unsupported';
+        diag.browser = 'no_web_speech_api';
+      } else if (!LIVE_VOICE.active) {
+        diag.browser = 'session_stopped';
+      } else {
+        diag.browserSupport = 'available';
         const lang = (LIVE_VOICE.persona?.region || 'ar-SA');
-        const browserText = await new Promise((resolve) => {
+        const browserResult = await new Promise((resolve) => {
           let settled = false;
           let rec;
-          try { rec = new Ctor(); } catch (_) { resolve(''); return; }
+          try { rec = new Ctor(); } catch (err) { resolve({ text: '', err: err?.name || 'ctor_error' }); return; }
           rec.lang = lang;
           rec.continuous = false;
           rec.interimResults = false;
           rec.maxAlternatives = 1;
-          const done = (t) => { if (!settled) { settled = true; try { rec.stop?.(); } catch (_) {} resolve(t); } };
+          const done = (text, err) => {
+            if (settled) return;
+            settled = true;
+            try { rec.stop?.(); } catch (_) {}
+            resolve({ text: String(text || '').trim(), err: err || null });
+          };
           rec.onresult = (e) => {
             try { done(String(e?.results?.[0]?.[0]?.transcript || '').trim()); }
-            catch (_) { done(''); }
+            catch (err) { done('', err?.name || 'result_error'); }
           };
-          rec.onerror = () => done('');
+          rec.onerror = (ev) => done('', ev?.error || 'onerror');
           rec.onend = () => done('');
-          try { rec.start(); } catch (_) { done(''); }
-          window.setTimeout(() => done(''), 5000);
+          try { rec.start(); } catch (err) { done('', err?.name || 'start_error'); }
+          window.setTimeout(() => done('', 'timeout'), 5000);
         });
-        if (browserText) {
+        if (browserResult.text) {
           LIVE_VOICE.sttMethod = 'browser_fallback';
-          liveVoiceLog('stt_transcription_ok', { method: 'browser_fallback', chars: browserText.length });
-          return { text: browserText, method: 'browser_fallback', error: null };
+          liveVoiceLog('stt_transcription_ok', { method: 'browser_fallback', chars: browserResult.text.length });
+          return { text: browserResult.text, method: 'browser_fallback', error: null, diag };
         }
+        diag.browser = browserResult.err || 'empty';
       }
     } catch (err) {
+      diag.browser = err?.name || err?.message || 'exception';
       liveVoiceLogError('stt_transcription', err, { method: 'browser_fallback' });
     }
-    // Everything failed with useful output.
-    return { text: '', method: 'none', error: new Error('stt_failed_all') };
+    // Build a precise error label so the UI can tell the user exactly
+    // which path is broken.
+    let kind = 'stt_failed_all';
+    if (diag.cloud === 'not_configured') kind = 'stt_server_not_configured';
+    else if (diag.cloud === 'unauthorized') kind = 'stt_server_unauthorized';
+    else if (diag.cloud === 'network') kind = 'stt_server_network';
+    else if (diag.cloud === 'empty' && diag.browser === 'empty') kind = 'stt_empty';
+    else if (diag.cloud && diag.browserSupport === 'unsupported') kind = 'stt_server_failed_no_browser';
+    const err = new Error(kind);
+    err.diag = diag;
+    return { text: '', method: 'none', error: err, diag };
   }
 
   function stopLiveVoiceMode(){
