@@ -1,4 +1,4 @@
-﻿/* AI Workspace Studio v8.98 - strategic platform skeleton (no build step) */
+﻿/* AI Workspace Studio v8.99 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -367,7 +367,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.98';
+  const WEB_RELEASE_LABEL = 'v8.99';
   const RELEASE_CHANNEL = 'rc';
   const HIDE_PUBLIC_AAB = true;
   const DISABLE_RUNTIME_ENDPOINT_EDITING_FOR_MANAGED = true;
@@ -4454,15 +4454,17 @@ function refreshDeepSearchBtn(){
     if (!input) return;
     if (input.tagName === 'TEXTAREA'){
       const compact = typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 980px), (pointer: coarse)').matches;
-      const minH = compact ? 38 : 44;
+      const minH = compact ? 38 : 42;
+      const expandedByUi = composerExpandedByFocus || input.dataset.expanded === 'true' || document.activeElement === input;
       const value = String(input.value || '');
-      // Compact default: keep one-line height when empty/short. Grow only when needed.
-      const shouldStayCompact = !value.trim() || (!value.includes('\n') && value.length < 120);
+      const shortSingleLine = !value.trim() || (!value.includes('\n') && value.length < 120);
+      const shouldStayCompact = !expandedByUi && shortSingleLine;
       input.style.height = 'auto';
+      const maxH = compact ? 200 : 260;
       if (shouldStayCompact){
         input.style.height = `${minH}px`;
       } else {
-        input.style.height = `${Math.min(220, Math.max(minH, input.scrollHeight))}px`;
+        input.style.height = `${Math.min(maxH, Math.max(minH, input.scrollHeight))}px`;
       }
     }
     scheduleShellLayoutRefresh();
@@ -12726,7 +12728,11 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
     });
     $('chatInput')?.addEventListener('focus', () => expandComposerOnFocus());
     $('chatInput')?.addEventListener('blur', () => {
-      window.setTimeout(() => shrinkComposerToCompact(false), 80);
+      window.setTimeout(() => {
+        const ae = document.activeElement;
+        if (ae && typeof ae.closest === 'function' && ae.closest('.chatbar')) return;
+        shrinkComposerToCompact(false);
+      }, 120);
     });
 
     // New/Clear chat shortcuts in toolbar
@@ -12817,6 +12823,7 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
       toast('ℹ️ تم إلغاء وضع التعديل');
     });
     $('chatInput').addEventListener('input', () => {
+      resizeComposerInput($('chatInput'));
       syncComposerMeta();
     });
     window.addEventListener('resize', scheduleShellLayoutRefresh);
