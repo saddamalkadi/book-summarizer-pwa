@@ -1,6 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider paths.
+
+  * `cache_files` and `external_cache_files` hold camera/audio capture
+    temp files produced by the WebView <input type="file" capture> path.
+  * `external_files` exposes the app's getExternalFilesDir() so the JS
+    side can offer downloaded artifacts for sharing via Intent chooser
+    (no runtime permission required; app-scoped).
+-->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="cache_files" path="." />
     <files-path name="internal_shared_files" path="shared/" />
+    <files-path name="internal_captures" path="captures/" />
     <external-cache-path name="external_cache_files" path="." />
+    <external-files-path name="external_files" path="." />
+    <external-files-path name="external_captures" path="captures/" />
 </paths>

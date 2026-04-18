@@ -47,8 +47,57 @@
         </provider>
     </application>
 
-    <!-- Permissions -->
+    <!--
+        =================================================================
+        Permissions policy (v9.4)
+        =================================================================
+        We intentionally keep the permission set tight — Android runtime
+        permissions that are not strictly needed by the app are NOT added.
 
+        INTERNET
+            REST/SSE chat traffic, TTS, STT, uploads.
+
+        ACCESS_NETWORK_STATE
+            Lets our JS detect online/offline (connection lost toast).
+
+        RECORD_AUDIO
+            Live voice session + composer dictation. Actively used.
+
+        MODIFY_AUDIO_SETTINGS
+            Lets the WebView switch audio mode for echo cancellation while
+            the live voice session is active. Without it some Android
+            WebViews route TTS playback to the earpiece when the mic is
+            open. This is NOT a sensitive runtime permission — it is
+            granted at install time.
+
+        CAMERA
+            Only requested at runtime when the user picks a file-input
+            that has the `capture` attribute set or explicitly taps the
+            camera option in the chooser sheet. Declared with
+            `android:required="false"` so the APK still installs on
+            camera-less devices and the file chooser silently falls back
+            to gallery/SAF in that case.
+
+        We do NOT declare any of the following because the file chooser
+        uses the Storage Access Framework (ACTION_GET_CONTENT /
+        ACTION_OPEN_DOCUMENT), which returns a readable content URI
+        without needing these permissions:
+            - READ_EXTERNAL_STORAGE
+            - WRITE_EXTERNAL_STORAGE
+            - READ_MEDIA_IMAGES
+            - READ_MEDIA_VIDEO
+            - READ_MEDIA_AUDIO
+            - READ_MEDIA_VISUAL_USER_SELECTED
+        =================================================================
+    -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 </manifest>

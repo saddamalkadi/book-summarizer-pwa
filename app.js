@@ -8812,7 +8812,14 @@ async function fileToText(file){
   }
   function stripFileBlocks(text){
     const withoutBlocks = String(text || '').replace(getFileBlockRegex(), '');
-    return extractLooseBinaryPayloads(withoutBlocks).text;
+    const looseStripped = extractLooseBinaryPayloads(withoutBlocks).text;
+    // Also strip artifact fences (```artifact ... ```) so the user never sees
+    // the raw JSON contract in the chat bubble — we only surface the built
+    // file card (or an explicit error card) instead.
+    const artifactStripped = typeof extractArtifactRequests === 'function'
+      ? extractArtifactRequests(looseStripped).cleaned
+      : looseStripped;
+    return artifactStripped;
   }
   function ensureDownloadsFromText(text, sourceMessageId=''){
     const blocks = parseFileBlocks(text);
@@ -8820,7 +8827,6 @@ async function fileToText(file){
     const loose = extractLooseBinaryPayloads(withoutBlocks);
     const links = extractDownloadLinksFromText(loose.text);
     const items = [...blocks, ...loose.entries, ...links];
-    if (!items.length) return { entries: [], newCount: 0 };
     const entries = [];
     let newCount = 0;
     for (const b of items){
@@ -8836,7 +8842,28 @@ async function fileToText(file){
       entries.push(saved.entry);
       if (saved.created) newCount += 1;
     }
-    return { entries, newCount };
+    // Artifact engine: parse structured artifact requests and kick off async
+    // builders. When each build finishes it upserts a download and triggers a
+    // bubble re-render. Here we also synchronously include any already-built
+    // downloads in the returned entries list so the first render after the
+    // build already shows the card.
+    let artifactRequests = [];
+    try {
+      const { requests } = extractArtifactRequests(text);
+      artifactRequests = requests || [];
+      if (artifactRequests.length) {
+        materializeArtifactRequestsAsync(artifactRequests, sourceMessageId);
+        // Pull any already-built entries out of the registry.
+        artifactRequests.forEach((r) => {
+          const fp = r?._fingerprint || stableArtifactFingerprint(r);
+          const id = ARTIFACT_STATE.built.get(fp);
+          if (!id) return;
+          const found = resolveDownloadEntry(id);
+          if (found && !entries.find((e) => e.id === found.id)) entries.push(found);
+        });
+      }
+    } catch (_) {}
+    return { entries, newCount, artifactRequests };
   }
   function ingestDownloadsFromText(text){
     return ensureDownloadsFromText(text).entries.length;
@@ -9314,6 +9341,31 @@ async function fileToText(file){
         + "\\nاستخدم encoding=\"base64\" للملفات الثنائية مثل PowerPoint وExcel وZIP والصور والفيديو، أو url عندما يكون الملف مستضافًا على رابط مباشر."
         + "\\nوسيحوّل التطبيق هذا البلوك تلقائيًا إلى رابط وزر تنزيل داخل الدردشة. لا تكرر محتوى الملف خارج هذا البلوك إلا إذا طلب المستخدم ذلك."
         + "\\nممنوع إظهار base64 الخام أو البايتات الثنائية كنص مرئي داخل الرسالة.";
+    // --- Artifact Engine v9.3: preferred path for rich binary output ---
+    // When the user requests a document / presentation / spreadsheet / PDF the
+    // model must emit an `artifact` JSON block. The client will route it to a
+    // real builder (pptxgenjs / xlsx / jsPDF / html-to-docx / JSZip / ...) and
+    // produce a real downloadable file with a proper file card in the chat.
+    // NEVER dump raw PPTX / XLSX / PDF code as text — always use this block.
+    sys += "\\n\\n[Artifacts] الطريقة المفضلة لإنشاء الملفات الغنية (PowerPoint / Excel / PDF / Word / ZIP / صور / صوت):"
+        + "\\n- أخرج بلوك artifact واحد بهذا الشكل ولا تشرح محتوى الملف كنص خارجه:"
+        + "\\n```artifact"
+        + "\\n{\\n  \\\"kind\\\": \\\"pptx\\\",\\n  \\\"filename\\\": \\\"عرض تقديمي.pptx\\\",\\n  \\\"spec\\\": {\\n    \\\"title\\\": \\\"عنوان العرض\\\",\\n    \\\"author\\\": \\\"المساعد\\\",\\n    \\\"slides\\\": [\\n      { \\\"title\\\": \\\"مقدمة\\\", \\\"bullets\\\": [\\\"نقطة 1\\\", \\\"نقطة 2\\\"], \\\"notes\\\": \\\"ملاحظات المتحدث\\\" }\\n    ]\\n  }\\n}"
+        + "\\n```"
+        + "\\n- الأنواع المدعومة (kind): pptx, xlsx, pdf, docx, md, txt, html, csv, json, zip, png, jpg, webp, svg, mp3, wav."
+        + "\\n- spec لكل نوع:"
+        + "\\n  * pptx → { title?, author?, layout?, slides:[{ title?, subtitle?, bullets?, body?, notes?, image?, footer?, bgColor? }], theme?:{ titleColor, bodyColor, accentColor, bgColor } }"
+        + "\\n  * xlsx → { sheets:[{ name, headers?, rows:[[..]] | [{..}] }] }  أو { rows, headers? }"
+        + "\\n  * pdf  → { title?, pageSize?, landscape?, margin?, pages:[{ title?, subtitle?, body? | blocks:[{ heading?, text?, bullets? }] }] }"
+        + "\\n  * docx → { title?, markdown? | html?, landscape? }"
+        + "\\n  * md / txt / html → { content | markdown | body }"
+        + "\\n  * csv → { headers?, rows } أو { csv }"
+        + "\\n  * json → أي كائن يُحفظ كـ JSON منسّق."
+        + "\\n  * zip → { files:[{ name, content, encoding?: \\\"text\\\"|\\\"base64\\\"|\\\"url\\\" }] }"
+        + "\\n  * png/jpg/webp/svg → { data: \\\"data:image/...\\\" | \\\"https://...\\\" } أو { svg: \\\"<svg>...</svg>\\\" }"
+        + "\\n  * mp3/wav → { data: \\\"data:audio/...\\\" | \\\"https://...\\\" }"
+        + "\\n- لا تطبع JSON الخاص بـ artifact خارج البلوك، ولا تكرر المحتوى كنص. التطبيق سيعرض بطاقة ملف حقيقية مع زر تنزيل."
+        + "\\n- إذا فشل البناء سيعرض التطبيق بطاقة خطأ للمستخدم — لا تتجاهل هذا المسار لصالح كود خام.";
     if (voiceContract) sys += `\n\n${voiceContract}`;
     if (capabilityContract) sys += `\n\n${capabilityContract}`;
     return sys;
@@ -9896,14 +9948,16 @@ ${clip}` });
     return `<div class="chat-user-attachments">${blocks.join('')}</div>`;
   }
 
-  function renderAssistantMessageHtml(text, downloads=[]){
+  function renderAssistantMessageHtml(text, downloads=[], artifactRequests=[]){
     const visibleText = stripFileBlocks(text);
+    const hasFiles = (Array.isArray(downloads) && downloads.length) || (Array.isArray(artifactRequests) && artifactRequests.length);
     const main = visibleText
       ? renderMarkdown(visibleText)
-      : (downloads.length
-          ? `<div class="assistant-files-placeholder">${downloads.length > 1 ? 'تم إنشاء ملفات قابلة للتنزيل داخل هذه الرسالة.' : 'تم إنشاء ملف قابل للتنزيل داخل هذه الرسالة.'}</div>`
+      : (hasFiles
+          ? `<div class="assistant-files-placeholder">${downloads.length > 1 || (artifactRequests && artifactRequests.length > 1) ? 'تم إنشاء ملفات قابلة للتنزيل داخل هذه الرسالة.' : 'تم إنشاء ملف قابل للتنزيل داخل هذه الرسالة.'}</div>`
           : renderMarkdown(text || ''));
-    return `${main}${renderAssistantDownloadCards(downloads)}`;
+    const notices = (typeof renderArtifactNoticeCards === 'function') ? renderArtifactNoticeCards(artifactRequests || []) : '';
+    return `${main}${renderAssistantDownloadCards(downloads)}${notices}`;
   }
 
   function bindAssistantDownloadLinks(scope){
@@ -10192,6 +10246,590 @@ ${clip}` });
     }
   }
 
+  // =========================================================================
+  //  Artifact Engine (v9.3) — turn structured model output into real files
+  // =========================================================================
+  //  The model can emit either:
+  //    1) A fenced block:
+  //         ```artifact
+  //         { "kind": "pptx", "filename": "...", "spec": { ... } }
+  //         ```
+  //       (also accepts ```artifacts``` with a JSON array, or a plain ```json```
+  //        fence whose parsed body has `artifact` or `artifacts`)
+  //    2) A standalone top-level JSON response { "artifact": {...} } or
+  //       { "artifacts": [...] }.
+  //
+  //  Each artifact description is routed to a dedicated builder that produces
+  //  a real Blob (pptx / xlsx / pdf / docx / html / md / txt / csv / json /
+  //  zip / image / audio). The blob is registered in the existing downloads
+  //  registry (KEYS.downloads) — so chat UI, downloads page and preview
+  //  machinery all light up automatically.
+  //
+  //  Fingerprinting prevents the same artifact from being rebuilt on every
+  //  streaming chunk. Errors per artifact are surfaced as an inline error
+  //  card in the chat so the user sees the real reason ("PPTX_LIB_MISSING",
+  //  "pptx_spec_invalid", etc.) rather than raw code.
+  // =========================================================================
+  const ARTIFACT_KIND_CATALOG = {
+    pptx:  { mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', ext: 'pptx', label: 'PowerPoint' },
+    xlsx:  { mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',         ext: 'xlsx', label: 'Excel' },
+    docx:  { mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',  ext: 'docx', label: 'Word' },
+    pdf:   { mime: 'application/pdf',                                                            ext: 'pdf',  label: 'PDF' },
+    md:    { mime: 'text/markdown;charset=utf-8',                                                ext: 'md',   label: 'Markdown' },
+    txt:   { mime: 'text/plain;charset=utf-8',                                                   ext: 'txt',  label: 'Text' },
+    html:  { mime: 'text/html;charset=utf-8',                                                    ext: 'html', label: 'HTML' },
+    csv:   { mime: 'text/csv;charset=utf-8',                                                     ext: 'csv',  label: 'CSV' },
+    json:  { mime: 'application/json;charset=utf-8',                                             ext: 'json', label: 'JSON' },
+    zip:   { mime: 'application/zip',                                                            ext: 'zip',  label: 'ZIP' },
+    png:   { mime: 'image/png',                                                                  ext: 'png',  label: 'PNG' },
+    jpg:   { mime: 'image/jpeg',                                                                 ext: 'jpg',  label: 'JPEG' },
+    jpeg:  { mime: 'image/jpeg',                                                                 ext: 'jpg',  label: 'JPEG' },
+    webp:  { mime: 'image/webp',                                                                 ext: 'webp', label: 'WebP' },
+    svg:   { mime: 'image/svg+xml;charset=utf-8',                                                ext: 'svg',  label: 'SVG' },
+    mp3:   { mime: 'audio/mpeg',                                                                 ext: 'mp3',  label: 'MP3' },
+    wav:   { mime: 'audio/wav',                                                                  ext: 'wav',  label: 'WAV' }
+  };
+  function getArtifactKindMeta(kind){
+    const k = String(kind || '').trim().toLowerCase();
+    return ARTIFACT_KIND_CATALOG[k] || null;
+  }
+
+  // Match both ```artifact``` and ```artifacts``` fences. Capture the raw JSON.
+  const ARTIFACT_FENCE_RE = /```\s*(artifact|artifacts)[^\n`]*\n([\s\S]*?)\n?```/gi;
+
+  function isArtifactPayload(obj){
+    if (!obj || typeof obj !== 'object') return false;
+    return ('artifact' in obj) || ('artifacts' in obj) || ('kind' in obj && 'spec' in obj);
+  }
+  function normalizeArtifactList(raw){
+    const out = [];
+    if (!raw) return out;
+    if (Array.isArray(raw)) {
+      raw.forEach((x) => { if (x && typeof x === 'object') out.push(x); });
+      return out;
+    }
+    if (typeof raw !== 'object') return out;
+    if (Array.isArray(raw.artifacts)) {
+      raw.artifacts.forEach((x) => { if (x && typeof x === 'object') out.push(x); });
+    }
+    if (raw.artifact && typeof raw.artifact === 'object') out.push(raw.artifact);
+    if (!out.length && raw.kind && raw.spec) out.push(raw);
+    return out;
+  }
+  function stableArtifactFingerprint(req){
+    try {
+      const json = JSON.stringify({
+        k: String(req?.kind || '').toLowerCase(),
+        n: String(req?.filename || ''),
+        s: req?.spec || null,
+        d: req?.data ? String(req.data).slice(0, 512) : ''
+      });
+      let hash = 2166136261 >>> 0;
+      for (let i = 0; i < json.length; i += 1) {
+        hash ^= json.charCodeAt(i);
+        hash = Math.imul(hash, 16777619) >>> 0;
+      }
+      return `art_${hash.toString(16)}`;
+    } catch (_) { return `art_${Date.now().toString(36)}`; }
+  }
+  function sanitizeArtifactName(name, ext){
+    const raw = String(name || '').trim();
+    const cleaned = raw.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '').trim();
+    const base = cleaned || `artifact-${Date.now().toString(36)}`;
+    const hasDot = /\.[a-z0-9]{1,5}$/i.test(base);
+    if (hasDot || !ext) return base;
+    return `${base}.${ext}`;
+  }
+
+  // ---- Parsers ---------------------------------------------------------------
+  function extractArtifactRequests(text){
+    const s = String(text || '');
+    if (!s) return { cleaned: '', requests: [] };
+    const requests = [];
+    const seenLocally = new Set();
+    const cleaned = s.replace(ARTIFACT_FENCE_RE, (match, _fenceTag, body) => {
+      const bodyStr = String(body || '').trim();
+      let parsed = null;
+      try { parsed = JSON.parse(bodyStr); } catch (_) {
+        // Try to salvage by trimming to the last balanced brace — useful during streaming
+        const trimmed = bodyStr.replace(/,\s*([}\]])/g, '$1');
+        try { parsed = JSON.parse(trimmed); } catch (_) { parsed = null; }
+      }
+      if (!parsed) return ''; // silently drop malformed artifact fence from visible text
+      normalizeArtifactList(parsed).forEach((r) => {
+        const fp = stableArtifactFingerprint(r);
+        if (seenLocally.has(fp)) return;
+        seenLocally.add(fp);
+        requests.push({ ...r, _fingerprint: fp });
+      });
+      return '';
+    });
+    // Also try top-level JSON (entire message is a single artifact payload).
+    if (!requests.length) {
+      const trimmed = cleaned.trim();
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        try {
+          const top = JSON.parse(trimmed);
+          if (isArtifactPayload(top)) {
+            normalizeArtifactList(top).forEach((r) => {
+              const fp = stableArtifactFingerprint(r);
+              if (seenLocally.has(fp)) return;
+              seenLocally.add(fp);
+              requests.push({ ...r, _fingerprint: fp });
+            });
+            return { cleaned: '', requests };
+          }
+        } catch (_) { /* not a top-level artifact payload */ }
+      }
+    }
+    return { cleaned: cleaned.replace(/\n{3,}/g, '\n\n'), requests };
+  }
+
+  // ---- Builders --------------------------------------------------------------
+  function asArray(v){ return Array.isArray(v) ? v : (v == null ? [] : [v]); }
+  function collectSpecText(spec, fallbackFields = ['content','body','text','markdown']){
+    if (!spec) return '';
+    if (typeof spec === 'string') return spec;
+    for (const f of fallbackFields) {
+      const v = spec[f];
+      if (typeof v === 'string' && v.trim()) return v;
+    }
+    return '';
+  }
+  function base64ToUint8Array(b64){
+    const raw = String(b64 || '').replace(/\s+/g, '');
+    const bin = atob(raw);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  async function fetchBlobFromSource(data){
+    if (!data) return null;
+    if (typeof data === 'string' && /^data:/i.test(data)) {
+      const res = await fetch(data);
+      return await res.blob();
+    }
+    if (typeof data === 'string' && /^https?:\/\//i.test(data)) {
+      const res = await fetch(data, { mode: 'cors' });
+      if (!res.ok) throw new Error(`fetch_failed_${res.status}`);
+      return await res.blob();
+    }
+    if (typeof data === 'string') {
+      // Treat as base64
+      try {
+        const bytes = base64ToUint8Array(data);
+        return new Blob([bytes]);
+      } catch (_) { return null; }
+    }
+    return null;
+  }
+
+  async function buildArtifactPptx(req){
+    await ensureArtifactLib('pptx');
+    if (!window.PptxGenJS) throw new Error('PPTX_LIB_MISSING');
+    const spec = req?.spec || {};
+    const pptx = new window.PptxGenJS();
+    try { pptx.layout = String(spec.layout || 'LAYOUT_WIDE'); } catch (_) {}
+    if (spec.author) try { pptx.author = String(spec.author); } catch (_) {}
+    if (spec.title) try { pptx.title = String(spec.title); } catch (_) {}
+    const theme = spec.theme || {};
+    const titleColor = String(theme.titleColor || '203864');
+    const bodyColor = String(theme.bodyColor || '2b2b2b');
+    const accentColor = String(theme.accentColor || 'f2a516');
+    const bgColor = String(theme.bgColor || 'ffffff');
+    const slides = asArray(spec.slides);
+    if (!slides.length) {
+      // Fallback: single text slide from content field.
+      const fallbackText = collectSpecText(spec) || 'Empty presentation';
+      const s = pptx.addSlide(); s.background = { color: bgColor };
+      s.addText(fallbackText.slice(0, 5000), { x:0.6, y:0.6, w:12.0, h:6.2, fontSize:20, color:bodyColor, rtl:true, align:'right' });
+    } else {
+      slides.forEach((slide, idx) => {
+        const s = pptx.addSlide();
+        s.background = { color: String(slide.bgColor || bgColor) };
+        if (slide.title) {
+          s.addText(String(slide.title), {
+            x: 0.5, y: 0.4, w: 12.0, h: 0.9, fontSize: 32, bold: true,
+            color: titleColor, rtl: true, align: 'right', fontFace: 'Tahoma'
+          });
+        }
+        if (slide.subtitle) {
+          s.addText(String(slide.subtitle), {
+            x: 0.5, y: 1.3, w: 12.0, h: 0.7, fontSize: 20, italic: true,
+            color: accentColor, rtl: true, align: 'right'
+          });
+        }
+        const bullets = asArray(slide.bullets);
+        const body = String(slide.body || slide.content || '').trim();
+        if (bullets.length) {
+          const lines = bullets.map((b) => ({ text: String(b || ''), options: { bullet: { type:'bullet' }, fontSize: 20, color: bodyColor, rtl:true, align:'right' } }));
+          s.addText(lines, { x:0.7, y: slide.subtitle ? 2.2 : 1.6, w:11.6, h:5.0, fontSize:20, color:bodyColor, rtl:true, align:'right', fontFace:'Tahoma', paraSpaceAfter:8 });
+        } else if (body) {
+          s.addText(body.slice(0, 4000), { x:0.7, y: slide.subtitle ? 2.2 : 1.6, w:11.6, h:5.0, fontSize:20, color:bodyColor, rtl:true, align:'right', fontFace:'Tahoma' });
+        }
+        if (slide.notes) { try { s.addNotes(String(slide.notes)); } catch (_) {} }
+        if (slide.image) {
+          try {
+            const src = String(slide.image || '').trim();
+            if (/^data:image\//i.test(src) || /^https?:\/\//i.test(src)) {
+              s.addImage({ data: src.startsWith('data:') ? src : undefined, path: !src.startsWith('data:') ? src : undefined, x: 7.8, y: 1.6, w: 4.5, h: 3.0 });
+            }
+          } catch (_) {}
+        }
+        if (slide.footer) {
+          s.addText(String(slide.footer), { x:0.5, y:6.9, w:12.0, h:0.4, fontSize:12, color:accentColor, rtl:true, align:'right' });
+        }
+        // slide number (bottom-left)
+        try {
+          s.addText(`${idx + 1}`, { x:12.3, y:6.95, w:0.4, h:0.35, fontSize:11, color:accentColor, align:'right' });
+        } catch (_) {}
+      });
+    }
+    const buf = await pptx.write('arraybuffer');
+    return new Blob([buf], { type: ARTIFACT_KIND_CATALOG.pptx.mime });
+  }
+
+  async function buildArtifactXlsx(req){
+    await ensureArtifactLib('xlsx');
+    if (!window.XLSX) throw new Error('XLSX_LIB_MISSING');
+    const spec = req?.spec || {};
+    const wb = window.XLSX.utils.book_new();
+    const sheets = asArray(spec.sheets);
+    const pushSheet = (sheetSpec, fallbackName) => {
+      const name = String(sheetSpec?.name || fallbackName || 'Sheet1').slice(0, 31) || 'Sheet1';
+      let ws;
+      if (Array.isArray(sheetSpec?.rows)) {
+        // rows can be an array of arrays, or array of objects
+        if (sheetSpec.rows.length && !Array.isArray(sheetSpec.rows[0]) && typeof sheetSpec.rows[0] === 'object') {
+          ws = window.XLSX.utils.json_to_sheet(sheetSpec.rows);
+        } else {
+          const aoa = [];
+          if (Array.isArray(sheetSpec.headers) && sheetSpec.headers.length) aoa.push(sheetSpec.headers.map((h) => String(h)));
+          sheetSpec.rows.forEach((r) => aoa.push(Array.isArray(r) ? r : [r]));
+          ws = window.XLSX.utils.aoa_to_sheet(aoa);
+        }
+      } else if (Array.isArray(sheetSpec?.data)) {
+        ws = window.XLSX.utils.json_to_sheet(sheetSpec.data);
+      } else if (typeof sheetSpec?.csv === 'string') {
+        ws = window.XLSX.utils.aoa_to_sheet(sheetSpec.csv.split(/\r?\n/).filter((l) => l.length).map((l) => l.split(',')));
+      } else {
+        ws = window.XLSX.utils.aoa_to_sheet([[String(sheetSpec?.content || '')]]);
+      }
+      window.XLSX.utils.book_append_sheet(wb, ws, name);
+    };
+    if (sheets.length) {
+      sheets.forEach((s, i) => pushSheet(s, `Sheet${i + 1}`));
+    } else if (Array.isArray(spec.rows) || Array.isArray(spec.data) || typeof spec.csv === 'string') {
+      pushSheet(spec, 'Sheet1');
+    } else {
+      throw new Error('xlsx_spec_invalid');
+    }
+    const out = window.XLSX.write(wb, { bookType:'xlsx', type:'array' });
+    return new Blob([out], { type: ARTIFACT_KIND_CATALOG.xlsx.mime });
+  }
+
+  async function buildArtifactPdf(req){
+    await ensureArtifactLib('jspdf');
+    const jsPDF = window.jspdf?.jsPDF;
+    if (!jsPDF) throw new Error('PDF_LIB_MISSING');
+    const spec = req?.spec || {};
+    const doc = new jsPDF({ unit:'pt', format: String(spec.pageSize || 'a4'), orientation: spec.landscape ? 'landscape' : 'portrait' });
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const margin = Number(spec.margin) || 48;
+    const maxW = pageW - margin * 2;
+    let y = margin;
+    const writeLines = (text, opts = {}) => {
+      const fontSize = Number(opts.fontSize) || 12;
+      doc.setFontSize(fontSize);
+      if (opts.bold) doc.setFont(undefined, 'bold'); else doc.setFont(undefined, 'normal');
+      const lines = doc.splitTextToSize(String(text || ''), maxW);
+      lines.forEach((ln) => {
+        if (y + fontSize + 6 > pageH - margin) { doc.addPage(); y = margin; }
+        doc.text(ln, pageW - margin, y, { align: 'right' });
+        y += fontSize + 6;
+      });
+    };
+    const pages = asArray(spec.pages);
+    if (pages.length) {
+      pages.forEach((p, i) => {
+        if (i > 0) { doc.addPage(); y = margin; }
+        if (p.title) { writeLines(p.title, { fontSize: 22, bold: true }); y += 6; }
+        if (p.subtitle) { writeLines(p.subtitle, { fontSize: 16 }); y += 4; }
+        const blocks = asArray(p.blocks);
+        if (blocks.length) {
+          blocks.forEach((blk) => {
+            if (blk?.heading) { y += 8; writeLines(blk.heading, { fontSize: 16, bold: true }); }
+            if (blk?.text) writeLines(blk.text, { fontSize: Number(blk.fontSize) || 12 });
+            if (Array.isArray(blk?.bullets)) blk.bullets.forEach((b) => writeLines(`• ${b}`, { fontSize: 12 }));
+          });
+        } else {
+          const body = String(p.body || p.content || '').trim();
+          if (body) writeLines(body, { fontSize: 12 });
+        }
+      });
+    } else {
+      if (spec.title) { writeLines(spec.title, { fontSize: 22, bold: true }); y += 10; }
+      const body = collectSpecText(spec, ['body','content','text','markdown']) || '';
+      writeLines(body || ' ', { fontSize: Number(spec.fontSize) || 12 });
+    }
+    return doc.output('blob');
+  }
+
+  async function buildArtifactDocx(req){
+    const toDocx = getHtmlToDocxFn?.() || null;
+    if (!toDocx) throw new Error('DOCX_CONVERTER_MISSING');
+    const spec = req?.spec || {};
+    let html;
+    if (typeof spec.html === 'string' && spec.html.trim()) {
+      html = spec.html;
+    } else {
+      const md = collectSpecText(spec, ['markdown','body','content','text']);
+      html = (window.marked ? sanitizeRenderedHtml(window.marked.parse(String(md || ''))) : `<pre>${escapeHtml(md)}</pre>`);
+      if (spec.title) html = `<h1>${escapeHtml(spec.title)}</h1>${html}`;
+    }
+    const wrapped = `<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><body>${html}</body></html>`;
+    const bin = await toDocx(wrapped, { orientation: spec.landscape ? 'landscape' : 'portrait' });
+    return new Blob([bin], { type: ARTIFACT_KIND_CATALOG.docx.mime });
+  }
+
+  function buildArtifactMarkdownFamily(req, kind){
+    const spec = req?.spec || {};
+    const body = collectSpecText(spec, ['markdown','body','content','text']) || (typeof spec === 'string' ? spec : '');
+    if (kind === 'html') {
+      if (typeof spec.html === 'string' && spec.html.trim()) {
+        const name = escapeHtml(req?.filename || 'document');
+        return new Blob([`<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><title>${name}</title><body>${spec.html}</body></html>`], { type: ARTIFACT_KIND_CATALOG.html.mime });
+      }
+      const rendered = (window.marked ? sanitizeRenderedHtml(window.marked.parse(String(body || ''))) : `<pre>${escapeHtml(body)}</pre>`);
+      return new Blob([`<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><body>${rendered}</body></html>`], { type: ARTIFACT_KIND_CATALOG.html.mime });
+    }
+    const meta = ARTIFACT_KIND_CATALOG[kind];
+    return new Blob([body], { type: meta.mime });
+  }
+
+  function buildArtifactJson(req){
+    const spec = req?.spec ?? req?.data ?? null;
+    const pretty = JSON.stringify(spec, null, 2);
+    return new Blob([pretty], { type: ARTIFACT_KIND_CATALOG.json.mime });
+  }
+
+  function buildArtifactCsv(req){
+    const spec = req?.spec || {};
+    if (typeof spec === 'string') return new Blob([spec], { type: ARTIFACT_KIND_CATALOG.csv.mime });
+    if (typeof spec.csv === 'string') return new Blob([spec.csv], { type: ARTIFACT_KIND_CATALOG.csv.mime });
+    const rows = Array.isArray(spec.rows) ? spec.rows : Array.isArray(spec.data) ? spec.data : [];
+    const headers = Array.isArray(spec.headers) && spec.headers.length
+      ? spec.headers
+      : (rows.length && !Array.isArray(rows[0]) && typeof rows[0] === 'object' ? Object.keys(rows[0]) : null);
+    const escapeCell = (v) => {
+      const s = v == null ? '' : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines = [];
+    if (headers) lines.push(headers.map(escapeCell).join(','));
+    rows.forEach((r) => {
+      if (Array.isArray(r)) lines.push(r.map(escapeCell).join(','));
+      else if (r && typeof r === 'object') lines.push((headers || Object.keys(r)).map((h) => escapeCell(r[h])).join(','));
+    });
+    return new Blob([lines.join('\n')], { type: ARTIFACT_KIND_CATALOG.csv.mime });
+  }
+
+  async function buildArtifactZip(req){
+    await ensureArtifactLib('jszip');
+    if (!window.JSZip) throw new Error('ZIP_LIB_MISSING');
+    const spec = req?.spec || {};
+    const zip = new window.JSZip();
+    const files = asArray(spec.files);
+    if (!files.length) throw new Error('zip_spec_empty');
+    for (const entry of files) {
+      const name = sanitizeArtifactName(entry.name || 'file.txt', null) || 'file.txt';
+      if (entry.encoding === 'base64' && typeof entry.content === 'string') {
+        zip.file(name, base64ToUint8Array(entry.content));
+      } else if (entry.encoding === 'url' && entry.url) {
+        try {
+          const blob = await fetchBlobFromSource(entry.url);
+          if (blob) zip.file(name, blob);
+        } catch (_) { zip.file(`${name}.url.txt`, String(entry.url)); }
+      } else {
+        zip.file(name, String(entry.content || ''));
+      }
+    }
+    const out = await zip.generateAsync({ type: 'blob' });
+    return out;
+  }
+
+  async function buildArtifactImage(req, kind){
+    const spec = req?.spec || {};
+    const meta = ARTIFACT_KIND_CATALOG[kind];
+    const data = spec.data ?? req.data ?? null;
+    if (data) {
+      const blob = await fetchBlobFromSource(data);
+      if (blob) return new Blob([await blob.arrayBuffer()], { type: meta.mime });
+    }
+    if (kind === 'svg' && typeof spec.svg === 'string') {
+      return new Blob([spec.svg], { type: meta.mime });
+    }
+    throw new Error(`${kind}_spec_missing_data`);
+  }
+
+  async function buildArtifactAudio(req, kind){
+    const spec = req?.spec || {};
+    const meta = ARTIFACT_KIND_CATALOG[kind];
+    const data = spec.data ?? req.data ?? null;
+    if (data) {
+      const blob = await fetchBlobFromSource(data);
+      if (blob) return new Blob([await blob.arrayBuffer()], { type: meta.mime });
+    }
+    throw new Error(`${kind}_spec_missing_data`);
+  }
+
+  async function buildArtifactBlobForRequest(req){
+    const kind = String(req?.kind || '').toLowerCase();
+    const meta = getArtifactKindMeta(kind);
+    if (!meta) throw new Error(`unknown_artifact_kind:${kind}`);
+    if (kind === 'pptx') return await buildArtifactPptx(req);
+    if (kind === 'xlsx') return await buildArtifactXlsx(req);
+    if (kind === 'pdf')  return await buildArtifactPdf(req);
+    if (kind === 'docx') return await buildArtifactDocx(req);
+    if (kind === 'md' || kind === 'txt' || kind === 'html') return buildArtifactMarkdownFamily(req, kind);
+    if (kind === 'json') return buildArtifactJson(req);
+    if (kind === 'csv')  return buildArtifactCsv(req);
+    if (kind === 'zip')  return await buildArtifactZip(req);
+    if (kind === 'png' || kind === 'jpg' || kind === 'jpeg' || kind === 'webp' || kind === 'svg') return await buildArtifactImage(req, kind);
+    if (kind === 'mp3' || kind === 'wav') return await buildArtifactAudio(req, kind);
+    throw new Error(`builder_missing:${kind}`);
+  }
+
+  // ---- Orchestrator ----------------------------------------------------------
+  if (!window.__artifactBuildState) {
+    window.__artifactBuildState = {
+      built: new Map(),      // fingerprint -> downloadId
+      pending: new Map(),    // fingerprint -> Promise
+      errors: new Map()      // fingerprint -> { message, kind }
+    };
+  }
+  const ARTIFACT_STATE = window.__artifactBuildState;
+
+  function rerenderAssistantBubbleById(mid){
+    if (!mid) return;
+    try {
+      const thread = typeof getCurThread === 'function' ? getCurThread() : null;
+      const msg = thread?.messages?.find((m) => m.id === mid);
+      const text = String(msg?.content || '');
+      if (typeof updateStreamingAssistant === 'function') {
+        updateStreamingAssistant(mid, text);
+      }
+      if (typeof renderDownloads === 'function') renderDownloads();
+    } catch (_) {}
+  }
+
+  async function materializeArtifactRequest(req, sourceMessageId){
+    const fp = String(req?._fingerprint || stableArtifactFingerprint(req));
+    if (ARTIFACT_STATE.built.has(fp)) return ARTIFACT_STATE.built.get(fp);
+    if (ARTIFACT_STATE.pending.has(fp)) return ARTIFACT_STATE.pending.get(fp);
+    const job = (async () => {
+      const kind = String(req?.kind || '').toLowerCase();
+      const meta = getArtifactKindMeta(kind);
+      const filename = sanitizeArtifactName(req?.filename, meta?.ext || 'bin');
+      console.info('[artifact] build_start', { kind, filename, fp, sourceMessageId });
+      try {
+        const blob = await buildArtifactBlobForRequest(req);
+        if (!(blob instanceof Blob)) throw new Error('builder_returned_non_blob');
+        const buffer = await blob.arrayBuffer();
+        // Store as base64 so it survives a page reload via the existing downloads
+        // registry (localStorage). Without this the download would disappear on
+        // refresh and the card would break.
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i += 0x8000) {
+          binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + 0x8000, bytes.length)));
+        }
+        const base64 = btoa(binary);
+        const entry = upsertDownload({
+          name: filename,
+          mime: blob.type || meta?.mime || 'application/octet-stream',
+          encoding: 'base64',
+          content: base64,
+          sizeBytes: buffer.byteLength,
+          sourceMessageId: String(sourceMessageId || '')
+        });
+        const downloadId = entry?.entry?.id || '';
+        ARTIFACT_STATE.built.set(fp, downloadId);
+        console.info('[artifact] build_ok', { kind, filename, fp, bytes: buffer.byteLength, downloadId });
+        rerenderAssistantBubbleById(sourceMessageId);
+        return downloadId;
+      } catch (err) {
+        const msg = String(err?.message || err || 'build_failed');
+        console.warn('[artifact] build_fail', { kind, fp, error: msg }, err);
+        ARTIFACT_STATE.errors.set(fp, { message: msg, kind });
+        rerenderAssistantBubbleById(sourceMessageId);
+        return '';
+      } finally {
+        ARTIFACT_STATE.pending.delete(fp);
+      }
+    })();
+    ARTIFACT_STATE.pending.set(fp, job);
+    return job;
+  }
+
+  function materializeArtifactRequestsAsync(requests, sourceMessageId){
+    if (!Array.isArray(requests) || !requests.length) return;
+    requests.forEach((r) => {
+      materializeArtifactRequest(r, sourceMessageId).catch(() => {});
+    });
+  }
+
+  function getArtifactErrorsForMessage(requests){
+    if (!Array.isArray(requests) || !requests.length) return [];
+    return requests.map((r) => {
+      const fp = r?._fingerprint || stableArtifactFingerprint(r);
+      const err = ARTIFACT_STATE.errors.get(fp);
+      if (!err) return null;
+      const meta = getArtifactKindMeta(r?.kind);
+      return {
+        filename: sanitizeArtifactName(r?.filename, meta?.ext || 'bin'),
+        kind: r?.kind || 'unknown',
+        message: err.message
+      };
+    }).filter(Boolean);
+  }
+  function getArtifactPendingForMessage(requests){
+    if (!Array.isArray(requests) || !requests.length) return [];
+    return requests.map((r) => {
+      const fp = r?._fingerprint || stableArtifactFingerprint(r);
+      if (!ARTIFACT_STATE.pending.has(fp)) return null;
+      if (ARTIFACT_STATE.built.has(fp)) return null;
+      const meta = getArtifactKindMeta(r?.kind);
+      return { filename: sanitizeArtifactName(r?.filename, meta?.ext || 'bin'), kind: r?.kind || 'unknown' };
+    }).filter(Boolean);
+  }
+  function renderArtifactNoticeCards(requests){
+    if (!Array.isArray(requests) || !requests.length) return '';
+    const pending = getArtifactPendingForMessage(requests);
+    const errors = getArtifactErrorsForMessage(requests);
+    if (!pending.length && !errors.length) return '';
+    const pendingHtml = pending.map((p) => `
+      <div class="artifact-notice artifact-notice--pending">
+        <span class="artifact-notice-icon">⏳</span>
+        <div class="artifact-notice-body">
+          <div class="artifact-notice-title">جاري بناء ${escapeHtml(p.kind.toUpperCase())}…</div>
+          <div class="artifact-notice-meta">${escapeHtml(p.filename)}</div>
+        </div>
+      </div>`).join('');
+    const errorHtml = errors.map((e) => `
+      <div class="artifact-notice artifact-notice--error">
+        <span class="artifact-notice-icon">⚠️</span>
+        <div class="artifact-notice-body">
+          <div class="artifact-notice-title">تعذر بناء ${escapeHtml(e.kind.toUpperCase())}</div>
+          <div class="artifact-notice-meta">${escapeHtml(e.filename)} — ${escapeHtml(e.message)}</div>
+        </div>
+      </div>`).join('');
+    return `<div class="artifact-notice-list">${pendingHtml}${errorHtml}</div>`;
+  }
+  try { window.materializeArtifactRequest = materializeArtifactRequest; } catch (_) {}
+  try { window.extractArtifactRequests = extractArtifactRequests; } catch (_) {}
+
   function describeAttachmentChip(a){
     const parts = [formatAttachmentKindLabel(a)];
     if (a.hasText && a.chars) parts.push(`${formatCompactChars(a.chars)} حرف`);
@@ -10297,7 +10935,7 @@ ${clip}` });
     const body = b.querySelector('.body');
     if (body){
       const downloadState = ensureDownloadsFromText(text || '', mid || '');
-      body.innerHTML = renderAssistantMessageHtml(text || '', downloadState.entries);
+      body.innerHTML = renderAssistantMessageHtml(text || '', downloadState.entries, downloadState.artifactRequests || []);
       bindAssistantDownloadLinks(body);
     }
     scrollChatToBottom();
@@ -10349,9 +10987,9 @@ ${clip}` });
       body.className = 'body';
       const downloadState = m.role === 'assistant'
         ? ensureDownloadsFromText(m.content || '', m.id || '')
-        : { entries: [], newCount: 0 };
+        : { entries: [], newCount: 0, artifactRequests: [] };
       body.innerHTML = m.role === 'assistant'
-        ? renderAssistantMessageHtml(m.content || '', downloadState.entries)
+        ? renderAssistantMessageHtml(m.content || '', downloadState.entries, downloadState.artifactRequests || [])
         : `${m.engineeredPrompt ? '<div class="tag" style="margin-bottom:6px">🧩 Prompt Engineering مفعّل</div>' : ''}${renderUserAttachmentPreviewsHtml(m.attachmentPreviews)}${m.content ? `<pre class="chat-user-text">${escapeHtml(m.content || '')}</pre>` : ''}` || '<pre class="chat-user-text"></pre>';
       if (m.role === 'assistant') bindAssistantDownloadLinks(body);
 
@@ -10543,12 +11181,72 @@ ${clip}` });
     return 'file';
   }
 
+  // Structured logging for the file attachment pipeline. Mirrors the
+  // live-voice logging contract so production support can correlate web
+  // errors with Logcat entries from MainActivity's WebChromeClient.
+  function logAttachmentEvent(stage, extra){
+    try{
+      const platform = isNativePlatform() ? (getCapacitorPlatform() || 'native') : 'web';
+      console.info('[attach]', stage, Object.assign({ platform, ts: Date.now() }, extra || {}));
+    }catch(_){ /* never throw from logging */ }
+  }
+  function logAttachmentError(stage, err, extra){
+    try{
+      const platform = isNativePlatform() ? (getCapacitorPlatform() || 'native') : 'web';
+      console.error('[attach:error]', stage, {
+        platform,
+        name: err?.name || '',
+        message: err?.message || String(err || ''),
+        ...extra
+      });
+    }catch(_){ /* never throw from logging */ }
+  }
+
+  // Convert a low-level File-read failure into an Arabic message that
+  // actually helps the user — we differentiate permission / chooser /
+  // capture / decode failures instead of always printing "تعذر استخراج النص".
+  function describeAttachmentFailure(kind, err){
+    const name = err?.name || '';
+    const msg = String(err?.message || err || '').toLowerCase();
+    if (name === 'NotAllowedError' || /not allowed|permission/i.test(msg)){
+      return 'تعذر قراءة الملف: الصلاحية مرفوضة من النظام.';
+    }
+    if (name === 'SecurityError' || /security/i.test(msg)){
+      return 'تعذر قراءة الملف: حاجز أمني من الـ WebView (حاول اختيار الملف من مسار آخر).';
+    }
+    if (name === 'NotReadableError' || /notreadable|in use/i.test(msg)){
+      return 'تعذر قراءة الملف: قد يكون مفتوحًا في تطبيق آخر أو مشفّرًا.';
+    }
+    if (name === 'QuotaExceededError' || /quota|too large|size/i.test(msg)){
+      return 'الملف أكبر من الحد المسموح للمعاينة السريعة.';
+    }
+    if (name === 'AbortError' || /abort/i.test(msg)){
+      return 'تم إلغاء قراءة الملف قبل اكتمالها.';
+    }
+    if (/unsupported|not supported|unknown format/i.test(msg)){
+      return 'صيغة الملف غير مدعومة للاستخراج التلقائي.';
+    }
+    return kind === 'image'
+      ? 'تعذر تحليل الصورة — سيتم إرفاقها مرئيًا فقط.'
+      : 'تعذر استخراج نص من هذا الملف — تم إرفاقه كمرفق خام.';
+  }
+
   async function addChatAttachments(fileList){
     const settings = getSettings();
     const files = Array.from(fileList || []);
-    if (!files.length) return;
+    logAttachmentEvent('chooser_result', { count: files.length });
+
+    // Empty FileList on native = user cancelled OR the WebView's
+    // onShowFileChooser returned null. We deliberately do NOT toast in
+    // that case so the chooser feels cancelable, but we do log it for
+    // support diagnostics.
+    if (!files.length){
+      logAttachmentEvent('chooser_empty', {});
+      return;
+    }
 
     showStatus('إرفاق الملفات وتحليلها…', true);
+    const failureSummaries = [];
     for (let idx=0; idx<files.length; idx++){
       const file = files[idx];
       const name = file.name || 'file';
@@ -10557,6 +11255,7 @@ ${clip}` });
       let textFull = '';
       let dataUrl = '';
       let extractionMode = kind === 'image' ? 'صورة' : 'استخراج نص';
+      let failureReason = '';
 
       try{
         showStatus(`${stepLabel}…`, true);
@@ -10565,13 +11264,15 @@ ${clip}` });
           extractionMode = 'OCR + صورة مرئية';
           try{
             textFull = await ocrDataUrl(dataUrl, getOcrLang(), { fileName: name, page: 1 });
-          }catch(_){
+          }catch(ocrErr){
+            logAttachmentError('ocr', ocrErr, { name, size: file.size });
             textFull = '';
           }
         } else if ((kind === 'video' || kind === 'audio') && file.size <= MAX_CHAT_INLINE_MEDIA_BYTES){
           try{
             dataUrl = await fileToDataUrl(file);
-          }catch(_){
+          }catch(mediaErr){
+            logAttachmentError('media_data_url', mediaErr, { name, size: file.size, kind });
             dataUrl = '';
           }
           extractionMode = kind === 'video' ? 'فيديو معاينة' : 'صوت معاينة';
@@ -10587,9 +11288,12 @@ ${clip}` });
           extractionMode = kind === 'docx' ? 'Word قابل للقراءة' : 'تحليل نص مباشر';
           textFull = await fileToTextSmart(file);
         }
-      }catch(_){
+      }catch(err){
+        logAttachmentError('extract', err, { name, size: file.size, kind });
         textFull = '';
-        extractionMode = kind === 'image' ? 'صورة مرئية فقط' : 'تعذر استخراج النص';
+        failureReason = describeAttachmentFailure(kind, err);
+        extractionMode = failureReason;
+        failureSummaries.push(`${name}: ${failureReason}`);
       }
 
       const cleanText = String(textFull || '').trim();
@@ -10611,16 +11315,30 @@ ${clip}` });
 
     showStatus('', false);
     updateChatAttachChips();
-    toast('✅ تم إرفاق الملفات وإدراجها في سياق الدردشة');
+    if (failureSummaries.length){
+      toast(`⚠️ ${failureSummaries.slice(0, 2).join(' • ')}`);
+    } else {
+      toast('✅ تم إرفاق الملفات وإدراجها في سياق الدردشة');
+    }
   }
 
   function openChatAttachmentPicker(){
     const input = $('chatAttachFiles');
-    if (!input) return;
-    input.value = '';
-    input.removeAttribute('accept');
-    input.setAttribute('multiple', 'multiple');
-    input.click();
+    if (!input){
+      logAttachmentError('picker_missing_input', new Error('chatAttachFiles element missing'));
+      toast('⚠️ تعذر فتح منتقي الملفات — عنصر الإدخال مفقود.');
+      return;
+    }
+    try{
+      input.value = '';
+      input.removeAttribute('accept');
+      input.setAttribute('multiple', 'multiple');
+      logAttachmentEvent('picker_open', {});
+      input.click();
+    }catch(err){
+      logAttachmentError('picker_click', err);
+      toast(`⚠️ تعذر فتح منتقي الملفات: ${err?.message || err}`);
+    }
   }
 
 function updateChips(){
@@ -13842,8 +14560,71 @@ ${e?.message||e}`, false);
     lastBargeAt: 0,
     audioUnlocked: false,
     unlockPlayer: null,
-    micErrorKind: ''
+    micErrorKind: '',
+    // --- v9.3 stage-tracked state ---
+    stage: 'idle',            // idle | mic_init | speech_capture | stt_transcription | llm_reply | tts_playback
+    micAttempts: 0,
+    micBusyConfirmed: false,  // only flip true AFTER hard-reset + retry both fail
+    lastError: null,
+    lastErrorStage: '',
+    lastTranscript: '',
+    sttMethod: ''             // 'browser' | 'cloud' | 'browser_then_cloud'
   };
+
+  // Structured per-stage logger. Every error/state transition goes through this so
+  // the browser console has a reproducible trace: which stage, what error type,
+  // retry counter and platform info — no more silent generic failures.
+  function liveVoicePlatformInfo(){
+    try {
+      const native = typeof isNativeAndroidPlatform === 'function' ? isNativeAndroidPlatform() : false;
+      const ua = String(navigator.userAgent || '');
+      return {
+        platform: native ? 'android_webview' : (/(iphone|ipad|ios)/i.test(ua) ? 'ios' : (/android/i.test(ua) ? 'android_browser' : 'web')),
+        ua: ua.slice(0, 180),
+        secure: !!window.isSecureContext,
+        hasMediaDevices: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
+        hasMediaRecorder: typeof window.MediaRecorder === 'function',
+        hasSpeechRecognition: !!(window.SpeechRecognition || window.webkitSpeechRecognition)
+      };
+    } catch (_) { return { platform: 'unknown' }; }
+  }
+  function liveVoiceLog(stage, extra){
+    try {
+      const payload = Object.assign({
+        stage,
+        ts: Date.now(),
+        attempts: LIVE_VOICE.micAttempts,
+        sttMethod: LIVE_VOICE.sttMethod,
+        state: {
+          active: LIVE_VOICE.active,
+          speaking: LIVE_VOICE.speaking,
+          recording: LIVE_VOICE.recording,
+          hasStream: !!LIVE_VOICE.stream,
+          hasCtx: !!LIVE_VOICE.audioCtx
+        },
+        platform: liveVoicePlatformInfo()
+      }, extra || {});
+      console.info('[live-voice]', stage, payload);
+    } catch (_) {}
+  }
+  function liveVoiceLogError(stage, err, extra){
+    try {
+      const info = Object.assign({
+        name: err?.name || '',
+        message: err?.message || String(err || ''),
+        code: err?.code || '',
+        kind: classifyLiveVoiceMicError(err)
+      }, extra || {});
+      console.warn('[live-voice:error]', stage, info, err);
+      LIVE_VOICE.lastError = err || null;
+      LIVE_VOICE.lastErrorStage = stage || '';
+    } catch (_) {}
+  }
+  function setLiveVoiceStage(stage, userText){
+    LIVE_VOICE.stage = stage || 'idle';
+    if (typeof userText === 'string') setLiveVoiceStatus(userText);
+    liveVoiceLog(stage || 'idle');
+  }
 
   function initLiveVoiceMode(){
     const btn = document.getElementById('liveVoiceOpenBtn');
@@ -13918,6 +14699,13 @@ ${e?.message||e}`, false);
       toast?.('وضع المحادثة الصوتية غير متاح في هذه الصفحة.');
       return;
     }
+
+    // CRITICAL: purge any lingering capture from a previous session or from the
+    // composer dictation plugin BEFORE we ask the OS for the mic. On Android
+    // WebView this is the single biggest source of spurious NotReadableError
+    // / AbortError false-positives — a 200–500ms hard reset clears them.
+    await hardResetLiveVoiceCapture({ keepOverlay: true, source: 'start' });
+
     // Fetch persona. If the call fails (network/unauth), we still fall back to a
     // reasonable local Arabic persona so the feature works in offline-ish conditions.
     let persona = null;
@@ -13927,12 +14715,13 @@ ${e?.message||e}`, false);
     } catch (_) { persona = null; }
     LIVE_VOICE.persona = persona || getDefaultLiveVoicePersona();
 
-    // On Android APK (Capacitor), explicitly drive the native runtime RECORD_AUDIO
-    // permission dialog before touching getUserMedia. We have to do this even when the
-    // "granted" dictation flow worked in a previous session, because Capacitor's
-    // WebView caches permission state per-process and the new live-voice path uses a
-    // different request origin (getUserMedia) from the native SpeechRecognition plugin.
     const onNativeAndroid = typeof isNativeAndroidPlatform === 'function' && isNativeAndroidPlatform();
+    setLiveVoiceStage('mic_init', 'جاري تجهيز الميكروفون…');
+    LIVE_VOICE.micErrorKind = '';
+    LIVE_VOICE.micBusyConfirmed = false;
+    LIVE_VOICE.micAttempts = 0;
+
+    // On Android APK, prime the native RECORD_AUDIO grant via the plugin first.
     if (onNativeAndroid) {
       try {
         const nativePlugin = typeof getNativeSpeechRecognitionPlugin === 'function'
@@ -13944,54 +14733,25 @@ ${e?.message||e}`, false);
       } catch (_) { /* permission priming is best-effort */ }
     }
 
-    // Grab mic with one-shot retry. On Android WebView, the first getUserMedia attempt
-    // can race the native permission grant propagation and fail with "NotAllowedError"
-    // even though RECORD_AUDIO is actually granted. A 400ms retry closes that race.
-    let stream = null;
-    let lastMicError = null;
-    LIVE_VOICE.micErrorKind = '';
-    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
-      LIVE_VOICE.micErrorKind = 'unsupported';
-      const msg = buildLiveVoiceMicErrorMessage('unsupported', null);
-      toast?.(msg); setLiveVoiceStatus?.(msg);
-      return;
-    }
-    const micConstraints = {
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-        channelCount: 1
-      }
-    };
-    const maxAttempts = onNativeAndroid ? 3 : 1;
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia(micConstraints);
-        break;
-      } catch (err) {
-        lastMicError = err;
-        const kind = classifyLiveVoiceMicError(err);
-        console.warn(`[live-voice] getUserMedia attempt ${attempt + 1}/${maxAttempts} failed:`, kind, err?.name, err?.message);
-        if (attempt < maxAttempts - 1 && (kind === 'permission_denied' || kind === 'capture_failed' || kind === 'session_init_failed')) {
-          // Re-prime permission and wait a bit for the native grant to propagate.
-          if (onNativeAndroid) {
-            try {
-              const nativePlugin = getNativeSpeechRecognitionPlugin?.();
-              if (nativePlugin) await ensureNativeSpeechRecognitionPermission(nativePlugin);
-            } catch (_) {}
-          }
-          await new Promise((r) => window.setTimeout(r, 400));
-          continue;
-        }
-        break;
-      }
-    }
+    // Everything mic-related goes through the lock so the composer plugin and
+    // our getUserMedia can never run at the same time inside the WebView.
+    const acquired = await withLiveVoiceMicLock('start_live', () =>
+      acquireLiveVoiceMicStream({ onNativeAndroid })
+    );
+    const { stream, kind: errKind, error: micError } = acquired || {};
+
     if (!stream) {
-      LIVE_VOICE.micErrorKind = classifyLiveVoiceMicError(lastMicError);
-      const msg = buildLiveVoiceMicErrorMessage(LIVE_VOICE.micErrorKind, lastMicError);
+      LIVE_VOICE.micErrorKind = errKind || 'session_init_failed';
+      const msg = buildLiveVoiceMicErrorMessage(LIVE_VOICE.micErrorKind, micError, 'mic_init');
+      liveVoiceLogError('mic_init_failed', micError, { kind: LIVE_VOICE.micErrorKind, attempts: LIVE_VOICE.micAttempts });
       toast?.(msg);
       setLiveVoiceStatus?.(msg);
+      // Hide the overlay we left up (keepOverlay) since we won't proceed.
+      if (overlay) {
+        overlay.classList.remove('live-voice-active');
+        overlay.setAttribute('aria-hidden', 'true');
+        overlay.style.display = 'none';
+      }
       return;
     }
 
@@ -14004,7 +14764,7 @@ ${e?.message||e}`, false);
     overlay.setAttribute('aria-hidden', 'false');
     overlay.style.display = 'flex';
     if (transcriptEl) transcriptEl.textContent = '';
-    setLiveVoiceStatus('جاهز للاستماع…');
+    setLiveVoiceStage('speech_capture', 'جاهز للاستماع…');
 
     // Build an AudioContext + AnalyserNode for VAD + visualizer.
     try {
@@ -14019,7 +14779,10 @@ ${e?.message||e}`, false);
         LIVE_VOICE.analyser = analyser;
         LIVE_VOICE.micSource = source;
       }
-    } catch (_) { /* VAD falls back to timer-based listening */ }
+    } catch (err) {
+      liveVoiceLogError('speech_capture', err, { phase: 'audio_graph_setup' });
+      // VAD falls back to timer-based listening
+    }
 
     startLiveVoiceTurn();
   }
@@ -14033,29 +14796,64 @@ ${e?.message||e}`, false);
     if (name === 'notfounderror' || /device|not\s*found|no\s*mic/.test(message)) {
       return 'device_unavailable';
     }
-    if (name === 'notreadableerror' || name === 'aborterror' || /busy|in use|hardware|capture/.test(message)) {
-      return 'capture_failed';
+    // CRITICAL: NotReadableError / AbortError on their own do NOT mean "another app
+    // is using the mic". On Android WebView + Capacitor they are overwhelmingly
+    // caused by a stale getUserMedia / SpeechRecognition plugin capture left over
+    // from a previous session. Only after a hard reset + retry both fail should we
+    // surface the generic "mic busy" UI (see buildLiveVoiceMicErrorMessage below).
+    if (name === 'notreadableerror' || /not\s*readable|hardware/.test(message)) {
+      return 'stale_capture';
+    }
+    if (name === 'aborterror' || /abort/.test(message)) {
+      return 'stale_capture';
+    }
+    if (/busy|in use/.test(message)) {
+      // Explicit "in use" keyword — still treat as stale first; the retry loop will
+      // escalate to mic_busy only if a clean reset fails.
+      return 'stale_capture';
     }
     if (name === 'securityerror' || /secure context|https/.test(message)) {
       return 'insecure_context';
     }
+    if (name === 'overconstrainederror' || /constraint/.test(message)) {
+      return 'constraints_unsupported';
+    }
     return 'session_init_failed';
   }
 
-  function buildLiveVoiceMicErrorMessage(kind, err){
+  function buildLiveVoiceMicErrorMessage(kind, err, stage){
+    const s = String(stage || 'mic_init');
+    const tail = err?.message ? ` (${err.name || 'err'}: ${err.message})` : '';
     switch (kind) {
       case 'permission_denied':
         return 'تم رفض إذن الميكروفون. افتح إعدادات التطبيق وفعّل صلاحية الميكروفون ثم حاول مجددًا.';
       case 'device_unavailable':
         return 'لم يتم العثور على ميكروفون متاح على هذا الجهاز.';
-      case 'capture_failed':
-        return 'تعذّر بدء تسجيل الصوت لأن الميكروفون مشغول بتطبيق آخر. أغلق التطبيقات الأخرى وأعد المحاولة.';
+      case 'stale_capture':
+        // This path is only reached AFTER a hard reset + retry loop has failed.
+        return `تعذّر فتح الميكروفون بعد محاولات تنظيف الجلسة السابقة. أعد فتح التطبيق ثم حاول مجددًا.${tail}`;
+      case 'mic_busy_confirmed':
+        return `الميكروفون مشغول بجلسة أخرى داخل التطبيق أو بتطبيق نظام. أغلق أي تسجيل صوتي نشط ثم حاول مجددًا.${tail}`;
       case 'insecure_context':
         return 'لا يمكن تشغيل الميكروفون إلا عبر اتصال آمن (HTTPS).';
+      case 'constraints_unsupported':
+        return `إعدادات الميكروفون (echo/noise/gain) غير مدعومة على هذا الجهاز.${tail}`;
       case 'unsupported':
         return 'هذه البيئة لا تدعم التقاط الصوت في الجلسة الحية.';
+      case 'stt_empty':
+        return 'لم يلتقط الخادم أي كلام واضح. ابدأ الحديث بصوت أعلى قليلًا.';
+      case 'stt_failed_all':
+        return `تعذّر تحويل الكلام إلى نص من كل المصادر (متصفح + خادم).${tail}`;
+      case 'stt_network':
+        return `تعذّر الاتصال بخدمة تفريغ الصوت.${tail}`;
+      case 'tts_network':
+        return `تعذّر الاتصال بخدمة نطق الرد.${tail}`;
+      case 'tts_playback':
+        return `تعذّر تشغيل الصوت على هذا الجهاز. تأكد من تفعيل الصوت وعدم كتم التطبيق.${tail}`;
+      case 'llm_failed':
+        return `تعذّر توليد رد من النموذج.${tail}`;
       default:
-        return `تعذّر بدء جلسة الصوت: ${err?.message || err || 'مشكلة غير معروفة'}`;
+        return `تعذّر بدء جلسة الصوت [${s}]: ${err?.message || err || 'مشكلة غير معروفة'}`;
     }
   }
 
@@ -14094,9 +14892,12 @@ ${e?.message||e}`, false);
   function startLiveVoiceTurn(){
     if (!LIVE_VOICE.active) return;
     LIVE_VOICE.interruptRequested = false;
-    setLiveVoiceStatus('🎙️ استمع إليك…');
+    setLiveVoiceStage('speech_capture', '🎙️ استمع إليك…');
     const stream = LIVE_VOICE.stream;
-    if (!stream) return;
+    if (!stream) {
+      liveVoiceLogError('speech_capture', new Error('no_stream'), { phase: 'turn_start' });
+      return;
+    }
 
     const mimeType = (function(){
       const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg', 'audio/mp4'];
@@ -14107,6 +14908,7 @@ ${e?.message||e}`, false);
     try {
       recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
     } catch (err) {
+      liveVoiceLogError('speech_capture', err, { phase: 'mediarecorder_ctor', mimeType });
       setLiveVoiceStatus(`تعذر بدء الاستماع: ${err?.message || err}`);
       return;
     }
@@ -14115,16 +14917,18 @@ ${e?.message||e}`, false);
     LIVE_VOICE.recording = true;
 
     recorder.ondataavailable = (e) => { if (e?.data?.size) LIVE_VOICE.chunks.push(e.data); };
+    recorder.onerror = (ev) => liveVoiceLogError('speech_capture', ev?.error || new Error('mediarecorder_error'), { phase: 'onerror' });
     recorder.onstop = async () => {
       LIVE_VOICE.recording = false;
       if (!LIVE_VOICE.active) return;
       const blob = new Blob(LIVE_VOICE.chunks, { type: recorder.mimeType || mimeType || 'audio/webm' });
       LIVE_VOICE.chunks = [];
       if (!blob.size) {
-        // Silence — loop back.
+        liveVoiceLog('speech_capture_silence');
         if (LIVE_VOICE.active) startLiveVoiceTurn();
         return;
       }
+      liveVoiceLog('speech_capture_done', { bytes: blob.size, mime: blob.type });
       await handleLiveVoiceUserUtterance(blob);
     };
 
@@ -14132,6 +14936,7 @@ ${e?.message||e}`, false);
       recorder.start(250);
       startLiveVoiceVadLoop(recorder);
     } catch (err) {
+      liveVoiceLogError('speech_capture', err, { phase: 'mediarecorder_start' });
       setLiveVoiceStatus(`تعذر بدء التسجيل: ${err?.message || err}`);
     }
   }
@@ -14187,34 +14992,34 @@ ${e?.message||e}`, false);
   }
 
   async function handleLiveVoiceUserUtterance(blob){
-    setLiveVoiceStatus('✍️ أحوّل كلامك إلى نص…');
-    let transcript = '';
-    try {
-      transcript = await transcribeAudioBlobByCloud(blob);
-    } catch (err) {
-      setLiveVoiceStatus(`تعذر التفريغ الصوتي: ${err?.message || err}`);
-      // Go back to listening after a breath.
+    setLiveVoiceStage('stt_transcription', '✍️ أحوّل كلامك إلى نص…');
+    const sttResult = await transcribeLiveVoiceBlob(blob);
+    const transcript = String(sttResult?.text || '').trim();
+    if (!transcript) {
+      const stageErr = sttResult?.error || new Error('stt_empty');
+      const kind = sttResult?.error ? 'stt_failed_all' : 'stt_empty';
+      const msg = buildLiveVoiceMicErrorMessage(kind, stageErr, 'stt_transcription');
+      setLiveVoiceStatus(msg);
+      liveVoiceLogError('stt_transcription', stageErr, { method: sttResult?.method || 'none', kind });
       window.setTimeout(() => { if (LIVE_VOICE.active) startLiveVoiceTurn(); }, 900);
       return;
     }
-    transcript = String(transcript || '').trim();
-    if (!transcript) {
-      if (LIVE_VOICE.active) startLiveVoiceTurn();
-      return;
-    }
+    LIVE_VOICE.lastTranscript = transcript;
     appendLiveVoiceTranscript('user', transcript);
     LIVE_VOICE.conversation.push({ role: 'user', content: transcript });
 
-    setLiveVoiceStatus('💭 أفكّر…');
+    setLiveVoiceStage('llm_reply', '💭 أفكّر…');
     let reply = '';
     try {
       reply = await runLiveVoiceChat(LIVE_VOICE.conversation);
     } catch (err) {
       if (/QUOTA_EXHAUSTED/i.test(String(err?.message || ''))) {
         setLiveVoiceStatus('تم استنفاد حصتك الشهرية من الدردشة.');
+        liveVoiceLogError('llm_reply', err, { kind: 'quota_exhausted' });
         return;
       }
-      setLiveVoiceStatus(`تعذر توليد الرد: ${err?.message || err}`);
+      liveVoiceLogError('llm_reply', err, {});
+      setLiveVoiceStatus(buildLiveVoiceMicErrorMessage('llm_failed', err, 'llm_reply'));
       window.setTimeout(() => { if (LIVE_VOICE.active) startLiveVoiceTurn(); }, 1400);
       return;
     }
@@ -14273,16 +15078,21 @@ ${e?.message||e}`, false);
     const persona = LIVE_VOICE.persona || getDefaultLiveVoicePersona();
     const sentences = splitIntoTtsChunks(text);
     LIVE_VOICE.speaking = true;
+    setLiveVoiceStage('tts_playback');
     // Ensure audio is unlocked — some browsers silently drop .play() after long awaits
     // even if the gesture was valid; resuming the AudioContext + pumping the unlock
     // player keeps the audio graph warm.
     try { unlockLiveVoiceAudio(); } catch (_) {}
     try { if (LIVE_VOICE.audioCtx && LIVE_VOICE.audioCtx.state === 'suspended') await LIVE_VOICE.audioCtx.resume(); } catch (_) {}
 
+    let networkFailures = 0;
     let playbackFailures = 0;
+    let lastNetErr = null;
+    let lastPlaybackErr = null;
     for (const sentence of sentences) {
       if (!LIVE_VOICE.active || LIVE_VOICE.interruptRequested) break;
       setLiveVoiceStatus('🗣️ أتحدث إليك…');
+      let blob = null;
       try {
         const apiRoot = (getAuthServiceRoot() || '').replace(/\/+$/, '');
         const proxyUrl = apiRoot ? `${apiRoot}/proxy/tts` : '/proxy/tts';
@@ -14291,22 +15101,30 @@ ${e?.message||e}`, false);
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: sentence, lang: (persona.language || 'ar').split('-')[0] })
         });
-        if (!r.ok) { playbackFailures += 1; continue; }
-        // Force audio/mpeg type because some WebViews (Android) refuse to play blobs
-        // whose reported type is missing or is "application/octet-stream".
+        if (!r.ok) { networkFailures += 1; lastNetErr = new Error(`HTTP ${r.status}`); liveVoiceLogError('tts_playback', lastNetErr, { phase: 'fetch', status: r.status }); continue; }
         const rawBlob = await r.blob();
-        if (!rawBlob || !rawBlob.size) { playbackFailures += 1; continue; }
-        const blob = new Blob([await rawBlob.arrayBuffer()], { type: 'audio/mpeg' });
-
+        if (!rawBlob || !rawBlob.size) { networkFailures += 1; lastNetErr = new Error('empty_tts_body'); liveVoiceLogError('tts_playback', lastNetErr, { phase: 'fetch' }); continue; }
+        blob = new Blob([await rawBlob.arrayBuffer()], { type: 'audio/mpeg' });
+      } catch (err) {
+        networkFailures += 1;
+        lastNetErr = err;
+        liveVoiceLogError('tts_playback', err, { phase: 'fetch' });
+        continue;
+      }
+      try {
         const played = await playLiveVoiceBlob(blob, persona);
-        if (!played) playbackFailures += 1;
-      } catch (_) {
+        if (!played) { playbackFailures += 1; lastPlaybackErr = new Error('play_returned_false'); liveVoiceLogError('tts_playback', lastPlaybackErr, { phase: 'play' }); }
+      } catch (err) {
         playbackFailures += 1;
+        lastPlaybackErr = err;
+        liveVoiceLogError('tts_playback', err, { phase: 'play' });
       }
     }
     LIVE_VOICE.speaking = false;
-    if (playbackFailures && playbackFailures === sentences.length) {
-      setLiveVoiceStatus('تعذّر تشغيل الصوت. تأكد من تفعيل الصوت على الجهاز.');
+    if (sentences.length && networkFailures === sentences.length) {
+      setLiveVoiceStatus(buildLiveVoiceMicErrorMessage('tts_network', lastNetErr, 'tts_playback'));
+    } else if (sentences.length && (networkFailures + playbackFailures) === sentences.length) {
+      setLiveVoiceStatus(buildLiveVoiceMicErrorMessage('tts_playback', lastPlaybackErr, 'tts_playback'));
     } else {
       setLiveVoiceStatus('جاهز للاستماع…');
     }
@@ -14523,31 +15341,222 @@ ${e?.message||e}`, false);
     return out.length ? out : [s];
   }
 
+  // Tear down every capture resource that could hold the mic or the audio graph.
+  // This is called BEFORE a new getUserMedia attempt and AFTER every session end.
+  // The goal is to make NotReadableError / AbortError disappear by purging any stale
+  // capture left behind by a previous crash, navigation, plugin start, or a
+  // Capacitor SpeechRecognition session that was never stopped.
+  async function hardResetLiveVoiceCapture({ keepOverlay = false, source = '' } = {}){
+    liveVoiceLog('hard_reset', { source });
+    try { if (LIVE_VOICE.vadTimer) { clearTimeout(LIVE_VOICE.vadTimer); LIVE_VOICE.vadTimer = 0; } } catch (_) {}
+    // 1) MediaRecorder
+    try { if (LIVE_VOICE.recorder && LIVE_VOICE.recorder.state !== 'inactive') LIVE_VOICE.recorder.stop(); } catch (_) {}
+    try { if (LIVE_VOICE.recorder) { LIVE_VOICE.recorder.ondataavailable = null; LIVE_VOICE.recorder.onstop = null; LIVE_VOICE.recorder.onerror = null; } } catch (_) {}
+    LIVE_VOICE.recorder = null;
+    LIVE_VOICE.recording = false;
+    LIVE_VOICE.chunks = [];
+    // 2) Current TTS playback (HTMLAudioElement or AudioBufferSourceNode)
+    try {
+      const cur = LIVE_VOICE.currentAudio;
+      if (cur) {
+        try { cur.pause?.(); } catch (_) {}
+        try { cur.stop?.(); } catch (_) {}
+        try { cur.onended = null; } catch (_) {}
+      }
+    } catch (_) {}
+    LIVE_VOICE.currentAudio = null;
+    // 3) Analyser + media source node
+    try { LIVE_VOICE.analyser?.disconnect?.(); } catch (_) {}
+    try { LIVE_VOICE.micSource?.disconnect?.(); } catch (_) {}
+    LIVE_VOICE.analyser = null;
+    LIVE_VOICE.micSource = null;
+    // 4) MediaStream tracks (each track holds the mic open on Android until stopped)
+    try {
+      if (LIVE_VOICE.stream && LIVE_VOICE.stream.getTracks) {
+        LIVE_VOICE.stream.getTracks().forEach((t) => {
+          try { t.stop(); } catch (_) {}
+          try { t.enabled = false; } catch (_) {}
+        });
+      }
+    } catch (_) {}
+    LIVE_VOICE.stream = null;
+    // 5) AudioContext — closing releases the hardware device on some Android WebViews
+    try {
+      const ctx = LIVE_VOICE.audioCtx;
+      if (ctx && typeof ctx.close === 'function' && ctx.state !== 'closed') {
+        await ctx.close().catch(() => {});
+      }
+    } catch (_) {}
+    LIVE_VOICE.audioCtx = null;
+    LIVE_VOICE.speaking = false;
+    // 6) Capacitor SpeechRecognition plugin — even when our live path does NOT use it
+    //    for transcription, the composer dictation path might have left a native
+    //    session running. Calling its stop() is idempotent and prevents Android's
+    //    audio focus system from declaring the mic busy for our getUserMedia.
+    try {
+      const nativePlugin = (typeof getNativeSpeechRecognitionPlugin === 'function')
+        ? getNativeSpeechRecognitionPlugin()
+        : null;
+      if (nativePlugin && typeof stopNativeSpeechPluginSafely === 'function') {
+        await stopNativeSpeechPluginSafely(nativePlugin, 600).catch(() => {});
+        try { await nativePlugin.removeAllListeners?.(); } catch (_) {}
+      }
+    } catch (_) {}
+    // 7) Hide overlay unless caller is about to bring it back up.
+    if (!keepOverlay) {
+      const overlay = document.getElementById('liveVoiceOverlay');
+      if (overlay) {
+        overlay.classList.remove('live-voice-active');
+        overlay.setAttribute('aria-hidden', 'true');
+        overlay.style.display = 'none';
+      }
+    }
+  }
+
+  // A mutex so the SpeechRecognition plugin and live-voice getUserMedia never race
+  // for the mic inside the same Android WebView. Any caller that is about to touch
+  // the mic must wrap their critical section in withLiveVoiceMicLock().
+  let __liveVoiceMicLock = Promise.resolve();
+  function withLiveVoiceMicLock(label, fn){
+    const next = __liveVoiceMicLock.then(async () => {
+      liveVoiceLog('mic_lock_acquire', { label });
+      try { return await fn(); }
+      finally { liveVoiceLog('mic_lock_release', { label }); }
+    });
+    __liveVoiceMicLock = next.catch(() => null);
+    return next;
+  }
+  try { window.withLiveVoiceMicLock = withLiveVoiceMicLock; } catch (_) {}
+
+  // Acquire the mic with stage-aware retry logic. Only escalates to "mic busy
+  // confirmed" AFTER a hard reset has failed twice — this is the fix for
+  // NotReadableError / AbortError false positives on Android WebView.
+  async function acquireLiveVoiceMicStream({ onNativeAndroid }){
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+      return { stream: null, kind: 'unsupported', error: null };
+    }
+    const constraintVariants = [
+      { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } },
+      { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } },
+      { audio: true }
+    ];
+    const maxOuter = onNativeAndroid ? 3 : 2;
+    let lastErr = null;
+    let lastKind = 'session_init_failed';
+    for (let attempt = 0; attempt < maxOuter; attempt += 1) {
+      LIVE_VOICE.micAttempts = attempt + 1;
+      // On the 2nd+ attempt, purge any leftover capture from the last try before
+      // asking the OS for the mic again. This is what turns a spurious
+      // NotReadableError into success on the next call.
+      if (attempt > 0) {
+        await hardResetLiveVoiceCapture({ keepOverlay: true, source: `acquire_retry_${attempt}` });
+        // Android grant propagation inside the WebView is sluggish; give it a beat.
+        await new Promise((r) => window.setTimeout(r, onNativeAndroid ? 500 : 250));
+        if (onNativeAndroid) {
+          try {
+            const nativePlugin = getNativeSpeechRecognitionPlugin?.();
+            if (nativePlugin) await ensureNativeSpeechRecognitionPermission(nativePlugin);
+          } catch (_) {}
+        }
+      }
+      for (const c of constraintVariants) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia(c);
+          liveVoiceLog('mic_init_success', { attempt: attempt + 1, constraints: Object.keys(c.audio || {}).length ? c.audio : 'bare' });
+          return { stream, kind: '', error: null };
+        } catch (err) {
+          lastErr = err;
+          lastKind = classifyLiveVoiceMicError(err);
+          liveVoiceLogError('mic_init', err, { attempt: attempt + 1, constraints: c.audio });
+          // permission_denied / insecure_context are terminal — retrying won't help.
+          if (lastKind === 'permission_denied' || lastKind === 'insecure_context' || lastKind === 'device_unavailable') {
+            return { stream: null, kind: lastKind, error: err };
+          }
+          // try next constraint variant within the same outer attempt
+        }
+      }
+    }
+    // All outer attempts failed — if we've been classifying them as stale_capture,
+    // the hard-reset retries didn't help so this really is a busy mic.
+    if (lastKind === 'stale_capture') {
+      LIVE_VOICE.micBusyConfirmed = true;
+      return { stream: null, kind: 'mic_busy_confirmed', error: lastErr };
+    }
+    return { stream: null, kind: lastKind, error: lastErr };
+  }
+
+  // Transcription fallback chain for Web and APK:
+  //   1) cloud STT (preferred — highest accuracy)
+  //   2) browser SpeechRecognition (Web Speech API) — requires a fresh utterance
+  //      since it can't replay a recorded blob, so we only run it when step 1
+  //      threw a network-ish error AND we still have mic permission.
+  //   3) graceful failure carrying the exact error.
+  async function transcribeLiveVoiceBlob(blob){
+    LIVE_VOICE.sttMethod = '';
+    setLiveVoiceStage('stt_transcription');
+    // Primary: cloud STT
+    try {
+      const cloud = await transcribeAudioBlobByCloud(blob);
+      const text = String(cloud || '').trim();
+      if (text) {
+        LIVE_VOICE.sttMethod = 'cloud';
+        liveVoiceLog('stt_transcription_ok', { method: 'cloud', chars: text.length });
+        return { text, method: 'cloud', error: null };
+      }
+      // Cloud returned empty — record and fall through to browser SR.
+      liveVoiceLog('stt_transcription_empty', { method: 'cloud' });
+    } catch (err) {
+      liveVoiceLogError('stt_transcription', err, { method: 'cloud' });
+    }
+    // Secondary: browser SR (if available). This re-opens the mic for a short
+    // live listen — NOT a re-play of the recorded blob, which the Web Speech API
+    // doesn't support. We only do this if we're still active.
+    try {
+      const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (Ctor && LIVE_VOICE.active) {
+        const lang = (LIVE_VOICE.persona?.region || 'ar-SA');
+        const browserText = await new Promise((resolve) => {
+          let settled = false;
+          let rec;
+          try { rec = new Ctor(); } catch (_) { resolve(''); return; }
+          rec.lang = lang;
+          rec.continuous = false;
+          rec.interimResults = false;
+          rec.maxAlternatives = 1;
+          const done = (t) => { if (!settled) { settled = true; try { rec.stop?.(); } catch (_) {} resolve(t); } };
+          rec.onresult = (e) => {
+            try { done(String(e?.results?.[0]?.[0]?.transcript || '').trim()); }
+            catch (_) { done(''); }
+          };
+          rec.onerror = () => done('');
+          rec.onend = () => done('');
+          try { rec.start(); } catch (_) { done(''); }
+          window.setTimeout(() => done(''), 5000);
+        });
+        if (browserText) {
+          LIVE_VOICE.sttMethod = 'browser_fallback';
+          liveVoiceLog('stt_transcription_ok', { method: 'browser_fallback', chars: browserText.length });
+          return { text: browserText, method: 'browser_fallback', error: null };
+        }
+      }
+    } catch (err) {
+      liveVoiceLogError('stt_transcription', err, { method: 'browser_fallback' });
+    }
+    // Everything failed with useful output.
+    return { text: '', method: 'none', error: new Error('stt_failed_all') };
+  }
+
   function stopLiveVoiceMode(){
     LIVE_VOICE.active = false;
     LIVE_VOICE.interruptRequested = true;
-    if (LIVE_VOICE.vadTimer) { try { clearTimeout(LIVE_VOICE.vadTimer); } catch (_) {} LIVE_VOICE.vadTimer = 0; }
-    try { LIVE_VOICE.recorder?.stop?.(); } catch (_) {}
-    LIVE_VOICE.recorder = null;
-    LIVE_VOICE.recording = false;
-    try { LIVE_VOICE.currentAudio?.pause?.(); } catch (_) {}
-    LIVE_VOICE.currentAudio = null;
-    try { LIVE_VOICE.stream?.getTracks?.().forEach(t => t.stop()); } catch (_) {}
-    LIVE_VOICE.stream = null;
-    try { LIVE_VOICE.audioCtx?.close?.(); } catch (_) {}
-    LIVE_VOICE.audioCtx = null;
-    LIVE_VOICE.analyser = null;
-    LIVE_VOICE.speaking = false;
-    const overlay = document.getElementById('liveVoiceOverlay');
-    if (overlay) {
-      overlay.classList.remove('live-voice-active');
-      overlay.setAttribute('aria-hidden', 'true');
-      overlay.style.display = 'none';
-    }
+    // Fire-and-forget — consumers should not await teardown (back-button path, etc.).
+    hardResetLiveVoiceCapture({ keepOverlay: false, source: 'stop' }).catch(() => {});
+    LIVE_VOICE.stage = 'idle';
     setLiveVoiceStatus('');
   }
 
   try { window.stopLiveVoiceMode = stopLiveVoiceMode; } catch (_) {}
+  try { window.hardResetLiveVoiceCapture = hardResetLiveVoiceCapture; } catch (_) {}
 
   init();
 })();

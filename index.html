@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="9.2">
+<html lang="ar" dir="rtl" data-appver="9.4">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -2134,6 +2134,61 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
       font-size: 12px;
       font-weight: 700;
     }
+    /* Artifact engine: pending / error notices */
+    .artifact-notice-list{
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      margin-top:10px;
+    }
+    .artifact-notice{
+      display:flex;
+      align-items:flex-start;
+      gap:10px;
+      padding:10px 12px;
+      border-radius:12px;
+      border:1px solid transparent;
+      font-size:13px;
+      line-height:1.45;
+    }
+    .artifact-notice-icon{
+      font-size:18px;
+      flex:0 0 auto;
+      line-height:1;
+    }
+    .artifact-notice-body{
+      display:flex;
+      flex-direction:column;
+      gap:2px;
+      min-width:0;
+    }
+    .artifact-notice-title{
+      font-weight:800;
+      color:var(--text);
+    }
+    .artifact-notice-meta{
+      color:#5d6a86;
+      font-size:12px;
+      word-break:break-word;
+    }
+    .artifact-notice--pending{
+      background: linear-gradient(180deg,#fff,#f4f7ff);
+      border-color: rgba(27,102,255,.20);
+    }
+    .artifact-notice--error{
+      background: linear-gradient(180deg,#fff4f4,#ffeaea);
+      border-color: rgba(220,60,60,.32);
+    }
+    body.dark .artifact-notice--pending{
+      background: linear-gradient(180deg, rgba(40,56,110,.55), rgba(30,40,80,.45));
+      border-color: rgba(120,160,255,.28);
+    }
+    body.dark .artifact-notice--error{
+      background: linear-gradient(180deg, rgba(80,30,30,.6), rgba(60,25,25,.5));
+      border-color: rgba(255,120,120,.35);
+    }
+    body.dark .artifact-notice-title{ color: #eaf0ff; }
+    body.dark .artifact-notice-meta{ color: #aab4c8; }
     .app-release-card{
       margin:0;
       padding:16px;
@@ -6215,7 +6270,7 @@ body.dark *::-webkit-scrollbar-thumb:hover{
   <p class="lv-hint">اتكلم وسأستمع لحظيًا، ثم سأرد بجُمل قصيرة. تكلّم فوق صوتي لمقاطعتي.</p>
 </div>
 
-<script src="app.js?v=920"></script>
+<script src="app.js?v=940"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -6238,7 +6293,7 @@ body.dark *::-webkit-scrollbar-thumb:hover{
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=920").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=940").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

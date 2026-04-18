@@ -114,17 +114,17 @@
         <h2>ملف التثبيت المباشر</h2>
         <p>استخدم هذا الملف للتثبيت اليدوي على الهاتف. النسخة مبنية من نفس شفرة الويب المعتمدة في المستودع.</p>
         <ul>
-          <li>الإصدار: <code>v9.2 RC</code></li>
+          <li>الإصدار: <code>v9.4 RC</code></li>
           <li>الحد الأدنى للنظام: <code>Android 7.0+</code></li>
           <li>نوع البناء: <code>release</code> (R8 + shrinkResources + v2 signature)</li>
-          <li>جديد هذه النسخة: <strong>إصلاح نهائي لصوت جلسة المحادثة الصوتية</strong> عبر Web Audio API يعمل فعليًا على Android WebView، <strong>إصلاح إذن الميكروفون في APK</strong> عبر دمج الإذن الأصلي مع إعادة محاولة آمنة و<code>onPermissionRequest</code> للـ WebView، <strong>زر الرجوع الهرمي</strong> بسلوك "اضغط مرتين للخروج" بدل الإزعاج بتأكيد دائم، <strong>تصحيح رصيد كود الترقية</strong> بحيث $5 تبقى $5 فعلاً في <code>/me/quota</code>، و<strong>تبسيط شريط الكتابة</strong> بإزالة "سطر" و"فقرة" واستبدالهما بزر المحادثة الصوتية وإعادة التوليد. لم نكسر البوابة أو OpenRouter أو دخول الإدارة أو الحصص لكل مستخدم.</li>
+          <li>جديد هذه النسخة: <strong>طبقة صلاحيات Android كاملة وصحيحة</strong> — رفع الملفات داخل APK يعمل فعليًا عبر تنفيذ <code>WebChromeClient.onShowFileChooser</code> المفقود سابقًا، مع دعم <code>multiple</code> و<code>accept=*/*</code> و<code>accept=".pdf,.docx,.xlsx,.pptx,..."</code> وتطبيع الامتدادات إلى MIME types حقيقية، ودمج <code>ACTION_GET_CONTENT</code> (SAF) مع خيارات التقاط اختيارية للكاميرا/الفيديو/الصوت عبر <code>EXTRA_INITIAL_INTENTS</code>. أُضيفت صلاحيات <code>CAMERA</code> و<code>MODIFY_AUDIO_SETTINGS</code> و<code>ACCESS_NETWORK_STATE</code> في AndroidManifest (مع <code>uses-feature required=false</code>)، و<code>FileProvider</code> موسّع ليشمل <code>external-files-path</code> لمسارات الالتقاط. <code>CAMERA</code> يُطلب وقت التشغيل فقط عندما يحتوي الـ <code>&lt;input&gt;</code> على <code>capture</code>، ولا يطلب التطبيق أي صلاحيات غير لازمة (لا <code>READ_MEDIA_*</code>, لا <code>READ/WRITE_EXTERNAL_STORAGE</code>, لا <code>POST_NOTIFICATIONS</code>). على جانب JS: رسائل خطأ دقيقة تميّز بين <em>permission denied</em> و<em>security</em> و<em>not readable</em> و<em>quota</em> و<em>abort</em> و<em>unsupported</em>، وتسجيل <code>[attach]</code> منظم في الـ console يقابل الـ Logcat. تتضمن النسخة أيضًا جميع تحسينات v9.3 (Voice Session + Artifact Engine).</li>
         </ul>
         <div class="actions">
           <a class="btn primary" id="apkPrimary" href="./ai-workspace-studio-latest.apk" download="ai-workspace-studio-latest.apk">تنزيل APK</a>
           <a class="btn ghost" href="https://github.com/saddamalkadi/book-summarizer-pwa/releases/latest/download/AI-Workspace-Studio-latest.apk" target="_blank" rel="noopener noreferrer">رابط احتياطي</a>
           <a class="btn ghost" href="../">فتح نسخة الويب</a>
         </div>
-        <div class="meta">اسم الإصدار المحدد: <code>ai-workspace-studio-v9.2.0-android-release.apk</code></div>
+        <div class="meta">اسم الإصدار المحدد: <code>ai-workspace-studio-v9.4.0-android-release.apk</code></div>
       </article>
     </section>
 
