@@ -42,7 +42,15 @@
     cloudMeta: 'aistudio_cloud_meta_v1',
     chatReadingMode: 'aistudio_chat_reading_mode_v1',
     uiZoom: 'aistudio_ui_zoom_v1',
-    darkMode: 'aistudio_dark_mode_v1'
+    darkMode: 'aistudio_dark_mode_v1',
+    // v9.6.1 — side-registry for chat attachment preview assets (image
+    // thumbnails, audio/video data URLs). Separating these from the
+    // thread JSON prevents a single oversized message from pushing the
+    // main thread payload over localStorage quota (which in v9.6 caused
+    // the "image appears then disappears" regression: saveThreads() hit
+    // QuotaExceededError silently and the next renderChat() read back a
+    // stale thread without the inline dataUrl).
+    attachmentAssets: 'aistudio_attachment_assets_v1'
   };
 
   const nowTs = () => Date.now();
@@ -7383,7 +7391,70 @@ async function submitUnifiedAuthEntry(){
     localStorage.setItem(KEYS.curThread(pid), t[0].id);
     return t;
   }
-  function saveThreads(pid, arr){ saveJSON(KEYS.threads(pid), arr); }
+  function saveThreads(pid, arr){
+    // v9.6.1 — belt-and-suspenders save: if the fat thread JSON hits
+    // QuotaExceededError, strip the inline dataUrls off of attachment
+    // previews (they already live in the asset registry) and retry. The
+    // side-registry fallback keeps the bubble previews alive on the next
+    // renderChat() pass, so the user never sees an image disappear just
+    // because the thread JSON got too big.
+    const ok = saveJSON(KEYS.threads(pid), arr);
+    if (ok) return true;
+    try{
+      let stripped = 0;
+      const slimmed = (Array.isArray(arr) ? arr : []).map((thread) => {
+        if (!thread || !Array.isArray(thread.messages)) return thread;
+        return {
+          ...thread,
+          messages: thread.messages.map((msg) => {
+            if (!msg || !Array.isArray(msg.attachmentPreviews) || !msg.attachmentPreviews.length) return msg;
+            return {
+              ...msg,
+              attachmentPreviews: msg.attachmentPreviews.map((p) => {
+                const hasInline = !!String(p?.dataUrl || '').trim();
+                if (!hasInline) return p;
+                stripped += 1;
+                const id = String(p?.assetId || p?.id || '').trim() || makeId('att');
+                // Ensure the asset is safely in the registry before we
+                // drop the inline copy, so the render path can recover.
+                if (!ATTACHMENT_ASSET_RUNTIME.has(id)) ATTACHMENT_ASSET_RUNTIME.set(id, p.dataUrl);
+                storeAttachmentAsset(id, p.dataUrl);
+                return { ...p, id, assetId: id, dataUrl: '' };
+              })
+            };
+          })
+        };
+      });
+      const retryOk = saveJSON(KEYS.threads(pid), slimmed);
+      logPreviewEvent('thread_save_retry_stripped_inline', {
+        pid, stripped, retryOk
+      });
+      // Also mirror the slim copy in-place so the caller's in-memory
+      // thread state matches what is now on disk. That keeps getCurThread()
+      // and renderChat() aligned on the lightweight shape.
+      if (retryOk && Array.isArray(arr)){
+        arr.forEach((thread, i) => {
+          const slim = slimmed[i];
+          if (!thread || !slim || !Array.isArray(thread.messages)) return;
+          thread.messages.forEach((msg, j) => {
+            const slimMsg = slim.messages?.[j];
+            if (!msg || !slimMsg || !Array.isArray(msg.attachmentPreviews)) return;
+            msg.attachmentPreviews.forEach((p, k) => {
+              const slimP = slimMsg.attachmentPreviews?.[k];
+              if (!p || !slimP) return;
+              p.id = slimP.id;
+              p.assetId = slimP.assetId;
+              p.dataUrl = slimP.dataUrl;
+            });
+          });
+        });
+      }
+      return retryOk;
+    }catch(err){
+      logPreviewError('thread_save_strip_failed', err, { pid });
+      return false;
+    }
+  }
   function getCurThreadId(pid){ return localStorage.getItem(KEYS.curThread(pid)) || loadThreads(pid)[0]?.id; }
   function setCurThreadId(pid, tid){ localStorage.setItem(KEYS.curThread(pid), tid); }
   function getCurThread(){
@@ -8835,7 +8906,7 @@ async function fileToText(file){
         const src = getDownloadPreviewUrl(normalized);
         if (src){
           return `<div class="assistant-preview assistant-preview--media">`
-            + `<img class="assistant-preview-media" loading="lazy" alt="${escapeHtml(normalized.name)}" src="${escapeHtml(src)}" />`
+            + `<img class="assistant-preview-media" alt="${escapeHtml(normalized.name)}" src="${escapeHtml(src)}" />`
             + `</div>`;
         }
         return renderAssistantDownloadFileCard(normalized, 'تعذر توليد معاينة الصورة — استخدم زر التنزيل');
@@ -10000,6 +10071,134 @@ async function maybeUpdateThreadSummary(pid, tid){
     }catch(_){ /* never throw from logging */ }
   }
 
+  // v9.6.1 — Attachment preview asset registry.
+  //
+  // Root cause of the "image appears then disappears" regression:
+  //   1. sendMessage() built an attachmentPreviews entry with a full inline
+  //      dataUrl (image thumbnail or audio/video data: URL).
+  //   2. saveThreads() serialised the entire threads array — including the
+  //      just-added inline dataUrl — into a single localStorage key.
+  //   3. On phones where localStorage was already ~4-5 MB heavy (long
+  //      history, generated artifacts, cached settings), that write threw
+  //      QuotaExceededError silently. getCurThread() later re-read the
+  //      STALE thread (no inline dataUrl), so the next renderChat tick
+  //      rendered an empty bubble even though the very first render had
+  //      shown the image. That is the "disappears after a moment" symptom.
+  //
+  // Fix: keep the heavy dataUrl bytes in a DEDICATED side-registry so the
+  // thread JSON stays lightweight (and almost always saveable). The render
+  // path resolves the preview source from, in order:
+  //   1. preview.dataUrl                (kept inline when small enough)
+  //   2. ATTACHMENT_ASSET_RUNTIME       (in-memory Map — survives the tab
+  //                                      session even if localStorage
+  //                                      refuses our write)
+  //   3. localStorage[attachmentAssets] (side-registry on disk, restored
+  //                                      across reloads/reopens)
+  // This makes the preview source stable across: optimistic render, the
+  // save-then-rerender cycle, a full reload, a reopen, and the hydration
+  // pass in renderChat() — which is exactly the persistence contract the
+  // user asked for.
+  const ATTACHMENT_ASSET_RUNTIME = new Map();
+  const ATTACHMENT_ASSET_MAX_ENTRIES = 48;
+
+  function loadAttachmentAssetRegistry(){
+    const store = loadJSON(KEYS.attachmentAssets, null);
+    return (store && typeof store === 'object') ? store : {};
+  }
+
+  function commitAttachmentAssetRegistry(store){
+    try{
+      return saveJSON(KEYS.attachmentAssets, store);
+    }catch(err){
+      logPreviewError('asset_registry_commit', err, { size: Object.keys(store || {}).length });
+      return false;
+    }
+  }
+
+  function storeAttachmentAsset(assetId, dataUrl){
+    const id = String(assetId || '').trim();
+    const src = String(dataUrl || '').trim();
+    if (!id || !src) return false;
+    // Always mirror into the in-memory cache first — even if disk is full
+    // the render path can read the image back for the remainder of the
+    // session. Without this, the disappear regression fires the moment
+    // renderChat() re-reads from storage.
+    ATTACHMENT_ASSET_RUNTIME.set(id, src);
+    const store = loadAttachmentAssetRegistry();
+    store[id] = src;
+    let ok = commitAttachmentAssetRegistry(store);
+    if (!ok){
+      // Quota hit: prune oldest half by insertion order, then keep the
+      // new entry. Object.entries preserves insertion order for string
+      // keys per the spec, which gives us an implicit LRU.
+      const entries = Object.entries(store);
+      const keepCount = Math.max(Math.floor(ATTACHMENT_ASSET_MAX_ENTRIES / 2), 1);
+      const pruneStart = Math.max(0, entries.length - keepCount);
+      const kept = Object.fromEntries(entries.slice(pruneStart));
+      kept[id] = src;
+      ok = commitAttachmentAssetRegistry(kept);
+      logPreviewEvent('asset_registry_pruned', {
+        assetId: id,
+        before: entries.length,
+        after: Object.keys(kept).length,
+        retryOk: ok
+      });
+    } else {
+      // Normal happy path — but still cap to avoid unbounded growth.
+      const keys = Object.keys(store);
+      if (keys.length > ATTACHMENT_ASSET_MAX_ENTRIES){
+        const trimmed = {};
+        keys.slice(keys.length - ATTACHMENT_ASSET_MAX_ENTRIES).forEach((k) => { trimmed[k] = store[k]; });
+        trimmed[id] = src;
+        commitAttachmentAssetRegistry(trimmed);
+        logPreviewEvent('asset_registry_capped', {
+          assetId: id,
+          before: keys.length,
+          after: Object.keys(trimmed).length
+        });
+      }
+    }
+    if (ok){
+      logPreviewEvent('asset_registry_stored', {
+        assetId: id,
+        approxBytes: Math.floor(src.length * 0.75)
+      });
+    } else {
+      logPreviewEvent('asset_registry_store_failed_kept_in_memory', {
+        assetId: id,
+        approxBytes: Math.floor(src.length * 0.75)
+      });
+    }
+    return ok || ATTACHMENT_ASSET_RUNTIME.has(id);
+  }
+
+  function fetchAttachmentAsset(assetId){
+    const id = String(assetId || '').trim();
+    if (!id) return '';
+    const mem = ATTACHMENT_ASSET_RUNTIME.get(id);
+    if (mem) return mem;
+    const store = loadAttachmentAssetRegistry();
+    const val = String(store[id] || '');
+    if (val){
+      ATTACHMENT_ASSET_RUNTIME.set(id, val);
+      return val;
+    }
+    return '';
+  }
+
+  // v9.6.1 — canonical way to derive the <img>/<video>/<audio> src for a
+  // persisted attachment preview entry. Used by both the user-bubble
+  // renderer and the hydrate pass so a storage round-trip NEVER makes
+  // the image disappear as long as the asset was stored at snapshot time.
+  function resolveAttachmentPreviewSrc(preview){
+    if (!preview || typeof preview !== 'object') return '';
+    const inline = String(preview.dataUrl || '').trim();
+    if (inline) return inline;
+    const id = String(preview.assetId || preview.id || '').trim();
+    if (!id) return '';
+    return fetchAttachmentAsset(id);
+  }
+
   // v9.6 — Downscale a data URL via <canvas> to a thumbnail that survives
   // localStorage persistence. We ONLY use this for images that are too
   // large to embed at full resolution inside the thread state. Without
@@ -10055,6 +10254,7 @@ async function maybeUpdateThreadSummary(pid, tid){
     const arr = Array.isArray(list) ? list : [];
     return arr.map((a) => {
       const kind = String(a?.kind || '').toLowerCase();
+      const assetId = String(a?.id || '').trim() || makeId('att');
       let dataUrl = String(a?.dataUrl || '').trim();
       let dataUrlReduced = false;
       if (dataUrl && (kind === 'image' || kind === 'video' || kind === 'audio')){
@@ -10064,7 +10264,13 @@ async function maybeUpdateThreadSummary(pid, tid){
           dataUrlReduced = true;
         }
       }
+      // v9.6.1 — always mirror the raw dataUrl into the asset registry so
+      // the render path can recover it even if the thread JSON write
+      // later drops it under quota pressure.
+      if (dataUrl) storeAttachmentAsset(assetId, dataUrl);
       const snapshot = {
+        id: assetId,
+        assetId,
         name: String(a?.name || 'مرفق'),
         kind,
         type: String(a?.type || ''),
@@ -10077,6 +10283,7 @@ async function maybeUpdateThreadSummary(pid, tid){
           : (dataUrlReduced ? 'oversized_card' : 'card_only')
       };
       logPreviewEvent('snapshot_sync', {
+        assetId,
         name: snapshot.name,
         kind: snapshot.kind,
         size: snapshot.size,
@@ -10096,6 +10303,12 @@ async function maybeUpdateThreadSummary(pid, tid){
     const out = [];
     for (const a of arr){
       const kind = String(a?.kind || '').toLowerCase();
+      // v9.6.1 — carry the composer's stable attachment id through to
+      // the persisted preview entry. We use it as the key into the
+      // side-registry so the render path can recover the dataUrl after
+      // any storage round-trip, which is what killed the preview in
+      // v9.6 ("appears then disappears").
+      const assetId = String(a?.id || '').trim() || makeId('att');
       let dataUrl = String(a?.dataUrl || '').trim();
       let previewStatus = 'card_only';
       if (dataUrl && (kind === 'image' || kind === 'video' || kind === 'audio')){
@@ -10109,6 +10322,7 @@ async function maybeUpdateThreadSummary(pid, tid){
               dataUrl = thumb;
               previewStatus = 'inline_thumbnail';
               logPreviewEvent('snapshot_thumbnail', {
+                assetId,
                 name: a?.name || '',
                 originalBytes: approxBytes,
                 thumbnailBytes: Math.floor(thumb.length * 0.75)
@@ -10117,6 +10331,7 @@ async function maybeUpdateThreadSummary(pid, tid){
               dataUrl = '';
               previewStatus = 'oversized_card';
               logPreviewEvent('snapshot_oversized_drop', {
+                assetId,
                 name: a?.name || '',
                 originalBytes: approxBytes
               });
@@ -10125,6 +10340,7 @@ async function maybeUpdateThreadSummary(pid, tid){
             dataUrl = '';
             previewStatus = 'oversized_card';
             logPreviewEvent('snapshot_oversized_drop_media', {
+              assetId,
               name: a?.name || '',
               kind,
               originalBytes: approxBytes
@@ -10136,7 +10352,22 @@ async function maybeUpdateThreadSummary(pid, tid){
       } else if (dataUrl){
         previewStatus = 'inline';
       }
+      // v9.6.1 — commit the final render-ready dataUrl into the asset
+      // registry FIRST, so that even if saveThreads() hits quota below
+      // and the next load reads back an entry with dataUrl=''' stripped,
+      // resolveAttachmentPreviewSrc() still finds the image by assetId.
+      if (dataUrl){
+        storeAttachmentAsset(assetId, dataUrl);
+        logPreviewEvent('image_preview_stored_to_registry', {
+          assetId,
+          kind,
+          status: previewStatus,
+          approxBytes: Math.floor(dataUrl.length * 0.75)
+        });
+      }
       out.push({
+        id: assetId,
+        assetId,
         name: String(a?.name || 'مرفق'),
         kind,
         type: String(a?.type || ''),
@@ -10430,34 +10661,55 @@ ${clip}` });
     const blocks = list.map((p) => {
       const name = escapeHtml(p?.name || 'مرفق');
       const kind = String(p?.kind || '').toLowerCase();
-      const src = String(p?.dataUrl || '').trim();
+      // v9.6.1 — resolve from inline dataUrl first, then asset registry,
+      // then in-memory cache. Eager resolution here is what makes the
+      // image survive the save-then-rerender cycle: even if the thread
+      // JSON write stripped the inline dataUrl under quota, the asset
+      // registry still carries the bytes.
+      const assetId = String(p?.assetId || p?.id || '').trim();
+      const inlineSrc = String(p?.dataUrl || '').trim();
+      const src = resolveAttachmentPreviewSrc(p);
+      const resolvedVia = inlineSrc
+        ? 'inline'
+        : (src ? (ATTACHMENT_ASSET_RUNTIME.has(assetId) ? 'runtime_cache' : 'asset_registry') : 'none');
       const sizeLabel = p?.size ? formatCompactBytes(p.size) : '';
       const kindLabel = formatAttachmentKindLabel(p);
       const status = String(p?.previewStatus || (src ? 'inline' : 'card_only'));
       const isThumbnail = status === 'inline_thumbnail';
       logPreviewEvent('render_user_attachment', {
+        assetId,
         name: p?.name || '',
         kind,
         size: p?.size || 0,
-        hasSrc: !!src,
+        hasInlineSrc: !!inlineSrc,
+        hasResolvedSrc: !!src,
+        resolvedVia,
         status
       });
+      if (kind === 'image' && !src && assetId){
+        logPreviewEvent('image_preview_source_lost', {
+          assetId,
+          name: p?.name || '',
+          status,
+          reason: 'no_inline_and_registry_miss'
+        });
+      }
       if (kind === 'image' && src){
         const thumbBadge = isThumbnail
           ? '<span class="chat-inline-media-badge">معاينة مصغّرة</span>'
           : '';
-        return `<div class="chat-inline-media chat-inline-media--dark">`
-          + `<img class="chat-inline-media-el" loading="lazy" alt="${name}" src="${escapeHtml(src)}" />`
+        return `<div class="chat-inline-media chat-inline-media--dark" data-attachment-id="${escapeHtml(assetId)}">`
+          + `<img class="chat-inline-media-el" alt="${name}" src="${escapeHtml(src)}" />`
           + thumbBadge
           + `</div>`;
       }
       if (kind === 'video' && src){
-        return `<div class="chat-inline-media chat-inline-media--dark">`
+        return `<div class="chat-inline-media chat-inline-media--dark" data-attachment-id="${escapeHtml(assetId)}">`
           + `<video class="chat-inline-media-el" controls playsinline preload="metadata" src="${escapeHtml(src)}"></video>`
           + `</div>`;
       }
       if (kind === 'audio' && src){
-        return `<div class="chat-inline-media chat-inline-media--audio">`
+        return `<div class="chat-inline-media chat-inline-media--audio" data-attachment-id="${escapeHtml(assetId)}">`
           + `<audio controls preload="metadata" src="${escapeHtml(src)}"></audio>`
           + `</div>`;
       }
@@ -11480,31 +11732,83 @@ ${clip}` });
     return s.slice(0, Math.floor(limit*0.55)) + "\n...\n" + s.slice(-Math.floor(limit*0.45));
   }
 
-  // v9.6 — Normalize any legacy/partial attachmentPreviews shapes so
-  // renderers never trip over missing fields after a restore/reload.
-  // Older threads (pre-9.6) may have stored entries without a
-  // `previewStatus`, which is fine — we just derive it here.
+  // v9.6.1 — Normalize any legacy/partial attachmentPreviews shapes AND
+  // non-destructively re-hydrate the preview dataUrl from the asset
+  // registry whenever the storage copy lost it (quota, stripped save,
+  // stale overwrite, cloud restore of a thinner snapshot). This is the
+  // function that closes the "image appears then disappears" loop:
+  // every subsequent renderChat() pass now sees an entry with a live
+  // dataUrl restored from the side-registry, even if the thread JSON
+  // itself lost it on disk.
   function hydrateAttachmentPreviewsInPlace(message){
     if (!message || message.role !== 'user') return;
     const list = Array.isArray(message.attachmentPreviews) ? message.attachmentPreviews : null;
     if (!list || !list.length) return;
-    let changed = false;
+    let changed = 0;
+    let restored = 0;
+    let missingSources = 0;
     for (const preview of list){
       if (!preview || typeof preview !== 'object') continue;
       if (!preview.kind && preview.type){
         const inferred = String(preview.type || '').toLowerCase().split('/', 1)[0];
         preview.kind = inferred || 'file';
-        changed = true;
+        changed += 1;
+      }
+      // v9.6.1 — ensure every preview has a stable asset id. Legacy
+      // entries (pre-9.6.1) did not carry one, so we back-fill. A newly
+      // minted id naturally misses the registry, which is fine — the
+      // renderer will show the rich card fallback.
+      if (!preview.id && !preview.assetId){
+        preview.id = preview.assetId = makeId('att');
+        changed += 1;
+      } else if (!preview.assetId && preview.id){
+        preview.assetId = preview.id;
+        changed += 1;
+      } else if (!preview.id && preview.assetId){
+        preview.id = preview.assetId;
+        changed += 1;
+      }
+      // CRITICAL: if the stored entry lost its dataUrl, try to pull it
+      // back from the registry so the bubble survives rerender.
+      if (!preview.dataUrl){
+        const id = String(preview.assetId || preview.id || '').trim();
+        if (id){
+          const fromRegistry = fetchAttachmentAsset(id);
+          if (fromRegistry){
+            preview.dataUrl = fromRegistry;
+            if (!preview.previewStatus || preview.previewStatus === 'card_only'){
+              preview.previewStatus = String(preview.kind || '').toLowerCase() === 'image'
+                ? 'inline_thumbnail'
+                : 'inline';
+            }
+            restored += 1;
+            changed += 1;
+            logPreviewEvent('image_preview_hydrated_success', {
+              mid: message.id || '',
+              assetId: id,
+              kind: preview.kind || '',
+              approxBytes: Math.floor(fromRegistry.length * 0.75)
+            });
+          } else if (preview.kind === 'image' || preview.kind === 'video' || preview.kind === 'audio'){
+            missingSources += 1;
+            logPreviewEvent('image_preview_hydrated_missing_source', {
+              mid: message.id || '',
+              assetId: id,
+              kind: preview.kind || '',
+              name: preview.name || ''
+            });
+          }
+        }
       }
       if (!preview.previewStatus){
         const src = String(preview.dataUrl || '').trim();
         preview.previewStatus = src ? 'inline' : 'card_only';
-        changed = true;
+        changed += 1;
       }
     }
     if (changed){
       logPreviewEvent('hydrate_message_previews', {
-        mid: message.id || '', count: list.length
+        mid: message.id || '', count: list.length, restored, missingSources
       });
     }
   }
@@ -11514,9 +11818,24 @@ ${clip}` });
     if (!log) return;
     const thread = getCurThread();
     const msgs = thread.messages || [];
-    // v9.6 — hydrate legacy/partial attachmentPreviews so a message
+    // v9.6.1 — hydrate legacy/partial attachmentPreviews so a message
     // restored from localStorage still renders full cards and images.
-    try { msgs.forEach(hydrateAttachmentPreviewsInPlace); } catch(_) {}
+    // This also transparently re-hydrates preview.dataUrl from the
+    // asset registry whenever the storage copy lost it (which is the
+    // regression that caused "image appears then disappears").
+    try {
+      msgs.forEach(hydrateAttachmentPreviewsInPlace);
+      const userWithPreviews = msgs.filter((m) => m && m.role === 'user' && Array.isArray(m.attachmentPreviews) && m.attachmentPreviews.length);
+      if (userWithPreviews.length){
+        logPreviewEvent('image_preview_persisted_render', {
+          tid: thread?.id || '',
+          messagesWithPreviews: userWithPreviews.length,
+          totalPreviews: userWithPreviews.reduce((n, m) => n + m.attachmentPreviews.length, 0)
+        });
+      }
+    } catch(err) {
+      logPreviewError('hydrate_messages_pass', err, { tid: thread?.id || '' });
+    }
     log.innerHTML = '';
 
     if (!msgs.length){
