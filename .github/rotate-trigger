@@ -1,1 +1,1 @@
-v9.6 preview-incident rotate (retry, skip APK race) — re-heal OPENROUTER_API_KEY + APP_ADMIN_PASSWORD after CF Workers Builds auto-deploy of 7b5239e overwrote step-14/15 bindings (incident 2026-04-18T13:45:00Z)
+v9.6 preview-incident rotate #3 — heal admin password + OR key after CF Workers Builds race (APK build will redeploy; rotate waits for that CF build before binding secrets). incident 2026-04-18T13:50:00Z
