@@ -1,4 +1,4 @@
-﻿/* AI Workspace Studio v9.0 - strategic platform skeleton (no build step) */
+﻿/* AI Workspace Studio v9.1 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -170,6 +170,19 @@
   async function requestExitApp(){
     const ok = await confirmExitApp();
     if (!ok) return;
+    // Save everything possible before native exitApp() (which doesn't fire beforeunload):
+    // stop voice playback, stop live voice session, flush pending cloud sync, persist UI state.
+    try { if (typeof stopLiveVoiceMode === 'function') stopLiveVoiceMode(); } catch (_) {}
+    try { stopVoicePlayback(); } catch (_) {}
+    try {
+      if (typeof syncCloudNow === 'function'){
+        // Best-effort flush with a tight timeout so we never block exit forever.
+        await Promise.race([
+          syncCloudNow('exit').catch(() => null),
+          new Promise((resolve) => window.setTimeout(resolve, 1500))
+        ]);
+      }
+    } catch (_) {}
     if (isNativePlatform()){
       try{ await getCapacitorAppPlugin()?.exitApp?.(); return; }catch(_){ }
     }
@@ -367,7 +380,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v9.0';
+  const WEB_RELEASE_LABEL = 'v9.1';
   const RELEASE_CHANNEL = 'rc';
   const HIDE_PUBLIC_AAB = true;
   const DISABLE_RUNTIME_ENDPOINT_EDITING_FOR_MANAGED = true;
@@ -3733,11 +3746,15 @@ function applyShellLayout(){
       ? 'إيقاف الإملاء الصوتي'
       : (state === 'processing' ? 'جارٍ تجهيز الإملاء الصوتي' : 'بدء الإملاء الصوتي');
     btn.setAttribute('aria-label', btn.title);
+    // Icon-only in the composer rail to save space on mobile / APK. Accessibility is
+    // preserved via aria-label + title; hidden visually-accessible text keeps screen
+    // readers happy.
+    btn.classList.add('icon-only');
     btn.innerHTML = state === 'listening'
-      ? '<span class="icon">🎙️</span><span class="label">إيقاف الإملاء</span>'
+      ? '<span class="icon" aria-hidden="true">🎙️</span><span class="sr-only">إيقاف الإملاء الصوتي</span>'
       : (state === 'processing'
-        ? '<span class="icon">⏳</span><span class="label">جارٍ التحضير</span>'
-        : '<span class="icon">🎤</span><span class="label">إملاء صوتي</span>');
+        ? '<span class="icon" aria-hidden="true">⏳</span><span class="sr-only">جارٍ تجهيز الإملاء الصوتي</span>'
+        : '<span class="icon" aria-hidden="true">🎤</span><span class="sr-only">بدء الإملاء الصوتي</span>');
   }
 
   function refreshVoiceModeButton(){
@@ -5003,8 +5020,25 @@ function refreshDeepSearchBtn(){
                   <input id="adminUpgradeEmail" type="email" placeholder="user@gmail.com" />
                 </div>
                 <div>
-                  <label class="hint">مدة الكود بالأيام</label>
+                  <label class="hint">مدة صلاحية الكود (أيام)</label>
                   <input id="adminUpgradeDays" type="number" min="1" max="3650" value="365" />
+                </div>
+              </div>
+              <div class="auth-config-grid" style="margin-top:10px">
+                <div>
+                  <label class="hint">حد الرصيد (USD)</label>
+                  <input id="adminUpgradeLimit" type="number" min="0" step="0.01" placeholder="5" />
+                  <div class="row" style="gap:6px; margin-top:6px; flex-wrap:wrap;">
+                    <button type="button" class="btn ghost sm" data-upgrade-preset="1">$1</button>
+                    <button type="button" class="btn ghost sm" data-upgrade-preset="5">$5</button>
+                    <button type="button" class="btn ghost sm" data-upgrade-preset="10">$10</button>
+                    <button type="button" class="btn ghost sm" data-upgrade-preset="25">$25</button>
+                    <button type="button" class="btn ghost sm" data-upgrade-preset="">مخصص</button>
+                  </div>
+                </div>
+                <div>
+                  <label class="hint">فترة الرصيد (أيام)</label>
+                  <input id="adminUpgradePeriodDays" type="number" min="1" max="3650" value="30" />
                 </div>
               </div>
               <div class="account-actions" style="margin-top:12px">
@@ -5014,7 +5048,7 @@ function refreshDeepSearchBtn(){
               <div class="upgrade-inline" style="margin-top:12px">
                 <input id="adminGeneratedCode" type="text" placeholder="سيظهر كود الترقية هنا" readonly />
               </div>
-              <div class="hint" id="adminUpgradeMeta" style="margin-top:10px">هذا القسم متاح فقط لحساب الإدارة، والكود الناتج يرتبط ببريد المستخدم المحدد.</div>
+              <div class="hint" id="adminUpgradeMeta" style="margin-top:10px">اختر حدًا ماليًا مثل 1$ / 5$ / 10$ ليتم تثبيته مباشرةً على حساب المستخدم عند التفعيل. اتركه فارغًا لاستخدام حد الخطة الافتراضي.</div>
             </div>
           </details>
           <div class="row" style="margin-top:10px">
@@ -5738,7 +5772,15 @@ async function submitUnifiedAuthEntry(){
       refreshModeButtons();
       renderSettings();
       refreshStrategicWorkspace().catch(()=>{});
-      toast('✅ تم تفعيل الخطة المدفوعة');
+      // Refresh the per-user quota snapshot so the balance widget immediately reflects
+      // the amount baked into the activated upgrade code (e.g. $1/$5/$10).
+      try { await refreshUsageState({ force: true }); } catch (_) {}
+      const upgradeInfo = payload?.upgrade;
+      if (upgradeInfo && upgradeInfo.limitUsd != null){
+        toast(`✅ تم تفعيل الترقية (رصيد ${Number(upgradeInfo.limitUsd).toFixed(2)}$)`);
+      } else {
+        toast('✅ تم تفعيل الخطة المدفوعة');
+      }
     }catch(error){
       toast(`⚠️ تعذر تفعيل الكود: ${error?.message || error}`);
     }
@@ -5751,18 +5793,23 @@ async function submitUnifiedAuthEntry(){
     }
     const email = String($('adminUpgradeEmail')?.value || '').trim().toLowerCase();
     const days = clamp(Number($('adminUpgradeDays')?.value || 365), 1, 3650);
+    const rawLimit = String($('adminUpgradeLimit')?.value || '').trim();
+    const limitUsd = rawLimit === '' ? null : Number(rawLimit);
+    if (limitUsd !== null && (!Number.isFinite(limitUsd) || limitUsd < 0)){
+      return toast('⚠️ حد الرصيد يجب أن يكون رقمًا موجبًا أو صفرًا.');
+    }
+    const periodDaysRaw = Number($('adminUpgradePeriodDays')?.value || 30);
+    const periodDays = clamp(Number.isFinite(periodDaysRaw) && periodDaysRaw > 0 ? periodDaysRaw : 30, 1, 3650);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
       return toast('⚠️ أدخل بريد المستخدم أولاً.');
     }
     try{
       if ($('adminUpgradeMeta')) $('adminUpgradeMeta').textContent = 'جارٍ إنشاء كود الترقية...';
+      const requestBody = { email, plan: 'premium', days, periodDays };
+      if (limitUsd !== null) requestBody.limitUsd = limitUsd;
       const payload = await fetchAuthJson('/auth/admin/generate-upgrade-code', {
         method: 'POST',
-        body: JSON.stringify({
-          email,
-          plan: 'premium',
-          days
-        })
+        body: JSON.stringify(requestBody)
       });
       const code = String(payload?.code || '').trim();
       if (!code) throw new Error('لم يتم استلام كود من الخادم.');
@@ -5771,13 +5818,28 @@ async function submitUnifiedAuthEntry(){
       if ($('adminUpgradeMeta')){
         const expiresAt = Number(payload?.expiresAt || 0);
         const expiresLabel = expiresAt ? new Date(expiresAt).toLocaleString('ar-SA') : `بعد ${days} يوم`;
-        $('adminUpgradeMeta').textContent = `تم إنشاء كود مرتبط بالبريد ${email} وصالح حتى ${expiresLabel}.`;
+        const limitPart = limitUsd !== null ? ` مع رصيد ${limitUsd.toFixed(2)}$ لمدة ${periodDays} يوم` : ' (حد الخطة الافتراضي)';
+        $('adminUpgradeMeta').textContent = `تم إنشاء كود مرتبط بـ ${email}${limitPart}. صالح حتى ${expiresLabel}.`;
       }
       toast('✅ تم إنشاء كود الترقية');
     }catch(error){
       if ($('adminUpgradeMeta')) $('adminUpgradeMeta').textContent = `تعذر إنشاء الكود: ${error?.message || error}`;
       toast(`⚠️ تعذر إنشاء كود الترقية: ${error?.message || error}`);
     }
+  }
+
+  function wireUpgradeAmountPresets(){
+    document.querySelectorAll('[data-upgrade-preset]').forEach((btn) => {
+      if (btn.dataset.bound === '1') return;
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', () => {
+        const amount = String(btn.dataset.upgradePreset || '').trim();
+        const input = $('adminUpgradeLimit');
+        if (!input) return;
+        input.value = amount;
+        input.focus();
+      });
+    });
   }
 
   async function copyAdminUpgradeCode(){
@@ -12572,6 +12634,7 @@ let pinOnly = false;
     $('activateUpgradeBtn')?.addEventListener('click', activateUpgradeCodeFromUi);
     $('adminGenerateUpgradeBtn')?.addEventListener('click', generateAdminUpgradeCodeFromUi);
     $('adminCopyUpgradeBtn')?.addEventListener('click', copyAdminUpgradeCode);
+    wireUpgradeAmountPresets();
     $('authEntrySubmitBtn')?.addEventListener('click', submitUnifiedAuthEntry);
     $('authEntryForm')?.addEventListener('submit', (e) => { e.preventDefault(); submitUnifiedAuthEntry(); });
     $('authRetryBtn')?.addEventListener('click', async () => {
@@ -13558,6 +13621,90 @@ ${e?.message||e}`, false);
     }catch(_){}
 
     try{ initLiveVoiceMode(); }catch(_){ }
+    try{ initAndroidBackButtonHandler(); }catch(_){ }
+  }
+
+  /**
+   * Wire the Android hardware back button to sensible in-app behavior:
+   *   1. If the Live Voice overlay is active → close it.
+   *   2. If any visible modal is open → close the top-most one.
+   *   3. If the sidebar is open on narrow layouts → close it.
+   *   4. If we are inside a secondary workspace page → return to chat.
+   *   5. Otherwise → show the exit confirmation (saves state on "نعم").
+   *
+   * Falls back gracefully on web (no-op) and preserves prior `browserPopState` so
+   * we don't break the in-app Google auth bridge.
+   */
+  function initAndroidBackButtonHandler(){
+    if (typeof isNativeAndroidPlatform !== 'function' || !isNativeAndroidPlatform()) return;
+    const appPlugin = typeof getCapacitorAppPlugin === 'function' ? getCapacitorAppPlugin() : null;
+    if (!appPlugin?.addListener) return;
+    if (window.__AI_STUDIO_BACK_HANDLER__) return;
+    window.__AI_STUDIO_BACK_HANDLER__ = true;
+
+    appPlugin.addListener('backButton', async () => {
+      try { await handleAndroidBackPress(); } catch (_) { /* never crash the UI on back */ }
+    });
+  }
+
+  async function handleAndroidBackPress(){
+    // 1) Live voice overlay
+    try {
+      const overlay = document.getElementById('liveVoiceOverlay');
+      if (overlay && overlay.classList.contains('live-voice-active')) {
+        try { stopLiveVoiceMode(); } catch (_) {}
+        return;
+      }
+    } catch (_) {}
+
+    // 2) Close top-most visible modal (skip the exit modal itself so the back
+    //    press effectively cancels the confirmation).
+    try {
+      const openModals = Array.from(document.querySelectorAll('.modal.show'));
+      const dismissable = openModals.filter((m) => m.id !== 'exitAppModal');
+      if (dismissable.length) {
+        const top = dismissable[dismissable.length - 1];
+        top.classList.remove('show');
+        top.setAttribute('aria-hidden', 'true');
+        // If a "close" button exists, also click it to run any per-modal cleanup.
+        const closer = top.querySelector('[data-close], .modal-close, [aria-label="إغلاق"], [aria-label="Close"]');
+        try { closer?.click?.(); } catch (_) {}
+        return;
+      }
+      const exitOpen = document.getElementById('exitAppModal');
+      if (exitOpen && exitOpen.classList.contains('show')) {
+        const no = document.getElementById('exitAppNoBtn');
+        try { no?.click?.(); } catch (_) {}
+        return;
+      }
+    } catch (_) {}
+
+    // 3) Close side drawer / auth gate / any z-index overlay with [data-dismiss-on-back="true"].
+    try {
+      const drawer = document.querySelector('[data-sidebar-open="true"], .side.open, body.sidebar-open .side');
+      if (drawer && document.body.classList.contains('sidebar-open')){
+        document.body.classList.remove('sidebar-open');
+        drawer.classList?.remove?.('open');
+        return;
+      }
+    } catch (_) {}
+
+    // 4) Return to main chat if we're on a secondary page.
+    try {
+      const activeSection = document.querySelector('main > section.page.active, .workspace-page.active');
+      const activeId = activeSection?.id || '';
+      const chatIds = ['page-chat', 'workspace-chat', 'chat-page', 'page-home'];
+      if (activeId && !chatIds.includes(activeId) && typeof openWorkspacePage === 'function') {
+        try { openWorkspacePage('chat'); return; } catch (_) { /* fallthrough */ }
+      }
+    } catch (_) {}
+
+    // 5) Exit flow — save + confirm + exit.
+    await confirmExitWithSave();
+  }
+
+  async function confirmExitWithSave(){
+    try { if (typeof requestExitApp === 'function') { return await requestExitApp(); } } catch (_) {}
   }
 
   /* =================================================================================
@@ -13590,16 +13737,52 @@ ${e?.message||e}`, false);
     overlayEl: null,
     stateLabel: '',
     interruptRequested: false,
-    lastBargeAt: 0
+    lastBargeAt: 0,
+    audioUnlocked: false,
+    unlockPlayer: null,
+    micErrorKind: ''
   };
 
   function initLiveVoiceMode(){
     const btn = document.getElementById('liveVoiceOpenBtn');
     if (!btn) return;
     btn.addEventListener('click', () => {
+      // Unlock audio playback synchronously inside the user gesture — this is the
+      // only reliable window to let HTMLMediaElement.play() succeed later on iOS
+      // Safari and some Android WebViews. Without this the live voice session
+      // becomes silent even though TTS requests succeed.
+      try { unlockLiveVoiceAudio(); } catch (_) {}
       if (LIVE_VOICE.active) { stopLiveVoiceMode(); return; }
       void startLiveVoiceMode();
     });
+  }
+
+  function unlockLiveVoiceAudio(){
+    if (LIVE_VOICE.audioUnlocked) return;
+    try {
+      // 1) Silent HTMLAudioElement play — satisfies Safari/iOS gesture gate.
+      const silent = new Audio(
+        'data:audio/mpeg;base64,SUQzBAAAAAABEVRYWFgAAAAtAAADY29tbWVudABCaWdTb3VuZEJhbmsuY29tIC8gTGFTb25vdGhlcXVlLm9yZwBURU5DAAAAHQAAA1N3aXRjaCBQbHVzIMKpIE5DSCBTb2Z0d2FyZQBUSVQyAAAABgAAAzIyMzUAVFNTRQAAAA8AAANMYXZmNTcuODMuMTAwAAAAAAAAAAAAAAD/80DEAAAAA0gAAAAATEFNRTMuMTAwVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MkxAAAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV/+MYxAAAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MUxAAAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV'
+      );
+      silent.muted = false;
+      silent.volume = 0.01;
+      const p = silent.play();
+      if (p && typeof p.then === 'function') p.then(() => { try { silent.pause(); } catch (_) {} }).catch(() => {});
+      LIVE_VOICE.unlockPlayer = silent;
+    } catch (_) {}
+    try {
+      // 2) AudioContext resume — some WebViews require this specifically for <audio>
+      //    elements to not be throttled.
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC && !LIVE_VOICE.audioCtx) {
+        const ctx = new AC();
+        if (ctx.state === 'suspended') { try { ctx.resume(); } catch (_) {} }
+        LIVE_VOICE.audioCtx = ctx;
+      } else if (LIVE_VOICE.audioCtx && LIVE_VOICE.audioCtx.state === 'suspended') {
+        try { LIVE_VOICE.audioCtx.resume(); } catch (_) {}
+      }
+    } catch (_) {}
+    LIVE_VOICE.audioUnlocked = true;
   }
 
   async function startLiveVoiceMode(){
@@ -13620,9 +13803,30 @@ ${e?.message||e}`, false);
     } catch (_) { persona = null; }
     LIVE_VOICE.persona = persona || getDefaultLiveVoicePersona();
 
+    // On Android APK (Capacitor), pre-warm the RECORD_AUDIO runtime permission via the
+    // native SpeechRecognition plugin if available. The native plugin's prompt flow is
+    // the same one the dictation button uses, so if dictation works the live voice
+    // session must not show a false "denied" message. This also covers the case where
+    // the WebView's getUserMedia would otherwise reject before any OS dialog appears.
+    try {
+      if (typeof isNativeAndroidPlatform === 'function' && isNativeAndroidPlatform()) {
+        const nativePlugin = typeof getNativeSpeechRecognitionPlugin === 'function'
+          ? getNativeSpeechRecognitionPlugin()
+          : null;
+        if (nativePlugin && typeof ensureNativeSpeechRecognitionPermission === 'function') {
+          await ensureNativeSpeechRecognitionPermission(nativePlugin);
+        }
+      }
+    } catch (_) { /* permission priming is best-effort */ }
+
     // Grab mic. If denied, show a clear prompt and bail out cleanly.
     let stream;
+    LIVE_VOICE.micErrorKind = '';
     try {
+      if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+        LIVE_VOICE.micErrorKind = 'unsupported';
+        throw new Error('متصفح هذا الجهاز لا يدعم التقاط الصوت مباشرة.');
+      }
       stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -13632,7 +13836,10 @@ ${e?.message||e}`, false);
         }
       });
     } catch (err) {
-      toast?.(`تعذر الوصول إلى الميكروفون: ${err?.message || err}`);
+      LIVE_VOICE.micErrorKind = classifyLiveVoiceMicError(err);
+      const msg = buildLiveVoiceMicErrorMessage(LIVE_VOICE.micErrorKind, err);
+      toast?.(msg);
+      setLiveVoiceStatus?.(msg);
       return;
     }
 
@@ -13663,6 +13870,41 @@ ${e?.message||e}`, false);
     } catch (_) { /* VAD falls back to timer-based listening */ }
 
     startLiveVoiceTurn();
+  }
+
+  function classifyLiveVoiceMicError(err){
+    const name = String(err?.name || '').toLowerCase();
+    const message = String(err?.message || '').toLowerCase();
+    if (name === 'notallowederror' || name === 'permissiondeniederror' || /permission|denied|not\s*allowed/.test(message)) {
+      return 'permission_denied';
+    }
+    if (name === 'notfounderror' || /device|not\s*found|no\s*mic/.test(message)) {
+      return 'device_unavailable';
+    }
+    if (name === 'notreadableerror' || name === 'aborterror' || /busy|in use|hardware|capture/.test(message)) {
+      return 'capture_failed';
+    }
+    if (name === 'securityerror' || /secure context|https/.test(message)) {
+      return 'insecure_context';
+    }
+    return 'session_init_failed';
+  }
+
+  function buildLiveVoiceMicErrorMessage(kind, err){
+    switch (kind) {
+      case 'permission_denied':
+        return 'تم رفض إذن الميكروفون. افتح إعدادات التطبيق وفعّل صلاحية الميكروفون ثم حاول مجددًا.';
+      case 'device_unavailable':
+        return 'لم يتم العثور على ميكروفون متاح على هذا الجهاز.';
+      case 'capture_failed':
+        return 'تعذّر بدء تسجيل الصوت لأن الميكروفون مشغول بتطبيق آخر. أغلق التطبيقات الأخرى وأعد المحاولة.';
+      case 'insecure_context':
+        return 'لا يمكن تشغيل الميكروفون إلا عبر اتصال آمن (HTTPS).';
+      case 'unsupported':
+        return 'هذه البيئة لا تدعم التقاط الصوت في الجلسة الحية.';
+      default:
+        return `تعذّر بدء جلسة الصوت: ${err?.message || err || 'مشكلة غير معروفة'}`;
+    }
   }
 
   function getDefaultLiveVoicePersona(){
@@ -13879,6 +14121,13 @@ ${e?.message||e}`, false);
     const persona = LIVE_VOICE.persona || getDefaultLiveVoicePersona();
     const sentences = splitIntoTtsChunks(text);
     LIVE_VOICE.speaking = true;
+    // Ensure audio is unlocked — some browsers silently drop .play() after long awaits
+    // even if the gesture was valid; resuming the AudioContext + pumping the unlock
+    // player keeps the audio graph warm.
+    try { unlockLiveVoiceAudio(); } catch (_) {}
+    try { if (LIVE_VOICE.audioCtx && LIVE_VOICE.audioCtx.state === 'suspended') await LIVE_VOICE.audioCtx.resume(); } catch (_) {}
+
+    let playbackFailures = 0;
     for (const sentence of sentences) {
       if (!LIVE_VOICE.active || LIVE_VOICE.interruptRequested) break;
       setLiveVoiceStatus('🗣️ أتحدث إليك…');
@@ -13890,54 +14139,129 @@ ${e?.message||e}`, false);
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: sentence, lang: (persona.language || 'ar').split('-')[0] })
         });
-        if (!r.ok) continue;
-        const blob = await r.blob();
-        if (!blob || !blob.size) continue;
-        const audio = new Audio();
-        const objectUrl = URL.createObjectURL(blob);
-        audio.src = objectUrl;
-        LIVE_VOICE.currentAudio = audio;
+        if (!r.ok) { playbackFailures += 1; continue; }
+        // Force audio/mpeg type because some WebViews (Android) refuse to play blobs
+        // whose reported type is missing or is "application/octet-stream".
+        const rawBlob = await r.blob();
+        if (!rawBlob || !rawBlob.size) { playbackFailures += 1; continue; }
+        const blob = new Blob([await rawBlob.arrayBuffer()], { type: 'audio/mpeg' });
 
-        await new Promise((resolve) => {
-          let bargeTimer = 0;
-          const cleanup = () => {
-            try { URL.revokeObjectURL(objectUrl); } catch (_) {}
-            if (bargeTimer) { window.clearInterval(bargeTimer); bargeTimer = 0; }
-            if (LIVE_VOICE.currentAudio === audio) LIVE_VOICE.currentAudio = null;
-            resolve();
-          };
-          audio.onended = cleanup;
-          audio.onerror = cleanup;
-          // Barge-in monitor: poll RMS ~12x/sec and halt playback if user starts talking.
-          const bargeCfg = persona.barge || {};
-          const bargeThreshold = Number(bargeCfg.micRmsThreshold || 0.04);
-          const analyser = LIVE_VOICE.analyser;
-          const buf = analyser ? new Float32Array(analyser.fftSize) : null;
-          if (analyser && bargeCfg.enabled !== false) {
-            bargeTimer = window.setInterval(() => {
-              try {
-                analyser.getFloatTimeDomainData(buf);
-                let sum = 0;
-                for (let i = 0; i < buf.length; i += 1) sum += buf[i] * buf[i];
-                const rms = Math.sqrt(sum / buf.length);
-                if (rms > bargeThreshold) {
-                  LIVE_VOICE.lastBargeAt = Date.now();
-                  LIVE_VOICE.interruptRequested = true;
-                  try { audio.pause(); } catch (_) {}
-                  cleanup();
-                }
-              } catch (_) {}
-            }, 85);
-          }
-          try {
-            const p = audio.play();
-            if (p && typeof p.catch === 'function') p.catch(() => cleanup());
-          } catch (_) { cleanup(); }
-        });
-      } catch (_) { /* skip this sentence on error */ }
+        const played = await playLiveVoiceBlob(blob, persona);
+        if (!played) playbackFailures += 1;
+      } catch (_) {
+        playbackFailures += 1;
+      }
     }
     LIVE_VOICE.speaking = false;
-    setLiveVoiceStatus('جاهز للاستماع…');
+    if (playbackFailures && playbackFailures === sentences.length) {
+      setLiveVoiceStatus('تعذّر تشغيل الصوت. تأكد من تفعيل الصوت على الجهاز.');
+    } else {
+      setLiveVoiceStatus('جاهز للاستماع…');
+    }
+  }
+
+  function playLiveVoiceBlob(blob, persona){
+    return new Promise((resolve) => {
+      let audio = null;
+      let objectUrl = '';
+      let dataUrl = '';
+      let bargeTimer = 0;
+      let resolved = false;
+      let startedFallback = false;
+
+      const finalize = (ok) => {
+        if (resolved) return;
+        resolved = true;
+        if (bargeTimer) { try { window.clearInterval(bargeTimer); } catch (_) {} bargeTimer = 0; }
+        try { if (objectUrl) URL.revokeObjectURL(objectUrl); } catch (_) {}
+        if (audio) {
+          try { audio.onended = null; audio.onerror = null; audio.oncanplay = null; } catch (_) {}
+          if (LIVE_VOICE.currentAudio === audio) LIVE_VOICE.currentAudio = null;
+        }
+        resolve(!!ok);
+      };
+
+      const attachBargeMonitor = (element) => {
+        const bargeCfg = persona?.barge || {};
+        const bargeThreshold = Number(bargeCfg.micRmsThreshold || 0.04);
+        const analyser = LIVE_VOICE.analyser;
+        if (!analyser || bargeCfg.enabled === false) return;
+        const buf = new Float32Array(analyser.fftSize);
+        bargeTimer = window.setInterval(() => {
+          try {
+            analyser.getFloatTimeDomainData(buf);
+            let sum = 0;
+            for (let i = 0; i < buf.length; i += 1) sum += buf[i] * buf[i];
+            const rms = Math.sqrt(sum / buf.length);
+            if (rms > bargeThreshold) {
+              LIVE_VOICE.lastBargeAt = Date.now();
+              LIVE_VOICE.interruptRequested = true;
+              try { element.pause(); } catch (_) {}
+              finalize(true);
+            }
+          } catch (_) {}
+        }, 85);
+      };
+
+      const tryPlay = (src) => {
+        audio = new Audio();
+        audio.preload = 'auto';
+        audio.setAttribute('playsinline', 'true');
+        audio.crossOrigin = 'anonymous';
+        audio.src = src;
+        LIVE_VOICE.currentAudio = audio;
+        audio.onended = () => finalize(true);
+        audio.onerror = () => {
+          if (!startedFallback && dataUrl && audio.src !== dataUrl) {
+            startedFallback = true;
+            try { tryPlay(dataUrl); } catch (_) { finalize(false); }
+          } else {
+            finalize(false);
+          }
+        };
+        attachBargeMonitor(audio);
+        try {
+          const p = audio.play();
+          if (p && typeof p.catch === 'function') {
+            p.catch(() => {
+              if (!startedFallback && dataUrl && audio.src !== dataUrl) {
+                startedFallback = true;
+                try { tryPlay(dataUrl); } catch (_) { finalize(false); }
+              } else {
+                finalize(false);
+              }
+            });
+          }
+        } catch (_) {
+          if (!startedFallback && dataUrl && audio.src !== dataUrl) {
+            startedFallback = true;
+            try { tryPlay(dataUrl); } catch (__) { finalize(false); }
+          } else {
+            finalize(false);
+          }
+        }
+      };
+
+      (async () => {
+        try { objectUrl = URL.createObjectURL(blob); } catch (_) { objectUrl = ''; }
+        // Prepare a base64 data-URL fallback so WebViews that refuse blob URLs can
+        // still play the clip.
+        try {
+          const buffer = await blob.arrayBuffer();
+          const bytes = new Uint8Array(buffer);
+          let binary = '';
+          const chunkSize = 0x8000;
+          for (let i = 0; i < bytes.length; i += chunkSize) {
+            binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + chunkSize, bytes.length)));
+          }
+          dataUrl = `data:audio/mpeg;base64,${btoa(binary)}`;
+        } catch (_) { dataUrl = ''; }
+
+        const initialSrc = objectUrl || dataUrl;
+        if (!initialSrc) { finalize(false); return; }
+        tryPlay(initialSrc);
+      })();
+    });
   }
 
   function splitIntoTtsChunks(text){

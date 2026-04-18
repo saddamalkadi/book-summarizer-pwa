@@ -1028,7 +1028,7 @@ async function handleUpgradeActivation(request, env) {
     if (!code) {
       return jsonResponse({ error: 'Missing upgrade code.', code: 'UPGRADE_CODE_REQUIRED' }, 400);
     }
-    await verifyUpgradeCodeForEmail(code, session.email, env);
+    const payload = await verifyUpgradeCodeForEmail(code, session.email, env);
     const upgraded = await issueSessionToken({
       email: session.email,
       name: session.name,
@@ -1036,7 +1036,25 @@ async function handleUpgradeActivation(request, env) {
       plan: 'premium',
       role: session.role === 'admin' ? 'admin' : 'user'
     }, env);
-    return jsonResponse({ ...upgraded, upgradeAccepted: true }, 200);
+    // Apply optional quota bundle from the upgrade code: limitUsd + periodDays.
+    // This lets admins issue codes like "Premium + $5 / 30 days" that deterministically
+    // set the user's quota on activation instead of relying on the plan default.
+    let quotaAfterUpgrade = null;
+    try {
+      const appliedSession = { email: session.email, name: session.name, role: session.role === 'admin' ? 'admin' : 'user', plan: 'premium' };
+      quotaAfterUpgrade = await applyUpgradeCodeToQuota(appliedSession, payload, env);
+    } catch (_) { /* quota side-effects shouldn't block the session swap */ }
+    return jsonResponse({
+      ...upgraded,
+      upgradeAccepted: true,
+      upgrade: {
+        plan: payload.plan || 'premium',
+        limitUsd: Number.isFinite(Number(payload.limitUsd)) ? Number(payload.limitUsd) : null,
+        periodDays: Number.isFinite(Number(payload.periodDays)) ? Number(payload.periodDays) : null,
+        note: String(payload.note || '')
+      },
+      quota: quotaAfterUpgrade ? quotaPublicView(quotaAfterUpgrade) : null
+    }, 200);
   } catch (error) {
     return jsonResponse({
       error: String(error?.message || error || 'Upgrade activation failed.'),
@@ -1070,18 +1088,28 @@ async function handleAdminUpgradeCode(request, env) {
   const email = String(body?.email || '').trim().toLowerCase();
   const plan = String(body?.plan || 'premium').trim() === 'premium' ? 'premium' : 'premium';
   const days = clampNumber(body?.days, 1, 3650, 365);
+  // Explicit quota bundle carried by the code. limitUsd is the amount of upstream credit
+  // the user gets for this activation (e.g. 1, 5, 10 USD). periodDays defaults to 30 days
+  // but admins can override (e.g. single-shot 7-day trial codes).
+  const rawLimit = Number(body?.limitUsd);
+  const limitUsd = Number.isFinite(rawLimit) && rawLimit >= 0 ? Math.round(rawLimit * 1_000_000) / 1_000_000 : null;
+  const periodDays = clampNumber(body?.periodDays, 1, 3650, 30);
+  const note = String(body?.note || '').slice(0, 180);
   if (!email || !email.includes('@')) {
     return jsonResponse({
       error: 'A valid email is required to generate an upgrade code.',
       code: 'UPGRADE_EMAIL_REQUIRED'
     }, 400);
   }
-  const code = await createUpgradeCode({ email, plan, days }, env);
+  const code = await createUpgradeCode({ email, plan, days, limitUsd, periodDays, note }, env);
   return jsonResponse({
     ok: true,
     email,
     plan,
     code,
+    limitUsd,
+    periodDays,
+    note,
     expiresAt: Date.now() + (days * 24 * 60 * 60 * 1000)
   }, 200);
 }
@@ -1335,7 +1363,7 @@ async function issueSessionToken(profile, env) {
   };
 }
 
-async function createUpgradeCode({ email, plan = 'premium', days = 365 }, env) {
+async function createUpgradeCode({ email, plan = 'premium', days = 365, limitUsd = null, periodDays = 30, note = '' }, env) {
   const now = Date.now();
   const payload = {
     iss: 'aistudio',
@@ -1345,8 +1373,58 @@ async function createUpgradeCode({ email, plan = 'premium', days = 365 }, env) {
     iat: Math.floor(now / 1000),
     exp: Math.floor((now + (days * 24 * 60 * 60 * 1000)) / 1000)
   };
+  if (Number.isFinite(Number(limitUsd)) && Number(limitUsd) >= 0) {
+    payload.limitUsd = Number(limitUsd);
+  }
+  const pd = Number(periodDays);
+  if (Number.isFinite(pd) && pd > 0) payload.periodDays = Math.floor(pd);
+  if (note) payload.note = String(note).slice(0, 180);
   const signed = await signCompactToken(payload, getUpgradeSecret(env), 'upgrade');
   return `AIPRO-${signed}`;
+}
+
+// Apply the upgrade code's quota bundle directly to the user's KV quota doc so
+// `/me/quota` reflects the new limit immediately after activation. Keeps accumulated
+// usage visible as `lifetimeUsed` for auditing.
+async function applyUpgradeCodeToQuota(session, codePayload, env) {
+  const email = String(session?.email || '').trim().toLowerCase();
+  if (!email) return null;
+  const rawLimit = Number(codePayload?.limitUsd);
+  const rawDays = Number(codePayload?.periodDays);
+  const hasExplicitLimit = Number.isFinite(rawLimit) && rawLimit >= 0;
+  const periodDays = Number.isFinite(rawDays) && rawDays > 0 ? Math.floor(rawDays) : QUOTA_PERIOD_DAYS;
+  if (!hasExplicitLimit) {
+    // No explicit limit -> just ensure the plan is lifted and a fresh period begins.
+    const base = await getOrInitUserQuota({ ...session, plan: 'premium', role: session.role === 'admin' ? 'admin' : 'user' }, env);
+    return base;
+  }
+  const now = nowMs();
+  const period = { periodStart: now, periodEnd: now + periodDays * 24 * 60 * 60 * 1000 };
+  const existing = await readQuotaFromKv(email, env);
+  const base = existing && existing.email === email ? existing : {
+    email,
+    plan: 'premium',
+    role: session.role === 'admin' ? 'admin' : 'user',
+    limit: 0,
+    used: 0,
+    periodStart: period.periodStart,
+    periodEnd: period.periodEnd,
+    lastPromptTokens: 0, lastCompletionTokens: 0, lastTotalTokens: 0,
+    lastCost: 0, lastModel: '', lastUpdatedAt: 0, lifetimeUsed: 0
+  };
+  const next = {
+    ...base,
+    plan: 'premium',
+    limit: roundUsd(rawLimit),
+    used: 0,
+    periodStart: period.periodStart,
+    periodEnd: period.periodEnd,
+    lifetimeUsed: Number(base.lifetimeUsed || 0) + Number(base.used || 0),
+    lastUpgradeAt: now,
+    updatedAt: now
+  };
+  await writeQuotaToKv(next, env);
+  return next;
 }
 
 async function verifyUpgradeCodeForEmail(code, email, env) {
