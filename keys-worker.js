@@ -309,11 +309,11 @@ async function getPublicAuthConfig(env) {
  * accepted. Cached in-module per worker isolate for 60s to avoid hitting the
  * upstream on every health request. Never blocks health beyond ~2s.
  */
-let UPSTREAM_KEY_PROBE = { checkedAt: 0, ok: null, status: 0 };
+let UPSTREAM_KEY_PROBE = { checkedAt: 0, ok: null, status: 0, bodyExcerpt: '' };
 async function probeUpstreamKey(env) {
   const key = getServerKey(env);
   if (!key) {
-    UPSTREAM_KEY_PROBE = { checkedAt: Date.now(), ok: false, status: 0 };
+    UPSTREAM_KEY_PROBE = { checkedAt: Date.now(), ok: false, status: 0, bodyExcerpt: 'no-key' };
     return UPSTREAM_KEY_PROBE;
   }
   const now = Date.now();
@@ -322,25 +322,29 @@ async function probeUpstreamKey(env) {
   }
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 2500);
-    const referer = String(env.OPENROUTER_REFERER || 'https://app.saddamalkadi.com/').trim() || 'https://app.saddamalkadi.com/';
-    const title = String(env.OPENROUTER_TITLE || 'AI Workspace Studio').trim() || 'AI Workspace Studio';
+    const timer = setTimeout(() => controller.abort(), 3000);
+    // Probe OpenRouter WITHOUT any Referer. The key's OpenRouter allowlist (if any) is
+    // evaluated on the outbound request; our /credits probe is purely a health ping and
+    // must not be rejected by a configured HTTP referrer allowlist.
     const resp = await fetch('https://openrouter.ai/api/v1/credits', {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${key}`,
-        // OpenRouter accepts standard Referer; some stacks also expect HTTP-Referer — send both.
-        'Referer': referer,
-        'HTTP-Referer': referer,
-        'X-Title': title
+        'Authorization': `Bearer ${key}`
       },
       signal: controller.signal
     }).catch(() => null);
     clearTimeout(timer);
     const status = resp ? resp.status : 0;
-    UPSTREAM_KEY_PROBE = { checkedAt: now, ok: status >= 200 && status < 300, status };
-  } catch (_) {
-    UPSTREAM_KEY_PROBE = { checkedAt: now, ok: false, status: 0 };
+    let bodyExcerpt = '';
+    if (resp) {
+      try {
+        const text = await resp.text();
+        bodyExcerpt = (text || '').slice(0, 220);
+      } catch (_) {}
+    }
+    UPSTREAM_KEY_PROBE = { checkedAt: now, ok: status >= 200 && status < 300, status, bodyExcerpt };
+  } catch (e) {
+    UPSTREAM_KEY_PROBE = { checkedAt: now, ok: false, status: 0, bodyExcerpt: 'exception:' + (e && e.message ? e.message : 'unknown') };
   }
   return UPSTREAM_KEY_PROBE;
 }
@@ -368,7 +372,7 @@ async function getWorkerHealth(env) {
       configured,
       worker: 'keys',
       worker_public_name: String(env.WORKER_PUBLIC_NAME || '').trim() || undefined,
-      build_sentinel: 'rotate-v1-sentinel-2026-04-17B',
+      build_sentinel: 'rotate-v2-sentinel-2026-04-17C',
       env_has_openrouter_key: !!(env.OPENROUTER_API_KEY && String(env.OPENROUTER_API_KEY).length > 0),
       env_has_admin_password: !!(env.APP_ADMIN_PASSWORD && String(env.APP_ADMIN_PASSWORD).length > 0),
       env_admin_password_length: String(env.APP_ADMIN_PASSWORD || '').length,
@@ -377,6 +381,7 @@ async function getWorkerHealth(env) {
       upstream_configured: upstreamConfigured,
       upstream_key_valid: upstreamKeyValid,
       upstream_status: keyProbe.status || 0,
+      upstream_probe_body: keyProbe.bodyExcerpt || '',
       client_token_required: clientTokenRequired,
       auth_required: authConfig.authRequired,
       google_client_configured: authConfig.clientIdConfigured,
