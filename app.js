@@ -1,4 +1,4 @@
-﻿/* AI Workspace Studio v8.99 - strategic platform skeleton (no build step) */
+﻿/* AI Workspace Studio v9.0 - strategic platform skeleton (no build step) */
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -367,7 +367,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v8.99';
+  const WEB_RELEASE_LABEL = 'v9.0';
   const RELEASE_CHANNEL = 'rc';
   const HIDE_PUBLIC_AAB = true;
   const DISABLE_RUNTIME_ENDPOINT_EDITING_FOR_MANAGED = true;
@@ -1298,6 +1298,13 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     const h = {};
     if (settings.authMode === 'gateway'){
       if (settings.gatewayToken) h['X-Client-Token'] = settings.gatewayToken;
+      // Attach the signed app session so the worker can enforce per-user quota and
+      // return user-scoped responses (e.g. /v1/credits → user quota view). This never
+      // replaces the upstream API key — the worker keeps the real OpenRouter key server-side.
+      try{
+        const auth = (typeof getAuthState === 'function') ? getAuthState() : null;
+        if (auth?.sessionToken) h['X-App-Session'] = auth.sessionToken;
+      }catch(_){ }
       // Cloudflare/OpenAI-compatible gateways may still require Bearer auth.
       if (settings.apiKey) h['Authorization'] = `Bearer ${settings.apiKey}`;
     } else {
@@ -1862,6 +1869,14 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
 
   function renderUsageIndicators(settings = getSettings(), usage = getUsageState()){
     const supported = supportsCreditVisibility(settings);
+    const isUserQuota = usage.scope === 'user' || usage.source === 'user_quota';
+    const planLabel = (() => {
+      const p = String(usage.plan || '').trim().toLowerCase();
+      if (p === 'premium') return 'مدفوعة';
+      if (p === 'admin') return 'إدارية';
+      if (p === 'free') return 'مجانية';
+      return '';
+    })();
     const balanceLabel = usage.available && usage.remainingCredits != null
       ? formatUsd(usage.remainingCredits)
       : (supported
@@ -1877,12 +1892,16 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       : getLastUsageLabel(usage);
 
     if ($('topUsageBadge')){
+      const prefix = isUserQuota ? 'رصيدي المتبقي' : 'الاستهلاك';
       $('topUsageBadge').textContent = usage.available && usage.remainingCredits != null
-        ? `رصيد OpenRouter ${formatUsd(usage.remainingCredits)}`
+        ? `${prefix} ${formatUsd(usage.remainingCredits)}${planLabel ? ` · ${planLabel}` : ''}`
         : (usage.lastTotalTokens != null
           ? `آخر استهلاك ${formatTokenCount(usage.lastTotalTokens)} token`
-          : (supported ? 'رصيد OpenRouter غير متاح' : 'الاستهلاك غير مدعوم'));
-      $('topUsageBadge').title = usage.lastError || 'إجمالي الرصيد وآخر استهلاك متى ما كان المزوّد يدعمه.';
+          : (supported ? `${prefix} غير متاح` : 'الاستهلاك غير مدعوم'));
+      $('topUsageBadge').title = usage.lastError
+        || (isUserQuota
+          ? 'هذه حصتك الشخصية فقط ولا تعكس رصيد النظام.'
+          : 'إجمالي الاستهلاك حسب مزوّد الخدمة.');
     }
     if ($('settingsBalanceState')) $('settingsBalanceState').textContent = balanceLabel;
     if ($('settingsSpentState')) $('settingsSpentState').textContent = spentLabel;
@@ -1959,20 +1978,28 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       ?? data?.remainingCredits
       ?? ((totalCredits != null && totalUsage != null) ? Math.max(0, totalCredits - totalUsage) : null)
     );
-    return { totalCredits, totalUsage, remainingCredits };
+    // When the gateway serves per-user quota (source="per_user_quota"), surface plan + period
+    // so the UI can render "Plan: premium — remaining until DATE" instead of a generic balance.
+    const plan = String(data?.plan || '').trim();
+    const periodEnd = toFiniteNumber(data?.period_end ?? data?.periodEnd);
+    const source = String(data?.source || '').trim();
+    return { totalCredits, totalUsage, remainingCredits, plan, periodEnd, source };
   }
 
   function getFriendlyUsageError(error){
     const raw = String(error?.message || error || '').trim();
-    if (!raw) return 'تعذر قراءة بيانات الرصيد الآن.';
+    if (!raw) return 'تعذر قراءة بيانات حصتك الآن.';
+    if (/QUOTA_EXHAUSTED|quota.*exhausted|حصتك|حصّتك/i.test(raw)){
+      return 'تم استنفاد حصتك الشهرية. يمكنك التواصل مع الإدارة لتجديد الحصة.';
+    }
     if (/management key|admin key|unauthorized.*credits|forbidden.*credits/i.test(raw)){
-      return 'إجمالي الرصيد يحتاج Management Key من OpenRouter، لكن آخر استهلاك الطلبات سيظل ظاهرًا عند توفره.';
+      return 'هذه بيانات إدارية تحتاج إلى صلاحية أعلى لعرضها.';
     }
     if (/insufficient\s+(credits?|balance)|not enough credits?|quota.*exceeded|billing|payment required|402\b/i.test(raw)){
-      return 'نفد رصيد OpenRouter أو تم بلوغ حد الفوترة.';
+      return 'الحصة المتبقية لا تكفي لإكمال هذا الطلب. جرّب طلبًا أقصر أو تواصل مع الإدارة.';
     }
     if (isCloudflareAccessCookieError(raw)){
-      return 'تعذر الوصول إلى بيانات الرصيد لأن رابط البوابة محمي أو غير صحيح.';
+      return 'تعذر الوصول إلى بيانات حصتك لأن رابط البوابة محمي أو غير صحيح.';
     }
     return briefSnippet(raw, 120);
   }
@@ -2039,6 +2066,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       try{
         const payload = await fetchCreditsPayload(settings);
         const snapshot = parseCreditsSnapshot(payload);
+        const isPerUser = snapshot.source === 'per_user_quota';
         const next = saveUsageState({
           provider: settings.provider || 'openrouter',
           supported: true,
@@ -2046,9 +2074,12 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
           totalCredits: snapshot.totalCredits,
           totalUsage: snapshot.totalUsage,
           remainingCredits: snapshot.remainingCredits,
+          plan: snapshot.plan || '',
+          periodEnd: snapshot.periodEnd || 0,
+          scope: isPerUser ? 'user' : 'system',
           lastError: '',
           lastCheckedAt: nowTs(),
-          source: 'openrouter_credits'
+          source: isPerUser ? 'user_quota' : 'openrouter_credits'
         });
         renderUsageIndicators(settings, next);
         return next;
@@ -13525,7 +13556,434 @@ ${e?.message||e}`, false);
     try{
       window._ttsStop = () => { void stopVoicePlayback(); };
     }catch(_){}
+
+    try{ initLiveVoiceMode(); }catch(_){ }
   }
+
+  /* =================================================================================
+   * Live Voice Conversation Mode (v9)
+   *
+   * A real-time voice conversation layer that sits on top of the existing cloud STT/TTS
+   * endpoints. Unlike the older "dictate → send → speak reply" loop, this mode:
+   *   - Continuously listens with voice activity detection (VAD)
+   *   - Auto-stops when the user finishes a turn
+   *   - Streams the assistant response in sentence-sized TTS chunks
+   *   - Supports barge-in: talking while the AI speaks interrupts playback
+   *   - Uses the Arabic persona returned by GET /voice/live/persona
+   * ================================================================================= */
+  const LIVE_VOICE = {
+    active: false,
+    initialized: false,
+    persona: null,
+    stream: null,
+    audioCtx: null,
+    analyser: null,
+    micSource: null,
+    recorder: null,
+    chunks: [],
+    recording: false,
+    speaking: false,
+    currentAudio: null,
+    conversation: [],
+    vadTimer: 0,
+    statusEl: null,
+    overlayEl: null,
+    stateLabel: '',
+    interruptRequested: false,
+    lastBargeAt: 0
+  };
+
+  function initLiveVoiceMode(){
+    const btn = document.getElementById('liveVoiceOpenBtn');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      if (LIVE_VOICE.active) { stopLiveVoiceMode(); return; }
+      void startLiveVoiceMode();
+    });
+  }
+
+  async function startLiveVoiceMode(){
+    if (LIVE_VOICE.active) return;
+    const overlay = document.getElementById('liveVoiceOverlay');
+    const status = document.getElementById('liveVoiceStatus');
+    const transcriptEl = document.getElementById('liveVoiceTranscript');
+    if (!overlay || !status) {
+      toast?.('وضع المحادثة الصوتية غير متاح في هذه الصفحة.');
+      return;
+    }
+    // Fetch persona. If the call fails (network/unauth), we still fall back to a
+    // reasonable local Arabic persona so the feature works in offline-ish conditions.
+    let persona = null;
+    try {
+      const p = await fetchAuthJson('/voice/live/persona');
+      if (p && typeof p === 'object') persona = p;
+    } catch (_) { persona = null; }
+    LIVE_VOICE.persona = persona || getDefaultLiveVoicePersona();
+
+    // Grab mic. If denied, show a clear prompt and bail out cleanly.
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1
+        }
+      });
+    } catch (err) {
+      toast?.(`تعذر الوصول إلى الميكروفون: ${err?.message || err}`);
+      return;
+    }
+
+    LIVE_VOICE.active = true;
+    LIVE_VOICE.stream = stream;
+    LIVE_VOICE.conversation = [
+      { role: 'system', content: LIVE_VOICE.persona.systemPrompt || 'أنت مساعد صوتي ذكي يرد بالعربية الفصحى بجمل قصيرة طبيعية.' }
+    ];
+    overlay.classList.add('live-voice-active');
+    overlay.setAttribute('aria-hidden', 'false');
+    overlay.style.display = 'flex';
+    if (transcriptEl) transcriptEl.textContent = '';
+    setLiveVoiceStatus('جاهز للاستماع…');
+
+    // Build an AudioContext + AnalyserNode for VAD + visualizer.
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) {
+        const ctx = new AC();
+        const source = ctx.createMediaStreamSource(stream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 1024;
+        source.connect(analyser);
+        LIVE_VOICE.audioCtx = ctx;
+        LIVE_VOICE.analyser = analyser;
+        LIVE_VOICE.micSource = source;
+      }
+    } catch (_) { /* VAD falls back to timer-based listening */ }
+
+    startLiveVoiceTurn();
+  }
+
+  function getDefaultLiveVoicePersona(){
+    return {
+      language: 'ar',
+      region: 'ar-SA',
+      voice: 'ar',
+      systemPrompt: [
+        'أنت مساعد ذكاء اصطناعي يتحدث العربية بلكنة فصحى واضحة.',
+        'نبرتك دافئة وهادئة ومتعاطفة دون مبالغة أو تصنّع.',
+        'ترد بجُمل قصيرة طبيعية مناسبة للحوار الصوتي.'
+      ].join(' '),
+      barge: { enabled: true, micRmsThreshold: 0.04, silenceHoldMs: 800 },
+      vad: { enabled: true, rmsThreshold: 0.011, minLoudMs: 320, silenceHoldMs: 1400, maxUtteranceMs: 16000 },
+      streamingTts: { enabled: true, sentenceBufferMs: 180 }
+    };
+  }
+
+  function setLiveVoiceStatus(text){
+    LIVE_VOICE.stateLabel = text || '';
+    const el = document.getElementById('liveVoiceStatus');
+    if (el) el.textContent = text || '';
+  }
+
+  function appendLiveVoiceTranscript(role, text){
+    const el = document.getElementById('liveVoiceTranscript');
+    if (!el) return;
+    const bubble = document.createElement('div');
+    bubble.className = `lv-bubble lv-${role}`;
+    bubble.textContent = text;
+    el.appendChild(bubble);
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function startLiveVoiceTurn(){
+    if (!LIVE_VOICE.active) return;
+    LIVE_VOICE.interruptRequested = false;
+    setLiveVoiceStatus('🎙️ استمع إليك…');
+    const stream = LIVE_VOICE.stream;
+    if (!stream) return;
+
+    const mimeType = (function(){
+      const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg', 'audio/mp4'];
+      for (const m of candidates) { try { if (MediaRecorder.isTypeSupported(m)) return m; } catch (_) {} }
+      return '';
+    })();
+    let recorder;
+    try {
+      recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+    } catch (err) {
+      setLiveVoiceStatus(`تعذر بدء الاستماع: ${err?.message || err}`);
+      return;
+    }
+    LIVE_VOICE.recorder = recorder;
+    LIVE_VOICE.chunks = [];
+    LIVE_VOICE.recording = true;
+
+    recorder.ondataavailable = (e) => { if (e?.data?.size) LIVE_VOICE.chunks.push(e.data); };
+    recorder.onstop = async () => {
+      LIVE_VOICE.recording = false;
+      if (!LIVE_VOICE.active) return;
+      const blob = new Blob(LIVE_VOICE.chunks, { type: recorder.mimeType || mimeType || 'audio/webm' });
+      LIVE_VOICE.chunks = [];
+      if (!blob.size) {
+        // Silence — loop back.
+        if (LIVE_VOICE.active) startLiveVoiceTurn();
+        return;
+      }
+      await handleLiveVoiceUserUtterance(blob);
+    };
+
+    try {
+      recorder.start(250);
+      startLiveVoiceVadLoop(recorder);
+    } catch (err) {
+      setLiveVoiceStatus(`تعذر بدء التسجيل: ${err?.message || err}`);
+    }
+  }
+
+  function startLiveVoiceVadLoop(recorder){
+    const persona = LIVE_VOICE.persona || getDefaultLiveVoicePersona();
+    const vad = persona.vad || {};
+    const rmsThreshold = Number(vad.rmsThreshold || 0.011);
+    const minLoudMs = Number(vad.minLoudMs || 320);
+    const silenceHoldMs = Number(vad.silenceHoldMs || 1400);
+    const maxUtteranceMs = Number(vad.maxUtteranceMs || 16000);
+    const analyser = LIVE_VOICE.analyser;
+    const startedAt = Date.now();
+    let lastLoudAt = 0;
+    let loudAccum = 0;
+    let hasSpokenOnce = false;
+
+    const buf = analyser ? new Float32Array(analyser.fftSize) : null;
+
+    const tick = () => {
+      if (!LIVE_VOICE.active || !LIVE_VOICE.recording) return;
+      const now = Date.now();
+      let rms = 0;
+      if (analyser && buf) {
+        try {
+          analyser.getFloatTimeDomainData(buf);
+          let sum = 0;
+          for (let i = 0; i < buf.length; i += 1) sum += buf[i] * buf[i];
+          rms = Math.sqrt(sum / buf.length);
+        } catch (_) { rms = 0; }
+      }
+      const loud = rms > rmsThreshold;
+      if (loud) {
+        if (lastLoudAt === 0) loudAccum = 0;
+        loudAccum += 90;
+        lastLoudAt = now;
+        if (loudAccum >= minLoudMs) hasSpokenOnce = true;
+      }
+
+      // Stop on silence hold AFTER the user has clearly spoken at least once.
+      if (hasSpokenOnce && lastLoudAt && now - lastLoudAt > silenceHoldMs) {
+        try { recorder.stop(); } catch (_) {}
+        return;
+      }
+      // Stop on hard max utterance length regardless.
+      if (now - startedAt > maxUtteranceMs) {
+        try { recorder.stop(); } catch (_) {}
+        return;
+      }
+      LIVE_VOICE.vadTimer = window.setTimeout(tick, 90);
+    };
+    LIVE_VOICE.vadTimer = window.setTimeout(tick, 90);
+  }
+
+  async function handleLiveVoiceUserUtterance(blob){
+    setLiveVoiceStatus('✍️ أحوّل كلامك إلى نص…');
+    let transcript = '';
+    try {
+      transcript = await transcribeAudioBlobByCloud(blob);
+    } catch (err) {
+      setLiveVoiceStatus(`تعذر التفريغ الصوتي: ${err?.message || err}`);
+      // Go back to listening after a breath.
+      window.setTimeout(() => { if (LIVE_VOICE.active) startLiveVoiceTurn(); }, 900);
+      return;
+    }
+    transcript = String(transcript || '').trim();
+    if (!transcript) {
+      if (LIVE_VOICE.active) startLiveVoiceTurn();
+      return;
+    }
+    appendLiveVoiceTranscript('user', transcript);
+    LIVE_VOICE.conversation.push({ role: 'user', content: transcript });
+
+    setLiveVoiceStatus('💭 أفكّر…');
+    let reply = '';
+    try {
+      reply = await runLiveVoiceChat(LIVE_VOICE.conversation);
+    } catch (err) {
+      if (/QUOTA_EXHAUSTED/i.test(String(err?.message || ''))) {
+        setLiveVoiceStatus('تم استنفاد حصتك الشهرية من الدردشة.');
+        return;
+      }
+      setLiveVoiceStatus(`تعذر توليد الرد: ${err?.message || err}`);
+      window.setTimeout(() => { if (LIVE_VOICE.active) startLiveVoiceTurn(); }, 1400);
+      return;
+    }
+    reply = String(reply || '').trim();
+    if (!reply) {
+      if (LIVE_VOICE.active) startLiveVoiceTurn();
+      return;
+    }
+    LIVE_VOICE.conversation.push({ role: 'assistant', content: reply });
+    appendLiveVoiceTranscript('assistant', reply);
+
+    await speakLiveVoiceResponse(reply);
+    if (LIVE_VOICE.active) startLiveVoiceTurn();
+  }
+
+  async function runLiveVoiceChat(messages){
+    const settings = getSettings();
+    const baseUrl = effectiveBaseUrl(settings) || 'https://openrouter.ai/api/v1';
+    const model = String(settings.model || 'openai/gpt-4o-mini').trim() || 'openai/gpt-4o-mini';
+    const url = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+    const body = {
+      model,
+      messages,
+      max_tokens: 260,
+      temperature: 0.6
+    };
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...buildAuthHeaders(settings)
+      },
+      body: JSON.stringify(body)
+    });
+    const text = await response.text();
+    let payload = null;
+    try { payload = text ? JSON.parse(text) : null; } catch (_) { payload = null; }
+    if (!response.ok) {
+      const err = new Error(payload?.error?.message || payload?.error || payload?.message || text || `HTTP ${response.status}`);
+      if (payload?.code === 'QUOTA_EXHAUSTED') err.code = 'QUOTA_EXHAUSTED';
+      throw err;
+    }
+    try {
+      if (payload && typeof recordUsageFromPayload === 'function') {
+        recordUsageFromPayload(payload, { provider: settings.provider || 'openrouter', source: 'voice_live' });
+      }
+    } catch (_) {}
+    const extracted = extractAssistantResponseData ? extractAssistantResponseData(payload) : null;
+    return extracted?.text
+      || payload?.choices?.[0]?.message?.content
+      || payload?.choices?.[0]?.text
+      || '';
+  }
+
+  async function speakLiveVoiceResponse(text){
+    const persona = LIVE_VOICE.persona || getDefaultLiveVoicePersona();
+    const sentences = splitIntoTtsChunks(text);
+    LIVE_VOICE.speaking = true;
+    for (const sentence of sentences) {
+      if (!LIVE_VOICE.active || LIVE_VOICE.interruptRequested) break;
+      setLiveVoiceStatus('🗣️ أتحدث إليك…');
+      try {
+        const apiRoot = (getAuthServiceRoot() || '').replace(/\/+$/, '');
+        const proxyUrl = apiRoot ? `${apiRoot}/proxy/tts` : '/proxy/tts';
+        const r = await fetch(proxyUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: sentence, lang: (persona.language || 'ar').split('-')[0] })
+        });
+        if (!r.ok) continue;
+        const blob = await r.blob();
+        if (!blob || !blob.size) continue;
+        const audio = new Audio();
+        const objectUrl = URL.createObjectURL(blob);
+        audio.src = objectUrl;
+        LIVE_VOICE.currentAudio = audio;
+
+        await new Promise((resolve) => {
+          let bargeTimer = 0;
+          const cleanup = () => {
+            try { URL.revokeObjectURL(objectUrl); } catch (_) {}
+            if (bargeTimer) { window.clearInterval(bargeTimer); bargeTimer = 0; }
+            if (LIVE_VOICE.currentAudio === audio) LIVE_VOICE.currentAudio = null;
+            resolve();
+          };
+          audio.onended = cleanup;
+          audio.onerror = cleanup;
+          // Barge-in monitor: poll RMS ~12x/sec and halt playback if user starts talking.
+          const bargeCfg = persona.barge || {};
+          const bargeThreshold = Number(bargeCfg.micRmsThreshold || 0.04);
+          const analyser = LIVE_VOICE.analyser;
+          const buf = analyser ? new Float32Array(analyser.fftSize) : null;
+          if (analyser && bargeCfg.enabled !== false) {
+            bargeTimer = window.setInterval(() => {
+              try {
+                analyser.getFloatTimeDomainData(buf);
+                let sum = 0;
+                for (let i = 0; i < buf.length; i += 1) sum += buf[i] * buf[i];
+                const rms = Math.sqrt(sum / buf.length);
+                if (rms > bargeThreshold) {
+                  LIVE_VOICE.lastBargeAt = Date.now();
+                  LIVE_VOICE.interruptRequested = true;
+                  try { audio.pause(); } catch (_) {}
+                  cleanup();
+                }
+              } catch (_) {}
+            }, 85);
+          }
+          try {
+            const p = audio.play();
+            if (p && typeof p.catch === 'function') p.catch(() => cleanup());
+          } catch (_) { cleanup(); }
+        });
+      } catch (_) { /* skip this sentence on error */ }
+    }
+    LIVE_VOICE.speaking = false;
+    setLiveVoiceStatus('جاهز للاستماع…');
+  }
+
+  function splitIntoTtsChunks(text){
+    const s = String(text || '').trim();
+    if (!s) return [];
+    // Split on sentence terminators common in Arabic (. ! ? ؟ ،) but keep chunks short.
+    const pieces = s.split(/(?<=[\.!\?؟])\s+|(?<=،)\s+|\n+/u).map(x => x.trim()).filter(Boolean);
+    const out = [];
+    let buf = '';
+    for (const p of pieces) {
+      if ((buf + ' ' + p).trim().length > 160) {
+        if (buf.trim()) out.push(buf.trim());
+        buf = p;
+      } else {
+        buf = (buf + ' ' + p).trim();
+      }
+    }
+    if (buf.trim()) out.push(buf.trim());
+    return out.length ? out : [s];
+  }
+
+  function stopLiveVoiceMode(){
+    LIVE_VOICE.active = false;
+    LIVE_VOICE.interruptRequested = true;
+    if (LIVE_VOICE.vadTimer) { try { clearTimeout(LIVE_VOICE.vadTimer); } catch (_) {} LIVE_VOICE.vadTimer = 0; }
+    try { LIVE_VOICE.recorder?.stop?.(); } catch (_) {}
+    LIVE_VOICE.recorder = null;
+    LIVE_VOICE.recording = false;
+    try { LIVE_VOICE.currentAudio?.pause?.(); } catch (_) {}
+    LIVE_VOICE.currentAudio = null;
+    try { LIVE_VOICE.stream?.getTracks?.().forEach(t => t.stop()); } catch (_) {}
+    LIVE_VOICE.stream = null;
+    try { LIVE_VOICE.audioCtx?.close?.(); } catch (_) {}
+    LIVE_VOICE.audioCtx = null;
+    LIVE_VOICE.analyser = null;
+    LIVE_VOICE.speaking = false;
+    const overlay = document.getElementById('liveVoiceOverlay');
+    if (overlay) {
+      overlay.classList.remove('live-voice-active');
+      overlay.setAttribute('aria-hidden', 'true');
+      overlay.style.display = 'none';
+    }
+    setLiveVoiceStatus('');
+  }
+
+  try { window.stopLiveVoiceMode = stopLiveVoiceMode; } catch (_) {}
 
   init();
 })();

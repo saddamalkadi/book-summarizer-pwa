@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="8.99">
+<html lang="ar" dir="rtl" data-appver="9.0">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -372,7 +372,7 @@
     body.dark *::-webkit-scrollbar-thumb{background:linear-gradient(180deg,#5f7dd4,#4a63c4) !important; border-radius:999px; border:2px solid rgba(15,23,42,.55) !important;}
     body.dark *::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,#7a95e8,#5a74d8) !important;}
 
-    /* v8.99 — dark mode: full surface + typography parity (assistant markdown, chips, labs) */
+    /* v9.0 — per-user quota surfaces + live voice overlay + dark mode parity */
     body.dark .topbar{
       background: linear-gradient(180deg, rgba(17,27,47,.97), rgba(21,34,58,.95)) !important;
       border-color: rgba(255,255,255,.09) !important;
@@ -5005,6 +5005,129 @@ body.dark *::-webkit-scrollbar-thumb{
 body.dark *::-webkit-scrollbar-thumb:hover{
   background: linear-gradient(180deg, rgba(148,181,255,.95), rgba(122,162,255,.9));
 }
+
+/* ========== Live Voice Conversation Mode (v9) ========== */
+#liveVoiceOpenBtn{
+  position: fixed;
+  bottom: 20px;
+  inset-inline-end: 20px;
+  z-index: 60;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  border: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 22px;
+  background: linear-gradient(135deg, #7aa2ff 0%, #5478ff 100%);
+  box-shadow: 0 10px 28px rgba(84,120,255,.45), 0 2px 6px rgba(15,23,42,.18);
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+#liveVoiceOpenBtn:hover{ transform: translateY(-2px); box-shadow: 0 14px 34px rgba(84,120,255,.55); }
+#liveVoiceOpenBtn:focus-visible{ outline: 3px solid #cfd9ff; outline-offset: 3px; }
+body.live-voice-hidden #liveVoiceOpenBtn{ display: none; }
+
+#liveVoiceOverlay{
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle at 30% 20%, rgba(122,162,255,.2), transparent 55%),
+              radial-gradient(circle at 70% 80%, rgba(52,211,153,.18), transparent 55%),
+              rgba(6, 11, 24, .92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  z-index: 200;
+  display: none;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: clamp(16px, 3vw, 28px);
+  color: #e9efff;
+  overflow: hidden;
+}
+#liveVoiceOverlay.live-voice-active{ display: flex; }
+#liveVoiceOverlay header{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+}
+#liveVoiceOverlay header .title{
+  font-size: clamp(18px, 2.2vw, 22px);
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+#liveVoiceOverlay header .sub{
+  color: #aeb9d9;
+  font-size: 13px;
+}
+#liveVoiceOverlay .lv-close{
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.18);
+  color: #fff;
+  border-radius: 14px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 14px;
+}
+#liveVoiceOverlay .lv-close:hover{ background: rgba(255,255,255,.14); }
+#liveVoiceStatus{
+  margin: 10px auto 20px;
+  font-size: clamp(15px, 1.6vw, 17px);
+  color: #d6deff;
+  min-height: 26px;
+  text-align: center;
+}
+#liveVoiceTranscript{
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: rgba(12, 18, 36, .55);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 18px;
+  max-width: min(820px, 96vw);
+  margin: 0 auto 18px;
+  width: 100%;
+  min-height: 200px;
+}
+#liveVoiceTranscript .lv-bubble{
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 14px;
+  line-height: 1.65;
+  font-size: 15px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+#liveVoiceTranscript .lv-user{
+  align-self: flex-end;
+  background: linear-gradient(135deg, rgba(52,211,153,.22), rgba(52,211,153,.12));
+  border: 1px solid rgba(52,211,153,.28);
+  color: #d7fff0;
+}
+#liveVoiceTranscript .lv-assistant{
+  align-self: flex-start;
+  background: linear-gradient(135deg, rgba(122,162,255,.22), rgba(122,162,255,.10));
+  border: 1px solid rgba(122,162,255,.28);
+  color: #e6eeff;
+}
+#liveVoiceOverlay .lv-hint{
+  color: #98a3c4;
+  font-size: 12.5px;
+  text-align: center;
+  margin: 0 0 6px;
+}
+
+/* Respect reduced motion — no decorative animation beyond CSS transitions. */
+@media (prefers-reduced-motion: reduce){
+  #liveVoiceOpenBtn{ transition: none; }
+}
 </style>
 </head>
 <body>
@@ -5059,7 +5182,7 @@ body.dark *::-webkit-scrollbar-thumb:hover{
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v8.99</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v9.0</div>
       </div>
     </aside>
 
@@ -6088,7 +6211,24 @@ body.dark *::-webkit-scrollbar-thumb:hover{
     })();
   </script>
 
-<script src="app.js?v=899"></script>
+<!-- Live Voice Conversation Mode (v9): floating launcher + overlay. Controlled by app.js. -->
+<button id="liveVoiceOpenBtn" type="button" aria-label="فتح وضع المحادثة الصوتية المباشرة" title="محادثة صوتية مباشرة">
+  <span aria-hidden="true">🎙️</span>
+</button>
+<div id="liveVoiceOverlay" aria-hidden="true" role="dialog" aria-label="محادثة صوتية مباشرة">
+  <header>
+    <div>
+      <div class="title">محادثة صوتية مباشرة</div>
+      <div class="sub">اسأل بصوتك وسأرد عليك فورًا. يمكنك مقاطعتي بالكلام في أي وقت.</div>
+    </div>
+    <button class="lv-close" type="button" onclick="try{window.stopLiveVoiceMode&&window.stopLiveVoiceMode()}catch(_){}">إغلاق</button>
+  </header>
+  <div id="liveVoiceStatus" aria-live="polite"></div>
+  <div id="liveVoiceTranscript" aria-live="polite"></div>
+  <p class="lv-hint">اتكلم وسأستمع لحظيًا، ثم سأرد بجُمل قصيرة. تكلّم فوق صوتي لمقاطعتي.</p>
+</div>
+
+<script src="app.js?v=900"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -6111,7 +6251,7 @@ body.dark *::-webkit-scrollbar-thumb:hover{
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=899").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=900").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

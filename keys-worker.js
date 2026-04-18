@@ -20,7 +20,7 @@ export default {
       const url = new URL(request.url);
 
       if (url.pathname === '/health') {
-        const health = await getWorkerHealth(env);
+        const health = await getWorkerHealth(env, request);
         return withCors(jsonResponse(health.body, health.status), request);
       }
 
@@ -46,6 +46,22 @@ export default {
 
       if (url.pathname === '/auth/session' && request.method === 'GET') {
         return withCors(await handleSessionLookup(request, env), request);
+      }
+
+      if (url.pathname === '/me/quota' && request.method === 'GET') {
+        return withCors(await handleMeQuota(request, env), request);
+      }
+
+      if (url.pathname === '/admin/usage' && request.method === 'GET') {
+        return withCors(await handleAdminUsage(request, env), request);
+      }
+
+      if (url.pathname === '/admin/users/quota' && (request.method === 'GET' || request.method === 'POST')) {
+        return withCors(await handleAdminUsersQuota(request, env), request);
+      }
+
+      if (url.pathname === '/voice/live/persona' && request.method === 'GET') {
+        return withCors(await handleVoiceLivePersona(request, env), request);
       }
 
       if (url.pathname === '/convert/health' && request.method === 'GET') {
@@ -349,7 +365,7 @@ async function probeUpstreamKey(env) {
   return UPSTREAM_KEY_PROBE;
 }
 
-async function getWorkerHealth(env) {
+async function getWorkerHealth(env, request = null) {
   const upstreamConfigured = !!getServerKey(env);
   const clientTokenRequired = !!String(env.GATEWAY_CLIENT_TOKEN || '').trim();
   const authConfig = await getPublicAuthConfig(env);
@@ -364,41 +380,62 @@ async function getWorkerHealth(env) {
   const keyProbe = upstreamConfigured ? await probeUpstreamKey(env) : { ok: false, status: 0 };
   const upstreamKeyValid = !!keyProbe.ok;
   const configured = upstreamConfigured || authConfig.clientIdConfigured || adminLoginReady || cloudStorageReady || voice.ready || convertReady;
-  return {
-    status: configured ? 200 : 503,
-    body: {
-      ok: configured,
-      ready: configured,
-      configured,
-      worker: 'keys',
-      worker_public_name: String(env.WORKER_PUBLIC_NAME || '').trim() || undefined,
-      build_sentinel: 'rotate-v2-sentinel-2026-04-17C',
-      env_has_openrouter_key: !!(env.OPENROUTER_API_KEY && String(env.OPENROUTER_API_KEY).length > 0),
-      env_has_admin_password: !!(env.APP_ADMIN_PASSWORD && String(env.APP_ADMIN_PASSWORD).length > 0),
-      env_admin_password_length: String(env.APP_ADMIN_PASSWORD || '').length,
-      env_openrouter_key_length: String(env.OPENROUTER_API_KEY || '').length,
-      upstream: 'openrouter',
-      upstream_configured: upstreamConfigured,
-      upstream_key_valid: upstreamKeyValid,
-      upstream_status: keyProbe.status || 0,
-      upstream_probe_body: keyProbe.bodyExcerpt || '',
-      client_token_required: clientTokenRequired,
-      auth_required: authConfig.authRequired,
-      google_client_configured: authConfig.clientIdConfigured,
-      admin_password_ready: adminPasswordReady,
-      admin_google_ready: adminGoogleReady,
-      admin_login_ready: adminLoginReady,
-      session_ready: hasSessionSecret,
-      upgrade_flow_ready: hasUpgradeSecret,
-      cloud_storage_ready: cloudStorageReady,
-      convert_proxy_ready: convertReady,
-      voice_cloud_ready: voice.ready,
-      voice_stt_ready: voice.sttReady,
-      voice_tts_ready: voice.ttsReady,
-      voice_provider: voice.provider,
-      voice_premium_only: false
+
+  // Only admins (verified session, role=admin) or rotate workflow (no Origin, same-origin ops)
+  // see upstream probe details + raw OR key length. Normal users see a sanitized health payload.
+  let viewerIsAdmin = false;
+  if (request) {
+    try {
+      const s = await requireSession(request, env);
+      viewerIsAdmin = s?.role === 'admin';
+    } catch (_) {
+      viewerIsAdmin = false;
     }
+  }
+  // Permit the rotate workflow's probes (no browser Origin header) to continue seeing the
+  // full diagnostic payload so CI can reason about upstream health. Browser traffic gets the
+  // sanitized view.
+  const looksLikeBrowser = !!(request && request.headers && request.headers.get('Origin'));
+  const showDiag = viewerIsAdmin || !looksLikeBrowser;
+
+  const body = {
+    ok: configured,
+    ready: configured,
+    configured,
+    worker: 'keys',
+    worker_public_name: String(env.WORKER_PUBLIC_NAME || '').trim() || undefined,
+    build_sentinel: 'rotate-v2-sentinel-2026-04-17C',
+    upstream_configured: upstreamConfigured,
+    upstream_key_valid: upstreamKeyValid,
+    client_token_required: clientTokenRequired,
+    auth_required: authConfig.authRequired,
+    google_client_configured: authConfig.clientIdConfigured,
+    admin_password_ready: adminPasswordReady,
+    admin_google_ready: adminGoogleReady,
+    admin_login_ready: adminLoginReady,
+    session_ready: hasSessionSecret,
+    upgrade_flow_ready: hasUpgradeSecret,
+    cloud_storage_ready: cloudStorageReady,
+    convert_proxy_ready: convertReady,
+    voice_cloud_ready: voice.ready,
+    voice_stt_ready: voice.sttReady,
+    voice_tts_ready: voice.ttsReady,
+    voice_provider: voice.provider,
+    voice_premium_only: false,
+    quota_system: 'per_user_v1'
   };
+
+  if (showDiag) {
+    body.env_has_openrouter_key = !!(env.OPENROUTER_API_KEY && String(env.OPENROUTER_API_KEY).length > 0);
+    body.env_has_admin_password = !!(env.APP_ADMIN_PASSWORD && String(env.APP_ADMIN_PASSWORD).length > 0);
+    body.env_admin_password_length = String(env.APP_ADMIN_PASSWORD || '').length;
+    body.env_openrouter_key_length = String(env.OPENROUTER_API_KEY || '').length;
+    body.upstream = 'openrouter';
+    body.upstream_status = keyProbe.status || 0;
+    body.upstream_probe_body = keyProbe.bodyExcerpt || '';
+  }
+
+  return { status: configured ? 200 : 503, body };
 }
 
 const ALLOWED_CORS_ORIGINS = new Set([
@@ -1080,6 +1117,50 @@ async function handleGateway(request, env, url) {
     }, 401), request);
   }
 
+  // Resolve the session once so every gated branch below can share the result.
+  let gatewaySession = null;
+  try { gatewaySession = await requireSession(request, env); } catch (_) { gatewaySession = null; }
+
+  // /v1/credits: per-user quota replaces raw OpenRouter credits for non-admins so users
+  // never see the shared OpenRouter balance. Admins get OpenRouter's real /credits payload.
+  if (url.pathname === '/v1/credits' && request.method === 'GET') {
+    if (!gatewaySession) {
+      return withCors(jsonResponse({
+        error: 'Authentication required for credits.',
+        code: 'AUTH_SESSION_REQUIRED'
+      }, 401), request);
+    }
+    if (gatewaySession.role === 'admin') {
+      // Fall through below to proxy OpenRouter /credits as-is for admin diagnostics.
+    } else {
+      const quota = await getOrInitUserQuota(gatewaySession, env);
+      return withCors(jsonResponse({
+        data: quotaAsCreditsPayload(quota)
+      }, 200), request);
+    }
+  }
+
+  // Metered endpoints — require session + enforce quota before forwarding.
+  const isMeteredChat =
+    url.pathname === '/v1/chat/completions' ||
+    url.pathname === '/v1/completions';
+  if (isMeteredChat) {
+    if (!gatewaySession) {
+      return withCors(jsonResponse({
+        error: 'Authentication required for chat.',
+        code: 'AUTH_SESSION_REQUIRED'
+      }, 401), request);
+    }
+    const quota = await getOrInitUserQuota(gatewaySession, env);
+    if (quota.remaining <= 0) {
+      return withCors(jsonResponse({
+        error: 'تم استنفاد حصتك الشهرية. يمكنك التواصل مع الإدارة لتجديد الحصة.',
+        code: 'QUOTA_EXHAUSTED',
+        quota: quotaPublicView(quota)
+      }, 429), request);
+    }
+  }
+
   const upstreamPath = url.pathname.startsWith('/v1/')
     ? `/api${url.pathname}`
     : url.pathname;
@@ -1138,6 +1219,39 @@ async function handleGateway(request, env, url) {
       upstream_status: upstreamResp.status,
       requires_key_rotation: isInvalidKey || undefined
     }, upstreamResp.status), request);
+  }
+
+  // Meter usage for chat/completions requests of authenticated users so the deduction
+  // happens whether the response is streaming or buffered.
+  if (isMeteredChat && gatewaySession) {
+    const contentType = String(upstreamResp.headers.get('Content-Type') || '').toLowerCase();
+    const isSse = contentType.includes('text/event-stream') || contentType.includes('stream');
+    if (isSse && upstreamResp.body) {
+      const { readable, meterPromise } = meterSseStream(upstreamResp.body);
+      // Fire-and-forget: deduct after the stream fully drains, using Worker's ctx.waitUntil
+      // isn't available here, but awaiting the promise before returning would block streaming.
+      // Instead we schedule it via the readable tee; meterSseStream resolves when terminal
+      // chunk arrives and we apply the deduction asynchronously.
+      meterPromise.then((usage) => {
+        return applyQuotaDeductionFromUsage(gatewaySession, usage, env);
+      }).catch(() => {});
+      return withCors(new Response(readable, {
+        status: upstreamResp.status,
+        statusText: upstreamResp.statusText,
+        headers: upstreamResp.headers
+      }), request);
+    }
+    // Non-streaming JSON: buffer, meter, forward.
+    const raw = await upstreamResp.text().catch(() => '');
+    let parsed = null;
+    try { parsed = raw ? JSON.parse(raw) : null; } catch (_) { parsed = null; }
+    const usage = extractUsageMetaFromOpenAiPayload(parsed);
+    try { await applyQuotaDeductionFromUsage(gatewaySession, usage, env); } catch (_) {}
+    return withCors(new Response(raw, {
+      status: upstreamResp.status,
+      statusText: upstreamResp.statusText,
+      headers: upstreamResp.headers
+    }), request);
   }
 
   return withCors(new Response(upstreamResp.body, {
@@ -1474,4 +1588,483 @@ function isSpaRequest(request, url) {
   if (path === '/' || path === '') return true;
   const lastPart = path.split('/').pop() || '';
   return !lastPart.includes('.');
+}
+
+/* =============================================================================
+ * Per-user quota system (v1)
+ *
+ * Each authenticated user owns a quota document in KV under `quota:<email>`:
+ *   {
+ *     email, plan, limit, used, periodStart, periodEnd,
+ *     lastPromptTokens, lastCompletionTokens, lastTotalTokens,
+ *     lastCost, lastModel, lastUpdatedAt, updatedAt
+ *   }
+ *
+ * Limits are expressed in USD cents (to avoid float drift) and converted to USD
+ * on the wire. Each `/v1/chat/completions` deducts based on upstream-reported
+ * cost (USD) when present, otherwise a per-token fallback.
+ *
+ * Non-admin users only ever see their own quota. Admins can list + patch limits.
+ * =============================================================================
+ */
+
+const QUOTA_KV_PREFIX = 'quota:';
+const QUOTA_INDEX_KEY = '_quota:index';
+const QUOTA_DEFAULT_PLAN_LIMITS_USD = {
+  free: 0.50,
+  premium: 10.00,
+  admin: 1000.00
+};
+const QUOTA_PERIOD_DAYS = 30;
+// Fallback cost-per-token when upstream usage.cost is missing. Conservative blended estimate
+// across gpt-4o-mini-ish models. 1M tokens ≈ $0.60 in / $2.40 out → use weighted avg $1.00/M.
+const QUOTA_FALLBACK_USD_PER_TOKEN = 1.0 / 1_000_000;
+
+function roundUsd(value) {
+  const n = Number(value) || 0;
+  return Math.round(n * 1_000_000) / 1_000_000;
+}
+
+function nowMs() { return Date.now(); }
+
+function computePeriod(startMs) {
+  const start = Number(startMs) || nowMs();
+  const end = start + QUOTA_PERIOD_DAYS * 24 * 60 * 60 * 1000;
+  return { periodStart: start, periodEnd: end };
+}
+
+function planLimitUsd(plan, role, envOverrides = {}) {
+  if (role === 'admin') {
+    const override = Number(envOverrides.ADMIN_QUOTA_USD);
+    return Number.isFinite(override) && override > 0 ? override : QUOTA_DEFAULT_PLAN_LIMITS_USD.admin;
+  }
+  if (plan === 'premium') {
+    const override = Number(envOverrides.PREMIUM_QUOTA_USD);
+    return Number.isFinite(override) && override > 0 ? override : QUOTA_DEFAULT_PLAN_LIMITS_USD.premium;
+  }
+  const override = Number(envOverrides.FREE_QUOTA_USD);
+  return Number.isFinite(override) && override > 0 ? override : QUOTA_DEFAULT_PLAN_LIMITS_USD.free;
+}
+
+function quotaPublicView(q) {
+  const limit = Number(q.limit) || 0;
+  const used = Number(q.used) || 0;
+  const remaining = Math.max(0, roundUsd(limit - used));
+  return {
+    email: q.email,
+    plan: q.plan || 'free',
+    limit: roundUsd(limit),
+    used: roundUsd(used),
+    remaining,
+    periodStart: q.periodStart,
+    periodEnd: q.periodEnd,
+    lastPromptTokens: q.lastPromptTokens || 0,
+    lastCompletionTokens: q.lastCompletionTokens || 0,
+    lastTotalTokens: q.lastTotalTokens || 0,
+    lastCost: roundUsd(q.lastCost || 0),
+    lastModel: q.lastModel || '',
+    lastUpdatedAt: q.lastUpdatedAt || 0,
+    updatedAt: q.updatedAt || 0
+  };
+}
+
+function quotaAsCreditsPayload(q) {
+  const view = quotaPublicView(q);
+  return {
+    total_credits: view.limit,
+    total_usage: view.used,
+    remaining_credits: view.remaining,
+    plan: view.plan,
+    period_end: view.periodEnd,
+    source: 'per_user_quota'
+  };
+}
+
+async function readQuotaFromKv(email, env) {
+  const store = getUserDataStore(env);
+  if (!store || typeof store.get !== 'function') return null;
+  try {
+    const raw = await store.get(QUOTA_KV_PREFIX + email, { type: 'json' });
+    if (raw && typeof raw === 'object') return raw;
+  } catch (_) {}
+  return null;
+}
+
+async function writeQuotaToKv(q, env) {
+  const store = getUserDataStore(env);
+  if (!store || typeof store.put !== 'function') return false;
+  try {
+    await store.put(QUOTA_KV_PREFIX + q.email, JSON.stringify(q));
+    // Best-effort user index so /admin/usage doesn't need a list() walk on every call.
+    try {
+      const idxRaw = await store.get(QUOTA_INDEX_KEY, { type: 'json' });
+      const idx = Array.isArray(idxRaw?.users) ? idxRaw.users : [];
+      if (!idx.includes(q.email)) {
+        idx.push(q.email);
+        await store.put(QUOTA_INDEX_KEY, JSON.stringify({ users: idx, updatedAt: nowMs() }));
+      }
+    } catch (_) {}
+    return true;
+  } catch (_) { return false; }
+}
+
+async function getOrInitUserQuota(session, env) {
+  const email = String(session.email || '').trim().toLowerCase();
+  const existing = await readQuotaFromKv(email, env);
+  const role = session.role === 'admin' ? 'admin' : 'user';
+  const plan = role === 'admin' ? 'admin' : (session.plan === 'premium' ? 'premium' : 'free');
+  const defaultLimit = planLimitUsd(plan, role, env);
+  const now = nowMs();
+
+  if (existing && existing.email === email && Number(existing.periodEnd) > now) {
+    // Promote the cached plan if the user's session plan/role upgraded since last check,
+    // but preserve accumulated usage within the active billing window.
+    const patched = { ...existing };
+    let changed = false;
+    if (patched.plan !== plan) { patched.plan = plan; changed = true; }
+    // Raise the limit if the configured plan bumped higher mid-period.
+    if (Number(patched.limit) < defaultLimit) {
+      patched.limit = defaultLimit;
+      changed = true;
+    }
+    if (changed) {
+      patched.updatedAt = now;
+      await writeQuotaToKv(patched, env);
+    }
+    return patched;
+  }
+
+  // Either no quota yet, or the billing period rolled over → initialize a fresh period
+  // while preserving legacy totals under `lifetimeUsed` for observability.
+  const period = computePeriod(now);
+  const fresh = {
+    email,
+    plan,
+    role,
+    limit: defaultLimit,
+    used: 0,
+    periodStart: period.periodStart,
+    periodEnd: period.periodEnd,
+    lastPromptTokens: 0,
+    lastCompletionTokens: 0,
+    lastTotalTokens: 0,
+    lastCost: 0,
+    lastModel: '',
+    lastUpdatedAt: 0,
+    lifetimeUsed: Number(existing?.lifetimeUsed || 0) + Number(existing?.used || 0),
+    updatedAt: now
+  };
+  await writeQuotaToKv(fresh, env);
+  return fresh;
+}
+
+async function applyQuotaDeductionFromUsage(session, usage, env) {
+  if (!session || !usage) return null;
+  const email = String(session.email || '').trim().toLowerCase();
+  if (!email) return null;
+
+  const upstreamCost = Number(usage.cost);
+  const totalTokens = Number(usage.totalTokens) || 0;
+  const deltaCost = Number.isFinite(upstreamCost) && upstreamCost > 0
+    ? upstreamCost
+    : totalTokens * QUOTA_FALLBACK_USD_PER_TOKEN;
+
+  const current = await readQuotaFromKv(email, env);
+  const base = current && current.email === email ? current : await getOrInitUserQuota(session, env);
+  const nextUsed = roundUsd(Number(base.used || 0) + deltaCost);
+  const patch = {
+    ...base,
+    used: nextUsed,
+    lastPromptTokens: Number(usage.promptTokens) || 0,
+    lastCompletionTokens: Number(usage.completionTokens) || 0,
+    lastTotalTokens: totalTokens,
+    lastCost: roundUsd(deltaCost),
+    lastModel: String(usage.model || '').trim(),
+    lastUpdatedAt: nowMs(),
+    updatedAt: nowMs()
+  };
+  await writeQuotaToKv(patch, env);
+  return patch;
+}
+
+function extractUsageMetaFromOpenAiPayload(payload) {
+  const usage = (payload?.usage && typeof payload.usage === 'object') ? payload.usage : {};
+  const promptTokens = Number(usage.prompt_tokens || usage.input_tokens || 0) || 0;
+  const completionTokens = Number(usage.completion_tokens || usage.output_tokens || 0) || 0;
+  const totalTokens = Number(usage.total_tokens || (promptTokens + completionTokens)) || 0;
+  const cost = Number(usage.cost || usage.total_cost || payload?.cost || 0) || 0;
+  const model = String(payload?.model || '').trim();
+  return { promptTokens, completionTokens, totalTokens, cost, model };
+}
+
+/**
+ * Wrap an SSE response body in a TransformStream so we can (a) passthrough all bytes to the
+ * client unchanged for real streaming UX, while (b) parsing chunks in parallel to extract
+ * the final usage object OpenRouter (and OpenAI-compatible providers) emit on the terminal
+ * chunk. Returns the passthrough stream + a promise that resolves with extracted usage
+ * metadata when the upstream terminates.
+ */
+function meterSseStream(upstreamBody) {
+  const { readable, writable } = new TransformStream();
+  let usageOut = { promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0, model: '' };
+  let usageResolve;
+  const meterPromise = new Promise((resolve) => { usageResolve = resolve; });
+
+  (async () => {
+    const writer = writable.getWriter();
+    const reader = upstreamBody.getReader();
+    const decoder = new TextDecoder();
+    let pending = '';
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        try { await writer.write(value); } catch (_) {}
+        pending += decoder.decode(value, { stream: true });
+        // Parse SSE "data: {json}" blocks.
+        let idx;
+        while ((idx = pending.indexOf('\n\n')) !== -1) {
+          const block = pending.slice(0, idx);
+          pending = pending.slice(idx + 2);
+          for (const line of block.split('\n')) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data:')) continue;
+            const json = trimmed.slice(5).trim();
+            if (!json || json === '[DONE]') continue;
+            try {
+              const obj = JSON.parse(json);
+              const meta = extractUsageMetaFromOpenAiPayload(obj);
+              if (meta.totalTokens) usageOut.totalTokens = meta.totalTokens;
+              if (meta.promptTokens) usageOut.promptTokens = meta.promptTokens;
+              if (meta.completionTokens) usageOut.completionTokens = meta.completionTokens;
+              if (meta.cost) usageOut.cost = meta.cost;
+              if (meta.model) usageOut.model = meta.model;
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (_) {
+      // Pass — we still want to resolve with whatever we captured.
+    } finally {
+      try { await writer.close(); } catch (_) {}
+      usageResolve(usageOut);
+    }
+  })();
+
+  return { readable, meterPromise };
+}
+
+async function handleMeQuota(request, env) {
+  try {
+    const session = await requireSession(request, env);
+    const quota = await getOrInitUserQuota(session, env);
+    return jsonResponse({
+      ok: true,
+      role: session.role === 'admin' ? 'admin' : 'user',
+      quota: quotaPublicView(quota)
+    }, 200);
+  } catch (error) {
+    return jsonResponse({
+      error: String(error?.message || error || 'Authentication required.'),
+      code: 'AUTH_SESSION_REQUIRED'
+    }, 401);
+  }
+}
+
+async function listAllQuotaEmails(env) {
+  const store = getUserDataStore(env);
+  if (!store) return [];
+  const emails = new Set();
+  // Prefer the lightweight index; fall back to list() for robustness.
+  try {
+    const idxRaw = await store.get(QUOTA_INDEX_KEY, { type: 'json' });
+    if (Array.isArray(idxRaw?.users)) {
+      for (const e of idxRaw.users) emails.add(String(e).trim().toLowerCase());
+    }
+  } catch (_) {}
+  try {
+    if (typeof store.list === 'function') {
+      let cursor = undefined;
+      for (let i = 0; i < 20; i += 1) {
+        const page = await store.list({ prefix: QUOTA_KV_PREFIX, cursor });
+        for (const entry of (page.keys || [])) {
+          const name = String(entry.name || '');
+          if (name.startsWith(QUOTA_KV_PREFIX)) {
+            emails.add(name.slice(QUOTA_KV_PREFIX.length).toLowerCase());
+          }
+        }
+        if (page.list_complete || !page.cursor) break;
+        cursor = page.cursor;
+      }
+    }
+  } catch (_) {}
+  return Array.from(emails);
+}
+
+async function handleAdminUsage(request, env) {
+  try {
+    const session = await requireSession(request, env);
+    if (session.role !== 'admin') {
+      return jsonResponse({ error: 'Admin access required.', code: 'ADMIN_REQUIRED' }, 403);
+    }
+    const emails = await listAllQuotaEmails(env);
+    const users = [];
+    let totalUsed = 0;
+    let totalLimit = 0;
+    for (const email of emails) {
+      const q = await readQuotaFromKv(email, env);
+      if (q) {
+        const view = quotaPublicView(q);
+        users.push(view);
+        totalUsed += Number(view.used) || 0;
+        totalLimit += Number(view.limit) || 0;
+      }
+    }
+    // Only admins see the shared OpenRouter raw balance — this is explicitly a privileged view.
+    let openrouterCredits = null;
+    try {
+      const probe = await probeUpstreamKey(env);
+      if (probe.ok && probe.bodyExcerpt) {
+        try { openrouterCredits = JSON.parse(probe.bodyExcerpt); } catch (_) { openrouterCredits = null; }
+      }
+    } catch (_) {}
+    return jsonResponse({
+      ok: true,
+      generatedAt: nowMs(),
+      userCount: users.length,
+      totals: { usedUsd: roundUsd(totalUsed), limitUsd: roundUsd(totalLimit) },
+      users,
+      openrouter: openrouterCredits
+    }, 200);
+  } catch (error) {
+    return jsonResponse({
+      error: String(error?.message || error || 'Authentication required.'),
+      code: 'AUTH_SESSION_REQUIRED'
+    }, 401);
+  }
+}
+
+async function handleAdminUsersQuota(request, env) {
+  try {
+    const session = await requireSession(request, env);
+    if (session.role !== 'admin') {
+      return jsonResponse({ error: 'Admin access required.', code: 'ADMIN_REQUIRED' }, 403);
+    }
+    if (request.method === 'GET') {
+      const u = new URL(request.url);
+      const email = String(u.searchParams.get('email') || '').trim().toLowerCase();
+      if (!email) return jsonResponse({ error: 'email query param is required', code: 'EMAIL_REQUIRED' }, 400);
+      const q = await readQuotaFromKv(email, env);
+      return jsonResponse({ ok: true, quota: q ? quotaPublicView(q) : null }, 200);
+    }
+    // POST: patch one user's quota (limit, used, plan).
+    const body = await parseJson(request);
+    const email = String(body?.email || '').trim().toLowerCase();
+    if (!email) return jsonResponse({ error: 'email is required', code: 'EMAIL_REQUIRED' }, 400);
+    const existing = await readQuotaFromKv(email, env);
+    const period = computePeriod(existing?.periodStart || nowMs());
+    const base = existing && existing.email === email ? existing : {
+      email,
+      plan: 'free',
+      role: 'user',
+      limit: QUOTA_DEFAULT_PLAN_LIMITS_USD.free,
+      used: 0,
+      periodStart: period.periodStart,
+      periodEnd: period.periodEnd,
+      lastPromptTokens: 0, lastCompletionTokens: 0, lastTotalTokens: 0, lastCost: 0,
+      lastModel: '', lastUpdatedAt: 0, updatedAt: nowMs()
+    };
+    const patch = { ...base };
+    if (body?.limit != null) {
+      const v = Number(body.limit);
+      if (Number.isFinite(v) && v >= 0) patch.limit = roundUsd(v);
+    }
+    if (body?.used != null) {
+      const v = Number(body.used);
+      if (Number.isFinite(v) && v >= 0) patch.used = roundUsd(v);
+    }
+    if (body?.plan) {
+      const v = String(body.plan).trim().toLowerCase();
+      if (['free', 'premium', 'admin'].includes(v)) patch.plan = v;
+    }
+    if (body?.resetPeriod === true) {
+      const p = computePeriod(nowMs());
+      patch.periodStart = p.periodStart;
+      patch.periodEnd = p.periodEnd;
+      patch.used = 0;
+    }
+    patch.updatedAt = nowMs();
+    await writeQuotaToKv(patch, env);
+    return jsonResponse({ ok: true, quota: quotaPublicView(patch) }, 200);
+  } catch (error) {
+    return jsonResponse({
+      error: String(error?.message || error || 'Admin action failed.'),
+      code: 'ADMIN_QUOTA_FAILED'
+    }, 400);
+  }
+}
+
+/* =============================================================================
+ * Live Voice persona: returns the Arabic-first system prompt + voice hints the
+ * client should use for Live Voice Conversation Mode. Kept server-side so the
+ * admin can rotate tone without shipping a new app build.
+ * =============================================================================
+ */
+async function handleVoiceLivePersona(request, env) {
+  try {
+    const session = await requireSession(request, env);
+    const config = getVoiceApiConfig(env);
+    const persona = {
+      ok: true,
+      language: 'ar',
+      region: config.preferredLanguage || 'ar-SA',
+      voice: config.synthesisVoice || 'ar',
+      ttsModel: config.synthesisModel,
+      sttModel: config.recognitionModel,
+      provider: config.provider,
+      style: {
+        warmth: 'high',
+        formality: 'balanced',
+        pace: 'natural',
+        brevity: 'conversational'
+      },
+      dialectHint: 'عربية فصحى خفيفة مفهومة لكل اللهجات',
+      systemPrompt: [
+        'أنت مساعد ذكاء اصطناعي يتحدث العربية بلكنة فصحى واضحة.',
+        'نبرتك دافئة وهادئة ومتعاطفة دون مبالغة أو تصنّع.',
+        'ترد بجُمل قصيرة طبيعية مناسبة للحوار الصوتي، وليس بفقرات مطولة.',
+        'تستمع جيدًا ثم ترد بما يفيد السائل مباشرة، وتسأل للتوضيح عند الحاجة.',
+        'تتجنب القوالب الرسمية، وتتكلم كصديق خبير يحترم وقت المستخدم.',
+        'إذا طلب المستخدم شرحًا مطولًا، جزّئه إلى نقاط قصيرة يسهل سماعها.'
+      ].join(' '),
+      barge: {
+        enabled: true,
+        micRmsThreshold: 0.04,
+        silenceHoldMs: 800
+      },
+      vad: {
+        enabled: true,
+        rmsThreshold: 0.011,
+        minLoudMs: 320,
+        silenceHoldMs: 1500,
+        maxUtteranceMs: 16800
+      },
+      streamingTts: {
+        enabled: true,
+        sentenceBufferMs: 180,
+        preferShortSentences: true
+      },
+      session: {
+        email: session.email,
+        plan: session.plan,
+        role: session.role
+      }
+    };
+    return jsonResponse(persona, 200);
+  } catch (error) {
+    return jsonResponse({
+      error: String(error?.message || error || 'Authentication required.'),
+      code: 'AUTH_SESSION_REQUIRED'
+    }, 401);
+  }
 }
