@@ -7429,6 +7429,44 @@ async function submitUnifiedAuthEntry(){
       logPreviewEvent('thread_save_retry_stripped_inline', {
         pid, stripped, retryOk
       });
+      if (!retryOk){
+        let assistantBlocksStripped = 0;
+        const assistantSlimmed = slimmed.map((thread) => {
+          if (!thread || !Array.isArray(thread.messages)) return thread;
+          return {
+            ...thread,
+            messages: thread.messages.map((msg) => {
+              if (!msg || msg.role !== 'assistant' || !msg.content) return msg;
+              const original = String(msg.content || '');
+              const compact = original.replace(/```file\b([^\n]*encoding="dataurl"[^\n]*)\n([\s\S]*?)\n```/gi, (all, attrs) => {
+                assistantBlocksStripped += 1;
+                return '';
+              });
+              if (compact === original) return msg;
+              return { ...msg, content: compact };
+            })
+          };
+        });
+        const retryAssistantOk = saveJSON(KEYS.threads(pid), assistantSlimmed);
+        logPreviewEvent('assistant_generated_image_rerender_replaced', {
+          pid,
+          assistantBlocksStripped,
+          retryAssistantOk
+        });
+        if (retryAssistantOk && Array.isArray(arr)){
+          arr.forEach((thread, i) => {
+            const slim = assistantSlimmed[i];
+            if (!thread || !slim || !Array.isArray(thread.messages)) return;
+            thread.messages.forEach((msg, j) => {
+              if (!msg || msg.role !== 'assistant') return;
+              const slimMsg = slim.messages?.[j];
+              if (!slimMsg) return;
+              msg.content = slimMsg.content;
+            });
+          });
+          return true;
+        }
+      }
       // Also mirror the slim copy in-place so the caller's in-memory
       // thread state matches what is now on disk. That keeps getCurThread()
       // and renderChat() aligned on the lightweight shape.
@@ -8658,6 +8696,55 @@ async function fileToText(file){
   }
   function resolveDownloadEntry(downloadId){
     return loadDownloads().map(normalizeDownloadEntry).find((item) => item.id === downloadId) || null;
+  }
+  function resolveDownloadsForMessage(messageId){
+    const mid = String(messageId || '').trim();
+    if (!mid) return [];
+    return loadDownloads()
+      .map(normalizeDownloadEntry)
+      .filter((item) => String(item.sourceMessageId || '').trim() === mid);
+  }
+  function collectAssistantDownloadRenderState(text, messageId, stage = ''){
+    const parsed = ensureDownloadsFromText(text || '', messageId || '');
+    const linked = resolveDownloadsForMessage(messageId || '');
+    const mergedById = new Map();
+    for (const entry of parsed.entries || []){
+      if (entry?.id) mergedById.set(String(entry.id), entry);
+    }
+    for (const entry of linked){
+      if (entry?.id && !mergedById.has(String(entry.id))) mergedById.set(String(entry.id), entry);
+    }
+    const mergedEntries = Array.from(mergedById.values());
+    const imageEntries = mergedEntries.filter((entry) => /^image\//i.test(String(entry?.mime || '')));
+    const hasFileBlock = getFileBlockRegex().test(String(text || ''));
+    if (imageEntries.length){
+      const srcResolved = imageEntries.some((entry) => !!getDownloadPreviewUrl(entry));
+      logPreviewEvent(srcResolved ? (stage || 'assistant_generated_image_src_resolved') : 'assistant_generated_image_src_lost', {
+        mid: String(messageId || ''),
+        model: '',
+        hasFileBlock,
+        parsedEntries: (parsed.entries || []).length,
+        linkedEntries: linked.length,
+        mergedEntries: mergedEntries.length,
+        imageEntries: imageEntries.length,
+        srcResolved,
+        resolvedVia: linked.length > (parsed.entries || []).length ? 'message_registry_merge' : 'message_content'
+      });
+    } else if (linked.length && !hasFileBlock){
+      logPreviewEvent('assistant_generated_image_registry_miss', {
+        mid: String(messageId || ''),
+        hasFileBlock,
+        parsedEntries: (parsed.entries || []).length,
+        linkedEntries: linked.length,
+        mergedEntries: mergedEntries.length
+      });
+    }
+    return {
+      entries: mergedEntries,
+      newCount: parsed.newCount || 0,
+      artifactRequests: parsed.artifactRequests || [],
+      hasFileBlock
+    };
   }
   function buildBlobFromDownload(entry){
     const normalized = normalizeDownloadEntry(entry);
@@ -11719,7 +11806,7 @@ ${clip}` });
     if (!b) return;
     const body = b.querySelector('.body');
     if (body){
-      const downloadState = ensureDownloadsFromText(text || '', mid || '');
+      const downloadState = collectAssistantDownloadRenderState(text || '', mid || '', 'assistant_generated_image_initial_render');
       body.innerHTML = renderAssistantMessageHtml(text || '', downloadState.entries, downloadState.artifactRequests || []);
       bindAssistantDownloadLinks(body);
     }
@@ -11870,7 +11957,7 @@ ${clip}` });
       const body = document.createElement('div');
       body.className = 'body';
       const downloadState = m.role === 'assistant'
-        ? ensureDownloadsFromText(m.content || '', m.id || '')
+        ? collectAssistantDownloadRenderState(m.content || '', m.id || '', 'assistant_generated_image_hydrated')
         : { entries: [], newCount: 0, artifactRequests: [] };
       body.innerHTML = m.role === 'assistant'
         ? renderAssistantMessageHtml(m.content || '', downloadState.entries, downloadState.artifactRequests || [])
@@ -12446,6 +12533,18 @@ function updateChips(){
       const thread2 = threads2[idx2] || threads2[0];
       const msg2 = (thread2.messages || []).find(m => m.id === aId);
       if (msg2) msg2.content = ans || aMsg.content || '';
+      try{
+        const finalizedText = String(msg2?.content || ans || aMsg.content || '');
+        const finalizedState = collectAssistantDownloadRenderState(finalizedText, aId || '', 'assistant_generated_image_finalized');
+        logPreviewEvent('assistant_generated_image_finalized', {
+          mid: aId || '',
+          model: String(model || ''),
+          hasFileBlock: finalizedState.hasFileBlock,
+          hasDownloadEntry: (finalizedState.entries || []).length > 0,
+          hasResolvedSrc: (finalizedState.entries || []).some((entry) => /^image\//i.test(String(entry?.mime || '')) && !!getDownloadPreviewUrl(entry)),
+          entryCount: (finalizedState.entries || []).length
+        });
+      }catch(_){ /* logging only */ }
       thread2.updatedAt = nowTs();
       threads2[idx2] = thread2;
       saveThreads(pid, threads2);
