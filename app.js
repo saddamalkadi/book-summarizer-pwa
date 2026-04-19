@@ -9260,26 +9260,6 @@ async function fileToText(file){
   }
 
   // ---------------- Provider calls ----------------
-  async function callOpenAIChat({ apiKey, baseUrl, model, messages, max_tokens, signal, extraHeaders={}, modalities=[] }){
-    const url = baseUrl.replace(/\/+$/,'') + '/chat/completions';
-    const body = { model, messages, max_tokens, temperature: 0.25 };
-    if (Array.isArray(modalities) && modalities.length) body.modalities = modalities;
-    const r = await fetch(url, {
-      method:'POST',
-      headers: { 'Content-Type':'application/json', ...extraHeaders, ...buildAuthHeaders(getSettings()) },
-      body: JSON.stringify(body),
-      signal
-    });
-    const t = await r.text();
-    let j; try{ j = JSON.parse(t); }catch(_){ j = null; }
-    if (!r.ok) throw new Error(extractApiErrorMessage(j, t, r.status));
-
-    const extracted = extractAssistantResponseData(j);
-    if (!String(extracted.text || '').trim()){
-      throw new Error(extracted.diagnostic || 'EMPTY_ASSISTANT_RESPONSE');
-    }
-    return extracted.text;
-  }
 
   function textFromPart(part){
     if (part == null) return '';
@@ -9466,82 +9446,6 @@ async function fileToText(file){
     return parts.map(p => p?.text || '').join('');
   }
 
-  async function streamChatCompletions({ apiKey, baseUrl, model, messages, max_tokens, signal, onDelta, extraHeaders={} }){
-    const url = baseUrl.replace(/\/+$/,'') + '/chat/completions';
-    const body = { model, messages, max_tokens, temperature: 0.25, stream: true };
-    const r = await fetch(url, {
-      method:'POST',
-      headers: { 'Content-Type':'application/json', ...extraHeaders, ...buildAuthHeaders(getSettings()) },
-      body: JSON.stringify(body),
-      signal
-    });
-    if (!r.ok){
-      const t = await r.text().catch(()=> '');
-      let j; try{ j=JSON.parse(t);}catch(_){j=null;}
-      throw new Error(j?.error?.message || t || `HTTP ${r.status}`);
-    }
-
-    const contentType = String(r.headers.get('content-type') || '').toLowerCase();
-    // Some gateways ignore stream=true and return a normal JSON completion response.
-    if (contentType.includes('application/json')){
-      const t = await r.text();
-      let j; try{ j = JSON.parse(t); }catch(_){ j = null; }
-      const oneShot = extractAssistantText(j);
-      if (!String(oneShot.text || '').trim()){
-        throw new Error(oneShot.diagnostic || 'STREAM_EMPTY_RESPONSE');
-      }
-      return String(oneShot.text || '');
-    }
-
-    const reader = r.body.getReader();
-    const dec = new TextDecoder('utf-8');
-    let buf = '';
-    let full = '';
-    while (true){
-      const {value, done} = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, {stream:true});
-      const lines = buf.split(/\r?\n/);
-      buf = lines.pop() || '';
-      for (const line of lines){
-        const s = line.trim();
-        if (!s || !s.startsWith) continue;
-        if (!s.startsWith('data:')) continue;
-        const payload = s.slice(5).trim();
-        if (payload === '[DONE]') return full;
-        let j; try{ j = JSON.parse(payload); }catch(_){ continue; }
-        const delta = textFromPart(j?.choices?.[0]?.delta?.content) || textFromPart(j?.choices?.[0]?.delta);
-        if (delta){
-          full += delta;
-          onDelta?.(delta, full);
-        }
-      }
-    }
-
-    // Handle any final buffered line when stream closes without trailing newline.
-    const tail = (buf || '').trim();
-    if (tail.startsWith('data:')){
-      const payload = tail.slice(5).trim();
-      if (payload && payload !== '[DONE]'){
-        let j; try{ j = JSON.parse(payload); }catch(_){ j = null; }
-        const lastDelta = textFromPart(j?.choices?.[0]?.delta?.content)
-          || textFromPart(j?.choices?.[0]?.delta)
-          || textFromPart(j?.choices?.[0]?.message?.content)
-          || textFromPart(j?.choices?.[0]?.message)
-          || '';
-        if (lastDelta){
-          full += lastDelta;
-          onDelta?.(lastDelta, full);
-        }
-      }
-    }
-
-    if (!String(full || '').trim()){
-      throw new Error('STREAM_EMPTY_RESPONSE');
-    }
-    return full;
-  }
-
   async function callOpenAIChat({ apiKey, baseUrl, model, messages, max_tokens, signal, extraHeaders={}, modalities=[] }){
     const run = async () => {
       const currentSettings = getSettings();
@@ -9612,6 +9516,32 @@ async function fileToText(file){
       const dec = new TextDecoder('utf-8');
       let buf = '';
       let full = '';
+      // SSE streams often carry assistant TEXT in delta.content while image
+      // assets arrive as structured JSON on the same chunk (images[] /
+      // output[].content[]). extractAssistantResponseData() handles the
+      // non-streaming JSON response, but streaming historically concatenated
+      // ONLY text deltas — so generated images never became ```file``` blocks
+      // and ensureDownloadsFromText() could not render a stable inline <img>.
+      const appendedAssetKeys = new Set();
+      const mergeGeneratedAssetsFromPayload = (payload) => {
+        if (!payload || typeof payload !== 'object') return '';
+        const assets = extractAssistantGeneratedAssets(payload);
+        if (!assets.length) return '';
+        const parts = [];
+        for (const entry of assets){
+          const url = String(entry?.url || '').trim();
+          const key = url || `${entry?.name || ''}\u241f${entry?.mime || ''}`;
+          if (!key || appendedAssetKeys.has(key)) continue;
+          appendedAssetKeys.add(key);
+          parts.push(buildInlineFileBlock(entry));
+          logPreviewEvent('stream_generated_asset_chunk', {
+            name: entry?.name || '',
+            mime: entry?.mime || '',
+            scheme: url ? url.slice(0, 12) : ''
+          });
+        }
+        return parts.length ? `\n\n${parts.join('\n\n')}` : '';
+      };
       const streamMeta = { generationId:'', model:String(model || '').trim(), usage:null };
       let streamDone = false;
       while (true){
@@ -9634,10 +9564,11 @@ async function fileToText(file){
           if (!streamMeta.model) streamMeta.model = String(j?.model || '').trim();
           if (j?.usage && typeof j.usage === 'object') streamMeta.usage = j.usage;
           const delta = textFromPart(j?.choices?.[0]?.delta?.content) || textFromPart(j?.choices?.[0]?.delta);
-          if (delta){
-            full += delta;
-            onDelta?.(delta, full);
-          }
+          const assetAddon = mergeGeneratedAssetsFromPayload(j);
+          if (assetAddon) full += assetAddon;
+          if (delta) full += delta;
+          const incremental = `${assetAddon || ''}${delta || ''}`;
+          if (incremental) onDelta?.(incremental, full);
         }
         if (streamDone) break;
       }
@@ -9650,15 +9581,16 @@ async function fileToText(file){
           if (!streamMeta.generationId) streamMeta.generationId = String(j?.id || j?.generation_id || '').trim();
           if (!streamMeta.model) streamMeta.model = String(j?.model || '').trim();
           if (j?.usage && typeof j.usage === 'object') streamMeta.usage = j.usage;
+          const assetAddon = mergeGeneratedAssetsFromPayload(j);
+          if (assetAddon) full += assetAddon;
           const lastDelta = textFromPart(j?.choices?.[0]?.delta?.content)
             || textFromPart(j?.choices?.[0]?.delta)
             || textFromPart(j?.choices?.[0]?.message?.content)
             || textFromPart(j?.choices?.[0]?.message)
             || '';
-          if (lastDelta){
-            full += lastDelta;
-            onDelta?.(lastDelta, full);
-          }
+          if (lastDelta) full += lastDelta;
+          const incremental = `${assetAddon || ''}${lastDelta || ''}`;
+          if (incremental) onDelta?.(incremental, full);
         }
       }
 
@@ -12205,50 +12137,6 @@ ${clip}` });
     }
   }
 
-  function handleChatComposerPaste(e){
-    try{
-      const dt = e.clipboardData;
-      const items = dt && typeof dt.items !== 'undefined' ? Array.from(dt.items || []) : [];
-      let blob = null;
-      let mime = '';
-      for (const it of items){
-        if (it.kind === 'file'){
-          const f = it.getAsFile();
-          if (f && String(f.type || '').toLowerCase().startsWith('image/')){
-            blob = f;
-            mime = f.type || '';
-            break;
-          }
-        }
-      }
-      if (!blob){
-        for (const it of items){
-          if (it.type && String(it.type).toLowerCase().startsWith('image/')){
-            try{
-              blob = it.getAsFile ? it.getAsFile() : null;
-            }catch(_){
-              blob = null;
-            }
-            mime = String(it.type || '');
-            if (blob) break;
-          }
-        }
-      }
-      if (!blob || !mime.toLowerCase().startsWith('image/')) return;
-      e.preventDefault();
-      const ext = (mime.split('/')[1] || 'png').split('+')[0];
-      const file = blob instanceof File
-        ? blob
-        : new File([blob], `paste-${Date.now()}.${ext}`, { type: mime });
-      logAttachmentEvent('paste_image', { name: file.name, type: file.type, size: file.size || 0 });
-      logPreviewEvent('chat_paste_attach_image', { name: file.name });
-      void addChatAttachments([file]);
-      toast('✅ تم إرفاق الصورة من الحافظة مع الرسالة');
-    }catch(err){
-      logAttachmentError('paste_image', err, {});
-    }
-  }
-
   function openChatAttachmentPicker(){
     const input = $('chatAttachFiles');
     if (!input){
@@ -12339,21 +12227,6 @@ function updateChips(){
         logPreviewError('snapshot_async_failed', snapErr, { count: attachmentsForRequest.length });
         uMsg.attachmentPreviews = snapshotAttachmentsForMessage(attachmentsForRequest);
       }
-    } else if (
-      composerEditState.active &&
-      composerEditState.mutateThread &&
-      composerEditState.sourceRole === 'user' &&
-      Array.isArray(uMsg.attachmentPreviews) &&
-      uMsg.attachmentPreviews.length
-    ){
-      // Edit-resend without new pending attachments: keep the existing
-      // snapshot on the user message (same blob/dataUrl flow as the first
-      // send). No work required here — this branch exists only for
-      // explicit logging when diagnosing "preview vanished after edit".
-      logPreviewEvent('image_preview_edit_resend_kept', {
-        mid: uMsg.id || '',
-        count: uMsg.attachmentPreviews.length
-      });
     }
     thread.updatedAt = nowTs();
     threads[idx] = thread;
@@ -12541,49 +12414,12 @@ function updateChips(){
     showStatus('⛔ تم إيقاف التوليد', false);
   }
 
-  function pendingAttachmentsFromUserMessageSnapshot(message){
-    const out = [];
-    const list = Array.isArray(message?.attachmentPreviews) ? message.attachmentPreviews : [];
-    for (const p of list){
-      if (!p || typeof p !== 'object') continue;
-      const assetId = String(p.assetId || p.id || '').trim() || makeId('att');
-      let dataUrl = String(p.dataUrl || '').trim();
-      if (!dataUrl){
-        dataUrl = fetchAttachmentAsset(assetId);
-      }
-      const kind = String(p.kind || '').toLowerCase() || inferAttachmentKind({ name: p.name || '', type: p.type || '' });
-      const name = String(p.name || 'مرفق');
-      const type = String(p.type || '');
-      const size = Number(p.size || 0);
-      if (!dataUrl && kind === 'image'){
-        logPreviewEvent('regen_missing_attachment_blob', { assetId, name });
-      }
-      out.push({
-        id: assetId,
-        name,
-        kind,
-        type,
-        size,
-        dataUrl,
-        text: '',
-        textFull: '',
-        chars: 0,
-        hasText: false,
-        extractionMode: String(p.extractionMode || ''),
-        textWasClippedForPrompt: false
-      });
-    }
-    return out;
-  }
-
   function regenLast(){
     const th = getCurThread();
     const lastUser = [...(th.messages||[])].reverse().find(m => m.role === 'user');
     if (!lastUser) return;
     $('chatInput').value = lastUser.content || '';
     resizeComposerInput();
-    pendingChatAttachments = pendingAttachmentsFromUserMessageSnapshot(lastUser);
-    updateChatAttachChips();
     syncComposerMeta();
     sendMessage();
   }
@@ -14534,7 +14370,6 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
       void addChatAttachments(files);
       e.target.value = '';
     });
-    $('chatInput')?.addEventListener('paste', handleChatComposerPaste);
     $('chatInput')?.addEventListener('focus', () => expandComposerOnFocus());
     $('chatInput')?.addEventListener('blur', () => {
       window.setTimeout(() => {
