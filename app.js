@@ -393,6 +393,8 @@
   const VOICE_CLOUD_MAX_RECORD_MS_VOICE = 16800;
   const VOICE_CLOUD_MAX_RECORD_MS_SINGLE = 14800;
   const VOICE_CLOUD_SILENCE_HOLD_MS = 1500;
+  /** Continuous voice-mode capture tolerates longer pauses than one-shot dictation. */
+  const VOICE_CLOUD_SILENCE_HOLD_MS_VOICE = 3000;
   const VOICE_CLOUD_SILENCE_RMS = 0.011;
   const VOICE_CLOUD_SILENCE_TICK_MS = 90;
   const VOICE_CLOUD_MIN_LOUD_MS = 320;
@@ -3741,8 +3743,10 @@ function applyShellLayout(){
       try{
         recorder.start();
         try{ VOICE_RUNTIME.cloudSilenceCleanup?.(); }catch(_){ }
+        const voiceModeOn = getVoiceModeEnabled();
         VOICE_RUNTIME.cloudSilenceCleanup = attachCloudSilenceStop(stream, recorder, {
-          maxMs: getVoiceModeEnabled() ? VOICE_CLOUD_MAX_RECORD_MS_VOICE : VOICE_CLOUD_MAX_RECORD_MS_SINGLE
+          maxMs: voiceModeOn ? VOICE_CLOUD_MAX_RECORD_MS_VOICE : VOICE_CLOUD_MAX_RECORD_MS_SINGLE,
+          silenceHoldMs: voiceModeOn ? VOICE_CLOUD_SILENCE_HOLD_MS_VOICE : VOICE_CLOUD_SILENCE_HOLD_MS
         });
       }catch(error){
         cleanupCloudVoiceCapture();
@@ -15534,6 +15538,7 @@ ${e?.message||e}`, false);
     active: false,
     initialized: false,
     persona: null,
+    personaFetchId: 0,
     stream: null,
     audioCtx: null,
     analyser: null,
@@ -15698,14 +15703,20 @@ ${e?.message||e}`, false);
     // / AbortError false-positives — a 200–500ms hard reset clears them.
     await hardResetLiveVoiceCapture({ keepOverlay: true, source: 'start' });
 
-    // Fetch persona. If the call fails (network/unauth), we still fall back to a
-    // reasonable local Arabic persona so the feature works in offline-ish conditions.
-    let persona = null;
-    try {
-      const p = await fetchAuthJson('/voice/live/persona');
-      if (p && typeof p === 'object') persona = p;
-    } catch (_) { persona = null; }
-    LIVE_VOICE.persona = persona || getDefaultLiveVoicePersona();
+    // Persona is loaded in the background so a slow /voice/live/persona round-trip
+    // never blocks local mic acquisition (previously this awaited fetch gated getUserMedia).
+    LIVE_VOICE.persona = getDefaultLiveVoicePersona();
+    const personaFetchSession = ++LIVE_VOICE.personaFetchId;
+    void fetchAuthJson('/voice/live/persona').then((p) => {
+      if (personaFetchSession !== LIVE_VOICE.personaFetchId || !p || typeof p !== 'object') return;
+      LIVE_VOICE.persona = mergeLiveVoicePersonaFromFetch(p);
+      try {
+        if (LIVE_VOICE.active && Array.isArray(LIVE_VOICE.conversation) && LIVE_VOICE.conversation.length === 1 && LIVE_VOICE.conversation[0]?.role === 'system') {
+          const sys = String(LIVE_VOICE.persona.systemPrompt || '').trim();
+          if (sys) LIVE_VOICE.conversation[0].content = sys;
+        }
+      } catch (_) {}
+    }).catch(() => {});
 
     const onNativeAndroid = typeof isNativeAndroidPlatform === 'function' && isNativeAndroidPlatform();
     setLiveVoiceStage('mic_init', 'جاري تجهيز الميكروفون…');
@@ -15857,6 +15868,9 @@ ${e?.message||e}`, false);
     }
   }
 
+  /** Minimum post-speech quiet window before live VAD ends a turn (ms). */
+  const LIVE_VOICE_MIN_SILENCE_HOLD_MS = 2600;
+
   function getDefaultLiveVoicePersona(){
     return {
       language: 'ar',
@@ -15868,9 +15882,30 @@ ${e?.message||e}`, false);
         'ترد بجُمل قصيرة طبيعية مناسبة للحوار الصوتي.'
       ].join(' '),
       barge: { enabled: true, micRmsThreshold: 0.04, silenceHoldMs: 800 },
-      vad: { enabled: true, rmsThreshold: 0.011, minLoudMs: 320, silenceHoldMs: 1400, maxUtteranceMs: 16000 },
+      vad: { enabled: true, rmsThreshold: 0.011, minLoudMs: 320, silenceHoldMs: LIVE_VOICE_MIN_SILENCE_HOLD_MS, maxUtteranceMs: 16000 },
       streamingTts: { enabled: true, sentenceBufferMs: 180 }
     };
+  }
+
+  function mergeLiveVoicePersonaFromFetch(remote){
+    const base = getDefaultLiveVoicePersona();
+    if (!remote || typeof remote !== 'object') return base;
+    const out = {
+      ...base,
+      ...remote,
+      systemPrompt: typeof remote.systemPrompt === 'string' && remote.systemPrompt.trim()
+        ? remote.systemPrompt.trim()
+        : base.systemPrompt,
+      barge: { ...base.barge, ...(typeof remote.barge === 'object' && remote.barge ? remote.barge : {}) },
+      vad: { ...base.vad, ...(typeof remote.vad === 'object' && remote.vad ? remote.vad : {}) },
+      streamingTts: { ...base.streamingTts, ...(typeof remote.streamingTts === 'object' && remote.streamingTts ? remote.streamingTts : {}) }
+    };
+    const sh = Number(out.vad.silenceHoldMs);
+    out.vad.silenceHoldMs = Math.max(
+      LIVE_VOICE_MIN_SILENCE_HOLD_MS,
+      Number.isFinite(sh) ? sh : LIVE_VOICE_MIN_SILENCE_HOLD_MS
+    );
+    return out;
   }
 
   function setLiveVoiceStatus(text){
