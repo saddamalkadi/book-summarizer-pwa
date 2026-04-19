@@ -12205,6 +12205,50 @@ ${clip}` });
     }
   }
 
+  function handleChatComposerPaste(e){
+    try{
+      const dt = e.clipboardData;
+      const items = dt && typeof dt.items !== 'undefined' ? Array.from(dt.items || []) : [];
+      let blob = null;
+      let mime = '';
+      for (const it of items){
+        if (it.kind === 'file'){
+          const f = it.getAsFile();
+          if (f && String(f.type || '').toLowerCase().startsWith('image/')){
+            blob = f;
+            mime = f.type || '';
+            break;
+          }
+        }
+      }
+      if (!blob){
+        for (const it of items){
+          if (it.type && String(it.type).toLowerCase().startsWith('image/')){
+            try{
+              blob = it.getAsFile ? it.getAsFile() : null;
+            }catch(_){
+              blob = null;
+            }
+            mime = String(it.type || '');
+            if (blob) break;
+          }
+        }
+      }
+      if (!blob || !mime.toLowerCase().startsWith('image/')) return;
+      e.preventDefault();
+      const ext = (mime.split('/')[1] || 'png').split('+')[0];
+      const file = blob instanceof File
+        ? blob
+        : new File([blob], `paste-${Date.now()}.${ext}`, { type: mime });
+      logAttachmentEvent('paste_image', { name: file.name, type: file.type, size: file.size || 0 });
+      logPreviewEvent('chat_paste_attach_image', { name: file.name });
+      void addChatAttachments([file]);
+      toast('✅ تم إرفاق الصورة من الحافظة مع الرسالة');
+    }catch(err){
+      logAttachmentError('paste_image', err, {});
+    }
+  }
+
   function openChatAttachmentPicker(){
     const input = $('chatAttachFiles');
     if (!input){
@@ -12295,6 +12339,21 @@ function updateChips(){
         logPreviewError('snapshot_async_failed', snapErr, { count: attachmentsForRequest.length });
         uMsg.attachmentPreviews = snapshotAttachmentsForMessage(attachmentsForRequest);
       }
+    } else if (
+      composerEditState.active &&
+      composerEditState.mutateThread &&
+      composerEditState.sourceRole === 'user' &&
+      Array.isArray(uMsg.attachmentPreviews) &&
+      uMsg.attachmentPreviews.length
+    ){
+      // Edit-resend without new pending attachments: keep the existing
+      // snapshot on the user message (same blob/dataUrl flow as the first
+      // send). No work required here — this branch exists only for
+      // explicit logging when diagnosing "preview vanished after edit".
+      logPreviewEvent('image_preview_edit_resend_kept', {
+        mid: uMsg.id || '',
+        count: uMsg.attachmentPreviews.length
+      });
     }
     thread.updatedAt = nowTs();
     threads[idx] = thread;
@@ -12482,12 +12541,49 @@ function updateChips(){
     showStatus('⛔ تم إيقاف التوليد', false);
   }
 
+  function pendingAttachmentsFromUserMessageSnapshot(message){
+    const out = [];
+    const list = Array.isArray(message?.attachmentPreviews) ? message.attachmentPreviews : [];
+    for (const p of list){
+      if (!p || typeof p !== 'object') continue;
+      const assetId = String(p.assetId || p.id || '').trim() || makeId('att');
+      let dataUrl = String(p.dataUrl || '').trim();
+      if (!dataUrl){
+        dataUrl = fetchAttachmentAsset(assetId);
+      }
+      const kind = String(p.kind || '').toLowerCase() || inferAttachmentKind({ name: p.name || '', type: p.type || '' });
+      const name = String(p.name || 'مرفق');
+      const type = String(p.type || '');
+      const size = Number(p.size || 0);
+      if (!dataUrl && kind === 'image'){
+        logPreviewEvent('regen_missing_attachment_blob', { assetId, name });
+      }
+      out.push({
+        id: assetId,
+        name,
+        kind,
+        type,
+        size,
+        dataUrl,
+        text: '',
+        textFull: '',
+        chars: 0,
+        hasText: false,
+        extractionMode: String(p.extractionMode || ''),
+        textWasClippedForPrompt: false
+      });
+    }
+    return out;
+  }
+
   function regenLast(){
     const th = getCurThread();
     const lastUser = [...(th.messages||[])].reverse().find(m => m.role === 'user');
     if (!lastUser) return;
     $('chatInput').value = lastUser.content || '';
     resizeComposerInput();
+    pendingChatAttachments = pendingAttachmentsFromUserMessageSnapshot(lastUser);
+    updateChatAttachChips();
     syncComposerMeta();
     sendMessage();
   }
@@ -14438,6 +14534,7 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
       void addChatAttachments(files);
       e.target.value = '';
     });
+    $('chatInput')?.addEventListener('paste', handleChatComposerPaste);
     $('chatInput')?.addEventListener('focus', () => expandComposerOnFocus());
     $('chatInput')?.addEventListener('blur', () => {
       window.setTimeout(() => {
