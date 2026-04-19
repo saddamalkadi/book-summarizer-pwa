@@ -15565,7 +15565,9 @@ ${e?.message||e}`, false);
     lastError: null,
     lastErrorStage: '',
     lastTranscript: '',
-    sttMethod: ''             // 'browser' | 'cloud' | 'browser_then_cloud'
+    sttMethod: '',            // 'browser' | 'cloud' | 'browser_then_cloud'
+    /** sessionStorage: successful live mic this tab session — skip redundant native speech permission bridge on Android */
+    micSessionPrimedStorageKey: 'aiw_lv_mic_ok_v1'
   };
 
   // Structured per-stage logger. Every error/state transition goes through this so
@@ -15724,8 +15726,15 @@ ${e?.message||e}`, false);
     LIVE_VOICE.micBusyConfirmed = false;
     LIVE_VOICE.micAttempts = 0;
 
-    // On Android APK, prime the native RECORD_AUDIO grant via the plugin first.
-    if (onNativeAndroid) {
+    let micPrimedThisSession = false;
+    try {
+      micPrimedThisSession = typeof sessionStorage !== 'undefined'
+        && sessionStorage.getItem(LIVE_VOICE.micSessionPrimedStorageKey) === '1';
+    } catch (_) { micPrimedThisSession = false; }
+
+    // Android APK: prime RECORD_AUDIO via the SpeechRecognition plugin once per tab session.
+    // After the first successful live mic open, skip this bridge — checkPermissions/getUserMedia already reflect OS state.
+    if (onNativeAndroid && !micPrimedThisSession) {
       try {
         const nativePlugin = typeof getNativeSpeechRecognitionPlugin === 'function'
           ? getNativeSpeechRecognitionPlugin()
@@ -15755,11 +15764,19 @@ ${e?.message||e}`, false);
         overlay.setAttribute('aria-hidden', 'true');
         overlay.style.display = 'none';
       }
+      try {
+        if (errKind === 'permission_denied' && typeof sessionStorage !== 'undefined') {
+          sessionStorage.removeItem(LIVE_VOICE.micSessionPrimedStorageKey);
+        }
+      } catch (_) {}
       return;
     }
 
     LIVE_VOICE.active = true;
     LIVE_VOICE.stream = stream;
+    try {
+      if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(LIVE_VOICE.micSessionPrimedStorageKey, '1');
+    } catch (_) {}
     LIVE_VOICE.conversation = [
       { role: 'system', content: LIVE_VOICE.persona.systemPrompt || 'أنت مساعد صوتي ذكي يرد بالعربية الفصحى بجمل قصيرة طبيعية.' }
     ];
@@ -15869,7 +15886,11 @@ ${e?.message||e}`, false);
   }
 
   /** Minimum post-speech quiet window before live VAD ends a turn (ms). */
-  const LIVE_VOICE_MIN_SILENCE_HOLD_MS = 2600;
+  const LIVE_VOICE_MIN_SILENCE_HOLD_MS = 3800;
+  /** Smooth float mic level so brief RMS dips between syllables do not read as silence. */
+  const LIVE_VOICE_VAD_RMS_SMOOTHING = 0.48;
+  const LIVE_VOICE_VAD_SCHMITT_HIGH_MULT = 1.14;
+  const LIVE_VOICE_VAD_SCHMITT_LOW_MULT = 0.67;
 
   function getDefaultLiveVoicePersona(){
     return {
@@ -15988,6 +16009,10 @@ ${e?.message||e}`, false);
     let lastLoudAt = 0;
     let loudAccum = 0;
     let hasSpokenOnce = false;
+    let vadSmooth = 0;
+    let energyOn = false;
+    const thrHi = rmsThreshold * LIVE_VOICE_VAD_SCHMITT_HIGH_MULT;
+    const thrLo = rmsThreshold * LIVE_VOICE_VAD_SCHMITT_LOW_MULT;
 
     const buf = analyser ? new Float32Array(analyser.fftSize) : null;
 
@@ -16003,9 +16028,16 @@ ${e?.message||e}`, false);
           rms = Math.sqrt(sum / buf.length);
         } catch (_) { rms = 0; }
       }
-      const loud = rms > rmsThreshold;
-      if (loud) {
-        if (lastLoudAt === 0) loudAccum = 0;
+      if (analyser && buf) {
+        vadSmooth = LIVE_VOICE_VAD_RMS_SMOOTHING * vadSmooth + (1 - LIVE_VOICE_VAD_RMS_SMOOTHING) * rms;
+        if (!energyOn && vadSmooth >= thrHi) energyOn = true;
+        else if (energyOn && vadSmooth < thrLo) energyOn = false;
+      } else {
+        vadSmooth = rms;
+        if (!energyOn && rms > rmsThreshold) energyOn = true;
+        else if (energyOn && rms < rmsThreshold * 0.82) energyOn = false;
+      }
+      if (energyOn) {
         loudAccum += 90;
         lastLoudAt = now;
         if (loudAccum >= minLoudMs) hasSpokenOnce = true;
