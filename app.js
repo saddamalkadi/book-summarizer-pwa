@@ -8286,8 +8286,35 @@ async function fileToText(file){
   }
 
   // ---------------- Downloads (```file blocks) ----------------
-  function loadDownloads(){ return loadJSON(KEYS.downloads, []) || []; }
-  function saveDownloads(arr){ saveJSON(KEYS.downloads, arr); }
+  // Runtime overlay for download rows that could not be persisted to
+  // localStorage (QuotaExceededError). Without this, assistant-generated
+  // image previews that were successfully parsed into a download entry can
+  // still "vanish" on the next renderChat() because resolveDownloadEntry()
+  // only sees the last successfully-saved disk snapshot.
+  const DOWNLOADS_RUNTIME = new Map();
+  function loadDownloads(){
+    const disk = loadJSON(KEYS.downloads, []) || [];
+    if (!DOWNLOADS_RUNTIME.size) return disk;
+    const byId = new Map();
+    for (const row of disk){
+      if (row && row.id) byId.set(String(row.id), row);
+    }
+    DOWNLOADS_RUNTIME.forEach((row, id) => {
+      if (row && typeof row === 'object') byId.set(String(id), row);
+    });
+    return Array.from(byId.values());
+  }
+  function saveDownloads(arr){
+    const ok = saveJSON(KEYS.downloads, arr);
+    if (ok){
+      // Drop any runtime rows that now exist on disk with the same id.
+      try{
+        const ids = new Set((Array.isArray(arr) ? arr : []).map((r) => String(r?.id || '')).filter(Boolean));
+        ids.forEach((id) => { if (DOWNLOADS_RUNTIME.has(id)) DOWNLOADS_RUNTIME.delete(id); });
+      }catch(_){ /* never throw */ }
+    }
+    return ok;
+  }
   const DOWNLOAD_MIME_MAP = {
     txt: 'text/plain',
     md: 'text/markdown',
@@ -8606,11 +8633,24 @@ async function fileToText(file){
         existing.sourceMessageId = normalized.sourceMessageId;
         changed = true;
       }
-      if (changed) saveDownloads(downloads.slice(0, 160));
+      if (changed){
+        const ok = saveDownloads(downloads.slice(0, 160));
+        if (!ok && existing.id) DOWNLOADS_RUNTIME.set(String(existing.id), { ...existing });
+      }
       return { entry: existing, created: false };
     }
     downloads.unshift(normalized);
-    saveDownloads(downloads.slice(0, 160));
+    const ok = saveDownloads(downloads.slice(0, 160));
+    if (!ok && normalized.id){
+      DOWNLOADS_RUNTIME.set(String(normalized.id), { ...normalized });
+      try{
+        logPreviewEvent('download_registry_mem_only', {
+          id: normalized.id,
+          mime: normalized.mime,
+          enc: normalized.encoding
+        });
+      }catch(_){ /* never throw from logging */ }
+    }
     return { entry: normalized, created: true };
   }
   function addDownload(_pid, entry = {}){
@@ -8816,7 +8856,14 @@ async function fileToText(file){
     if (normalized.encoding === 'base64' && normalized.content){
       try{
         const approxBytes = Math.floor(String(normalized.content || '').length * 3 / 4);
-        if (approxBytes <= 2 * 1024 * 1024){
+        const mimeLower = String(normalized.mime || '').toLowerCase();
+        // PNG/JPEG outputs from image models commonly fall between ~2–6 MiB.
+        // Staying on data: URLs keeps <img src> stable on Android WebView;
+        // blob: URLs are less reliable inside chat previews.
+        const maxInline = mimeLower.startsWith('image/')
+          ? (6 * 1024 * 1024)
+          : (2 * 1024 * 1024);
+        if (approxBytes <= maxInline){
           const dataUrl = `data:${normalized.mime || 'application/octet-stream'};base64,${normalized.content}`;
           downloadPreviewUrlCache.set(cacheKey, dataUrl);
           logPreviewEvent('download_preview_base64_inline', {
@@ -9387,6 +9434,15 @@ async function fileToText(file){
   function extractAssistantGeneratedAssets(payload){
     const assets = [];
     collectGeneratedAssetEntries(assets, payload?.images);
+
+    // Gemini-flavored chunks sometimes expose inline parts here instead of
+    // OpenAI-style `choices[].delta`.
+    const geminiCandidates = Array.isArray(payload?.candidates) ? payload.candidates : [];
+    geminiCandidates.forEach((cand) => {
+      collectGeneratedAssetEntries(assets, cand?.content?.parts);
+      collectGeneratedAssetEntries(assets, cand?.content);
+      collectGeneratedAssetEntries(assets, cand?.output?.parts);
+    });
 
     const outputEntries = [
       ...(Array.isArray(payload?.output) ? payload.output : []),
