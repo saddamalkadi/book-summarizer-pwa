@@ -1,1 +1,1 @@
-v9.6 preview-incident rotate #4 — hotfix production secrets only (OPENROUTER_API_KEY + APP_ADMIN_PASSWORD) incident 2026-04-18T15:05:00Z
+v9.6.1 post-image-preview + production heal — rotate Worker secrets (APP_ADMIN_PASSWORD + OPENROUTER_API_KEY), KV cleanup _config:admin_password, purge stale OR aliases — 2026-04-19T13:10:00Z
