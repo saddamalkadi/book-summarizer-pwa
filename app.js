@@ -9400,7 +9400,7 @@ async function fileToText(file){
     if (!raw || typeof raw !== 'object') return null;
     const directUrl = raw.image_url?.url || raw.url || raw.href || raw.data_url || '';
     const directMime = String(raw.mime_type || raw.mime || inferMimeFromDataUrl(directUrl) || '').trim().toLowerCase();
-    const b64 = String(raw.b64_json || raw.base64 || raw.content || '').trim();
+    const b64 = String(raw.b64_json || raw.base64 || raw.content || raw.data || '').trim();
     const url = sanitizeDownloadUrl(directUrl) || (b64 ? `data:${directMime || 'image/png'};base64,${b64}` : '');
     if (!url) return null;
     const mime = directMime || inferMimeFromDataUrl(url) || inferMimeFromName(raw.name || extractFilenameFromUrl(url, '')) || 'image/png';
@@ -9425,6 +9425,18 @@ async function fileToText(file){
         normalized = normalizeGeneratedAssetEntry(item, target.length + 1);
       } else if (item?.image_url?.url || item?.url || item?.href || item?.b64_json || item?.base64){
         normalized = normalizeGeneratedAssetEntry(item, target.length + 1);
+      } else {
+        const inline = item?.inlineData || item?.inline_data;
+        const rawB64 = inline
+          ? String(inline.data ?? inline.bytesBase64Encoded ?? '').trim()
+          : '';
+        if (rawB64){
+          normalized = normalizeGeneratedAssetEntry({
+            base64: rawB64,
+            mime_type: String(inline.mimeType || inline.mime_type || 'image/png'),
+            name: item.name || item.display_name
+          }, target.length + 1);
+        }
       }
       if (!normalized) continue;
       const duplicate = target.some((entry) => entry.url === normalized.url || (entry.name === normalized.name && entry.mime === normalized.mime));
@@ -9538,12 +9550,13 @@ async function fileToText(file){
     }
   }
 
-  async function streamChatCompletions({ apiKey, baseUrl, model, messages, max_tokens, signal, onDelta, extraHeaders={} }){
+  async function streamChatCompletions({ apiKey, baseUrl, model, messages, max_tokens, signal, onDelta, extraHeaders={}, modalities=[] }){
     const run = async () => {
       const currentSettings = getSettings();
       const resolvedBaseUrl = String(baseUrl || effectiveBaseUrl(currentSettings) || '').replace(/\/+$/,'');
       const url = resolvedBaseUrl + '/chat/completions';
       const body = { model, messages, max_tokens, temperature: 0.25, stream: true };
+      if (Array.isArray(modalities) && modalities.length) body.modalities = modalities;
       const r = await fetch(url, {
         method:'POST',
         headers: { 'Content-Type':'application/json', ...extraHeaders, ...buildAuthHeaders(currentSettings) },
@@ -12362,6 +12375,7 @@ function updateChips(){
                 max_tokens: maxTokens,
                 signal: abortCtl.signal,
                 extraHeaders,
+                modalities: requestedModalities,
                 onDelta: (_d, full) => {
                   updateStreamingAssistant(aId, full);
                   aMsg.content = full;
@@ -13848,7 +13862,7 @@ let pinOnly = false;
     ].filter(Boolean).join(' ').toLowerCase();
     const ctx = Number(model?.ctx || 0);
     const categories = new Set();
-    const isImageGeneration = outputModalities.includes('image') || /(flux|sdxl|stable[-\s]?diffusion|recraft|imagen|dall[\s-]?e|ideogram|playground|image[-\s]?gen|text[-\s]?to[-\s]?image)/i.test(hay);
+    const isImageGeneration = outputModalities.includes('image') || /(flux|sdxl|stable[-\s]?diffusion|recraft|imagen|dall[\s-]?e|ideogram|playground|image[-\s]?gen|text[-\s]?to[-\s]?image|flash[-\s]?image|image[-\s]?preview)/i.test(hay);
     const isVideo = outputModalities.includes('video') || /(video|veo|runway|kling|hailuo|minimax[-\s]?video|pika|luma|wan[-\s]?video|movie[-\s]?gen|text[-\s]?to[-\s]?video)/i.test(hay);
     const isAudio = outputModalities.includes('audio') || /(whisper|tts|speech|audio|transcrib|voice|eleven|sonic|asr)/i.test(hay);
     const isCoding = /(code|coder|coding|codestral|deepseek[-\s]?coder|qwen.*coder|codellama|starcoder|replit|devstral|programming|software\s*engineer|aider)/i.test(hay);
