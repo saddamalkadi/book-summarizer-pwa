@@ -1,1 +1,1 @@
-v9.6.1 post-image-preview + production heal â€” rotate Worker secrets (APP_ADMIN_PASSWORD + OPENROUTER_API_KEY), KV cleanup _config:admin_password, purge stale OR aliases â€” 2026-04-19T13:10:00Z
+production incident hotfix rotate #893 — APP_ADMIN_PASSWORD + OPENROUTER_API_KEY + stale cleanup — 2026-04-19T17:45:26Z
