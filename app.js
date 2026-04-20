@@ -15791,6 +15791,8 @@ ${e?.message||e}`, false);
 
     LIVE_VOICE.active = true;
     LIVE_VOICE.stream = stream;
+    LIVE_VOICE.turnGuardUntil = 0;
+    LIVE_VOICE.turnHasUserSpeech = false;
     try {
       if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(LIVE_VOICE.micSessionPrimedStorageKey, '1');
     } catch (_) {}
@@ -15903,7 +15905,7 @@ ${e?.message||e}`, false);
   }
 
   /** Minimum post-speech quiet window before live VAD ends a turn (ms). */
-  const LIVE_VOICE_MIN_SILENCE_HOLD_MS = 3800;
+  const LIVE_VOICE_MIN_SILENCE_HOLD_MS = 2100;
   /** Smooth float mic level so brief RMS dips between syllables do not read as silence. */
   const LIVE_VOICE_VAD_RMS_SMOOTHING = 0.48;
   const LIVE_VOICE_VAD_SCHMITT_HIGH_MULT = 1.14;
@@ -16034,10 +16036,10 @@ ${e?.message||e}`, false);
     const minLoudMs = Number(vad.minLoudMs || 320);
     const silenceHoldMs = Number(vad.silenceHoldMs || 1400);
     const maxUtteranceMs = Number(vad.maxUtteranceMs || 16000);
-    const finalizeGraceMs = 320;
-    const noSpeechMaxMs = 5200;
-    const confidentSpeechMs = 2200;
-    const minTurnAfterSpeechMs = 1300;
+    const finalizeGraceMs = 260;
+    const noSpeechMaxMs = 9000;
+    const confidentSpeechMs = 1700;
+    const minTurnAfterSpeechMs = 1100;
     const analyser = LIVE_VOICE.analyser;
     const startedAt = Date.now();
     let lastLoudAt = 0;
@@ -16095,7 +16097,7 @@ ${e?.message||e}`, false);
       if (hasSpokenOnce && loudAccum >= confidentSpeechMs) {
         // After a clearly long enough utterance, switch to a shorter close-out hold
         // so we can enter transcription quickly once the thought naturally ends.
-        effectiveSilenceHoldMs = Math.max(1700, Math.round(silenceHoldMs * 0.58));
+        effectiveSilenceHoldMs = Math.max(1100, Math.round(silenceHoldMs * 0.45));
       }
       const speechMatured = !speechConfirmedAt || (now - speechConfirmedAt >= minTurnAfterSpeechMs);
       if (speechMatured && hasSpokenOnce && lastLoudAt && now - lastLoudAt > (effectiveSilenceHoldMs + finalizeGraceMs)) {
@@ -16492,6 +16494,8 @@ ${e?.message||e}`, false);
     LIVE_VOICE.recorder = null;
     LIVE_VOICE.recording = false;
     LIVE_VOICE.chunks = [];
+    LIVE_VOICE.turnHasUserSpeech = false;
+    LIVE_VOICE.turnGuardUntil = 0;
     // 2) Current TTS playback (HTMLAudioElement or AudioBufferSourceNode)
     try {
       const cur = LIVE_VOICE.currentAudio;
