@@ -3650,7 +3650,7 @@ function applyShellLayout(){
     const input = $('chatInput');
     if (!voice.sttReady || !input) return false;
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined'){
-      return { success:false, fallbackAllowed:true, cancelled:false };
+      return false;
     }
 
     let stream = null;
@@ -15979,6 +15979,13 @@ ${e?.message||e}`, false);
       if (!LIVE_VOICE.active) return;
       const blob = new Blob(LIVE_VOICE.chunks, { type: recorder.mimeType || mimeType || 'audio/webm' });
       LIVE_VOICE.chunks = [];
+      // Ignore tiny fragments (tap noise / short feedback bursts) to avoid premature
+      // STT turns that make live conversation feel broken.
+      if (blob.size < 1400) {
+        liveVoiceLog('speech_capture_too_small', { bytes: blob.size });
+        if (LIVE_VOICE.active) startLiveVoiceTurn();
+        return;
+      }
       if (!blob.size) {
         liveVoiceLog('speech_capture_silence');
         if (LIVE_VOICE.active) startLiveVoiceTurn();
@@ -16004,6 +16011,7 @@ ${e?.message||e}`, false);
     const minLoudMs = Number(vad.minLoudMs || 320);
     const silenceHoldMs = Number(vad.silenceHoldMs || 1400);
     const maxUtteranceMs = Number(vad.maxUtteranceMs || 16000);
+    const finalizeGraceMs = 420;
     const analyser = LIVE_VOICE.analyser;
     const startedAt = Date.now();
     let lastLoudAt = 0;
@@ -16044,7 +16052,7 @@ ${e?.message||e}`, false);
       }
 
       // Stop on silence hold AFTER the user has clearly spoken at least once.
-      if (hasSpokenOnce && lastLoudAt && now - lastLoudAt > silenceHoldMs) {
+      if (hasSpokenOnce && lastLoudAt && now - lastLoudAt > (silenceHoldMs + finalizeGraceMs)) {
         try { recorder.stop(); } catch (_) {}
         return;
       }
