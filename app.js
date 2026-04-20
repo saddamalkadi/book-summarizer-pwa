@@ -4222,7 +4222,7 @@ function applyShellLayout(){
       };
     }catch(error){
       const message = String(error?.message || error || '').trim();
-      const cancelled = /cancel|abort|^0$/i.test(message);
+      const cancelled = /cancel|^0$/i.test(message);
       const timedOut = /STT_TIMEOUT/i.test(message);
       if (!cancelled){
         const human = translateNativeSttError(message);
@@ -15566,6 +15566,8 @@ ${e?.message||e}`, false);
     lastErrorStage: '',
     lastTranscript: '',
     sttMethod: '',            // 'browser' | 'cloud' | 'browser_then_cloud'
+    turnHasUserSpeech: false,
+    turnGuardUntil: 0,
     /** sessionStorage: successful live mic this tab session — skip redundant native speech permission bridge on Android */
     micSessionPrimedStorageKey: 'aiw_lv_mic_ok_v1'
   };
@@ -15948,6 +15950,7 @@ ${e?.message||e}`, false);
   function startLiveVoiceTurn(){
     if (!LIVE_VOICE.active) return;
     LIVE_VOICE.interruptRequested = false;
+    LIVE_VOICE.turnHasUserSpeech = false;
     setLiveVoiceStage('speech_capture', '🎙️ استمع إليك…');
     const stream = LIVE_VOICE.stream;
     if (!stream) {
@@ -15979,6 +15982,11 @@ ${e?.message||e}`, false);
       if (!LIVE_VOICE.active) return;
       const blob = new Blob(LIVE_VOICE.chunks, { type: recorder.mimeType || mimeType || 'audio/webm' });
       LIVE_VOICE.chunks = [];
+      if (!LIVE_VOICE.turnHasUserSpeech) {
+        liveVoiceLog('speech_capture_no_user_speech', { bytes: blob.size });
+        if (LIVE_VOICE.active) startLiveVoiceTurn();
+        return;
+      }
       // Ignore tiny fragments (tap noise / short feedback bursts) to avoid premature
       // STT turns that make live conversation feel broken.
       if (blob.size < 1400) {
@@ -16012,6 +16020,7 @@ ${e?.message||e}`, false);
     const silenceHoldMs = Number(vad.silenceHoldMs || 1400);
     const maxUtteranceMs = Number(vad.maxUtteranceMs || 16000);
     const finalizeGraceMs = 420;
+    const noSpeechMaxMs = 4200;
     const analyser = LIVE_VOICE.analyser;
     const startedAt = Date.now();
     let lastLoudAt = 0;
@@ -16027,6 +16036,10 @@ ${e?.message||e}`, false);
     const tick = () => {
       if (!LIVE_VOICE.active || !LIVE_VOICE.recording) return;
       const now = Date.now();
+      if (LIVE_VOICE.turnGuardUntil && now < LIVE_VOICE.turnGuardUntil) {
+        LIVE_VOICE.vadTimer = window.setTimeout(tick, 90);
+        return;
+      }
       let rms = 0;
       if (analyser && buf) {
         try {
@@ -16048,7 +16061,14 @@ ${e?.message||e}`, false);
       if (energyOn) {
         loudAccum += 90;
         lastLoudAt = now;
-        if (loudAccum >= minLoudMs) hasSpokenOnce = true;
+        if (loudAccum >= minLoudMs) {
+          hasSpokenOnce = true;
+          LIVE_VOICE.turnHasUserSpeech = true;
+        }
+      }
+      if (!hasSpokenOnce && now - startedAt > noSpeechMaxMs) {
+        try { recorder.stop(); } catch (_) {}
+        return;
       }
 
       // Stop on silence hold AFTER the user has clearly spoken at least once.
@@ -16116,7 +16136,11 @@ ${e?.message||e}`, false);
     appendLiveVoiceTranscript('assistant', reply);
 
     await speakLiveVoiceResponse(reply);
-    if (LIVE_VOICE.active) startLiveVoiceTurn();
+    if (LIVE_VOICE.active) {
+      const waitMs = Math.max(0, Number(LIVE_VOICE.turnGuardUntil || 0) - Date.now());
+      if (waitMs > 0) window.setTimeout(() => { if (LIVE_VOICE.active) startLiveVoiceTurn(); }, waitMs);
+      else startLiveVoiceTurn();
+    }
   }
 
   async function runLiveVoiceChat(messages){
@@ -16205,6 +16229,9 @@ ${e?.message||e}`, false);
       }
     }
     LIVE_VOICE.speaking = false;
+    const onNativeAndroid = typeof isNativeAndroidPlatform === 'function' && isNativeAndroidPlatform();
+    const postTtsGuardMs = LIVE_VOICE.interruptRequested ? 220 : (onNativeAndroid ? 1350 : 900);
+    LIVE_VOICE.turnGuardUntil = Date.now() + postTtsGuardMs;
     if (sentences.length && networkFailures === sentences.length) {
       setLiveVoiceStatus(buildLiveVoiceMicErrorMessage('tts_network', lastNetErr, 'tts_playback'));
     } else if (sentences.length && (networkFailures + playbackFailures) === sentences.length) {
