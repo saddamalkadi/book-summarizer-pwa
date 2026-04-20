@@ -392,14 +392,26 @@
   /** Cloud STT segment end: silence hold + max length; post-STT auto-send is separate (see below). */
   const VOICE_CLOUD_MAX_RECORD_MS_VOICE = 16800;
   const VOICE_CLOUD_MAX_RECORD_MS_SINGLE = 14800;
-  const VOICE_CLOUD_SILENCE_HOLD_MS = 2600;
+  const VOICE_CLOUD_SILENCE_HOLD_MS = 3200;
   /** Continuous voice-mode capture tolerates longer pauses than one-shot dictation. */
   const VOICE_CLOUD_SILENCE_HOLD_MS_VOICE = 3000;
   const VOICE_CLOUD_SILENCE_RMS = 0.011;
   const VOICE_CLOUD_SILENCE_TICK_MS = 90;
   const VOICE_CLOUD_MIN_LOUD_MS = 320;
-  const VOICE_AUTOSEND_AFTER_TRANSCRIPT_MS = 900;
+  const VOICE_AUTOSEND_AFTER_TRANSCRIPT_MS = 950;
   const VOICE_WEBSPEECH_END_GRACE_MS = 2200;
+
+  function getVoiceAutoSendDelayMs(transcript = ''){
+    const text = String(transcript || '').trim();
+    let delay = VOICE_AUTOSEND_AFTER_TRANSCRIPT_MS;
+    if (!text) return delay;
+    // If the transcript does not look like a completed sentence yet, give the
+    // speaker extra breathing room before auto-send.
+    const hasNaturalEnd = /[.!?؟…。]\s*$/.test(text);
+    if (!hasNaturalEnd) delay += 550;
+    if (text.length < 16) delay += 280;
+    return Math.min(2200, Math.max(700, delay));
+  }
 
   const BROWSER_AUTH_BRIDGE = {
     webPath: 'auth-bridge.html',
@@ -3719,9 +3731,10 @@ function applyShellLayout(){
           const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && !!String(input.value || '').trim();
           VOICE_RUNTIME.autoSendArmed = false;
           if (shouldAutoSend){
+            const sendDelayMs = getVoiceAutoSendDelayMs(String(input.value || ''));
             window.setTimeout(() => {
               if (String($('chatInput')?.value || '').trim()) void sendMessage();
-            }, VOICE_AUTOSEND_AFTER_TRANSCRIPT_MS);
+            }, sendDelayMs);
           } else if (shouldKeepContinuousVoiceLoop()){
             scheduleVoiceConversationRestart(650);
           }
@@ -4207,9 +4220,10 @@ function applyShellLayout(){
       const shouldAutoSend = VOICE_RUNTIME.autoSendArmed && String(input.value || '').trim();
       VOICE_RUNTIME.autoSendArmed = false;
       if (shouldAutoSend){
+        const sendDelayMs = getVoiceAutoSendDelayMs(String(input.value || ''));
         window.setTimeout(() => {
           if (String($('chatInput')?.value || '').trim()) void sendMessage();
-        }, VOICE_AUTOSEND_AFTER_TRANSCRIPT_MS);
+        }, sendDelayMs);
       } else if (transcriptCaptured && shouldKeepContinuousVoiceLoop()){
         scheduleVoiceConversationRestart(550);
       } else if (!transcriptCaptured && shouldKeepContinuousVoiceLoop()){
@@ -4307,10 +4321,11 @@ function applyShellLayout(){
           composerWebVoiceSendTimer = 0;
         }
         if (shouldAutoSend){
+          const sendDelayMs = getVoiceAutoSendDelayMs(String(input.value || ''));
           composerWebVoiceSendTimer = window.setTimeout(() => {
             composerWebVoiceSendTimer = 0;
             if (String($('chatInput')?.value || '').trim()) void sendMessage();
-          }, VOICE_WEBSPEECH_END_GRACE_MS);
+          }, Math.max(VOICE_WEBSPEECH_END_GRACE_MS, sendDelayMs));
         } else if (shouldKeepContinuousVoiceLoop()){
           scheduleVoiceConversationRestart(550);
         }
@@ -16019,13 +16034,16 @@ ${e?.message||e}`, false);
     const minLoudMs = Number(vad.minLoudMs || 320);
     const silenceHoldMs = Number(vad.silenceHoldMs || 1400);
     const maxUtteranceMs = Number(vad.maxUtteranceMs || 16000);
-    const finalizeGraceMs = 420;
-    const noSpeechMaxMs = 7000;
+    const finalizeGraceMs = 320;
+    const noSpeechMaxMs = 5200;
+    const confidentSpeechMs = 2200;
+    const minTurnAfterSpeechMs = 1300;
     const analyser = LIVE_VOICE.analyser;
     const startedAt = Date.now();
     let lastLoudAt = 0;
     let loudAccum = 0;
     let hasSpokenOnce = false;
+    let speechConfirmedAt = 0;
     let vadSmooth = 0;
     let energyOn = false;
     const thrHi = rmsThreshold * LIVE_VOICE_VAD_SCHMITT_HIGH_MULT;
@@ -16063,6 +16081,7 @@ ${e?.message||e}`, false);
         lastLoudAt = now;
         if (loudAccum >= minLoudMs) {
           hasSpokenOnce = true;
+          if (!speechConfirmedAt) speechConfirmedAt = now;
           LIVE_VOICE.turnHasUserSpeech = true;
         }
       }
@@ -16072,7 +16091,14 @@ ${e?.message||e}`, false);
       }
 
       // Stop on silence hold AFTER the user has clearly spoken at least once.
-      if (hasSpokenOnce && lastLoudAt && now - lastLoudAt > (silenceHoldMs + finalizeGraceMs)) {
+      let effectiveSilenceHoldMs = silenceHoldMs;
+      if (hasSpokenOnce && loudAccum >= confidentSpeechMs) {
+        // After a clearly long enough utterance, switch to a shorter close-out hold
+        // so we can enter transcription quickly once the thought naturally ends.
+        effectiveSilenceHoldMs = Math.max(1700, Math.round(silenceHoldMs * 0.58));
+      }
+      const speechMatured = !speechConfirmedAt || (now - speechConfirmedAt >= minTurnAfterSpeechMs);
+      if (speechMatured && hasSpokenOnce && lastLoudAt && now - lastLoudAt > (effectiveSilenceHoldMs + finalizeGraceMs)) {
         try { recorder.stop(); } catch (_) {}
         return;
       }
