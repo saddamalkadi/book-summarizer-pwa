@@ -392,14 +392,14 @@
   /** Cloud STT segment end: silence hold + max length; post-STT auto-send is separate (see below). */
   const VOICE_CLOUD_MAX_RECORD_MS_VOICE = 16800;
   const VOICE_CLOUD_MAX_RECORD_MS_SINGLE = 14800;
-  const VOICE_CLOUD_SILENCE_HOLD_MS = 1500;
+  const VOICE_CLOUD_SILENCE_HOLD_MS = 2600;
   /** Continuous voice-mode capture tolerates longer pauses than one-shot dictation. */
   const VOICE_CLOUD_SILENCE_HOLD_MS_VOICE = 3000;
   const VOICE_CLOUD_SILENCE_RMS = 0.011;
   const VOICE_CLOUD_SILENCE_TICK_MS = 90;
   const VOICE_CLOUD_MIN_LOUD_MS = 320;
-  const VOICE_AUTOSEND_AFTER_TRANSCRIPT_MS = 480;
-  const VOICE_WEBSPEECH_END_GRACE_MS = 1200;
+  const VOICE_AUTOSEND_AFTER_TRANSCRIPT_MS = 900;
+  const VOICE_WEBSPEECH_END_GRACE_MS = 2200;
 
   const BROWSER_AUTH_BRIDGE = {
     webPath: 'auth-bridge.html',
@@ -16020,7 +16020,7 @@ ${e?.message||e}`, false);
     const silenceHoldMs = Number(vad.silenceHoldMs || 1400);
     const maxUtteranceMs = Number(vad.maxUtteranceMs || 16000);
     const finalizeGraceMs = 420;
-    const noSpeechMaxMs = 4200;
+    const noSpeechMaxMs = 7000;
     const analyser = LIVE_VOICE.analyser;
     const startedAt = Date.now();
     let lastLoudAt = 0;
@@ -16230,7 +16230,7 @@ ${e?.message||e}`, false);
     }
     LIVE_VOICE.speaking = false;
     const onNativeAndroid = typeof isNativeAndroidPlatform === 'function' && isNativeAndroidPlatform();
-    const postTtsGuardMs = LIVE_VOICE.interruptRequested ? 220 : (onNativeAndroid ? 1350 : 900);
+    const postTtsGuardMs = LIVE_VOICE.interruptRequested ? 180 : (onNativeAndroid ? 750 : 520);
     LIVE_VOICE.turnGuardUntil = Date.now() + postTtsGuardMs;
     if (sentences.length && networkFailures === sentences.length) {
       setLiveVoiceStatus(buildLiveVoiceMicErrorMessage('tts_network', lastNetErr, 'tts_playback'));
