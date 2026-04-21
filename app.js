@@ -12414,6 +12414,15 @@ function updateChips(){
     syncComposerMeta();
     renderChat();
 
+    if (isDeepSearch()){
+      // Keep Deep Search tied to the current user message and skip normal chat
+      // request construction to avoid unrelated generation paths.
+      pendingChatAttachments = [];
+      updateChatAttachChips();
+      await runResearchAgent(originalText);
+      return;
+    }
+
     const filesText = buildAutoFilesContext(settings);
     const rag = await buildRagContextIfEnabled(originalText, rawSettings);
     const messages = buildMessagesForChat({
@@ -12425,15 +12434,6 @@ function updateChips(){
       historyMessages: historySnapshot,
       threadSummary
     });
-
-    if (isDeepSearch()){
-      await runResearchAgent(originalText);
-      input.value = '';
-      shrinkComposerToCompact(true);
-      resizeComposerInput(input);
-      syncComposerMeta();
-      return;
-    }
 
     // clear pending attachments after being embedded into the request
     pendingChatAttachments = [];
@@ -12628,12 +12628,6 @@ function resolveResearchTopic(topicOverride){
   if (direct) return direct;
   const fromInput = String($('chatInput')?.value || '').trim();
   if (fromInput) return fromInput;
-  try{
-    const th = getCurThread();
-    const lastUser = [...(th?.messages || [])].reverse().find((m) => m?.role === 'user');
-    const fromLastUser = String(lastUser?.content || '').trim();
-    if (fromLastUser) return fromLastUser;
-  }catch(_){}
   return '';
 }
 
@@ -12676,6 +12670,7 @@ async function runResearchAgent(topicOverride){
 
   abortCtl?.abort?.();
   abortCtl = new AbortController();
+  if ($('stopBtn')) $('stopBtn').style.display = 'inline-flex';
   const sys = buildSystemPrompt(settings);
 
   // 1) Plan
@@ -12776,6 +12771,8 @@ async function runResearchAgent(topicOverride){
     await ensureKbStats();
   }catch(e){
     showStatus(`❌ Research فشل في التقرير:\n${e?.message||e}`, false);
+  } finally {
+    if ($('stopBtn')) $('stopBtn').style.display = 'none';
   }
 }
 
