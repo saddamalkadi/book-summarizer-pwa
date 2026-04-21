@@ -12426,6 +12426,15 @@ function updateChips(){
       threadSummary
     });
 
+    if (isDeepSearch()){
+      await runResearchAgent(originalText);
+      input.value = '';
+      shrinkComposerToCompact(true);
+      resizeComposerInput(input);
+      syncComposerMeta();
+      return;
+    }
+
     // clear pending attachments after being embedded into the request
     pendingChatAttachments = [];
     updateChatAttachChips();
@@ -12614,9 +12623,26 @@ function updateChips(){
 
 
 // ---------------- Research Agent (3 steps) ----------------
+function resolveResearchTopic(topicOverride){
+  const direct = String(topicOverride ?? '').trim();
+  if (direct) return direct;
+  const fromInput = String($('chatInput')?.value || '').trim();
+  if (fromInput) return fromInput;
+  try{
+    const th = getCurThread();
+    const lastUser = [...(th?.messages || [])].reverse().find((m) => m?.role === 'user');
+    const fromLastUser = String(lastUser?.content || '').trim();
+    if (fromLastUser) return fromLastUser;
+  }catch(_){}
+  return '';
+}
+
 async function runResearchAgent(topicOverride){
-  const topic = (topicOverride != null ? String(topicOverride) : (prompt('موضوع البحث التفصيلي:', '') || '')) || '';
-  if (!topic.trim()) return;
+  const topic = resolveResearchTopic(topicOverride);
+  if (!topic) {
+    toast('اكتب موضوع البحث أولًا ثم فعّل البحث العميق.');
+    return;
+  }
 
   const rawSettings = getSettings();
   const policy = getAppRuntimePolicy(rawSettings);
