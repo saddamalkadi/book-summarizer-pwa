@@ -9908,6 +9908,93 @@ async function fileToText(file){
     if (!s) return false;
     return /(?:cannot|can't|unable|not possible|within chat only|inside chat only|platform .*does not allow|لا يمكن(?:ني)?|غير قادر|داخل (?:الشات|المحادثة) فقط|لا يدعم(?: النظام| المنصة)?(?: إنشاء)? ملفات)/i.test(s);
   }
+  function hasUnclosedArtifactFence(text = ''){
+    const s = String(text || '');
+    if (!s) return false;
+    const openRe = /```\s*(artifact|artifacts|json)\b[^\n`]*\n/gi;
+    let openMatch = null;
+    while ((openMatch = openRe.exec(s))){ /* keep last */ }
+    if (!openMatch) return false;
+    const afterOpen = s.slice(openMatch.index + openMatch[0].length);
+    return !/```/.test(afterOpen);
+  }
+  function getArtifactContinuationTail(text = '', maxChars = 9000){
+    const s = String(text || '');
+    if (!s) return '';
+    const openRe = /```\s*(artifact|artifacts|json)\b[^\n`]*\n/gi;
+    let openMatch = null;
+    while ((openMatch = openRe.exec(s))){ /* keep last */ }
+    const start = openMatch ? openMatch.index : Math.max(0, s.length - maxChars);
+    return s.slice(Math.max(0, start), Math.max(0, s.length)).slice(-maxChars);
+  }
+  async function continueTruncatedArtifactOutput({
+    initialAnswer = '',
+    originalUserText = '',
+    settings,
+    model,
+    baseCandidates = [],
+    maxTokens = 1200,
+    extraHeaders = {},
+    signal = null,
+    modalities = []
+  }){
+    let answer = String(initialAnswer || '');
+    if (!answer) return answer;
+    for (let pass = 0; pass < 4; pass += 1){
+      if (extractArtifactRequests(answer).requests.length > 0) return answer;
+      if (!hasUnclosedArtifactFence(answer)) return answer;
+      const tail = getArtifactContinuationTail(answer, 9000);
+      const continuationMessages = [
+        {
+          role: 'system',
+          content: [
+            'You are continuing a truncated artifact block.',
+            'Return ONLY the missing tail needed to complete the same artifact block.',
+            'Do not restart from scratch. Do not add explanations.',
+            'Close JSON/braces/fence correctly so it becomes parseable.'
+          ].join('\n')
+        },
+        {
+          role: 'user',
+          content: `Original user request:\n${String(originalUserText || '').slice(0, 4000)}`
+        },
+        {
+          role: 'assistant',
+          content: tail
+        },
+        {
+          role: 'user',
+          content: 'Continue from the exact cutoff point and finish the same artifact block only.'
+        }
+      ];
+      let delta = '';
+      let lastErr = null;
+      for (let i = 0; i < baseCandidates.length; i += 1){
+        const baseUrl = baseCandidates[i];
+        try{
+          delta = await callOpenAIChat({
+            apiKey: settings.apiKey,
+            baseUrl,
+            model,
+            messages: continuationMessages,
+            max_tokens: Math.min(1400, Math.max(300, Number(maxTokens || 1200))),
+            signal,
+            extraHeaders,
+            modalities
+          });
+          lastErr = null;
+          break;
+        }catch(err){
+          lastErr = err;
+        }
+      }
+      if (lastErr) throw lastErr;
+      const chunk = String(delta || '');
+      if (!chunk.trim()) return answer;
+      answer += chunk;
+    }
+    return answer;
+  }
 
   // ---------------- Tools (v6) ----------------
   function parseFirstToolCall(text){
@@ -12663,6 +12750,23 @@ function updateChips(){
             }
           }
           if (rescueErrLast) throw rescueErrLast;
+          if (!String(ans || '').trim()) throw new Error('EMPTY_ASSISTANT_RESPONSE');
+          updateStreamingAssistant(aId, ans);
+        }
+        const postRescueState = collectAssistantDownloadRenderState(ans, aId || '', 'artifact_path_post_rescue_probe');
+        const stillMissingArtifact = ((postRescueState.entries || []).length === 0) && ((postRescueState.artifactRequests || []).length === 0);
+        if (stillMissingArtifact && hasUnclosedArtifactFence(ans)){
+          ans = await continueTruncatedArtifactOutput({
+            initialAnswer: ans,
+            originalUserText: originalText,
+            settings,
+            model,
+            baseCandidates,
+            maxTokens,
+            extraHeaders,
+            signal: abortCtl?.signal || null,
+            modalities: requestedModalities
+          });
           if (!String(ans || '').trim()) throw new Error('EMPTY_ASSISTANT_RESPONSE');
           updateStreamingAssistant(aId, ans);
         }
