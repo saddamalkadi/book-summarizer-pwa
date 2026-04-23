@@ -11200,11 +11200,11 @@ ${clip}` });
   // Match both dedicated artifact fences and generic JSON fences so models that
   // emit ```json { "kind":"pdf", ... } ``` still route through artifacts.
   const ARTIFACT_FENCE_RE = /```\s*(artifact|artifacts)[^\n`]*\n([\s\S]*?)\n?```/gi;
-  const JSON_FENCE_RE = /```\s*(json|application\/json|javascript|js)?[^\n`]*\n([\s\S]*?)\n?```/gi;
+  const JSON_FENCE_RE = /```\s*(json|application\/json|javascript|js)\b[^\n`]*\n([\s\S]*?)\n?```/gi;
 
   function isArtifactPayload(obj){
     if (!obj || typeof obj !== 'object') return false;
-    return ('artifact' in obj) || ('artifacts' in obj) || ('kind' in obj && 'spec' in obj);
+    return ('artifact' in obj) || ('artifacts' in obj) || ('kind' in obj);
   }
   function normalizeArtifactList(raw){
     const out = [];
@@ -11218,7 +11218,17 @@ ${clip}` });
       raw.artifacts.forEach((x) => { if (x && typeof x === 'object') out.push(x); });
     }
     if (raw.artifact && typeof raw.artifact === 'object') out.push(raw.artifact);
-    if (!out.length && raw.kind && raw.spec) out.push(raw);
+    if (!out.length && raw.kind){
+      if (raw.spec && typeof raw.spec === 'object'){
+        out.push(raw);
+      }else{
+        const { kind, filename, data, ...rest } = raw;
+        const spec = (rest && typeof rest === 'object' && Object.keys(rest).length)
+          ? rest
+          : (typeof data === 'object' ? data : { content: typeof data === 'string' ? data : '' });
+        out.push({ kind, filename, data, spec });
+      }
+    }
     return out;
   }
   function stableArtifactFingerprint(req){
@@ -11850,18 +11860,53 @@ ${clip}` });
     });
   }
 
+  const STREAM_RENDER_THROTTLE_MS = 140;
+  const STREAM_ARTIFACT_RECONCILE_MS = 900;
+  const STREAM_RECONCILE_TAIL_RE = /```(?:file|artifact|artifacts|json)\b|data:[^,\n]+;base64,|https?:\/\/\S+/i;
+  const STREAM_RENDER_STATE = new Map();
   function updateStreamingAssistant(mid, text){
     const log = $('chatLog');
     const b = log?.querySelector(`.bubble.assistant[data-mid="${CSS.escape(mid)}"]`);
     if (!b) return;
     const body = b.querySelector('.body');
-    if (body){
-      const downloadState = collectAssistantDownloadRenderState(text || '', mid || '', 'assistant_generated_image_initial_render');
-      body.innerHTML = renderAssistantMessageHtml(text || '', downloadState.entries, downloadState.artifactRequests || []);
-      bindAssistantDownloadLinks(body);
+    if (!body) return;
+    const key = String(mid || '');
+    let state = STREAM_RENDER_STATE.get(key);
+    if (!state){
+      state = {
+        timer: null,
+        pendingText: '',
+        lastAppliedText: '',
+        lastReconcileAt: 0,
+        cachedDownloadState: { entries: [], artifactRequests: [] }
+      };
+      STREAM_RENDER_STATE.set(key, state);
     }
-    scrollChatToBottom();
-    scheduleChatScrollDockSync();
+    state.pendingText = String(text || '');
+    if (state.timer) return;
+    state.timer = window.setTimeout(() => {
+      state.timer = null;
+      const nextText = state.pendingText;
+      if (nextText === state.lastAppliedText) return;
+      const now = Date.now();
+      const tail = nextText.slice(-1400);
+      const shouldReconcile = (now - state.lastReconcileAt) >= STREAM_ARTIFACT_RECONCILE_MS
+        || STREAM_RECONCILE_TAIL_RE.test(tail)
+        || (nextText.length - state.lastAppliedText.length) > 1800;
+      if (shouldReconcile){
+        state.cachedDownloadState = collectAssistantDownloadRenderState(nextText, key, 'assistant_generated_image_initial_render');
+        state.lastReconcileAt = now;
+      }
+      body.innerHTML = renderAssistantMessageHtml(
+        nextText,
+        state.cachedDownloadState?.entries || [],
+        state.cachedDownloadState?.artifactRequests || []
+      );
+      bindAssistantDownloadLinks(body);
+      state.lastAppliedText = nextText;
+      scrollChatToBottom();
+      scheduleChatScrollDockSync();
+    }, STREAM_RENDER_THROTTLE_MS);
   }
 
   function clipText(t, limit){
