@@ -9862,6 +9862,8 @@ async function fileToText(file){
         + "\\n  * png/jpg/webp/svg → { data: \\\"data:image/...\\\" | \\\"https://...\\\" } أو { svg: \\\"<svg>...</svg>\\\" }"
         + "\\n  * mp3/wav → { data: \\\"data:audio/...\\\" | \\\"https://...\\\" }"
         + "\\n- لا تطبع JSON الخاص بـ artifact خارج البلوك، ولا تكرر المحتوى كنص. التطبيق سيعرض بطاقة ملف حقيقية مع زر تنزيل."
+        + "\\n- لا تقل إن المنصة لا تدعم إنشاء ملفات خارجية: المنصة تدعم تنزيل ملفات فعلية."
+        + "\\n- إذا كان المطلوب كبيرًا (تقرير طويل/عرض كبير/جدول كبير) فاستخدم artifact JSON مُهيكل بدل إغراق الرد بنص ضخم داخل الرسالة."
         + "\\n- إذا فشل البناء سيعرض التطبيق بطاقة خطأ للمستخدم — لا تتجاهل هذا المسار لصالح كود خام.";
     if (voiceContract) sys += `\n\n${voiceContract}`;
     if (capabilityContract) sys += `\n\n${capabilityContract}`;
@@ -9895,6 +9897,16 @@ async function fileToText(file){
       '- Avoid long lists unless the user explicitly asks for structure.',
       '- Do not repeat meta-disclaimers about voice support unless the user asks.'
     ].join('\n');
+  }
+  function userRequestedFileArtifact(text = ''){
+    const s = String(text || '').toLowerCase();
+    if (!s) return false;
+    return /(file|download|artifact|docx|word|pdf|pptx|powerpoint|xlsx|excel|csv|json|html|markdown|zip|ملف|تنزيل|مستند|وورد|بي\s*دي\s*اف|عرض|بوربوينت|اكسل|ارشيف)/i.test(s);
+  }
+  function looksLikeExternalFileCapabilityRefusal(text = ''){
+    const s = String(text || '').toLowerCase();
+    if (!s) return false;
+    return /(?:cannot|can't|unable|not possible|within chat only|inside chat only|platform .*does not allow|لا يمكن(?:ني)?|غير قادر|داخل (?:الشات|المحادثة) فقط|لا يدعم(?: النظام| المنصة)?(?: إنشاء)? ملفات)/i.test(s);
   }
 
   // ---------------- Tools (v6) ----------------
@@ -11185,8 +11197,10 @@ ${clip}` });
     return ARTIFACT_KIND_CATALOG[k] || null;
   }
 
-  // Match both ```artifact``` and ```artifacts``` fences. Capture the raw JSON.
+  // Match both dedicated artifact fences and generic JSON fences so models that
+  // emit ```json { "kind":"pdf", ... } ``` still route through artifacts.
   const ARTIFACT_FENCE_RE = /```\s*(artifact|artifacts)[^\n`]*\n([\s\S]*?)\n?```/gi;
+  const JSON_FENCE_RE = /```\s*(json|application\/json|javascript|js)?[^\n`]*\n([\s\S]*?)\n?```/gi;
 
   function isArtifactPayload(obj){
     if (!obj || typeof obj !== 'object') return false;
@@ -11238,7 +11252,7 @@ ${clip}` });
     if (!s) return { cleaned: '', requests: [] };
     const requests = [];
     const seenLocally = new Set();
-    const cleaned = s.replace(ARTIFACT_FENCE_RE, (match, _fenceTag, body) => {
+    let cleaned = s.replace(ARTIFACT_FENCE_RE, (match, _fenceTag, body) => {
       const bodyStr = String(body || '').trim();
       let parsed = null;
       try { parsed = JSON.parse(bodyStr); } catch (_) {
@@ -11247,6 +11261,23 @@ ${clip}` });
         try { parsed = JSON.parse(trimmed); } catch (_) { parsed = null; }
       }
       if (!parsed) return ''; // silently drop malformed artifact fence from visible text
+      normalizeArtifactList(parsed).forEach((r) => {
+        const fp = stableArtifactFingerprint(r);
+        if (seenLocally.has(fp)) return;
+        seenLocally.add(fp);
+        requests.push({ ...r, _fingerprint: fp });
+      });
+      return '';
+    });
+    cleaned = cleaned.replace(JSON_FENCE_RE, (match, _lang, body) => {
+      const bodyStr = String(body || '').trim();
+      if (!bodyStr) return match;
+      let parsed = null;
+      try { parsed = JSON.parse(bodyStr); } catch (_) {
+        const trimmed = bodyStr.replace(/,\s*([}\]])/g, '$1');
+        try { parsed = JSON.parse(trimmed); } catch (__){ parsed = null; }
+      }
+      if (!parsed || !isArtifactPayload(parsed)) return match;
       normalizeArtifactList(parsed).forEach((r) => {
         const fp = stableArtifactFingerprint(r);
         if (seenLocally.has(fp)) return;
@@ -12550,7 +12581,47 @@ function updateChips(){
           }
         }
 
-        if (!String(ans || '').trim()) throw new Error('EMPTY_ASSISTANT_RESPONSE');
+      if (!String(ans || '').trim()) throw new Error('EMPTY_ASSISTANT_RESPONSE');
+      if (userRequestedFileArtifact(originalText)){
+        const probeState = collectAssistantDownloadRenderState(ans, aId || '', 'artifact_path_probe');
+        const hasArtifactOutput = (probeState.entries || []).length > 0 || (probeState.artifactRequests || []).length > 0;
+        if (!hasArtifactOutput && looksLikeExternalFileCapabilityRefusal(ans)){
+          const rescueSys = [
+            'تعليمات إلزامية: المنصة تدعم إنشاء ملفات خارجية قابلة للتنزيل.',
+            'لا تقل إن النظام محدود داخل المحادثة فقط.',
+            'أعد نفس الطلب عبر artifact فقط (docx/pdf/pptx/xlsx/md/html/csv/json/zip حسب النوع المطلوب).',
+            'إذا كان المحتوى كبيرًا فاستخدم spec مُهيكل بدل إرسال جسم الملف كاملًا كنص.'
+          ].join('\n');
+          const rescueMessages = [
+            ...messages,
+            { role:'system', content: rescueSys },
+            { role:'user', content: `أعد تنفيذ طلبي السابق الآن عبر artifact قابل للتنزيل فقط.\n\nالطلب الأصلي:\n${originalText}` }
+          ];
+          let rescueErrLast = null;
+          for (let i = 0; i < baseCandidates.length; i += 1){
+            const baseUrl = baseCandidates[i];
+            try{
+              ans = await callOpenAIChat({
+                apiKey: settings.apiKey,
+                baseUrl,
+                model,
+                messages: rescueMessages,
+                max_tokens: maxTokens,
+                signal: abortCtl.signal,
+                extraHeaders,
+                modalities: requestedModalities
+              });
+              rescueErrLast = null;
+              break;
+            }catch(rescueErr){
+              rescueErrLast = rescueErr;
+            }
+          }
+          if (rescueErrLast) throw rescueErrLast;
+          if (!String(ans || '').trim()) throw new Error('EMPTY_ASSISTANT_RESPONSE');
+          updateStreamingAssistant(aId, ans);
+        }
+      }
 
       if (getEffectiveModeState(rawSettings, policy).agent && ans && !answerHasAgentPlan(ans)){
         ans = `الخطة:\n1) تحليل\n2) تنفيذ\n3) نتيجة\n\nالتنفيذ:\n${ans}\n\nالنتيجة النهائية:\n—`;
