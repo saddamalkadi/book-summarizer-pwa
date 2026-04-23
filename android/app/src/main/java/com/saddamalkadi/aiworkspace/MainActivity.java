@@ -253,9 +253,11 @@ public class MainActivity extends BridgeActivity {
         }
 
         try {
-            Intent baseIntent = new Intent(Intent.ACTION_GET_CONTENT);
+            Intent baseIntent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
             baseIntent.addCategory(Intent.CATEGORY_OPENABLE);
             baseIntent.setType("*/*");
+            baseIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
 
             String[] accept = params.getAcceptTypes();
             String[] mimeTypes = normalizeMimeTypes(accept);
@@ -296,8 +298,19 @@ public class MainActivity extends BridgeActivity {
             return true;
         } catch (Throwable t) {
             Log.e(TAG, "chooser_launch_failed", t);
-            deliverChooserResult(null);
-            return false;
+            try {
+                // Fallback for vendors that reject OPEN_DOCUMENT from WebView.
+                Intent fallback = new Intent(Intent.ACTION_GET_CONTENT);
+                fallback.addCategory(Intent.CATEGORY_OPENABLE);
+                fallback.setType("*/*");
+                fileChooserLauncher.launch(Intent.createChooser(fallback, "اختيار ملف"));
+                Log.w(TAG, "chooser_launch_fallback_get_content");
+                return true;
+            } catch (Throwable t2) {
+                Log.e(TAG, "chooser_launch_fallback_failed", t2);
+                deliverChooserResult(null);
+                return false;
+            }
         }
     }
 
@@ -321,6 +334,17 @@ public class MainActivity extends BridgeActivity {
                 // Camera/video/audio capture intents don't return data via
                 // the Intent, they write to the URI we passed in.
                 results = new Uri[]{ pendingCaptureUri };
+            }
+            if (results != null && data != null) {
+                final int persistFlags = data.getFlags()
+                        & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                if (persistFlags != 0) {
+                    for (Uri uri : results) {
+                        try {
+                            getContentResolver().takePersistableUriPermission(uri, persistFlags);
+                        } catch (Throwable ignored) {}
+                    }
+                }
             }
 
             Log.i(TAG, "chooser_result files=" + (results == null ? 0 : results.length));

@@ -13179,7 +13179,13 @@ async function runResearchAgent(topicOverride){
   async function addFiles(fileList){
     const pid = getCurProjectId();
     const arr = loadFiles(pid);
-    for (const file of Array.from(fileList || [])){
+    const picked = Array.from(fileList || []).filter(Boolean);
+    if (!picked.length){
+      toast('⚠️ لم يتم اختيار أي ملف.');
+      return;
+    }
+    let added = 0;
+    for (const file of picked){
       const id = makeId('f');
       const name = file.name || 'file';
       const kind = (file.type || '').startsWith('image/') ? 'image' : 'file';
@@ -13190,11 +13196,16 @@ async function runResearchAgent(topicOverride){
       let text = '';
       try{ text = await fileToText(file); }catch(_){}
       arr.unshift({ id, name, kind, size: file.size || 0, type: file.type || '', dataUrl, text });
+      added += 1;
+    }
+    if (!added){
+      toast('⚠️ تعذر إضافة الملفات المختارة.');
+      return;
     }
     saveFiles(pid, arr.slice(0, 80));
     renderFiles();
     refreshNavMeta();
-    toast('✅ تم إضافة الملفات');
+    toast(added === 1 ? '✅ تم إضافة ملف واحد.' : `✅ تم إضافة ${added} ملفًا.`);
   }
 
   // ---------------- Downloads page ----------------
@@ -13427,6 +13438,35 @@ let pinOnly = false;
             Android 7.0+ • قم بتفعيل "تثبيت من مصادر غير معروفة" في الإعدادات قبل التثبيت
           </div>
         </div>`;
+      const wireApkAction = (selector, targetUrl) => {
+        const el = overview.querySelector(selector);
+        if (!el) return;
+        el.addEventListener('click', async (ev) => {
+          if (!(typeof isNativeAndroidPlatform === 'function' && isNativeAndroidPlatform())) return;
+          ev.preventDefault();
+          const url = String(targetUrl || el.getAttribute('href') || '').trim();
+          if (!/^https?:\/\//i.test(url)) return;
+          showStatus('⬇️ جاري تجهيز تنزيل APK على Android…', true);
+          try{
+            const res = await fetch(url, { cache: 'no-store' });
+            if (!res.ok) throw new Error(`apk_fetch_${res.status}`);
+            const blob = await res.blob();
+            if (!(blob instanceof Blob) || !blob.size) throw new Error('apk_empty_blob');
+            const apkBlob = new Blob([await blob.arrayBuffer()], { type: 'application/vnd.android.package-archive' });
+            const saved = await saveBlobViaAndroidBridge('AI-Workspace-Studio-latest.apk', apkBlob);
+            if (!saved?.ok){
+              try{ window.open(url, '_blank', 'noopener,noreferrer'); }catch(_){}
+            }
+          }catch(err){
+            try{ window.open(url, '_blank', 'noopener,noreferrer'); }catch(_){}
+            toast(`⚠️ تعذر تنزيل APK داخل التطبيق (${err?.message || err}). فُتح الرابط الخارجي كخطة بديلة.`);
+          } finally {
+            showStatus('', false);
+          }
+        });
+      };
+      wireApkAction('#apkMainBtn', APK_LATEST_URL);
+      wireApkAction('.app-release-actions a', APK_BACKUP_URL);
     }
     const q = String($('dlSearch')?.value || '').trim().toLowerCase();
     const filtered = dl.filter(d => {
@@ -14991,8 +15031,27 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
     });
 
     // files
-    $('addFilesBtn').addEventListener('click', () => $('filePicker').click());
-    $('filePicker').addEventListener('change', (e) => addFiles(e.target.files));
+    const openFilesPicker = () => {
+      const picker = $('filePicker');
+      if (!picker) return;
+      if (typeof isNativeAndroidPlatform === 'function' && isNativeAndroidPlatform()){
+        picker.setAttribute('accept', '.pdf,.doc,.docx,.txt,.md,.csv,.json,.xml,.html,.htm,.ppt,.pptx,.xls,.xlsx,.zip,.png,.jpg,.jpeg,.webp');
+      }
+      picker.value = '';
+      try{
+        if (typeof picker.showPicker === 'function'){
+          picker.showPicker();
+          return;
+        }
+      }catch(_){ /* fallback to click below */ }
+      picker.click();
+    };
+    $('addFilesBtn').addEventListener('click', openFilesPicker);
+    $('filePicker').addEventListener('change', async (e) => {
+      const files = e.target?.files;
+      await addFiles(files);
+      if (e.target) e.target.value = '';
+    });
     $('clearFilesBtn').addEventListener('click', () => {
       const pid = getCurProjectId();
       saveFiles(pid, []);
