@@ -9595,6 +9595,17 @@ async function fileToText(file){
     }
     return { text:'', diagnostic:textResult.diagnostic || 'EMPTY_ASSISTANT_RESPONSE', assets: generatedAssets };
   }
+  function extractChatFinishReason(payload){
+    if (!payload || typeof payload !== 'object') return '';
+    const ch = Array.isArray(payload.choices) ? payload.choices[0] : null;
+    if (!ch) return '';
+    return String(
+      ch.finish_reason
+        || ch.native_finish_reason
+        || ch.finishReason
+        || ''
+    ).trim();
+  }
   function getRequestedOutputModalities(settings, modelId = '', messages = []){
     const descriptor = getModelDescriptor(modelId || settings.model || '', settings.provider || '');
     if (!descriptor?.capabilities?.image_generation) return [];
@@ -9609,7 +9620,7 @@ async function fileToText(file){
     return ['image', 'text'];
   }
 
-  async function callGemini({ apiKey, model, prompt, signal, maxOut=2048 }){
+  async function callGeminiWithMeta({ apiKey, model, prompt, signal, maxOut=2048 }){
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
     const body = { contents: [{ role:'user', parts:[{ text: prompt }] }], generationConfig: { temperature: 0.25, maxOutputTokens: maxOut } };
     const r = await fetch(url, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body), signal });
@@ -9617,10 +9628,16 @@ async function fileToText(file){
     let j; try{ j = JSON.parse(t); }catch(_){ j = null; }
     if (!r.ok) throw new Error(j?.error?.message || t || `HTTP ${r.status}`);
     const parts = j?.candidates?.[0]?.content?.parts || [];
-    return parts.map(p => p?.text || '').join('');
+    const text = parts.map(p => p?.text || '').join('');
+    const finishReason = String(j?.candidates?.[0]?.finishReason || j?.candidates?.[0]?.finish_reason || '').trim();
+    return { text, finishReason };
+  }
+  async function callGemini(opts){
+    const { text } = await callGeminiWithMeta(opts);
+    return text;
   }
 
-  async function callOpenAIChat({ apiKey, baseUrl, model, messages, max_tokens, signal, extraHeaders={}, modalities=[] }){
+  async function callOpenAIChatWithMeta({ apiKey, baseUrl, model, messages, max_tokens, signal, extraHeaders={}, modalities=[] }){
     const run = async () => {
       const currentSettings = getSettings();
       const resolvedBaseUrl = String(baseUrl || effectiveBaseUrl(currentSettings) || '').replace(/\/+$/,'');
@@ -9642,7 +9659,8 @@ async function fileToText(file){
         throw new Error(extracted.diagnostic || 'EMPTY_ASSISTANT_RESPONSE');
       }
       recordUsageFromPayload(j, { source: 'chat_completion', settings: currentSettings, model });
-      return extracted.text;
+      const finishReason = extractChatFinishReason(j);
+      return { text: extracted.text, finishReason, usage: (j && j.usage) ? j.usage : null };
     };
 
     try{
@@ -9654,6 +9672,10 @@ async function fileToText(file){
       }
       throw err;
     }
+  }
+  async function callOpenAIChat(opts){
+    const { text } = await callOpenAIChatWithMeta(opts);
+    return text;
   }
 
   async function streamChatCompletions({ apiKey, baseUrl, model, messages, max_tokens, signal, onDelta, extraHeaders={}, modalities=[] }){
@@ -9684,7 +9706,7 @@ async function fileToText(file){
           throw new Error(oneShot.diagnostic || 'STREAM_EMPTY_RESPONSE');
         }
         recordUsageFromPayload(j, { source: 'chat_stream_json', settings: currentSettings, model });
-        return String(oneShot.text || '');
+        return { text: String(oneShot.text || ''), finishReason: extractChatFinishReason(j), usage: (j && j.usage) ? j.usage : null };
       }
 
       const reader = r.body.getReader();
@@ -9719,6 +9741,7 @@ async function fileToText(file){
       };
       const streamMeta = { generationId:'', model:String(model || '').trim(), usage:null };
       let streamDone = false;
+      let lastFinishReason = '';
       while (true){
         const {value, done} = await reader.read();
         if (done) break;
@@ -9738,6 +9761,8 @@ async function fileToText(file){
           if (!streamMeta.generationId) streamMeta.generationId = String(j?.id || j?.generation_id || '').trim();
           if (!streamMeta.model) streamMeta.model = String(j?.model || '').trim();
           if (j?.usage && typeof j.usage === 'object') streamMeta.usage = j.usage;
+          const fr = extractChatFinishReason(j);
+          if (fr) lastFinishReason = fr;
           const delta = textFromPart(j?.choices?.[0]?.delta?.content) || textFromPart(j?.choices?.[0]?.delta);
           const assetAddon = mergeGeneratedAssetsFromPayload(j);
           if (assetAddon) full += assetAddon;
@@ -9756,6 +9781,10 @@ async function fileToText(file){
           if (!streamMeta.generationId) streamMeta.generationId = String(j?.id || j?.generation_id || '').trim();
           if (!streamMeta.model) streamMeta.model = String(j?.model || '').trim();
           if (j?.usage && typeof j.usage === 'object') streamMeta.usage = j.usage;
+          {
+            const fr = extractChatFinishReason(j);
+            if (fr) lastFinishReason = fr;
+          }
           const assetAddon = mergeGeneratedAssetsFromPayload(j);
           if (assetAddon) full += assetAddon;
           const lastDelta = textFromPart(j?.choices?.[0]?.delta?.content)
@@ -9779,7 +9808,7 @@ async function fileToText(file){
           usage: streamMeta.usage || {}
         }, { source: 'chat_stream_sse', settings: currentSettings, model: streamMeta.model || model });
       }
-      return full;
+      return { text: full, finishReason: String(lastFinishReason || ''), usage: streamMeta.usage || null };
     };
 
     try{
@@ -9791,6 +9820,158 @@ async function fileToText(file){
       }
       throw err;
     }
+  }
+
+  const OPEN_ENDED_MAX_PASSES = 32;
+  function isLengthTruncationFinish(reason){
+    const r = String(reason || '').toLowerCase();
+    return r === 'length' || r === 'max_tokens' || r === 'max_output_tokens' || r === 'length_limit' || r === 'model_length';
+  }
+  function shouldOpenEndContinue(finishReason, usage, maxTokens, passText = ''){
+    if (isLengthTruncationFinish(finishReason)) return true;
+    const fr = String(finishReason || '').toLowerCase();
+    if (fr === 'stop' || fr === 'end_turn' || fr === 'content_filter' || fr === 'error' || fr === 'tool_calls') return false;
+    const mt = Math.max(1, Number(maxTokens) || 1);
+    const c = Number(usage?.completion_tokens ?? usage?.completionTokens ?? 0);
+    if (c && c >= Math.floor(mt * 0.9)) return true;
+    if (!fr && String(passText || '').length >= Math.floor(mt * 2.8)) return true;
+    return false;
+  }
+  function isGeminiLengthFinish(reason){
+    return String(reason || '').toUpperCase() === 'MAX_TOKENS';
+  }
+  function buildOpenEndContinueUserPrompt(originalUserText, fullAccumulated){
+    const tail = String(fullAccumulated || '').slice(-14000);
+    return [
+      '[Open-ended continuation] The assistant output was cut by the provider max output length.',
+      'Continue the assistant message EXACTLY from the next character after the text below.',
+      'Do not repeat already-written paragraphs; do not restart; do not summarize; append only new content.',
+      'If the user request is fully satisfied, output exactly: OPEN_END_DONE',
+      '--- End of partial assistant output (continue after this) ---',
+      tail,
+      '---',
+      'User request (reminder):',
+      String(originalUserText || '').slice(0, 6000)
+    ].join('\n\n');
+  }
+  function buildGeminiOpenEndContinueUserPrompt(originalUserText, fullAccumulated){
+    const tail = String(fullAccumulated || '').slice(-10000);
+    return `Continue the previous answer EXACTLY from where it stopped. Do not repeat prior text. Append only new content.
+
+Original user request:
+${String(originalUserText || '').slice(0, 5000)}
+
+Text so far (end):
+${tail}`;
+  }
+  async function runSinglePassOpenAIChat({
+    wantStream,
+    baseCandidates = [],
+    apiKey,
+    model,
+    messages,
+    maxTokens,
+    signal,
+    extraHeaders = {},
+    modalities = [],
+    onDelta
+  }){
+    if (wantStream){
+      let streamErrLast = null;
+      for (let i=0; i<baseCandidates.length; i++){
+        const baseUrl = baseCandidates[i];
+        try{
+          const { text, finishReason, usage } = await streamChatCompletions({
+            apiKey, baseUrl, model, messages, max_tokens: maxTokens, signal, extraHeaders, modalities, onDelta
+          });
+          return { text, finishReason, usage, via: 'stream' };
+        }catch(streamErr){
+          streamErrLast = streamErr;
+          const streamUnavailable = shouldRetryWithoutStreaming(streamErr);
+          const isLast = i === baseCandidates.length - 1;
+          if (!streamUnavailable || isLast) break;
+        }
+      }
+      if (streamErrLast){
+        showStatus('⚠️ تعذر البث المباشر على هذا الاتصال، سيتم المتابعة بدون بث مباشر…', true);
+        let callErrLast = null;
+        for (let i=0; i<baseCandidates.length; i++){
+          const baseUrl = baseCandidates[i];
+          try{
+            return { ...(await callOpenAIChatWithMeta({
+              apiKey, baseUrl, model, messages, max_tokens: maxTokens, signal, extraHeaders, modalities
+            })), via: 'nostream' };
+          }catch(callErr){
+            callErrLast = callErr;
+          }
+        }
+        if (callErrLast) throw callErrLast;
+        throw streamErrLast;
+      }
+    } else {
+      let callErrLast = null;
+      for (let i=0; i<baseCandidates.length; i++){
+        const baseUrl = baseCandidates[i];
+        try{
+          return { ...(await callOpenAIChatWithMeta({
+            apiKey, baseUrl, model, messages, max_tokens: maxTokens, signal, extraHeaders, modalities
+          })), via: 'nostream' };
+        }catch(callErr){
+          callErrLast = callErr;
+        }
+      }
+      if (callErrLast) throw callErrLast;
+    }
+    throw new Error('EMPTY_ASSISTANT_RESPONSE');
+  }
+  async function openEndedRunChatCompletion({
+    originalUserText = '',
+    wantStream = false,
+    baseCandidates = [],
+    apiKey,
+    model,
+    messages: seedMessages,
+    maxTokens,
+    signal,
+    extraHeaders = {},
+    modalities = [],
+    onProgress,
+    maxPasses = OPEN_ENDED_MAX_PASSES
+  }){
+    let acc = '';
+    for (let pass = 0; pass < maxPasses; pass += 1){
+      if (signal?.aborted) break;
+      const passMessages = pass === 0
+        ? seedMessages
+        : [
+          ...seedMessages,
+          { role: 'assistant', content: acc },
+          { role: 'user', content: buildOpenEndContinueUserPrompt(originalUserText, acc) }
+        ];
+      const { text: passText, finishReason, usage: passUsage } = await runSinglePassOpenAIChat({
+        wantStream,
+        baseCandidates,
+        apiKey,
+        model,
+        messages: passMessages,
+        maxTokens,
+        signal,
+        extraHeaders,
+        modalities,
+        onDelta: (inc, partFull) => {
+          onProgress?.(acc + partFull);
+        }
+      });
+      if (String(passText || '').trim() === 'OPEN_END_DONE'){
+        onProgress?.(acc);
+        break;
+      }
+      acc += String(passText || '');
+      acc = acc.replace(/\s*OPEN_END_DONE\s*$/i, '');
+      onProgress?.(acc);
+      if (!shouldOpenEndContinue(finishReason, passUsage, maxTokens, passText)) break;
+    }
+    return acc;
   }
 
   // ---------------- Prompts and messages ----------------
@@ -12633,85 +12814,55 @@ function updateChips(){
     try{
       let ans = '';
       const wantStream = !!settings.streaming && !imageGenerationMode;
+      const maxTokens = Number(settings.maxOut || 2000);
+      const baseCandidates = getChatBaseUrlCandidates(settings);
       if (imageGenerationMode && settings.streaming){
         showStatus('جاري إنشاء الصورة. هذا النوع من الردود يعود دفعة واحدة بدل البث المباشر…', true);
       }
 
       if (settings.provider === 'gemini'){
-        const prompt = messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n');
-        ans = await callGemini({ apiKey: settings.geminiKey, model: settings.model, prompt, signal: abortCtl.signal, maxOut: Math.min(2048, Number(settings.maxOut||2000)) });
-      } else {
-        const baseCandidates = getChatBaseUrlCandidates(settings);
-        const maxTokens = Number(settings.maxOut || 2000);
-        if (wantStream){
-          let streamErrLast = null;
-          for (let i=0; i<baseCandidates.length; i++){
-            const baseUrl = baseCandidates[i];
-            try{
-              ans = await streamChatCompletions({
-                apiKey: settings.apiKey, baseUrl, model, messages,
-                max_tokens: maxTokens,
-                signal: abortCtl.signal,
-                extraHeaders,
-                modalities: requestedModalities,
-                onDelta: (_d, full) => {
-                  updateStreamingAssistant(aId, full);
-                  aMsg.content = full;
-                }
-              });
-              streamErrLast = null;
-              break;
-            }catch(streamErr){
-              streamErrLast = streamErr;
-              const streamUnavailable = shouldRetryWithoutStreaming(streamErr);
-              const isLast = i === baseCandidates.length - 1;
-              if (!streamUnavailable || isLast) break;
-            }
-          }
-
-          if (streamErrLast){
-            showStatus('⚠️ تعذر البث المباشر على هذا الاتصال، سيتم المتابعة بدون بث مباشر…', true);
-            let callErrLast = null;
-            for (let i=0; i<baseCandidates.length; i++){
-              const baseUrl = baseCandidates[i];
-              try{
-                ans = await callOpenAIChat({
-                  apiKey: settings.apiKey,
-                  baseUrl,
-                  model,
-                  messages,
-                  max_tokens: maxTokens,
-                  signal: abortCtl.signal,
-                  extraHeaders,
-                  modalities: requestedModalities
-                });
-                callErrLast = null;
-                break;
-                }catch(callErr){
-                  callErrLast = callErr;
-                }
-              }
-              if (callErrLast) throw callErrLast;
-              if (!String(ans || '').trim()) throw new Error('EMPTY_ASSISTANT_RESPONSE');
-              updateStreamingAssistant(aId, ans);
-            }
-          } else {
-          let callErrLast = null;
-          for (let i=0; i<baseCandidates.length; i++){
-            const baseUrl = baseCandidates[i];
-            try{
-              ans = await callOpenAIChat({ apiKey: settings.apiKey, baseUrl, model, messages, max_tokens: maxTokens, signal: abortCtl.signal, extraHeaders, modalities: requestedModalities });
-              callErrLast = null;
-              break;
-            }catch(callErr){
-                callErrLast = callErr;
-              }
-            }
-            if (callErrLast) throw callErrLast;
-            if (!String(ans || '').trim()) throw new Error('EMPTY_ASSISTANT_RESPONSE');
-            updateStreamingAssistant(aId, ans);
-          }
+        const prompt0 = messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n');
+        const maxOutGem = Math.min(2048, Number(settings.maxOut||2000));
+        let gAcc = '';
+        for (let gPass = 0; gPass < 16; gPass += 1){
+          if (abortCtl.signal.aborted) break;
+          const p = gPass === 0
+            ? prompt0
+            : buildGeminiOpenEndContinueUserPrompt(originalText, gAcc);
+          const { text: gText, finishReason: gFr } = await callGeminiWithMeta({
+            apiKey: settings.geminiKey,
+            model: settings.model,
+            prompt: p,
+            signal: abortCtl.signal,
+            maxOut: maxOutGem
+          });
+          if (gPass > 0 && String(gText || '').trim() === 'OPEN_END_DONE') break;
+          gAcc += String(gText || '');
+          gAcc = gAcc.replace(/\s*OPEN_END_DONE\s*$/i, '');
+          updateStreamingAssistant(aId, gAcc);
+          aMsg.content = gAcc;
+          if (!isGeminiLengthFinish(gFr)) break;
         }
+        ans = gAcc;
+      } else {
+        ans = await openEndedRunChatCompletion({
+          originalUserText: originalText,
+          wantStream,
+          baseCandidates,
+          apiKey: settings.apiKey,
+          model,
+          messages,
+          maxTokens,
+          signal: abortCtl.signal,
+          extraHeaders,
+          modalities: requestedModalities,
+          onProgress: (full) => {
+            updateStreamingAssistant(aId, full);
+            aMsg.content = full;
+          },
+          maxPasses: OPEN_ENDED_MAX_PASSES
+        });
+      }
 
       if (!String(ans || '').trim()) throw new Error('EMPTY_ASSISTANT_RESPONSE');
       if (userRequestedFileArtifact(originalText)){
@@ -12869,6 +13020,8 @@ async function runResearchAgent(topicOverride){
   const baseUrl = effectiveBaseUrl(settings) || (settings.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1');
 
   const extraHeaders = buildProviderHeaders(settings);
+  const reportBaseCandidates = getChatBaseUrlCandidates(settings);
+  const reportSynthMax = Math.min(2400, Number(settings.maxOut || 2000));
 
   const pushAssistant = (content, modelId = settings.model) => {
     const threads = loadThreads(pid);
@@ -12947,44 +13100,59 @@ async function runResearchAgent(topicOverride){
       final = await callGemini({ apiKey: settings.geminiKey, model: settings.model, prompt: `${sys}\n\n${synthPrompt}`, signal: abortCtl.signal, maxOut: Math.min(2048, Number(settings.maxOut||2000)) });
       pushAssistant('🧪 تقرير بحث:\n\n' + final, settings.model);
     } else {
-      if (settings.streaming){
         const aId = makeId('m');
         const threads = loadThreads(pid);
         const idx = threads.findIndex(t => t.id === tid);
         const thread = threads[idx] || threads[0];
         thread.messages = thread.messages || [];
+        const reportPrefix = '🧪 تقرير بحث:\n\n';
         thread.messages.push({
           id: aId,
           role:'assistant',
-          content:'🧪 تقرير بحث:\n\n',
+          content: reportPrefix,
           ts: nowTs(),
           ...buildAssistantMessageModelMeta(settings, settings.model)
         });
         threads[idx] = thread;
         saveThreads(pid, threads);
         renderChat();
-
-        final = await streamChatCompletions({
-          apiKey: settings.apiKey,
-          baseUrl,
-          model: settings.model,
-          messages: [{role:'system', content: sys},{role:'user', content: synthPrompt}],
-          max_tokens: Math.min(2400, Number(settings.maxOut||2000)),
-          signal: abortCtl.signal,
-          extraHeaders,
-          onDelta: (_d, full) => updateStreamingAssistant(aId, '🧪 تقرير بحث:\n\n' + full)
-        });
-
+        if (settings.streaming){
+          final = await openEndedRunChatCompletion({
+            originalUserText: synthPrompt,
+            wantStream: true,
+            baseCandidates: reportBaseCandidates,
+            apiKey: settings.apiKey,
+            model: settings.model,
+            messages: [{ role:'system', content: sys }, { role:'user', content: synthPrompt }],
+            maxTokens: reportSynthMax,
+            signal: abortCtl.signal,
+            extraHeaders,
+            modalities: [],
+            onProgress: (acc) => updateStreamingAssistant(aId, reportPrefix + acc),
+            maxPasses: OPEN_ENDED_MAX_PASSES
+          });
+        } else {
+          final = await openEndedRunChatCompletion({
+            originalUserText: synthPrompt,
+            wantStream: false,
+            baseCandidates: reportBaseCandidates,
+            apiKey: settings.apiKey,
+            model: settings.model,
+            messages: [{ role:'system', content: sys }, { role:'user', content: synthPrompt }],
+            maxTokens: reportSynthMax,
+            signal: abortCtl.signal,
+            extraHeaders,
+            modalities: [],
+            onProgress: (acc) => { /* one-shot */ updateStreamingAssistant(aId, reportPrefix + acc); },
+            maxPasses: OPEN_ENDED_MAX_PASSES
+          });
+        }
         const threads2 = loadThreads(pid);
         const thread2 = threads2.find(t => t.id === tid) || threads2[0];
-        const msg2 = (thread2.messages||[]).find(m => m.id === aId);
-        if (msg2) msg2.content = '🧪 تقرير بحث:\n\n' + final;
+        const msg2 = (thread2.messages || []).find(m => m.id === aId);
+        if (msg2) msg2.content = reportPrefix + final;
         saveThreads(pid, threads2);
         renderChat();
-      } else {
-        final = await callOpenAIChat({ apiKey: settings.apiKey, baseUrl, model: settings.model, messages: [{role:'system', content: sys},{role:'user', content: synthPrompt}], max_tokens: Math.min(2400, Number(settings.maxOut||2000)), signal: abortCtl.signal, extraHeaders });
-        pushAssistant('🧪 تقرير بحث:\n\n' + final, settings.model);
-      }
     }
     showStatus('', false);
     toast('✅ اكتمل البحث التفصيلي');
