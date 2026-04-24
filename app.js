@@ -286,7 +286,10 @@
     sessionToken: '',
     sessionExp: 0,
     upgradeCode: '',
-    lastVerifiedAt: 0
+    lastVerifiedAt: 0,
+    emailVerified: true,
+    hasPassword: false,
+    emailVerificationPending: false
   };
 
   const DEFAULT_AUTH_CONFIG = {
@@ -310,7 +313,9 @@
     voiceSynthesisModel: 'gpt-4o-mini-tts',
     voiceSynthesisVoice: 'alloy',
     voicePreferredLanguage: 'ar-SA',
-    voicePremiumOnly: false
+    voicePremiumOnly: false,
+    userEmailPasswordEnabled: false,
+    transactionalEmailConfigured: false
   };
 
   const DEFAULT_USAGE_STATE = {
@@ -338,7 +343,9 @@
     configLoadedAt: 0,
     configPromise: null,
     authHealth: null,
-    booting: false
+    booting: false,
+    resetPwToken: '',
+    adminUsersSelectedEmail: ''
   };
 
   const USAGE_RUNTIME = {
@@ -445,6 +452,10 @@
     if (!raw) return 'تعذر إتمام تسجيل الدخول الآن. حاول مرة أخرى.';
     if (/AUTH_ADMIN_PASSWORD_NOT_CONFIGURED|Admin password login is not configured/i.test(raw)) return 'تسجيل الدخول الإداري بكلمة المرور غير متاح الآن. استخدم Google للحساب الإداري.';
     if (/AUTH_INVALID_ADMIN_CREDENTIALS|Invalid admin credentials/i.test(raw)) return 'تعذر تسجيل الدخول بهذه البيانات.';
+    if (/AUTH_EMAIL_NOT_VERIFIED|verify your email/i.test(raw)) return 'يُرجى تأكيد بريدك الإلكتروني قبل استخدام الدردشة. افتح الرابط المرسل أو أعد إرسال التحقق من الإعدادات.';
+    if (/AUTH_REGISTER_EMAIL_TAKEN|already exists/i.test(raw)) return 'يوجد حساب بهذا البريد. جرّب «تسجيل الدخول» بدلًا من إنشاء حساب.';
+    if (/AUTH_REGISTER_PASSWORD_WEAK|at least 8/i.test(raw)) return 'كلمة المرور يجب أن تكون 8 أحرف على الأقل.';
+    if (/STORAGE_NOT_CONFIGURED|Account storage is not configured/i.test(raw)) return 'خادم الحسابات غير مهيأ بالكامل بعد.';
     if (/configured as the admin account/i.test(raw)) return 'هذا الحساب يحتاج مسار دخول الإدارة المناسب.';
     return raw;
   }
@@ -1121,7 +1132,9 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       voiceSynthesisModel: DEFAULT_AUTH_CONFIG.voiceSynthesisModel,
       voiceSynthesisVoice: DEFAULT_AUTH_CONFIG.voiceSynthesisVoice,
       voicePreferredLanguage: DEFAULT_AUTH_CONFIG.voicePreferredLanguage,
-      voicePremiumOnly: DEFAULT_AUTH_CONFIG.voicePremiumOnly
+      voicePremiumOnly: DEFAULT_AUTH_CONFIG.voicePremiumOnly,
+      userEmailPasswordEnabled: false,
+      transactionalEmailConfigured: false
     };
   }
 
@@ -1537,7 +1550,9 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
         voiceSynthesisModel: String(remote.voiceSynthesisModel || local.voiceSynthesisModel || DEFAULT_AUTH_CONFIG.voiceSynthesisModel).trim(),
         voiceSynthesisVoice: String(remote.voiceSynthesisVoice || local.voiceSynthesisVoice || DEFAULT_AUTH_CONFIG.voiceSynthesisVoice).trim(),
         voicePreferredLanguage: String(remote.voicePreferredLanguage || local.voicePreferredLanguage || DEFAULT_AUTH_CONFIG.voicePreferredLanguage).trim(),
-        voicePremiumOnly: remote.voicePremiumOnly !== false
+        voicePremiumOnly: remote.voicePremiumOnly !== false,
+        userEmailPasswordEnabled: remote.userEmailPasswordEnabled === true,
+        transactionalEmailConfigured: remote.transactionalEmailConfigured === true
       });
       const stabilized = preserveAdminPasswordCapability(normalized, previous, healthPayload);
       return setAuthConfigCached(stabilized);
@@ -1562,6 +1577,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   }
 
   function applyAuthResponse(payload, extra = {}){
+    const pending = !!payload?.emailVerificationPending;
     const next = saveAuthState({
       signedIn: true,
       plan: payload?.plan === 'premium' ? 'premium' : 'free',
@@ -1572,7 +1588,10 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       sessionToken: payload?.sessionToken || payload?.session_token || '',
       sessionExp: Number(payload?.sessionExp || payload?.session_exp || 0),
       upgradeCode: extra.upgradeCode || payload?.upgradeCode || getAuthState().upgradeCode || '',
-      lastVerifiedAt: Date.now()
+      lastVerifiedAt: Date.now(),
+      emailVerified: pending ? false : (payload?.emailVerified !== false),
+      hasPassword: payload?.hasPassword === true,
+      emailVerificationPending: pending
     });
     return next;
   }
@@ -4681,6 +4700,9 @@ function refreshDeepSearchBtn(){
     if (/Authentication is temporarily unavailable/i.test(raw)){
       return 'تسجيل الدخول غير متاح مؤقتًا. يرجى المحاولة بعد قليل.';
     }
+    if (/AUTH_EMAIL_NOT_VERIFIED|verify your email/i.test(raw)){
+      return 'يُرجى تأكيد بريدك الإلكتروني قبل استخدام الدردشة. افتح رابط التحقق من بريدك أو أعد الإرسال من الإعدادات.';
+    }
     if (/Invalid or expired session|Missing signed session/i.test(raw)){
       return 'انتهت صلاحية الجلسة. يرجى إعادة تسجيل الدخول.';
     }
@@ -4987,6 +5009,13 @@ function refreshDeepSearchBtn(){
               <form id="authEntryForm" autocomplete="on" onsubmit="return false" style="margin-top:12px">
               <div class="auth-config-grid">
                 <div>
+                  <label class="hint" for="authEntryMode">نوع العملية</label>
+                  <select id="authEntryMode">
+                    <option value="signin">تسجيل الدخول</option>
+                    <option value="signup">إنشاء حساب جديد</option>
+                  </select>
+                </div>
+                <div>
                   <label class="hint" for="authEntryName">الاسم</label>
                   <input id="authEntryName" name="name" type="text" placeholder="الاسم الظاهر" autocomplete="name" />
                 </div>
@@ -5000,6 +5029,10 @@ function refreshDeepSearchBtn(){
                 </div>
               </div>
               <div class="auth-note" id="authEntryModeHint">يتم تحديد نوع الدخول تلقائيًا من البريد.</div>
+              <div class="account-actions" style="margin-top:8px">
+                <button class="btn ghost sm with-label" type="button" id="authForgotPwBtn"><span class="icon">🔁</span><span class="label">نسيت كلمة المرور</span></button>
+                <button class="btn ghost sm with-label" type="button" id="authResendVerifyBtn"><span class="icon">✉️</span><span class="label">إعادة إرسال التحقق</span></button>
+              </div>
               <div class="account-actions" style="margin-top:12px">
                 <button class="btn dark sm with-label" type="submit" id="authEntrySubmitBtn"><span class="icon">→</span><span class="label" id="authEntrySubmitLabel">متابعة بالخطة المجانية</span></button>
               </div>
@@ -5052,6 +5085,7 @@ function refreshDeepSearchBtn(){
           <div class="account-actions">
             <button class="btn sm with-label" type="button" id="accountSignInBtn"><span class="icon">🔐</span><span class="label">تسجيل الدخول</span></button>
             <button class="btn ghost sm with-label" type="button" id="accountUpgradeRequestBtn"><span class="icon">✉️</span><span class="label">طلب تفعيل مدفوع</span></button>
+            <button class="btn ghost sm with-label" type="button" id="accountChangePwBtn"><span class="icon">🔑</span><span class="label">تغيير كلمة المرور</span></button>
             <button class="btn ghost sm with-label" type="button" id="accountLogoutBtn"><span class="icon">↩</span><span class="label">تسجيل الخروج</span></button>
           </div>
           <div class="upgrade-inline" id="upgradeRedeemRow">
@@ -5102,6 +5136,72 @@ function refreshDeepSearchBtn(){
                 <input id="adminGeneratedCode" type="text" placeholder="سيظهر كود الترقية هنا" readonly />
               </div>
               <div class="hint" id="adminUpgradeMeta" style="margin-top:10px">اختر حدًا ماليًا مثل 1$ / 5$ / 10$ ليتم تثبيته مباشرةً على حساب المستخدم عند التفعيل. اتركه فارغًا لاستخدام حد الخطة الافتراضي.</div>
+            </div>
+          </details>
+          <details class="tool-group" id="adminUsersPanel" style="margin-top:12px; display:none">
+            <summary class="workspace-section-toggle">
+              <span class="workspace-section-head">
+                <span class="workspace-section-title">إدارة المستخدمين</span>
+                <span class="workspace-section-summary">عرض وإدارة الحسابات والخطط والاستهلاك.</span>
+              </span>
+              <span class="workspace-section-chevron">⌄</span>
+            </summary>
+            <div class="tool-group-body" style="padding-top:14px">
+              <div class="upgrade-inline">
+                <input id="adminUsersSearch" type="text" placeholder="بحث بالبريد أو الاسم..." />
+                <button class="btn ghost sm with-label" type="button" id="adminUsersRefreshBtn"><span class="icon">↻</span><span class="label">تحديث</span></button>
+              </div>
+              <div class="hint" id="adminUsersMeta" style="margin-top:8px">لا توجد بيانات حتى الآن.</div>
+              <div style="max-height:220px; overflow:auto; margin-top:8px; border:1px solid var(--line); border-radius:12px;">
+                <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                  <thead>
+                    <tr>
+                      <th style="text-align:start; padding:8px;">Email</th>
+                      <th style="text-align:start; padding:8px;">Plan</th>
+                      <th style="text-align:start; padding:8px;">Used/Limit</th>
+                      <th style="text-align:start; padding:8px;">State</th>
+                    </tr>
+                  </thead>
+                  <tbody id="adminUsersTableBody"></tbody>
+                </table>
+              </div>
+              <div class="auth-config-grid" style="margin-top:10px">
+                <div>
+                  <label class="hint">المستخدم المحدد</label>
+                  <input id="adminUserEmail" type="email" placeholder="user@example.com" />
+                </div>
+                <div>
+                  <label class="hint">الاسم</label>
+                  <input id="adminUserName" type="text" placeholder="الاسم" disabled />
+                </div>
+              </div>
+              <div class="auth-config-grid" style="margin-top:10px">
+                <div>
+                  <label class="hint">الخطة</label>
+                  <select id="adminUserPlan">
+                    <option value="free">free</option>
+                    <option value="premium">premium</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="hint">حد الرصيد (USD)</label>
+                  <input id="adminUserLimit" type="number" min="0" step="0.01" placeholder="0.00" />
+                </div>
+                <div>
+                  <label class="hint">المستخدم (USD)</label>
+                  <input id="adminUserUsed" type="number" min="0" step="0.01" placeholder="0.00" />
+                </div>
+                <div style="display:flex; align-items:flex-end; gap:8px;">
+                  <label class="auth-inline-check"><input id="adminUserDisabled" type="checkbox" />تعطيل المستخدم</label>
+                  <label class="auth-inline-check"><input id="adminUserVerified" type="checkbox" />البريد موثّق</label>
+                </div>
+              </div>
+              <div class="account-actions" style="margin-top:12px">
+                <button class="btn dark sm with-label" type="button" id="adminUserSaveBtn"><span class="icon">💾</span><span class="label">حفظ التعديلات</span></button>
+                <button class="btn ghost sm with-label" type="button" id="adminUserResetPeriodBtn"><span class="icon">🧹</span><span class="label">تصفير فترة الاستخدام</span></button>
+                <button class="btn ghost sm with-label" type="button" id="adminUserIssueResetBtn"><span class="icon">🔐</span><span class="label">إصدار رابط إعادة كلمة المرور</span></button>
+              </div>
+              <div class="hint" id="adminUserPatchMeta" style="margin-top:8px"></div>
             </div>
           </details>
           <div class="row" style="margin-top:10px">
@@ -5179,6 +5279,7 @@ function refreshDeepSearchBtn(){
       $('accountUpgradeRequestBtn').style.display = signedIn && role === 'admin' ? 'none' : '';
     }
     if ($('accountLogoutBtn')) $('accountLogoutBtn').disabled = !signedIn;
+    if ($('accountChangePwBtn')) $('accountChangePwBtn').disabled = !(signedIn && auth.hasPassword);
     if ($('activateUpgradeBtn')) $('activateUpgradeBtn').disabled = !signedIn;
     if ($('upgradeRedeemRow')) $('upgradeRedeemRow').style.display = signedIn && role === 'admin' ? 'none' : '';
     if ($('upgradeCodeInput') && auth.upgradeCode && !$('upgradeCodeInput').value) $('upgradeCodeInput').value = auth.upgradeCode;
@@ -5186,14 +5287,20 @@ function refreshDeepSearchBtn(){
     if ($('upgradeEmail')) $('upgradeEmail').value = settings.upgradeEmail || config.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail;
     if ($('upgradeEmail')) $('upgradeEmail').closest('.row')?.style.setProperty('display', SHOW_UPGRADE_EMAIL_FIELD ? '' : 'none');
     if ($('adminUpgradePanel')) $('adminUpgradePanel').style.display = signedIn && role === 'admin' ? '' : 'none';
+    if ($('adminUsersPanel')) $('adminUsersPanel').style.display = signedIn && role === 'admin' ? '' : 'none';
     if ($('adminUpgradeEmail') && signedIn && role === 'admin' && !$('adminUpgradeEmail').value) $('adminUpgradeEmail').value = '';
     if ($('adminGenerateUpgradeBtn')) $('adminGenerateUpgradeBtn').disabled = !(signedIn && role === 'admin');
     if ($('adminCopyUpgradeBtn')) $('adminCopyUpgradeBtn').disabled = !String($('adminGeneratedCode')?.value || '').trim();
     if ($('adminUpgradeMeta') && signedIn && role === 'admin'){
       $('adminUpgradeMeta').textContent = 'أنشئ الكود ثم أرسله للمستخدم. لن يعمل الكود إلا مع البريد الذي أدخلته هنا.';
     }
+    if (signedIn && role === 'admin' && $('adminUsersTableBody') && !$('adminUsersTableBody').dataset.loaded){
+      $('adminUsersTableBody').dataset.loaded = '1';
+      refreshAdminUsersPanel().catch(()=>{});
+    }
     if ($('authEntryName') && !$('authEntryName').value && signedIn) $('authEntryName').value = auth.name || '';
     if ($('authEntryEmail') && !$('authEntryEmail').value && signedIn) $('authEntryEmail').value = auth.email || '';
+    if ($('authEntryMode')) $('authEntryMode').value = signedIn ? 'signin' : ($('authEntryMode').value || 'signin');
     if ($('authGatePlanNote')) $('authGatePlanNote').textContent = role === 'admin'
       ? 'تم تفعيل الصلاحيات الكاملة والمزايا المدفوعة لهذا الحساب.'
       : plan === 'premium'
@@ -5245,6 +5352,7 @@ function refreshDeepSearchBtn(){
 function syncUnifiedAuthEntry(){
     const config = sanitizePublicAuthConfig(getEffectiveAuthConfig());
     const email = String($('authEntryEmail')?.value || '').trim().toLowerCase();
+    const mode = String($('authEntryMode')?.value || 'signin').trim().toLowerCase();
     const remoteAdminEmail = String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
     const isAdminEntry = !!email && !!remoteAdminEmail && email === remoteAdminEmail;
     const adminPasswordEnabled = config.adminPasswordEnabled === true;
@@ -5268,7 +5376,7 @@ function syncUnifiedAuthEntry(){
     // redirected to the Google popup. Now the input appears iff adminPasswordServerReady is
     // true. When the server is google_only, the primary button becomes a clearly-labeled
     // "متابعة الإدارة عبر Google" that is honest about what it will do.
-    const showPassword = isAdminEntry && adminPasswordServerReady;
+    const showPassword = isAdminEntry ? adminPasswordServerReady : true;
     const adminGoogleOnly = isAdminEntry && !adminPasswordServerReady && adminGoogleReady;
     const label = $('authEntrySubmitLabel');
     const hint = $('authEntryModeHint');
@@ -5277,23 +5385,25 @@ function syncUnifiedAuthEntry(){
     const passwordWrap = passwordInput?.closest('div[style*="grid-column"]') || passwordInput?.parentElement;
     if (label) label.textContent = isAdminEntry
       ? (adminGoogleOnly ? 'متابعة الإدارة عبر Google' : 'دخول الإدارة')
-      : 'متابعة بالخطة المجانية';
+      : (mode === 'signup' ? 'إنشاء حساب جديد' : 'تسجيل الدخول');
     if (hint) hint.textContent = isAdminEntry
       ? (adminGoogleOnly
         ? 'الخادم يعرض حاليًا "google_only" لحساب الإدارة. استخدم زر Google بالأسفل، أو فعّل APP_ADMIN_PASSWORD على الـ Worker لإعادة مسار كلمة المرور.'
         : 'هذا الحساب يحتاج كلمة مرور الإدارة أو Google عندما تكون متاحة.')
-      : 'أي بريد شخصي صالح يفتح لك الخطة المجانية فورًا، ويمكنك الترقية لاحقًا داخل التطبيق.';
+      : (mode === 'signup'
+        ? 'سيتم إنشاء حساب جديد (email/password) مع تخزين آمن للجلسة.'
+        : 'تسجيل دخول حساب موجود (email/password).');
     if ($('authCurrentPlanPill')){
       $('authCurrentPlanPill').textContent = isAdminEntry ? 'الإدارة' : 'الخطة المجانية';
       $('authCurrentPlanPill').classList.toggle('premium', isAdminEntry);
     }
     if (passwordLabel) passwordLabel.textContent = isAdminEntry
       ? (adminGoogleOnly ? 'كلمة مرور الإدارة أو Google' : 'كلمة مرور الإدارة')
-      : 'كلمة المرور للإدارة فقط';
+      : 'كلمة المرور';
     if (passwordInput){
       passwordInput.placeholder = isAdminEntry
         ? (adminGoogleOnly ? 'اتركها فارغة لاستخدام Google أو أدخل كلمة المرور' : 'أدخل كلمة مرور الإدارة')
-        : 'اختيارية للمستخدم العادي، ومطلوبة فقط إذا كان هذا بريد الإدارة';
+        : (mode === 'signup' ? 'أنشئ كلمة مرور قوية (8+).' : 'أدخل كلمة المرور الحالية');
       passwordInput.disabled = !showPassword;
       if (!showPassword) passwordInput.value = '';
     }
@@ -5489,7 +5599,10 @@ function syncUnifiedAuthEntry(){
   function installBrowserAuthBridgeListeners(){
     if (window.__AI_STUDIO_AUTH_BRIDGE__) return;
     window.__AI_STUDIO_AUTH_BRIDGE__ = true;
-    window.addEventListener('hashchange', () => { consumeAuthRedirectFromLocation().catch(() => {}); });
+    window.addEventListener('hashchange', () => {
+      consumeAuthRedirectFromLocation().catch(() => {});
+      handleAuthActionFromHash().catch(() => {});
+    });
     const syncBridgeFromForeground = () => {
       consumeAuthRedirectFromLocation().catch(() => {});
       consumeAuthBridgeStorage().catch(() => {});
@@ -5511,6 +5624,7 @@ function syncUnifiedAuthEntry(){
       consumeAuthPayload(data.payload, { upgradeCode: getAuthState().upgradeCode || '' }).catch(() => {});
     });
     syncBridgeFromForeground();
+    handleAuthActionFromHash().catch(() => {});
     const appPlugin = getCapacitorAppPlugin();
     const browserPlugin = getCapacitorBrowserPlugin();
     if (appPlugin?.addListener){
@@ -5667,10 +5781,19 @@ function syncUnifiedAuthEntry(){
 async function submitUnifiedAuthEntry(){
     const name = String($('authEntryName')?.value || '').trim();
     const email = String($('authEntryEmail')?.value || '').trim().toLowerCase();
-    const password = String($('authEntryPassword')?.value || '').trim();
+    const password = String($('authEntryPassword')?.value || '');
+    const mode = String($('authEntryMode')?.value || 'signin').trim().toLowerCase();
     let isAdminEntry = false;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
       setAuthGateStatus('أدخل بريدًا إلكترونيًا صالحًا أولًا.', 'error');
+      return;
+    }
+    if (!password){
+      setAuthGateStatus('كلمة المرور مطلوبة لتسجيل الدخول/إنشاء الحساب.', 'error');
+      return;
+    }
+    if (mode === 'signup' && String(password).length < 8){
+      setAuthGateStatus('كلمة المرور يجب أن تكون 8 أحرف على الأقل.', 'error');
       return;
     }
     try{
@@ -5682,71 +5805,45 @@ async function submitUnifiedAuthEntry(){
         || adminLoginMethod === 'password_or_google'
         || adminLoginMethod === 'password_only';
       const adminGoogleReady = !!String(config.googleClientId || '').trim();
-      // v8.94 — if the admin email is known, match it; otherwise, any password-bearing submission
-      // on a managed/admin-capable runtime is treated as an admin-login attempt. The worker is the
-      // final authority and will reject non-admin email/password pairs.
-      isAdminEntry = adminEmail
-        ? (!!email && email === adminEmail)
-        : (adminAllowsPassword && !!password);
-      // v8.96 — if the server is currently google_only for admin and the user is on the admin
-      // email, the submit button's LABEL already reads "متابعة الإدارة عبر Google" (set by
-      // syncUnifiedAuthEntry). In that state, take the explicit Google path — but only when
-      // password login is genuinely not available. If password is usable, always prefer it.
+      isAdminEntry = !!adminEmail && email === adminEmail;
       if (isAdminEntry && !adminAllowsPassword && adminGoogleReady){
         setAuthGateStatus('جارٍ فتح تسجيل Google لحساب الإدارة...', 'busy');
         await openGoogleAuthInBrowser();
         return;
       }
+
       let payload = null;
-      if (isAdminEntry){
-        // v8.96 — never silently redirect an admin-password click into the Google popup.
-        // If the user typed a password, always attempt POST /auth/login so an honest
-        // 503 AUTH_ADMIN_PASSWORD_NOT_CONFIGURED surfaces as an inline error the admin
-        // can act on, instead of an auth-bridge popup that looks like the wrong thing.
-        if (!password){
-          if (!adminAllowsPassword && adminGoogleReady){
-            setAuthGateStatus('تسجيل الدخول الإداري بكلمة المرور غير مُفعَّل حاليًا على الخادم. استخدم زر Google بالأسفل أو فعّل APP_ADMIN_PASSWORD.', 'error');
-          } else if (adminGoogleReady){
-            setAuthGateStatus('هذا الحساب يحتاج كلمة المرور أو Google حسب إعدادات الإدارة.', 'error');
-          } else {
-            setAuthGateStatus('هذا الحساب يحتاج كلمة مرور الإدارة للمتابعة.', 'error');
-          }
-          return;
-        }
-        setAuthGateStatus('جارٍ التحقق من حساب الإدارة...', 'busy');
-        try{
-          payload = await fetchAuthJson('/auth/login', {
-            method: 'POST',
-            body: JSON.stringify({ email, password })
-          });
-        }catch(error){
-          const message = sanitizeAuthErrorMessage(error?.message || error || '');
-          if (/AUTH_ADMIN_PASSWORD_NOT_CONFIGURED|Admin password login is not configured/i.test(message)){
-            // Keep the user on the password path with an actionable message — do NOT open the Google popup.
-            setAuthGateStatus('تسجيل الدخول الإداري بكلمة المرور غير مُفعَّل حاليًا على الخادم (APP_ADMIN_PASSWORD غير مضبوط). اضبط القيمة في إعدادات الـ Worker ثم أعد المحاولة، أو استخدم زر Google بالأسفل إن أردت.', 'error');
-            return;
-          }
-          throw error;
-        }
-      } else {
-        setAuthGateStatus('جارٍ إنشاء جلسة الخطة المجانية...', 'busy');
+      if (mode === 'signup' && !isAdminEntry){
+        setAuthGateStatus('جارٍ إنشاء الحساب...', 'busy');
         payload = await fetchAuthJson('/auth/register', {
           method: 'POST',
           body: JSON.stringify({
             name,
             email,
+            password,
             upgradeCode: ($('upgradeCodeInput')?.value || getAuthState().upgradeCode || '').trim()
           })
         });
+      } else {
+        setAuthGateStatus(isAdminEntry ? 'جارٍ تسجيل دخول الإدارة...' : 'جارٍ تسجيل الدخول...', 'busy');
+        payload = await fetchAuthJson('/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email, password })
+        });
       }
-      applyAuthResponse(payload, { upgradeCode: payload?.plan === 'premium' ? (($('upgradeCodeInput')?.value || getAuthState().upgradeCode || '').trim()) : getAuthState().upgradeCode || '' });
+
+      applyAuthResponse(payload, {
+        upgradeCode: payload?.plan === 'premium'
+          ? (($('upgradeCodeInput')?.value || getAuthState().upgradeCode || '').trim())
+          : (getAuthState().upgradeCode || '')
+      });
       const remember = !!$('authRememberToggle')?.checked;
       if (remember){
         saveRememberedAuthEntry({
           remember: true,
-          name,
+          name: String(payload?.name || name || '').trim(),
           email,
-          password: isAdminEntry ? password : ''
+          password
         });
       } else {
         clearRememberedAuthEntry();
@@ -5758,11 +5855,190 @@ async function submitUnifiedAuthEntry(){
       refreshStrategicWorkspace().catch(()=>{});
       closeAuthGate(true);
       if ($('authEntryPassword')) $('authEntryPassword').value = '';
-      toast(isAdminEntry ? '✅ تم تسجيل الدخول الإداري' : '✅ تم فتح الخطة المجانية بنجاح');
+      toast(mode === 'signup' ? '✅ تم إنشاء الحساب وتسجيل الدخول' : (isAdminEntry ? '✅ تم تسجيل الدخول الإداري' : '✅ تم تسجيل الدخول'));
+      if (payload?.emailVerificationPending){
+        setAuthGateStatus('تم إنشاء الحساب. يرجى التحقق من البريد الإلكتروني لتفعيل الحساب بالكامل.', 'info');
+      }
     }catch(error){
       const message = sanitizeAuthErrorMessage(explainAuthError(error, { nativeGoogle: false }));
-      setAuthGateStatus(`${isAdminEntry ? 'فشل دخول الإدارة' : 'فشل تسجيل الدخول'}: ${message}`, 'error');
+      setAuthGateStatus(`${isAdminEntry ? 'فشل دخول الإدارة' : 'فشل المصادقة'}: ${message}`, 'error');
       toast(`⚠️ ${message}`);
+    }
+  }
+
+  async function requestPasswordResetFromUi(){
+    const email = String($('authEntryEmail')?.value || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+      return setAuthGateStatus('أدخل بريدًا صحيحًا أولًا لإرسال رابط إعادة كلمة المرور.', 'error');
+    }
+    try{
+      setAuthGateStatus('جارٍ إرسال رابط إعادة كلمة المرور...', 'busy');
+      const payload = await fetchAuthJson('/auth/password/reset-request', {
+        method: 'POST',
+        body: JSON.stringify({ email })
+      });
+      if (payload?.resetUrl){
+        setAuthGateStatus('تم إنشاء رابط إعادة كلمة المرور. سيتم فتحه الآن.', 'info');
+        window.location.hash = `reset-password=${encodeURIComponent(String(payload.resetUrl).split('reset-password=').pop() || '')}`;
+      } else {
+        setAuthGateStatus('تم إرسال رابط إعادة كلمة المرور إلى البريد (إذا كان الحساب موجودًا).', 'info');
+      }
+      toast('✅ تم إرسال طلب إعادة كلمة المرور');
+    }catch(error){
+      setAuthGateStatus(`تعذر إرسال رابط الاستعادة: ${sanitizeAuthErrorMessage(error?.message || error)}`, 'error');
+    }
+  }
+
+  async function resendVerificationFromUi(){
+    try{
+      if (!hasValidAuthSession()) return toast('⚠️ سجّل الدخول أولًا.');
+      const payload = await fetchAuthJson('/auth/resend-verification', { method:'POST' });
+      if (payload?.verificationUrl){
+        const token = String(payload.verificationUrl).split('verify-email=').pop() || '';
+        if (token) window.location.hash = `verify-email=${encodeURIComponent(token)}`;
+      }
+      toast(payload?.alreadyVerified ? '✅ البريد موثّق بالفعل.' : '✅ تم إرسال رسالة التحقق.');
+    }catch(error){
+      toast(`⚠️ تعذر إعادة إرسال التحقق: ${sanitizeAuthErrorMessage(error?.message || error)}`);
+    }
+  }
+
+  async function changePasswordFromUi(){
+    const currentPassword = String(prompt('أدخل كلمة المرور الحالية:') || '');
+    if (!currentPassword) return;
+    const newPassword = String(prompt('أدخل كلمة المرور الجديدة (8+):') || '');
+    if (!newPassword || newPassword.length < 8){
+      return toast('⚠️ كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل.');
+    }
+    try{
+      await fetchAuthJson('/auth/password/change', {
+        method: 'POST',
+        body: JSON.stringify({ currentPassword, newPassword })
+      });
+      toast('✅ تم تغيير كلمة المرور.');
+    }catch(error){
+      toast(`⚠️ تعذر تغيير كلمة المرور: ${sanitizeAuthErrorMessage(error?.message || error)}`);
+    }
+  }
+
+  async function handleAuthActionFromHash(){
+    const hash = String(window.location.hash || '').replace(/^#/, '');
+    if (!hash) return false;
+    const params = new URLSearchParams(hash);
+    const verifyToken = String(params.get('verify-email') || '').trim();
+    if (verifyToken){
+      try{
+        await fetchAuthJson('/auth/verify-email', {
+          method: 'POST',
+          body: JSON.stringify({ token: verifyToken })
+        });
+        const cur = getAuthState();
+        saveAuthState({ ...cur, emailVerified: true, emailVerificationPending: false });
+        syncAccountUi();
+        toast('✅ تم توثيق البريد الإلكتروني بنجاح.');
+      }catch(error){
+        toast(`⚠️ فشل توثيق البريد: ${sanitizeAuthErrorMessage(error?.message || error)}`);
+      }finally{
+        history.replaceState({}, document.title, window.location.pathname + window.location.search);
+      }
+      return true;
+    }
+    const resetToken = String(params.get('reset-password') || '').trim();
+    if (resetToken){
+      const newPassword = String(prompt('أدخل كلمة مرور جديدة (8+):') || '');
+      if (!newPassword || newPassword.length < 8){
+        toast('⚠️ كلمة المرور الجديدة غير صالحة.');
+      } else {
+        try{
+          await fetchAuthJson('/auth/password/reset-confirm', {
+            method: 'POST',
+            body: JSON.stringify({ token: resetToken, newPassword })
+          });
+          toast('✅ تم تعيين كلمة المرور الجديدة.');
+        }catch(error){
+          toast(`⚠️ فشل إعادة التعيين: ${sanitizeAuthErrorMessage(error?.message || error)}`);
+        }
+      }
+      history.replaceState({}, document.title, window.location.pathname + window.location.search);
+      return true;
+    }
+    return false;
+  }
+
+  async function fetchAdminUsersFromApi(){
+    const q = encodeURIComponent(String($('adminUsersSearch')?.value || '').trim());
+    return fetchAuthJson(`/admin/users${q ? `?q=${q}` : ''}`, { method: 'GET' });
+  }
+
+  function renderAdminUsersTable(users = []){
+    const body = $('adminUsersTableBody');
+    if (!body) return;
+    body.innerHTML = '';
+    if (!Array.isArray(users) || !users.length){
+      body.innerHTML = `<tr><td colspan="4" style="padding:8px; color:var(--muted)">لا توجد نتائج.</td></tr>`;
+      return;
+    }
+    users.forEach((u) => {
+      const tr = document.createElement('tr');
+      tr.style.cursor = 'pointer';
+      tr.innerHTML = `
+        <td style="padding:8px">${escapeHtml(String(u.email || ''))}<div class="hint">${escapeHtml(String(u.name || ''))}</div></td>
+        <td style="padding:8px">${escapeHtml(String(u?.quota?.plan || 'free'))}</td>
+        <td style="padding:8px">${escapeHtml(String(u?.quota?.usedUsd ?? 0))}/${escapeHtml(String(u?.quota?.limitUsd ?? 0))}</td>
+        <td style="padding:8px">${u.disabled ? 'disabled' : 'active'}${u.emailVerified ? ' • verified' : ''}</td>`;
+      tr.addEventListener('click', () => selectAdminUser(u));
+      body.appendChild(tr);
+    });
+  }
+
+  function selectAdminUser(user){
+    if (!user) return;
+    AUTH_RUNTIME.adminUsersSelectedEmail = String(user.email || '').trim().toLowerCase();
+    if ($('adminUserEmail')) $('adminUserEmail').value = user.email || '';
+    if ($('adminUserName')) $('adminUserName').value = user.name || '';
+    if ($('adminUserPlan')) $('adminUserPlan').value = String(user?.quota?.plan || 'free');
+    if ($('adminUserLimit')) $('adminUserLimit').value = String(user?.quota?.limitUsd ?? '');
+    if ($('adminUserUsed')) $('adminUserUsed').value = String(user?.quota?.usedUsd ?? '');
+    if ($('adminUserDisabled')) $('adminUserDisabled').checked = !!user.disabled;
+    if ($('adminUserVerified')) $('adminUserVerified').checked = !!user.emailVerified;
+  }
+
+  async function refreshAdminUsersPanel(){
+    try{
+      if ($('adminUsersMeta')) $('adminUsersMeta').textContent = 'جارٍ تحميل المستخدمين...';
+      const payload = await fetchAdminUsersFromApi();
+      const users = Array.isArray(payload?.users) ? payload.users : [];
+      renderAdminUsersTable(users);
+      if ($('adminUsersMeta')) $('adminUsersMeta').textContent = `تم تحميل ${users.length} مستخدم.`;
+    }catch(error){
+      if ($('adminUsersMeta')) $('adminUsersMeta').textContent = `تعذر التحميل: ${sanitizeAuthErrorMessage(error?.message || error)}`;
+    }
+  }
+
+  async function patchAdminSelectedUser(extra = {}){
+    const email = String($('adminUserEmail')?.value || AUTH_RUNTIME.adminUsersSelectedEmail || '').trim().toLowerCase();
+    if (!email) return toast('⚠️ اختر مستخدمًا أولًا.');
+    const body = {
+      email,
+      plan: String($('adminUserPlan')?.value || 'free'),
+      limit: Number($('adminUserLimit')?.value || 0),
+      used: Number($('adminUserUsed')?.value || 0),
+      disabled: !!$('adminUserDisabled')?.checked,
+      emailVerified: !!$('adminUserVerified')?.checked,
+      ...extra
+    };
+    try{
+      const payload = await fetchAuthJson('/admin/users/patch', { method:'POST', body: JSON.stringify(body) });
+      if ($('adminUserPatchMeta')){
+        $('adminUserPatchMeta').textContent = payload?.adminPasswordResetUrl
+          ? `تم الحفظ. رابط إعادة كلمة المرور: ${payload.adminPasswordResetUrl}`
+          : 'تم حفظ تغييرات المستخدم.';
+      }
+      toast('✅ تم تحديث المستخدم.');
+      refreshAdminUsersPanel().catch(()=>{});
+    }catch(error){
+      if ($('adminUserPatchMeta')) $('adminUserPatchMeta').textContent = `فشل التحديث: ${sanitizeAuthErrorMessage(error?.message || error)}`;
+      toast(`⚠️ ${sanitizeAuthErrorMessage(error?.message || error)}`);
     }
   }
 
@@ -14819,6 +15095,7 @@ let pinOnly = false;
     $('accountTriggerBtn')?.addEventListener('click', openAccountCenter);
     $('accountSignInBtn')?.addEventListener('click', () => openAuthGate('', { force: true }));
     $('accountUpgradeRequestBtn')?.addEventListener('click', requestUpgradeByEmail);
+    $('accountChangePwBtn')?.addEventListener('click', changePasswordFromUi);
     $('accountLogoutBtn')?.addEventListener('click', logoutCurrentAccount);
     $('activateUpgradeBtn')?.addEventListener('click', activateUpgradeCodeFromUi);
     $('adminGenerateUpgradeBtn')?.addEventListener('click', generateAdminUpgradeCodeFromUi);
@@ -14826,6 +15103,8 @@ let pinOnly = false;
     wireUpgradeAmountPresets();
     $('authEntrySubmitBtn')?.addEventListener('click', submitUnifiedAuthEntry);
     $('authEntryForm')?.addEventListener('submit', (e) => { e.preventDefault(); submitUnifiedAuthEntry(); });
+    $('authForgotPwBtn')?.addEventListener('click', requestPasswordResetFromUi);
+    $('authResendVerifyBtn')?.addEventListener('click', resendVerificationFromUi);
     $('authRetryBtn')?.addEventListener('click', async () => {
       AUTH_RUNTIME.config = null;
       await loadRemoteAuthConfig(true);
@@ -14856,7 +15135,18 @@ let pinOnly = false;
       });
     });
     $('authEntryEmail')?.addEventListener('input', syncUnifiedAuthEntry);
+    $('authEntryMode')?.addEventListener('change', syncUnifiedAuthEntry);
     $('authGoogleBrowserBtn')?.addEventListener('click', openGoogleAuthInBrowser);
+    $('adminUsersRefreshBtn')?.addEventListener('click', refreshAdminUsersPanel);
+    $('adminUsersSearch')?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter'){
+        event.preventDefault();
+        refreshAdminUsersPanel();
+      }
+    });
+    $('adminUserSaveBtn')?.addEventListener('click', () => patchAdminSelectedUser());
+    $('adminUserResetPeriodBtn')?.addEventListener('click', () => patchAdminSelectedUser({ resetPeriod: true }));
+    $('adminUserIssueResetBtn')?.addEventListener('click', () => patchAdminSelectedUser({ issuePasswordReset: true }));
     $('authRememberToggle')?.addEventListener('change', () => {
       if (!$('authRememberToggle')?.checked) clearRememberedAuthEntry();
     });
@@ -15830,6 +16120,7 @@ ${e?.message||e}`, false);
     syncKeyboardEditingState();
     applyShellLayout();
     initializeAuthExperience().catch(()=>{});
+    handleAuthActionFromHash().catch(()=>{});
     refreshStrategicWorkspace().catch(()=>{});
 
     try{
