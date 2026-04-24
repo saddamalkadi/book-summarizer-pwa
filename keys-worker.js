@@ -379,7 +379,15 @@ async function getPublicAuthConfig(env) {
     voicePreferredLanguage: voice.preferredLanguage,
     voicePremiumOnly: false,
     userEmailPasswordEnabled: !!getUserDataStore(env),
-    transactionalEmailConfigured: !!String(env.RESEND_API_KEY || '').trim(),
+    transactionalEmailConfigured: !!String(
+      env.RESEND_API_KEY
+      || env.RESEND_KEY
+      || env.TRANSACTIONAL_EMAIL_API_KEY
+      || env.MAILCHANNELS_FROM
+      || env.EMAIL_FALLBACK_FROM
+      || env.MAIL_FROM
+      || ''
+    ).trim(),
     upgradeEmail: String(env.APP_UPGRADE_EMAIL || env.UPGRADE_EMAIL || '').trim()
   };
 }
@@ -904,8 +912,10 @@ async function handleEmailRegistration(request, env) {
     if (requireVerify && !doc.emailVerified) {
       out.emailVerificationPending = true;
       out.verificationEmailSent = verificationSent;
+      out.verificationProvider = mail?.provider || '';
       if (!verificationSent) {
         out.verificationUrl = `${String(env.APP_PUBLIC_ORIGIN || 'https://app.saddamalkadi.com').replace(/\/+$/, '')}/#verify-email=${encodeURIComponent(verificationToken)}`;
+        out.verificationDeliveryError = mail?.error || mail?.reason || (mail?.status ? `HTTP_${mail.status}` : 'EMAIL_SEND_FAILED');
       }
     }
     return jsonResponse(out, 200);
@@ -1054,7 +1064,13 @@ async function handleResendVerification(request, env) {
       text: link,
       html: `<a href="${link}">Verify</a>`
     });
-    return jsonResponse({ ok: true, emailSent: !!mail.ok, verificationUrl: mail.ok ? undefined : link }, 200);
+    return jsonResponse({
+      ok: true,
+      emailSent: !!mail.ok,
+      provider: mail?.provider || '',
+      verificationUrl: mail.ok ? undefined : link,
+      ...(mail?.ok ? {} : { deliveryError: mail?.error || mail?.reason || (mail?.status ? `HTTP_${mail.status}` : 'EMAIL_SEND_FAILED') })
+    }, 200);
   } catch (error) {
     return jsonResponse({ error: String(error?.message || error), code: 'AUTH_RESEND_FAILED' }, 400);
   }
@@ -1380,26 +1396,84 @@ function randomUrlToken() {
 }
 
 async function sendTransactionalEmail(env, { to, subject, text, html }) {
-  const apiKey = String(env.RESEND_API_KEY || '').trim();
-  if (!apiKey) return { ok: false, skipped: true };
-  const from = String(env.MAIL_FROM || 'onboarding@resend.dev').trim();
-  const body = {
-    from,
-    to: [String(to || '').trim()],
-    subject: String(subject || '').slice(0, 180),
-    text: text || '',
-    html: html || text || ''
-  };
-  const r = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  const raw = await r.text();
-  if (!r.ok) {
-    return { ok: false, status: r.status, body: raw.slice(0, 400) };
+  const recipient = String(to || '').trim().toLowerCase();
+  if (!recipient || !isValidEmail(recipient)) return { ok: false, skipped: true, reason: 'INVALID_RECIPIENT' };
+  const cleanSubject = String(subject || '').slice(0, 180);
+  const cleanText = String(text || '').trim();
+  const cleanHtml = String(html || cleanText || '').trim();
+  const from = String(
+    env.MAIL_FROM
+    || env.EMAIL_FROM
+    || env.TRANSACTIONAL_EMAIL_FROM
+    || env.NOTIFY_FROM
+    || 'AI Workspace <noreply@saddamalkadi.com>'
+  ).trim();
+
+  // Provider #1: Resend
+  const resendApiKey = String(
+    env.RESEND_API_KEY
+    || env.RESEND_KEY
+    || env.TRANSACTIONAL_EMAIL_API_KEY
+    || ''
+  ).trim();
+  if (resendApiKey) {
+    try {
+      const body = {
+        from,
+        to: [recipient],
+        subject: cleanSubject,
+        text: cleanText,
+        html: cleanHtml
+      };
+      const r = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${resendApiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const raw = await r.text();
+      if (r.ok) return { ok: true, provider: 'resend' };
+      // continue to fallback provider
+      try { console.warn('[mail] resend_failed', r.status, String(raw || '').slice(0, 200)); } catch (_) {}
+    } catch (error) {
+      try { console.warn('[mail] resend_error', String(error?.message || error || 'unknown')); } catch (_) {}
+    }
   }
-  return { ok: true };
+
+  // Provider #2: MailChannels fallback (works without API key in many CF setups)
+  try {
+    const fallbackFrom = String(
+      env.MAILCHANNELS_FROM
+      || env.EMAIL_FALLBACK_FROM
+      || from
+    ).trim();
+    const senderEmailMatch = fallbackFrom.match(/<([^>]+)>/);
+    const senderEmail = String(senderEmailMatch?.[1] || fallbackFrom).trim();
+    const senderName = fallbackFrom.includes('<')
+      ? String(fallbackFrom.split('<')[0] || 'AI Workspace').trim()
+      : 'AI Workspace';
+    if (isValidEmail(senderEmail)) {
+      const mcBody = {
+        personalizations: [{ to: [{ email: recipient }] }],
+        from: { email: senderEmail, name: senderName || 'AI Workspace' },
+        subject: cleanSubject,
+        content: [
+          { type: 'text/plain', value: cleanText || cleanHtml.replace(/<[^>]+>/g, ' ') },
+          { type: 'text/html', value: cleanHtml || `<pre>${String(cleanText || '').replace(/[&<>"]/g, (ch) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[ch] || ch))}</pre>` }
+        ]
+      };
+      const r2 = await fetch('https://api.mailchannels.net/tx/v1/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(mcBody)
+      });
+      const raw2 = await r2.text();
+      if (r2.ok) return { ok: true, provider: 'mailchannels' };
+      return { ok: false, provider: 'mailchannels', status: r2.status, body: String(raw2 || '').slice(0, 300) };
+    }
+  } catch (error) {
+    return { ok: false, provider: 'mailchannels', error: String(error?.message || error || 'MAILCHANNELS_FAILED') };
+  }
+  return { ok: false, skipped: true, reason: 'NO_PROVIDER_CONFIGURED' };
 }
 
 async function assertAccountNotDisabled(email, env) {
