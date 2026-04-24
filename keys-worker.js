@@ -1497,12 +1497,12 @@ async function sendTransactionalEmail(env, { to, subject, text, html }) {
         const raw = await r.text();
         return { r, raw };
       };
-      let { r, raw } = await postResend(from);
-      if (!r.ok && r.status === 422) {
-        const bare = bareEmailFromFromHeader(from);
-        if (bare && bare !== from) {
-          ({ r, raw } = await postResend(bare));
-        }
+      // Resend accepts plain `email@domain`; display-name forms sometimes 422 from strict validation.
+      const bareAddr = bareEmailFromFromHeader(from);
+      const fromForResend = bareAddr || from;
+      let { r, raw } = await postResend(fromForResend);
+      if (!r.ok && r.status === 422 && bareAddr && fromForResend === bareAddr) {
+        ({ r, raw } = await postResend(from));
       }
       if (r.ok) return { ok: true, provider: 'resend' };
       try { console.warn('[mail] resend_failed', r.status, String(raw || '').slice(0, 200)); } catch (_) {}
