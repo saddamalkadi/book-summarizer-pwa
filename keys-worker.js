@@ -1497,12 +1497,15 @@ async function sendTransactionalEmail(env, { to, subject, text, html }) {
         const raw = await r.text();
         return { r, raw };
       };
-      // Resend accepts plain `email@domain`; display-name forms sometimes 422 from strict validation.
+      // Resend: use a minimal ASCII `Display <email>` when we can parse the address (avoids 422 on some strict parses).
       const bareAddr = bareEmailFromFromHeader(from);
-      const fromForResend = bareAddr || from;
+      const fromForResend = bareAddr ? `AI Workspace <${bareAddr}>` : from;
       let { r, raw } = await postResend(fromForResend);
-      if (!r.ok && r.status === 422 && bareAddr && fromForResend === bareAddr) {
-        ({ r, raw } = await postResend(from));
+      if (!r.ok && r.status === 422) {
+        ({ r, raw } = await postResend(bareAddr || from));
+        if (!r.ok && r.status === 422 && bareAddr) {
+          ({ r, raw } = await postResend(from));
+        }
       }
       if (r.ok) return { ok: true, provider: 'resend' };
       try { console.warn('[mail] resend_failed', r.status, String(raw || '').slice(0, 200)); } catch (_) {}
