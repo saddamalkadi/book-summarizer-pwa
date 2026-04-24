@@ -1214,7 +1214,8 @@ function getUserStorageKey(email) {
 const ACCOUNT_KV_PREFIX = 'account:';
 const EMAIL_VERIFY_PREFIX = 'emailverify:';
 const PW_RESET_PREFIX = 'pwreset:';
-const PBKDF2_ITERATIONS = 120000;
+// Cloudflare Workers WebCrypto currently rejects PBKDF2 iterations above 100000.
+const PBKDF2_ITERATIONS = 100000;
 
 function accountKvKey(email) {
   return `${ACCOUNT_KV_PREFIX}${encodeURIComponent(String(email || '').trim().toLowerCase())}`;
