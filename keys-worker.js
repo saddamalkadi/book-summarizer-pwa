@@ -853,8 +853,35 @@ async function handleEmailRegistration(request, env) {
       plan = 'premium';
     }
 
-    const passwordHash = await hashUserPassword(passwordRaw);
     const requireVerify = String(env.REQUIRE_EMAIL_VERIFICATION || 'true').trim().toLowerCase() !== 'false';
+    let verificationToken = '';
+    let verificationSent = false;
+    let verificationMail = null;
+    if (requireVerify) {
+      verificationToken = randomUrlToken();
+      const appOrigin = String(env.APP_PUBLIC_ORIGIN || 'https://app.saddamalkadi.com').replace(/\/+$/, '');
+      const link = `${appOrigin}/#verify-email=${encodeURIComponent(verificationToken)}`;
+      verificationMail = await sendTransactionalEmail(env, {
+        to: email,
+        subject: 'Verify your AI Workspace account',
+        text: `Open this link to verify your email:\n${link}\n`,
+        html: `<p>Verify your email:</p><p><a href="${link}">${link}</a></p>`
+      });
+      verificationSent = !!verificationMail?.ok;
+      // Beta-safety rule: never report/signup-success when delivery itself failed.
+      if (!verificationSent) {
+        return jsonResponse({
+          error: 'Verification email delivery failed. Please retry after email provider is configured.',
+          code: 'AUTH_VERIFY_DELIVERY_FAILED',
+          deliveryStatus: {
+            ok: false,
+            provider: verificationMail?.provider || '',
+            reason: verificationMail?.error || verificationMail?.reason || (verificationMail?.status ? `HTTP_${verificationMail.status}` : 'EMAIL_SEND_FAILED')
+          }
+        }, 503);
+      }
+    }
+    const passwordHash = await hashUserPassword(passwordRaw);
     const doc = {
       email,
       name: name || deriveDisplayName(email),
@@ -870,11 +897,7 @@ async function handleEmailRegistration(request, env) {
     await writeUserAccount(doc, env);
     await getOrInitUserQuota({ email, name: doc.name, picture: '', plan, role: 'user' }, env);
 
-    let verificationToken = '';
-    let verificationSent = false;
-    let verificationMail = null;
     if (requireVerify) {
-      verificationToken = randomUrlToken();
       const store = getUserDataStore(env);
       if (store && typeof store.put === 'function') {
         await store.put(
@@ -883,15 +906,6 @@ async function handleEmailRegistration(request, env) {
           { expirationTtl: 48 * 60 * 60 }
         );
       }
-      const appOrigin = String(env.APP_PUBLIC_ORIGIN || 'https://app.saddamalkadi.com').replace(/\/+$/, '');
-      const link = `${appOrigin}/#verify-email=${encodeURIComponent(verificationToken)}`;
-      verificationMail = await sendTransactionalEmail(env, {
-        to: email,
-        subject: 'Verify your AI Workspace account',
-        text: `Open this link to verify your email:\n${link}\n`,
-        html: `<p>Verify your email:</p><p><a href="${link}">${link}</a></p>`
-      });
-      verificationSent = !!verificationMail?.ok;
     }
 
     const session = await issueSessionToken({
@@ -1062,12 +1076,20 @@ async function handleResendVerification(request, env) {
       text: link,
       html: `<a href="${link}">Verify</a>`
     });
+    if (!mail?.ok) {
+      return jsonResponse({
+        ok: false,
+        emailSent: false,
+        provider: mail?.provider || '',
+        verificationUrl: link,
+        deliveryError: mail?.error || mail?.reason || (mail?.status ? `HTTP_${mail.status}` : 'EMAIL_SEND_FAILED'),
+        code: 'AUTH_RESEND_DELIVERY_FAILED'
+      }, 503);
+    }
     return jsonResponse({
       ok: true,
-      emailSent: !!mail.ok,
-      provider: mail?.provider || '',
-      verificationUrl: mail.ok ? undefined : link,
-      ...(mail?.ok ? {} : { deliveryError: mail?.error || mail?.reason || (mail?.status ? `HTTP_${mail.status}` : 'EMAIL_SEND_FAILED') })
+      emailSent: true,
+      provider: mail?.provider || ''
     }, 200);
   } catch (error) {
     return jsonResponse({ error: String(error?.message || error), code: 'AUTH_RESEND_FAILED' }, 400);
