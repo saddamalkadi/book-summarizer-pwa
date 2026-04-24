@@ -383,9 +383,6 @@ async function getPublicAuthConfig(env) {
       env.RESEND_API_KEY
       || env.RESEND_KEY
       || env.TRANSACTIONAL_EMAIL_API_KEY
-      || env.MAILCHANNELS_FROM
-      || env.EMAIL_FALLBACK_FROM
-      || env.MAIL_FROM
       || ''
     ).trim(),
     upgradeEmail: String(env.APP_UPGRADE_EMAIL || env.UPGRADE_EMAIL || '').trim()
