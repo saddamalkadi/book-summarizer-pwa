@@ -875,6 +875,7 @@ async function handleEmailRegistration(request, env) {
 
     let verificationToken = '';
     let verificationSent = false;
+    let verificationMail = null;
     if (requireVerify) {
       verificationToken = randomUrlToken();
       const store = getUserDataStore(env);
@@ -887,13 +888,13 @@ async function handleEmailRegistration(request, env) {
       }
       const appOrigin = String(env.APP_PUBLIC_ORIGIN || 'https://app.saddamalkadi.com').replace(/\/+$/, '');
       const link = `${appOrigin}/#verify-email=${encodeURIComponent(verificationToken)}`;
-      const mail = await sendTransactionalEmail(env, {
+      verificationMail = await sendTransactionalEmail(env, {
         to: email,
         subject: 'Verify your AI Workspace account',
         text: `Open this link to verify your email:\n${link}\n`,
         html: `<p>Verify your email:</p><p><a href="${link}">${link}</a></p>`
       });
-      verificationSent = !!mail.ok;
+      verificationSent = !!verificationMail?.ok;
     }
 
     const session = await issueSessionToken({
@@ -912,10 +913,10 @@ async function handleEmailRegistration(request, env) {
     if (requireVerify && !doc.emailVerified) {
       out.emailVerificationPending = true;
       out.verificationEmailSent = verificationSent;
-      out.verificationProvider = mail?.provider || '';
+      out.verificationProvider = verificationMail?.provider || '';
       if (!verificationSent) {
         out.verificationUrl = `${String(env.APP_PUBLIC_ORIGIN || 'https://app.saddamalkadi.com').replace(/\/+$/, '')}/#verify-email=${encodeURIComponent(verificationToken)}`;
-        out.verificationDeliveryError = mail?.error || mail?.reason || (mail?.status ? `HTTP_${mail.status}` : 'EMAIL_SEND_FAILED');
+        out.verificationDeliveryError = verificationMail?.error || verificationMail?.reason || (verificationMail?.status ? `HTTP_${verificationMail.status}` : 'EMAIL_SEND_FAILED');
       }
     }
     return jsonResponse(out, 200);
