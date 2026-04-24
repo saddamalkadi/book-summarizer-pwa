@@ -323,6 +323,24 @@ function normalizeSecret(raw) {
   return s.replace(/^[\s\u00A0\u200B\u200C\u200D\u200E\u200F\uFEFF]+|[\s\u00A0\u200B\u200C\u200D\u200E\u200F\uFEFF]+$/g, '');
 }
 
+/** Normalize From line for mail APIs (trim/invisibles; strip wrapping quotes from dashboard paste). */
+function normalizeMailFromHeader(raw) {
+  let s = normalizeSecret(String(raw || ''));
+  if ((s.startsWith('"') && s.endsWith('"') && s.length >= 2)
+    || (s.startsWith('\u201c') && s.endsWith('\u201d') && s.length >= 2)) {
+    s = normalizeSecret(s.slice(1, -1));
+  }
+  return s;
+}
+
+/** Bare email from `Name <addr>` or plain `addr`; empty if not a valid email. */
+function bareEmailFromFromHeader(fromHeader) {
+  const s = normalizeMailFromHeader(fromHeader);
+  const m = s.match(/<([^>]+)>/);
+  const addr = String(m ? m[1] : s).trim();
+  return isValidEmail(addr) ? addr : '';
+}
+
 function getAdminPassword(env) {
   return normalizeSecret(env.APP_ADMIN_PASSWORD || env.ADMIN_PASSWORD || '');
 }
@@ -351,13 +369,13 @@ async function getAdminPasswordWithKv(env) {
  * Must stay aligned with sendTransactionalEmail.
  */
 function getTransactionalEmailConfig(env) {
-  const from = String(
+  const from = normalizeMailFromHeader(
     env.MAIL_FROM
     || env.EMAIL_FROM
     || env.TRANSACTIONAL_EMAIL_FROM
     || env.NOTIFY_FROM
     || 'AI Workspace <noreply@saddamalkadi.com>'
-  ).trim();
+  );
   const resendApiKey = normalizeSecret(
     String(env.RESEND_API_KEY || env.RESEND_KEY || env.TRANSACTIONAL_EMAIL_API_KEY || '')
   );
@@ -1463,19 +1481,29 @@ async function sendTransactionalEmail(env, { to, subject, text, html }) {
   // Resend: when a key is configured, use Resend only and surface real failures (no silent MailChannels fallback).
   if (tx.hasResend) {
     try {
-      const body = {
-        from,
-        to: [recipient],
-        subject: cleanSubject,
-        text: cleanText,
-        html: cleanHtml
+      const postResend = async (fromValue) => {
+        const body = {
+          from: fromValue,
+          to: [recipient],
+          subject: cleanSubject,
+          text: cleanText,
+          html: cleanHtml
+        };
+        const r = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${tx.resendApiKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const raw = await r.text();
+        return { r, raw };
       };
-      const r = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${tx.resendApiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      const raw = await r.text();
+      let { r, raw } = await postResend(from);
+      if (!r.ok && r.status === 422) {
+        const bare = bareEmailFromFromHeader(from);
+        if (bare && bare !== from) {
+          ({ r, raw } = await postResend(bare));
+        }
+      }
       if (r.ok) return { ok: true, provider: 'resend' };
       try { console.warn('[mail] resend_failed', r.status, String(raw || '').slice(0, 200)); } catch (_) {}
       return {
