@@ -1460,9 +1460,8 @@ async function sendTransactionalEmail(env, { to, subject, text, html }) {
   const cleanHtml = String(html || cleanText || '').trim();
   const from = tx.from;
 
-  // Provider #1: Resend
-  const resendApiKey = tx.resendApiKey;
-  if (resendApiKey) {
+  // Resend: when a key is configured, use Resend only and surface real failures (no silent MailChannels fallback).
+  if (tx.hasResend) {
     try {
       const body = {
         from,
@@ -1473,55 +1472,70 @@ async function sendTransactionalEmail(env, { to, subject, text, html }) {
       };
       const r = await fetch('https://api.resend.com/emails', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${resendApiKey}`, 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${tx.resendApiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
       const raw = await r.text();
       if (r.ok) return { ok: true, provider: 'resend' };
-      // continue to fallback provider
       try { console.warn('[mail] resend_failed', r.status, String(raw || '').slice(0, 200)); } catch (_) {}
+      return {
+        ok: false,
+        skipped: false,
+        provider: 'resend',
+        status: r.status,
+        body: String(raw || '').slice(0, 500),
+        reason: `HTTP_${r.status}`,
+        error: String(raw || '').slice(0, 400)
+      };
     } catch (error) {
       try { console.warn('[mail] resend_error', String(error?.message || error || 'unknown')); } catch (_) {}
+      return {
+        ok: false,
+        skipped: false,
+        provider: 'resend',
+        reason: 'RESEND_REQUEST_FAILED',
+        error: String(error?.message || error || 'unknown')
+      };
     }
   }
 
-  // Provider #2: MailChannels fallback (works without API key in many CF setups)
-  try {
-    const fallbackFrom = tx.fallbackFrom;
-    const senderEmailMatch = fallbackFrom.match(/<([^>]+)>/);
-    const senderEmail = String(senderEmailMatch?.[1] || fallbackFrom).trim();
-    const senderName = fallbackFrom.includes('<')
-      ? String(fallbackFrom.split('<')[0] || 'AI Workspace').trim()
-      : 'AI Workspace';
-    if (isValidEmail(senderEmail)) {
-      const mcBody = {
-        personalizations: [{ to: [{ email: recipient }] }],
-        from: { email: senderEmail, name: senderName || 'AI Workspace' },
-        subject: cleanSubject,
-        content: [
-          { type: 'text/plain', value: cleanText || cleanHtml.replace(/<[^>]+>/g, ' ') },
-          { type: 'text/html', value: cleanHtml || `<pre>${String(cleanText || '').replace(/[&<>"]/g, (ch) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[ch] || ch))}</pre>` }
-        ]
-      };
-      const r2 = await fetch('https://api.mailchannels.net/tx/v1/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mcBody)
-      });
-      const raw2 = await r2.text();
-      if (r2.ok) return { ok: true, provider: 'mailchannels' };
-      return { ok: false, provider: 'mailchannels', status: r2.status, body: String(raw2 || '').slice(0, 300) };
+  // MailChannels only when Resend is not configured (intentional non-Resend setups).
+  if (!tx.hasResend && tx.hasMailchannelsSender) {
+    try {
+      const fallbackFrom = tx.fallbackFrom;
+      const senderEmailMatch = fallbackFrom.match(/<([^>]+)>/);
+      const senderEmail = String(senderEmailMatch?.[1] || fallbackFrom).trim();
+      const senderName = fallbackFrom.includes('<')
+        ? String(fallbackFrom.split('<')[0] || 'AI Workspace').trim()
+        : 'AI Workspace';
+      if (isValidEmail(senderEmail)) {
+        const mcBody = {
+          personalizations: [{ to: [{ email: recipient }] }],
+          from: { email: senderEmail, name: senderName || 'AI Workspace' },
+          subject: cleanSubject,
+          content: [
+            { type: 'text/plain', value: cleanText || cleanHtml.replace(/<[^>]+>/g, ' ') },
+            { type: 'text/html', value: cleanHtml || `<pre>${String(cleanText || '').replace(/[&<>"]/g, (ch) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[ch] || ch))}</pre>` }
+          ]
+        };
+        const r2 = await fetch('https://api.mailchannels.net/tx/v1/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(mcBody)
+        });
+        const raw2 = await r2.text();
+        if (r2.ok) return { ok: true, provider: 'mailchannels' };
+        return { ok: false, provider: 'mailchannels', status: r2.status, body: String(raw2 || '').slice(0, 300) };
+      }
+    } catch (error) {
+      return { ok: false, provider: 'mailchannels', error: String(error?.message || error || 'MAILCHANNELS_FAILED') };
     }
-  } catch (error) {
-    return { ok: false, provider: 'mailchannels', error: String(error?.message || error || 'MAILCHANNELS_FAILED') };
   }
-  // tx.configured was true but every attempted path failed; never reuse NO_PROVIDER_CONFIGURED here
-  // (that reason is reserved for tx.configured === false above).
   return {
     ok: false,
     skipped: false,
-    provider: tx.hasResend ? 'resend' : 'mailchannels',
-    reason: tx.hasResend ? 'RESEND_AND_FALLBACK_FAILED' : 'MAILCHANNELS_SEND_FAILED'
+    provider: '',
+    reason: 'MAILCHANNELS_SEND_FAILED'
   };
 }
 
