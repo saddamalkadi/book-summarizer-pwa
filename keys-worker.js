@@ -155,6 +155,45 @@ export default {
   }
 };
 
+export class AuthStoreDO {
+  constructor(state) {
+    this.state = state;
+  }
+
+  async fetch(request) {
+    try {
+      const body = await request.json().catch(() => ({}));
+      const op = String(body?.op || '').trim().toLowerCase();
+      if (op === 'get') {
+        const key = String(body?.key || '');
+        const value = await this.state.storage.get(key);
+        return jsonResponse({ ok: true, value: value == null ? null : String(value) }, 200);
+      }
+      if (op === 'put') {
+        const key = String(body?.key || '');
+        const value = String(body?.value ?? '');
+        await this.state.storage.put(key, value);
+        return jsonResponse({ ok: true }, 200);
+      }
+      if (op === 'delete') {
+        const key = String(body?.key || '');
+        await this.state.storage.delete(key);
+        return jsonResponse({ ok: true }, 200);
+      }
+      if (op === 'list') {
+        const prefix = String(body?.prefix || '');
+        const rows = await this.state.storage.list({ prefix });
+        const keys = [];
+        for (const [key] of rows.entries()) keys.push(String(key || ''));
+        return jsonResponse({ ok: true, keys }, 200);
+      }
+      return jsonResponse({ ok: false, error: 'AUTH_STORE_OP_UNKNOWN' }, 400);
+    } catch (error) {
+      return jsonResponse({ ok: false, error: String(error?.message || error || 'AUTH_STORE_ERROR') }, 500);
+    }
+  }
+}
+
 function handleOptions(request) {
   return withCors(new Response(null, { status: 204 }), request);
 }
@@ -1201,7 +1240,56 @@ async function handleSessionLookup(request, env) {
 }
 
 function getUserDataStore(env) {
+  const doNs = env.AUTH_STORE;
+  if (doNs && typeof doNs.idFromName === 'function') {
+    return createDurableAuthStoreAdapter(env);
+  }
   return env.USER_DATA || env.AISTUDIO_DATA || null;
+}
+
+function createDurableAuthStoreAdapter(env) {
+  const ns = env.AUTH_STORE;
+  const stub = ns.get(ns.idFromName('global-auth-store'));
+  const call = async (op, payload = {}) => {
+    const resp = await stub.fetch('https://auth-store.internal/op', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ op, ...payload })
+    });
+    const text = await resp.text();
+    let data = null;
+    try { data = JSON.parse(text || '{}'); } catch (_) { data = null; }
+    if (!resp.ok || !data?.ok) {
+      throw new Error(data?.error || `AUTH_STORE_${op}_FAILED`);
+    }
+    return data;
+  };
+  return {
+    async get(key, opts = {}) {
+      const out = await call('get', { key: String(key || '') });
+      const raw = out.value;
+      if (raw == null) return null;
+      if (opts?.type === 'json') {
+        try { return typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (_) { return null; }
+      }
+      return typeof raw === 'string' ? raw : JSON.stringify(raw);
+    },
+    async put(key, value, options = {}) {
+      await call('put', { key: String(key || ''), value: String(value ?? ''), options });
+    },
+    async delete(key) {
+      await call('delete', { key: String(key || '') });
+    },
+    async list(options = {}) {
+      const out = await call('list', { prefix: String(options?.prefix || '') });
+      const keys = Array.isArray(out.keys) ? out.keys : [];
+      return {
+        keys: keys.map((name) => ({ name: String(name || '') })),
+        list_complete: true,
+        cursor: ''
+      };
+    }
+  };
 }
 
 function getUserStorageKey(email) {

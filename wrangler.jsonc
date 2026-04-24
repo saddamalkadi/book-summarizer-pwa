@@ -19,6 +19,20 @@
       "id": "49d87e2d4989452fb3c680ad024ae5b7"
     }
   ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "AUTH_STORE",
+        "class_name": "AuthStoreDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1-auth-store-do",
+      "new_sqlite_classes": ["AuthStoreDO"]
+    }
+  ],
   "services": [
     {
       "binding": "CONVERT",
