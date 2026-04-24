@@ -48,6 +48,28 @@ export default {
         return withCors(await handleSessionLookup(request, env), request);
       }
 
+      if (url.pathname === '/auth/password/change' && request.method === 'POST') {
+        return withCors(await handleUserPasswordChange(request, env), request);
+      }
+      if (url.pathname === '/auth/password/reset-request' && request.method === 'POST') {
+        return withCors(await handlePasswordResetRequest(request, env), request);
+      }
+      if (url.pathname === '/auth/password/reset-confirm' && request.method === 'POST') {
+        return withCors(await handlePasswordResetConfirm(request, env), request);
+      }
+      if (url.pathname === '/auth/verify-email' && request.method === 'POST') {
+        return withCors(await handleEmailVerifyConfirm(request, env), request);
+      }
+      if (url.pathname === '/auth/resend-verification' && request.method === 'POST') {
+        return withCors(await handleResendVerification(request, env), request);
+      }
+      if (url.pathname === '/admin/users' && request.method === 'GET') {
+        return withCors(await handleAdminUsersList(request, env), request);
+      }
+      if (url.pathname === '/admin/users/patch' && request.method === 'POST') {
+        return withCors(await handleAdminUserPatch(request, env), request);
+      }
+
       if (url.pathname === '/me/quota' && request.method === 'GET') {
         return withCors(await handleMeQuota(request, env), request);
       }
@@ -316,7 +338,10 @@ async function getPublicAuthConfig(env) {
     voiceSynthesisModel: voice.synthesisModel,
     voiceSynthesisVoice: voice.synthesisVoice,
     voicePreferredLanguage: voice.preferredLanguage,
-    voicePremiumOnly: false
+    voicePremiumOnly: false,
+    userEmailPasswordEnabled: !!getUserDataStore(env),
+    transactionalEmailConfigured: !!String(env.RESEND_API_KEY || '').trim(),
+    upgradeEmail: String(env.APP_UPGRADE_EMAIL || env.UPGRADE_EMAIL || '').trim()
   };
 }
 
@@ -525,6 +550,56 @@ async function handleGoogleAuth(request, env) {
       plan = 'premium';
     }
 
+    const existing = await readUserAccount(googleProfile.email, env);
+    if (existing) {
+      if (existing.disabled === true) {
+        return jsonResponse({ error: 'This account has been disabled.', code: 'AUTH_ACCOUNT_DISABLED' }, 403);
+      }
+      const googleSub = String(googleProfile.sub || '').trim();
+      if (existing.googleSub && googleSub && existing.googleSub !== googleSub) {
+        return jsonResponse({ error: 'Google account mismatch for this email.', code: 'AUTH_GOOGLE_LINK_MISMATCH' }, 403);
+      }
+      const next = {
+        ...existing,
+        name: String(googleProfile.name || existing.name || '').trim() || existing.name,
+        picture: String(googleProfile.picture || existing.picture || '').trim(),
+        googleSub: googleSub || existing.googleSub || '',
+        providers: Array.from(new Set([...(Array.isArray(existing.providers) ? existing.providers : []), 'google'])),
+        lastLoginAt: nowMs(),
+        emailVerified: true
+      };
+      await writeUserAccount(next, env);
+      if (!isAdmin) {
+        const existingQ = await readQuotaFromKv(googleProfile.email, env);
+        const sPlan = plan === 'premium' || existingQ?.plan === 'premium' ? 'premium' : 'free';
+        const q = await getOrInitUserQuota({
+          email: googleProfile.email,
+          name: next.name,
+          picture: next.picture || '',
+          plan: sPlan,
+          role: 'user'
+        }, env);
+        plan = q.plan === 'premium' ? 'premium' : 'free';
+      }
+    } else if (!isAdmin) {
+      const doc = {
+        email: googleProfile.email,
+        name: String(googleProfile.name || deriveDisplayName(googleProfile.email)).trim(),
+        picture: String(googleProfile.picture || '').trim(),
+        passwordHash: '',
+        googleSub: String(googleProfile.sub || '').trim(),
+        providers: ['google'],
+        emailVerified: true,
+        disabled: false,
+        createdAt: nowMs(),
+        lastLoginAt: nowMs()
+      };
+      await writeUserAccount(doc, env);
+      const qNew = await getOrInitUserQuota({ email: doc.email, name: doc.name, picture: doc.picture, plan, role: 'user' }, env);
+      plan = qNew.plan === 'premium' ? 'premium' : 'free';
+    }
+
+    const accOut = await readUserAccount(googleProfile.email, env);
     const session = await issueSessionToken({
       email: googleProfile.email,
       name: googleProfile.name,
@@ -533,7 +608,11 @@ async function handleGoogleAuth(request, env) {
       role: isAdmin ? 'admin' : 'user'
     }, env);
 
-    return jsonResponse(session, 200);
+    return jsonResponse({
+      ...session,
+      emailVerified: accOut ? !!accOut.emailVerified : true,
+      hasPassword: !!(accOut && accOut.passwordHash)
+    }, 200);
   } catch (error) {
     return jsonResponse({
       error: String(error?.message || error || 'Google authentication failed.'),
@@ -558,39 +637,78 @@ async function handlePasswordLogin(request, env) {
       }, 400);
     }
 
-    if (!adminPassword) {
-      return jsonResponse({
-        error: 'Admin password sign-in is not available. Please use Google sign-in with the approved admin account.',
-        code: 'AUTH_ADMIN_PASSWORD_NOT_CONFIGURED'
-      }, 503);
+    if (email === adminEmail) {
+      if (!adminPassword) {
+        return jsonResponse({
+          error: 'Admin password sign-in is not available. Please use Google sign-in with the approved admin account.',
+          code: 'AUTH_ADMIN_PASSWORD_NOT_CONFIGURED'
+        }, 503);
+      }
+      const matches = (
+        timingSafeEqual(passwordNormalized, adminPassword)
+        || timingSafeEqual(passwordRaw, adminPassword)
+        || timingSafeEqual(passwordRaw.trim(), adminPassword)
+      );
+      if (!matches) {
+        return jsonResponse({
+          error: 'Invalid admin credentials.',
+          code: 'AUTH_INVALID_ADMIN_CREDENTIALS'
+        }, 401);
+      }
+      const session = await issueSessionToken({
+        email,
+        name: 'صدام القاضي',
+        picture: '',
+        plan: 'premium',
+        role: 'admin'
+      }, env);
+      return jsonResponse(session, 200);
     }
 
-    // Compare both the user-normalized value and the raw typed value against the stored password.
-    // This absorbs invisible characters on either side without ever accepting an actual mismatch.
-    const matches = email === adminEmail && (
-      timingSafeEqual(passwordNormalized, adminPassword)
-      || timingSafeEqual(passwordRaw, adminPassword)
-      || timingSafeEqual(passwordRaw.trim(), adminPassword)
-    );
-    if (!matches) {
+    const acc = await readUserAccount(email, env);
+    if (!acc || !acc.passwordHash) {
       return jsonResponse({
-        error: 'Invalid admin credentials.',
-        code: 'AUTH_INVALID_ADMIN_CREDENTIALS'
+        error: 'Invalid email or password.',
+        code: 'AUTH_INVALID_CREDENTIALS'
       }, 401);
     }
-
+    if (acc.disabled === true) {
+      return jsonResponse({ error: 'This account has been disabled.', code: 'AUTH_ACCOUNT_DISABLED' }, 403);
+    }
+    const ok = await verifyUserPasswordHash(passwordRaw, acc.passwordHash);
+    if (!ok) {
+      return jsonResponse({
+        error: 'Invalid email or password.',
+        code: 'AUTH_INVALID_CREDENTIALS'
+      }, 401);
+    }
+    const next = { ...acc, lastLoginAt: nowMs() };
+    await writeUserAccount(next, env);
+    const existingQ = await readQuotaFromKv(email, env);
+    const sPlan = existingQ?.plan === 'premium' ? 'premium' : 'free';
+    const q = await getOrInitUserQuota({
+      email,
+      name: acc.name,
+      picture: acc.picture || '',
+      plan: sPlan,
+      role: 'user'
+    }, env);
+    const plan = q.plan === 'premium' ? 'premium' : 'free';
     const session = await issueSessionToken({
       email,
-      name: 'صدام القاضي',
-      picture: '',
-      plan: 'premium',
-      role: 'admin'
+      name: acc.name,
+      picture: acc.picture || '',
+      plan,
+      role: 'user'
     }, env);
-
-    return jsonResponse(session, 200);
+    return jsonResponse({
+      ...session,
+      emailVerified: !!next.emailVerified,
+      hasPassword: true
+    }, 200);
   } catch (error) {
     return jsonResponse({
-      error: String(error?.message || error || 'Admin login failed.'),
+      error: String(error?.message || error || 'Login failed.'),
       code: 'AUTH_LOGIN_FAILED'
     }, 401);
   }
@@ -641,8 +759,16 @@ async function handleEmailRegistration(request, env) {
     const body = await parseJson(request);
     const email = String(body?.email || '').trim().toLowerCase();
     const name = String(body?.name || '').trim();
+    const passwordRaw = String(body?.password || '');
     const upgradeCode = String(body?.upgradeCode || '').trim();
     const adminEmail = getAdminEmail(env);
+
+    if (!getUserDataStore(env)) {
+      return jsonResponse({
+        error: 'Account storage is not configured on this worker.',
+        code: 'STORAGE_NOT_CONFIGURED'
+      }, 503);
+    }
 
     if (!isValidEmail(email)) {
       return jsonResponse({
@@ -662,21 +788,88 @@ async function handleEmailRegistration(request, env) {
       }, 400);
     }
 
+    if (!passwordRaw || String(passwordRaw).length < 8) {
+      return jsonResponse({
+        error: 'Password must be at least 8 characters.',
+        code: 'AUTH_REGISTER_PASSWORD_WEAK'
+      }, 400);
+    }
+
+    const existing = await readUserAccount(email, env);
+    if (existing) {
+      return jsonResponse({
+        error: 'An account with this email already exists. Sign in instead.',
+        code: 'AUTH_REGISTER_EMAIL_TAKEN'
+      }, 409);
+    }
+
     let plan = 'free';
     if (upgradeCode) {
       await verifyUpgradeCodeForEmail(upgradeCode, email, env);
       plan = 'premium';
     }
 
-    const session = await issueSessionToken({
+    const passwordHash = await hashUserPassword(passwordRaw);
+    const requireVerify = String(env.REQUIRE_EMAIL_VERIFICATION || 'true').trim().toLowerCase() !== 'false';
+    const doc = {
       email,
       name: name || deriveDisplayName(email),
+      picture: '',
+      passwordHash,
+      googleSub: '',
+      providers: ['password'],
+      emailVerified: !requireVerify,
+      disabled: false,
+      createdAt: nowMs(),
+      lastLoginAt: nowMs()
+    };
+    await writeUserAccount(doc, env);
+    await getOrInitUserQuota({ email, name: doc.name, picture: '', plan, role: 'user' }, env);
+
+    let verificationToken = '';
+    let verificationSent = false;
+    if (requireVerify) {
+      verificationToken = randomUrlToken();
+      const store = getUserDataStore(env);
+      if (store && typeof store.put === 'function') {
+        await store.put(
+          `${EMAIL_VERIFY_PREFIX}${verificationToken}`,
+          JSON.stringify({ email, exp: nowMs() + 48 * 60 * 60 * 1000 }),
+          { expirationTtl: 48 * 60 * 60 }
+        );
+      }
+      const appOrigin = String(env.APP_PUBLIC_ORIGIN || 'https://app.saddamalkadi.com').replace(/\/+$/, '');
+      const link = `${appOrigin}/#verify-email=${encodeURIComponent(verificationToken)}`;
+      const mail = await sendTransactionalEmail(env, {
+        to: email,
+        subject: 'Verify your AI Workspace account',
+        text: `Open this link to verify your email:\n${link}\n`,
+        html: `<p>Verify your email:</p><p><a href="${link}">${link}</a></p>`
+      });
+      verificationSent = !!mail.ok;
+    }
+
+    const session = await issueSessionToken({
+      email,
+      name: doc.name,
       picture: '',
       plan,
       role: 'user'
     }, env);
 
-    return jsonResponse(session, 200);
+    const out = {
+      ...session,
+      emailVerified: !!doc.emailVerified,
+      hasPassword: true
+    };
+    if (requireVerify && !doc.emailVerified) {
+      out.emailVerificationPending = true;
+      out.verificationEmailSent = verificationSent;
+      if (!verificationSent) {
+        out.verificationUrl = `${String(env.APP_PUBLIC_ORIGIN || 'https://app.saddamalkadi.com').replace(/\/+$/, '')}/#verify-email=${encodeURIComponent(verificationToken)}`;
+      }
+    }
+    return jsonResponse(out, 200);
   } catch (error) {
     return jsonResponse({
       error: String(error?.message || error || 'Email registration failed.'),
@@ -685,9 +878,307 @@ async function handleEmailRegistration(request, env) {
   }
 }
 
+async function handleUserPasswordChange(request, env) {
+  try {
+    const session = await requireSession(request, env);
+    const body = await parseJson(request);
+    const oldPass = String(body?.currentPassword || body?.oldPassword || '');
+    const newPass = String(body?.newPassword || '');
+    if (!oldPass || !newPass || newPass.length < 8) {
+      return jsonResponse({ error: 'Current and new password (8+ chars) required.', code: 'AUTH_PASSWORD_CHANGE_INVALID' }, 400);
+    }
+    const acc = await readUserAccount(session.email, env);
+    if (!acc || !acc.passwordHash) {
+      return jsonResponse({ error: 'Password change is only for email/password accounts.', code: 'AUTH_PASSWORD_CHANGE_UNSUPPORTED' }, 400);
+    }
+    if (!(await verifyUserPasswordHash(oldPass, acc.passwordHash))) {
+      return jsonResponse({ error: 'Current password is incorrect.', code: 'AUTH_PASSWORD_CHANGE_WRONG' }, 401);
+    }
+    acc.passwordHash = await hashUserPassword(newPass);
+    await writeUserAccount(acc, env);
+    return jsonResponse({ ok: true }, 200);
+  } catch (error) {
+    return jsonResponse({ error: String(error?.message || error), code: 'AUTH_PASSWORD_CHANGE_FAILED' }, 400);
+  }
+}
+
+async function handlePasswordResetRequest(request, env) {
+  try {
+    const body = await parseJson(request);
+    const email = String(body?.email || '').trim().toLowerCase();
+    if (!isValidEmail(email)) {
+      return jsonResponse({ error: 'Valid email required.', code: 'AUTH_RESET_EMAIL_INVALID' }, 400);
+    }
+    const acc = await readUserAccount(email, env);
+    if (!acc || !acc.passwordHash) {
+      return jsonResponse({ ok: true, queued: false }, 200);
+    }
+    const token = randomUrlToken();
+    const store = getUserDataStore(env);
+    if (!store || typeof store.put !== 'function') {
+      return jsonResponse({ error: 'Storage not configured.', code: 'STORAGE_NOT_CONFIGURED' }, 503);
+    }
+    await store.put(
+      `${PW_RESET_PREFIX}${token}`,
+      JSON.stringify({ email, exp: nowMs() + 2 * 60 * 60 * 1000 }),
+      { expirationTtl: 2 * 60 * 60 }
+    );
+    const appOrigin = String(env.APP_PUBLIC_ORIGIN || 'https://app.saddamalkadi.com').replace(/\/+$/, '');
+    const link = `${appOrigin}/#reset-password=${encodeURIComponent(token)}`;
+    const mail = await sendTransactionalEmail(env, {
+      to: email,
+      subject: 'Reset your AI Workspace password',
+      text: `Reset link (valid 2 hours):\n${link}\n`,
+      html: `<p><a href="${link}">Reset password</a></p>`
+    });
+    return jsonResponse({
+      ok: true,
+      emailSent: !!mail.ok,
+      ...(mail.ok ? {} : { resetUrl: link })
+    }, 200);
+  } catch (error) {
+    return jsonResponse({ error: String(error?.message || error), code: 'AUTH_RESET_REQUEST_FAILED' }, 400);
+  }
+}
+
+async function handlePasswordResetConfirm(request, env) {
+  try {
+    const body = await parseJson(request);
+    const token = String(body?.token || '').trim();
+    const newPass = String(body?.newPassword || '');
+    if (!token || newPass.length < 8) {
+      return jsonResponse({ error: 'Token and new password (8+ chars) required.', code: 'AUTH_RESET_CONFIRM_INVALID' }, 400);
+    }
+    const store = getUserDataStore(env);
+    if (!store || typeof store.get !== 'function') {
+      return jsonResponse({ error: 'Storage not configured.', code: 'STORAGE_NOT_CONFIGURED' }, 503);
+    }
+    const raw = await store.get(`${PW_RESET_PREFIX}${token}`, { type: 'json' });
+    if (!raw || !raw.email || Number(raw.exp || 0) < nowMs()) {
+      return jsonResponse({ error: 'Invalid or expired reset link.', code: 'AUTH_RESET_TOKEN_INVALID' }, 400);
+    }
+    const acc = await readUserAccount(raw.email, env);
+    if (!acc) {
+      return jsonResponse({ error: 'Account not found.', code: 'AUTH_RESET_NO_ACCOUNT' }, 400);
+    }
+    acc.passwordHash = await hashUserPassword(newPass);
+    await writeUserAccount(acc, env);
+    await store.delete(`${PW_RESET_PREFIX}${token}`);
+    return jsonResponse({ ok: true }, 200);
+  } catch (error) {
+    return jsonResponse({ error: String(error?.message || error), code: 'AUTH_RESET_CONFIRM_FAILED' }, 400);
+  }
+}
+
+async function handleEmailVerifyConfirm(request, env) {
+  try {
+    const body = await parseJson(request);
+    const token = String(body?.token || '').trim();
+    if (!token) return jsonResponse({ error: 'Token required.', code: 'AUTH_VERIFY_TOKEN_REQUIRED' }, 400);
+    const store = getUserDataStore(env);
+    const raw = await store.get(`${EMAIL_VERIFY_PREFIX}${token}`, { type: 'json' });
+    if (!raw || !raw.email) {
+      return jsonResponse({ error: 'Invalid or expired verification link.', code: 'AUTH_VERIFY_TOKEN_INVALID' }, 400);
+    }
+    const acc = await readUserAccount(raw.email, env);
+    if (!acc) {
+      return jsonResponse({ error: 'Account not found.', code: 'AUTH_VERIFY_NO_ACCOUNT' }, 400);
+    }
+    acc.emailVerified = true;
+    await writeUserAccount(acc, env);
+    await store.delete(`${EMAIL_VERIFY_PREFIX}${token}`);
+    return jsonResponse({ ok: true, email: acc.email }, 200);
+  } catch (error) {
+    return jsonResponse({ error: String(error?.message || error), code: 'AUTH_VERIFY_FAILED' }, 400);
+  }
+}
+
+async function handleResendVerification(request, env) {
+  try {
+    const session = await requireSession(request, env);
+    const acc = await readUserAccount(session.email, env);
+    if (!acc || acc.emailVerified) {
+      return jsonResponse({ ok: true, alreadyVerified: true }, 200);
+    }
+    const token = randomUrlToken();
+    const store = getUserDataStore(env);
+    await store.put(
+      `${EMAIL_VERIFY_PREFIX}${token}`,
+      JSON.stringify({ email: session.email, exp: nowMs() + 48 * 60 * 60 * 1000 }),
+      { expirationTtl: 48 * 60 * 60 }
+    );
+    const appOrigin = String(env.APP_PUBLIC_ORIGIN || 'https://app.saddamalkadi.com').replace(/\/+$/, '');
+    const link = `${appOrigin}/#verify-email=${encodeURIComponent(token)}`;
+    const mail = await sendTransactionalEmail(env, {
+      to: session.email,
+      subject: 'Verify your AI Workspace account',
+      text: link,
+      html: `<a href="${link}">Verify</a>`
+    });
+    return jsonResponse({ ok: true, emailSent: !!mail.ok, verificationUrl: mail.ok ? undefined : link }, 200);
+  } catch (error) {
+    return jsonResponse({ error: String(error?.message || error), code: 'AUTH_RESEND_FAILED' }, 400);
+  }
+}
+
+async function handleAdminUsersList(request, env) {
+  try {
+    const session = await requireSession(request, env);
+    if (session.role !== 'admin') {
+      return jsonResponse({ error: 'Admin access required.', code: 'ADMIN_REQUIRED' }, 403);
+    }
+    const u = new URL(request.url);
+    const q = String(u.searchParams.get('q') || '').trim().toLowerCase();
+    const store = getUserDataStore(env);
+    const emails = new Set();
+    try {
+      const idxRaw = await store.get('_account:index', { type: 'json' });
+      if (Array.isArray(idxRaw?.users)) {
+        for (const e of idxRaw.users) emails.add(String(e).trim().toLowerCase());
+      }
+    } catch (_) {}
+    try {
+      if (typeof store.list === 'function') {
+        let cursor = undefined;
+        for (let i = 0; i < 25; i += 1) {
+          const page = await store.list({ prefix: ACCOUNT_KV_PREFIX, cursor });
+          for (const entry of page.keys || []) {
+            const name = String(entry.name || '');
+            if (name.startsWith(ACCOUNT_KV_PREFIX)) {
+              try {
+                emails.add(decodeURIComponent(name.slice(ACCOUNT_KV_PREFIX.length)).toLowerCase());
+              } catch (_) {}
+            }
+          }
+          if (page.list_complete || !page.cursor) break;
+          cursor = page.cursor;
+        }
+      }
+    } catch (_) {}
+    const list = Array.from(emails).filter((e) => !q || e.includes(q)).sort();
+    const users = [];
+    for (const email of list.slice(0, 200)) {
+      const acc = await readUserAccount(email, env);
+      const quota = await readQuotaFromKv(email, env);
+      if (acc) {
+        users.push({
+          email: acc.email,
+          name: acc.name,
+          providers: acc.providers || [],
+          emailVerified: !!acc.emailVerified,
+          disabled: !!acc.disabled,
+          googleSub: acc.googleSub ? 'linked' : '',
+          createdAt: acc.createdAt || 0,
+          lastLoginAt: acc.lastLoginAt || 0,
+          quota: quota ? quotaPublicView(quota) : null
+        });
+      }
+    }
+    return jsonResponse({ ok: true, users, total: users.length }, 200);
+  } catch (error) {
+    return jsonResponse({ error: String(error?.message || error), code: 'ADMIN_USERS_LIST_FAILED' }, 400);
+  }
+}
+
+async function handleAdminUserPatch(request, env) {
+  try {
+    const session = await requireSession(request, env);
+    if (session.role !== 'admin') {
+      return jsonResponse({ error: 'Admin access required.', code: 'ADMIN_REQUIRED' }, 403);
+    }
+    const body = await parseJson(request);
+    const email = String(body?.email || '').trim().toLowerCase();
+    if (!isValidEmail(email)) {
+      return jsonResponse({ error: 'Valid email required.', code: 'EMAIL_REQUIRED' }, 400);
+    }
+    const adminEmail = getAdminEmail(env);
+    if (email === adminEmail && body?.disabled === true) {
+      return jsonResponse({ error: 'Cannot disable primary admin email.', code: 'ADMIN_PATCH_FORBIDDEN' }, 400);
+    }
+    let acc = await readUserAccount(email, env);
+    if (!acc) {
+      acc = {
+        email,
+        name: deriveDisplayName(email),
+        picture: '',
+        passwordHash: '',
+        googleSub: '',
+        providers: [],
+        emailVerified: true,
+        disabled: false,
+        createdAt: nowMs(),
+        lastLoginAt: 0
+      };
+    }
+    if (body.disabled === true || body.disabled === false) acc.disabled = !!body.disabled;
+    if (body.emailVerified === true || body.emailVerified === false) acc.emailVerified = !!body.emailVerified;
+    await writeUserAccount(acc, env);
+
+    const existingQ = await readQuotaFromKv(email, env);
+    const period = computePeriod(existingQ?.periodStart || nowMs());
+    const base = existingQ && existingQ.email === email ? existingQ : {
+      email,
+      plan: 'free',
+      role: 'user',
+      limit: QUOTA_DEFAULT_PLAN_LIMITS_USD.free,
+      used: 0,
+      periodStart: period.periodStart,
+      periodEnd: period.periodEnd,
+      lastPromptTokens: 0, lastCompletionTokens: 0, lastTotalTokens: 0,
+      lastCost: 0, lastModel: '', lastUpdatedAt: 0, lifetimeUsed: 0
+    };
+    const patch = { ...base };
+    if (body.plan) {
+      const p = String(body.plan).trim().toLowerCase();
+      if (['free', 'premium'].includes(p)) patch.plan = p;
+    }
+    if (body.limit != null) {
+      const v = Number(body.limit);
+      if (Number.isFinite(v) && v >= 0) patch.limit = roundUsd(v);
+    }
+    if (body.used != null) {
+      const v = Number(body.used);
+      if (Number.isFinite(v) && v >= 0) patch.used = roundUsd(v);
+    }
+    if (body.resetPeriod === true) {
+      const p = computePeriod(nowMs());
+      patch.periodStart = p.periodStart;
+      patch.periodEnd = p.periodEnd;
+      patch.used = 0;
+    }
+    patch.updatedAt = nowMs();
+    await writeQuotaToKv(patch, env);
+
+    let adminPasswordResetUrl = null;
+    if (body.issuePasswordReset === true && acc.passwordHash) {
+      const token = randomUrlToken();
+      const st = getUserDataStore(env);
+      if (st && typeof st.put === 'function') {
+        await st.put(
+          `${PW_RESET_PREFIX}${token}`,
+          JSON.stringify({ email, exp: nowMs() + 2 * 60 * 60 * 1000 }),
+          { expirationTtl: 2 * 60 * 60 }
+        );
+        const appOrigin = String(env.APP_PUBLIC_ORIGIN || 'https://app.saddamalkadi.com').replace(/\/+$/, '');
+        adminPasswordResetUrl = `${appOrigin}/#reset-password=${encodeURIComponent(token)}`;
+      }
+    }
+
+    return jsonResponse({
+      ok: true,
+      account: acc,
+      quota: quotaPublicView(patch),
+      ...(adminPasswordResetUrl ? { adminPasswordResetUrl } : {})
+    }, 200);
+  } catch (error) {
+    return jsonResponse({ error: String(error?.message || error), code: 'ADMIN_USER_PATCH_FAILED' }, 400);
+  }
+}
+
 async function handleSessionLookup(request, env) {
   try {
     const session = await requireSession(request, env);
+    const acc = await readUserAccount(session.email, env);
     return jsonResponse({
       ok: true,
       email: session.email,
@@ -695,7 +1186,11 @@ async function handleSessionLookup(request, env) {
       picture: session.picture,
       plan: session.plan,
       role: session.role || 'user',
-      sessionExp: session.exp * 1000
+      sessionExp: session.exp * 1000,
+      emailVerified: acc ? !!acc.emailVerified : true,
+      hasPassword: !!(acc && acc.passwordHash),
+      providers: acc?.providers || (session.role === 'admin' ? ['admin'] : []),
+      disabled: !!(acc && acc.disabled)
     }, 200);
   } catch (error) {
     return jsonResponse({
@@ -711,6 +1206,118 @@ function getUserDataStore(env) {
 
 function getUserStorageKey(email) {
   return `state:${String(email || '').trim().toLowerCase()}`;
+}
+
+/* =============================================================================
+ * Persistent user accounts (email/password + Google link) — KV-backed
+ * ============================================================================= */
+const ACCOUNT_KV_PREFIX = 'account:';
+const EMAIL_VERIFY_PREFIX = 'emailverify:';
+const PW_RESET_PREFIX = 'pwreset:';
+const PBKDF2_ITERATIONS = 120000;
+
+function accountKvKey(email) {
+  return `${ACCOUNT_KV_PREFIX}${encodeURIComponent(String(email || '').trim().toLowerCase())}`;
+}
+
+async function readUserAccount(email, env) {
+  const store = getUserDataStore(env);
+  if (!store || typeof store.get !== 'function') return null;
+  try {
+    const raw = await store.get(accountKvKey(email), { type: 'json' });
+    if (raw && typeof raw === 'object' && raw.email) return raw;
+  } catch (_) {}
+  return null;
+}
+
+async function writeUserAccount(doc, env) {
+  const store = getUserDataStore(env);
+  if (!store || typeof store.put !== 'function') {
+    throw new Error('User storage is not configured.');
+  }
+  const email = String(doc.email || '').trim().toLowerCase();
+  doc.email = email;
+  doc.updatedAt = nowMs();
+  await store.put(accountKvKey(email), JSON.stringify(doc));
+  try {
+    const idxKey = '_account:index';
+    const idxRaw = await store.get(idxKey, { type: 'json' });
+    const idx = Array.isArray(idxRaw?.users) ? idxRaw.users : [];
+    if (!idx.includes(email)) {
+      idx.push(email);
+      await store.put(idxKey, JSON.stringify({ users: idx, updatedAt: nowMs() }));
+    }
+  } catch (_) {}
+}
+
+async function hashUserPassword(plain) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(String(plain)), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    keyMaterial,
+    256
+  );
+  return `pbkdf2$${PBKDF2_ITERATIONS}$${base64UrlEncode(salt)}$${base64UrlEncode(new Uint8Array(bits))}`;
+}
+
+async function verifyUserPasswordHash(plain, stored) {
+  if (!stored || typeof stored !== 'string' || !stored.startsWith('pbkdf2$')) return false;
+  const parts = stored.split('$');
+  if (parts.length !== 4) return false;
+  const iter = Number(parts[1]);
+  const salt = base64UrlDecodeToBytes(parts[2]);
+  const expected = base64UrlDecodeToBytes(parts[3]);
+  if (!Number.isFinite(iter) || iter < 10000 || salt.length < 8 || expected.length < 16) return false;
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(String(plain)), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations: iter, hash: 'SHA-256' },
+    keyMaterial,
+    expected.length * 8
+  );
+  const out = new Uint8Array(bits);
+  if (out.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < out.length; i += 1) diff |= out[i] ^ expected[i];
+  return diff === 0;
+}
+
+function randomUrlToken() {
+  const a = new Uint8Array(24);
+  crypto.getRandomValues(a);
+  return base64UrlEncode(a);
+}
+
+async function sendTransactionalEmail(env, { to, subject, text, html }) {
+  const apiKey = String(env.RESEND_API_KEY || '').trim();
+  if (!apiKey) return { ok: false, skipped: true };
+  const from = String(env.MAIL_FROM || 'onboarding@resend.dev').trim();
+  const body = {
+    from,
+    to: [String(to || '').trim()],
+    subject: String(subject || '').slice(0, 180),
+    text: text || '',
+    html: html || text || ''
+  };
+  const r = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const raw = await r.text();
+  if (!r.ok) {
+    return { ok: false, status: r.status, body: raw.slice(0, 400) };
+  }
+  return { ok: true };
+}
+
+async function assertAccountNotDisabled(email, env) {
+  const acc = await readUserAccount(email, env);
+  if (acc && acc.disabled === true) {
+    throw new Error('This account has been disabled. Contact support.');
+  }
 }
 
 async function handleStorageStateGet(request, env) {
@@ -1114,6 +1721,23 @@ async function handleAdminUpgradeCode(request, env) {
   }, 200);
 }
 
+/**
+ * Password-registered users may be issued a session before they click the email
+ * verification link. Block metered chat until verified (when REQUIRE_EMAIL_VERIFICATION
+ * is not explicitly disabled).
+ */
+async function assertEmailVerifiedForMeteredUse(session, env) {
+  if (!session || session.role === 'admin') return null;
+  if (String(env.REQUIRE_EMAIL_VERIFICATION || 'true').trim().toLowerCase() === 'false') return null;
+  const acc = await readUserAccount(session.email, env);
+  if (!acc || !acc.passwordHash) return null;
+  if (acc.emailVerified !== false) return null;
+  return jsonResponse({
+    error: 'Please verify your email before using chat. Check your inbox or resend verification from account settings.',
+    code: 'AUTH_EMAIL_NOT_VERIFIED'
+  }, 403);
+}
+
 async function handleGateway(request, env, url) {
   const expectedClientToken = (env.GATEWAY_CLIENT_TOKEN || '').trim();
   if (expectedClientToken) {
@@ -1179,6 +1803,8 @@ async function handleGateway(request, env, url) {
         code: 'AUTH_SESSION_REQUIRED'
       }, 401), request);
     }
+    const verifyBlock = await assertEmailVerifiedForMeteredUse(gatewaySession, env);
+    if (verifyBlock) return withCors(verifyBlock, request);
     const quota = await getOrInitUserQuota(gatewaySession, env);
     if (quota.remaining <= 0) {
       return withCors(jsonResponse({
@@ -1322,6 +1948,7 @@ async function requireSession(request, env) {
   if (!payload?.email) {
     throw new Error('Invalid or expired session.');
   }
+  await assertAccountNotDisabled(payload.email, env);
   return payload;
 }
 
@@ -1550,7 +2177,8 @@ async function verifyGoogleCredential(credential, env, clientIdHint = '') {
   return {
     email: String(payload.email || '').trim().toLowerCase(),
     name: String(payload.name || payload.email || '').trim(),
-    picture: String(payload.picture || '').trim()
+    picture: String(payload.picture || '').trim(),
+    sub: String(payload.sub || '').trim()
   };
 }
 
