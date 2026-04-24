@@ -1515,7 +1515,14 @@ async function sendTransactionalEmail(env, { to, subject, text, html }) {
   } catch (error) {
     return { ok: false, provider: 'mailchannels', error: String(error?.message || error || 'MAILCHANNELS_FAILED') };
   }
-  return { ok: false, skipped: true, reason: 'NO_PROVIDER_CONFIGURED' };
+  // tx.configured was true but every attempted path failed; never reuse NO_PROVIDER_CONFIGURED here
+  // (that reason is reserved for tx.configured === false above).
+  return {
+    ok: false,
+    skipped: false,
+    provider: tx.hasResend ? 'resend' : 'mailchannels',
+    reason: tx.hasResend ? 'RESEND_AND_FALLBACK_FAILED' : 'MAILCHANNELS_SEND_FAILED'
+  };
 }
 
 async function assertAccountNotDisabled(email, env) {
