@@ -345,6 +345,43 @@ async function getAdminPasswordWithKv(env) {
   return '';
 }
 
+/**
+ * Single source of truth for transactional email: API keys, From header, and
+ * whether any outbound path can run (Resend and/or MailChannels with a valid sender).
+ * Must stay aligned with sendTransactionalEmail.
+ */
+function getTransactionalEmailConfig(env) {
+  const from = String(
+    env.MAIL_FROM
+    || env.EMAIL_FROM
+    || env.TRANSACTIONAL_EMAIL_FROM
+    || env.NOTIFY_FROM
+    || 'AI Workspace <noreply@saddamalkadi.com>'
+  ).trim();
+  const resendApiKey = normalizeSecret(
+    String(env.RESEND_API_KEY || env.RESEND_KEY || env.TRANSACTIONAL_EMAIL_API_KEY || '')
+  );
+  const fallbackFrom = String(
+    env.MAILCHANNELS_FROM
+    || env.EMAIL_FALLBACK_FROM
+    || from
+  ).trim();
+  const senderEmailMatch = fallbackFrom.match(/<([^>]+)>/);
+  const mailchannelsSenderEmail = String(senderEmailMatch?.[1] || fallbackFrom).trim();
+  const hasResend = resendApiKey.length > 0;
+  const hasMailchannelsSender = isValidEmail(mailchannelsSenderEmail);
+  const configured = hasResend || hasMailchannelsSender;
+  return {
+    from,
+    resendApiKey,
+    configured,
+    hasResend,
+    hasMailchannelsSender,
+    mailchannelsSenderEmail,
+    fallbackFrom
+  };
+}
+
 async function getPublicAuthConfig(env) {
   const googleClientId = String(env.GOOGLE_CLIENT_ID_WEB || env.GOOGLE_CLIENT_ID || '').trim();
   const authRequired = String(env.AUTH_REQUIRE_LOGIN || 'true').trim().toLowerCase() !== 'false';
@@ -355,6 +392,7 @@ async function getPublicAuthConfig(env) {
   const adminEnabled = adminPasswordEnabled || adminGoogleEnabled;
   const allowAabDownloads = String(env.ALLOW_PUBLIC_AAB_DOWNLOADS || '').trim().toLowerCase() === 'true';
   const voice = getVoiceApiConfig(env);
+  const transactional = getTransactionalEmailConfig(env);
   return {
     ok: true,
     authRequired,
@@ -379,12 +417,7 @@ async function getPublicAuthConfig(env) {
     voicePreferredLanguage: voice.preferredLanguage,
     voicePremiumOnly: false,
     userEmailPasswordEnabled: !!getUserDataStore(env),
-    transactionalEmailConfigured: !!String(
-      env.RESEND_API_KEY
-      || env.RESEND_KEY
-      || env.TRANSACTIONAL_EMAIL_API_KEY
-      || ''
-    ).trim(),
+    transactionalEmailConfigured: transactional.configured,
     upgradeEmail: String(env.APP_UPGRADE_EMAIL || env.UPGRADE_EMAIL || '').trim()
   };
 }
@@ -1418,24 +1451,17 @@ function randomUrlToken() {
 async function sendTransactionalEmail(env, { to, subject, text, html }) {
   const recipient = String(to || '').trim().toLowerCase();
   if (!recipient || !isValidEmail(recipient)) return { ok: false, skipped: true, reason: 'INVALID_RECIPIENT' };
+  const tx = getTransactionalEmailConfig(env);
+  if (!tx.configured) {
+    return { ok: false, skipped: true, reason: 'NO_PROVIDER_CONFIGURED', provider: '' };
+  }
   const cleanSubject = String(subject || '').slice(0, 180);
   const cleanText = String(text || '').trim();
   const cleanHtml = String(html || cleanText || '').trim();
-  const from = String(
-    env.MAIL_FROM
-    || env.EMAIL_FROM
-    || env.TRANSACTIONAL_EMAIL_FROM
-    || env.NOTIFY_FROM
-    || 'AI Workspace <noreply@saddamalkadi.com>'
-  ).trim();
+  const from = tx.from;
 
   // Provider #1: Resend
-  const resendApiKey = String(
-    env.RESEND_API_KEY
-    || env.RESEND_KEY
-    || env.TRANSACTIONAL_EMAIL_API_KEY
-    || ''
-  ).trim();
+  const resendApiKey = tx.resendApiKey;
   if (resendApiKey) {
     try {
       const body = {
@@ -1461,11 +1487,7 @@ async function sendTransactionalEmail(env, { to, subject, text, html }) {
 
   // Provider #2: MailChannels fallback (works without API key in many CF setups)
   try {
-    const fallbackFrom = String(
-      env.MAILCHANNELS_FROM
-      || env.EMAIL_FALLBACK_FROM
-      || from
-    ).trim();
+    const fallbackFrom = tx.fallbackFrom;
     const senderEmailMatch = fallbackFrom.match(/<([^>]+)>/);
     const senderEmail = String(senderEmailMatch?.[1] || fallbackFrom).trim();
     const senderName = fallbackFrom.includes('<')
