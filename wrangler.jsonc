@@ -3,6 +3,8 @@
   "name": "sadam-key",
   "main": "keys-worker.js",
   "compatibility_date": "2025-09-27",
+  // Preserve dashboard-managed vars/bindings on deploy to avoid config drift.
+  "keep_vars": true,
   "routes": [
     {
       "pattern": "api.saddamalkadi.com",
