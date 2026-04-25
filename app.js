@@ -1577,7 +1577,12 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   }
 
   function applyAuthResponse(payload, extra = {}){
-    const pending = !!payload?.emailVerificationPending;
+    let pending = false;
+    if (typeof payload?.emailVerificationPending === 'boolean') {
+      pending = payload.emailVerificationPending;
+    } else {
+      pending = !!(payload?.hasPassword === true && payload?.emailVerified === false);
+    }
     const next = saveAuthState({
       signedIn: true,
       plan: payload?.plan === 'premium' ? 'premium' : 'free',
@@ -5082,6 +5087,10 @@ function refreshDeepSearchBtn(){
             <span class="plan-pill" id="settingsPlanPill">الخطة المجانية</span>
           </div>
           <div class="status" id="settingsPlanBanner" data-tone="info">الخطة المجانية تفعّل نموذجًا مجانيًا فقط وتوقف الميزات الأعلى تكلفة تلقائيًا.</div>
+          <div class="status" id="settingsVerifyPendingRow" data-tone="warning" style="display:none;margin-top:10px">البريد غير موثّق بعد. افتح الرابط من رسالة التحقق، أو أعد الإرسال من هنا.</div>
+          <div class="account-actions" id="settingsVerifyPendingActions" style="display:none;margin-top:8px;flex-wrap:wrap;gap:6px">
+            <button class="btn ghost sm with-label" type="button" id="settingsResendVerifyBtn"><span class="icon">✉️</span><span class="label">إعادة إرسال التحقق</span></button>
+          </div>
           <div class="account-actions">
             <button class="btn sm with-label" type="button" id="accountSignInBtn"><span class="icon">🔐</span><span class="label">تسجيل الدخول</span></button>
             <button class="btn ghost sm with-label" type="button" id="accountUpgradeRequestBtn"><span class="icon">✉️</span><span class="label">طلب تفعيل مدفوع</span></button>
@@ -5212,6 +5221,13 @@ function refreshDeepSearchBtn(){
           </div>
         </div>`);
     }
+    if ($('settingsPlanBanner') && !$('settingsVerifyPendingRow')){
+      $('settingsPlanBanner').insertAdjacentHTML('afterend', `
+          <div class="status" id="settingsVerifyPendingRow" data-tone="warning" style="display:none;margin-top:10px">البريد غير موثّق بعد. افتح الرابط من رسالة التحقق، أو أعد الإرسال من هنا.</div>
+          <div class="account-actions" id="settingsVerifyPendingActions" style="display:none;margin-top:8px;flex-wrap:wrap;gap:6px">
+            <button class="btn ghost sm with-label" type="button" id="settingsResendVerifyBtn"><span class="icon">✉️</span><span class="label">إعادة إرسال التحقق</span></button>
+          </div>`);
+    }
     refineAuthGateLayout();
   }
 
@@ -5273,6 +5289,9 @@ function refreshDeepSearchBtn(){
         ? 'الخطة المدفوعة نشطة. يمكنك استخدام جميع الموديلات والميزات حسب إعدادات التكلفة.'
         : 'الخطة المجانية تفرض OpenRouter Free فقط وتمنع تفعيل الموديلات المدفوعة والميزات الأعلى تكلفة.';
     }
+    const verifyPendingUi = signedIn && !!auth.emailVerificationPending;
+    if ($('settingsVerifyPendingRow')) $('settingsVerifyPendingRow').style.display = verifyPendingUi ? '' : 'none';
+    if ($('settingsVerifyPendingActions')) $('settingsVerifyPendingActions').style.display = verifyPendingUi ? '' : 'none';
     if ($('accountSignInBtn')) $('accountSignInBtn').textContent = signedIn ? 'إعادة المصادقة' : 'تسجيل الدخول';
     if ($('accountUpgradeRequestBtn')){
       $('accountUpgradeRequestBtn').disabled = !signedIn || role === 'admin';
@@ -5408,6 +5427,9 @@ function syncUnifiedAuthEntry(){
       if (!showPassword) passwordInput.value = '';
     }
     if (passwordWrap) passwordWrap.style.display = showPassword ? '' : 'none';
+    const authState = getAuthState();
+    const showAuthResend = hasValidAuthSession(authState) && !!authState.emailVerificationPending;
+    if ($('authResendVerifyBtn')) $('authResendVerifyBtn').style.display = showAuthResend ? '' : 'none';
   }
 
   function waitForGoogleIdentity(timeoutMs = 12000){
@@ -5891,15 +5913,36 @@ async function submitUnifiedAuthEntry(){
 
   async function resendVerificationFromUi(){
     try{
-      if (!hasValidAuthSession()) return toast('⚠️ سجّل الدخول أولًا.');
-      const payload = await fetchAuthJson('/auth/resend-verification', { method:'POST' });
+      if (!hasValidAuthSession()){
+        toast('⚠️ سجّل الدخول أولًا.');
+        setAuthGateStatus('سجّل الدخول أولًا لإعادة إرسال رسالة التحقق.', 'error');
+        return;
+      }
+      setAuthGateStatus('جارٍ إعادة إرسال رسالة التحقق إلى بريدك...', 'busy');
+      const payload = await fetchAuthJson('/auth/resend-verification', {
+        method: 'POST',
+        body: '{}'
+      });
+      if (payload?.alreadyVerified){
+        setAuthGateStatus('البريد الإلكتروني موثّق بالفعل على هذا الحساب.', 'info');
+        toast('✅ البريد موثّق بالفعل.');
+        return;
+      }
+      if (payload?.emailSent !== true){
+        setAuthGateStatus('لم يُؤكَّد إرسال البريد من الخادم. أعد المحاولة أو راجع صندوق الرسائل غير المرغوب فيها.', 'error');
+        toast('⚠️ تعذر تأكيد إرسال رسالة التحقق.');
+        return;
+      }
       if (payload?.verificationUrl){
         const token = String(payload.verificationUrl).split('verify-email=').pop() || '';
         if (token) window.location.hash = `verify-email=${encodeURIComponent(token)}`;
       }
-      toast(payload?.alreadyVerified ? '✅ البريد موثّق بالفعل.' : '✅ تم إرسال رسالة التحقق.');
+      setAuthGateStatus('تم إرسال رسالة تحقق جديدة. راجع البريد (والبريد غير المرغوب فيه) ثم افتح الرابط من الرسالة.', 'info');
+      toast('✅ تم إرسال رسالة التحقق.');
     }catch(error){
-      toast(`⚠️ تعذر إعادة إرسال التحقق: ${sanitizeAuthErrorMessage(error?.message || error)}`);
+      const msg = sanitizeAuthErrorMessage(error?.message || error);
+      setAuthGateStatus(`تعذر إعادة إرسال التحقق: ${msg}`, 'error');
+      toast(`⚠️ تعذر إعادة إرسال التحقق: ${msg}`);
     }
   }
 
@@ -15105,6 +15148,10 @@ let pinOnly = false;
     $('authEntryForm')?.addEventListener('submit', (e) => { e.preventDefault(); submitUnifiedAuthEntry(); });
     $('authForgotPwBtn')?.addEventListener('click', requestPasswordResetFromUi);
     $('authResendVerifyBtn')?.addEventListener('click', resendVerificationFromUi);
+    if ($('settingsResendVerifyBtn') && !$('settingsResendVerifyBtn').dataset.bound){
+      $('settingsResendVerifyBtn').dataset.bound = '1';
+      $('settingsResendVerifyBtn').addEventListener('click', () => { void resendVerificationFromUi(); });
+    }
     $('authRetryBtn')?.addEventListener('click', async () => {
       AUTH_RUNTIME.config = null;
       await loadRemoteAuthConfig(true);

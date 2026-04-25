@@ -912,11 +912,12 @@ async function handleEmailRegistration(request, env) {
       verificationToken = randomUrlToken();
       const appOrigin = String(env.APP_PUBLIC_ORIGIN || 'https://app.saddamalkadi.com').replace(/\/+$/, '');
       const link = `${appOrigin}/#verify-email=${encodeURIComponent(verificationToken)}`;
+      const verifyBodies = buildVerificationEmailBodies(link);
       verificationMail = await sendTransactionalEmail(env, {
         to: email,
-        subject: 'Verify your AI Workspace account',
-        text: `Open this link to verify your email:\n${link}\n`,
-        html: `<p>Verify your email:</p><p><a href="${link}">${link}</a></p>`
+        subject: verifyBodies.subject,
+        text: verifyBodies.text,
+        html: verifyBodies.html
       });
       verificationSent = !!verificationMail?.ok;
       // Beta-safety rule: never report/signup-success when delivery itself failed.
@@ -1037,11 +1038,12 @@ async function handlePasswordResetRequest(request, env) {
     );
     const appOrigin = String(env.APP_PUBLIC_ORIGIN || 'https://app.saddamalkadi.com').replace(/\/+$/, '');
     const link = `${appOrigin}/#reset-password=${encodeURIComponent(token)}`;
+    const resetBodies = buildPasswordResetEmailBodies(link);
     const mail = await sendTransactionalEmail(env, {
       to: email,
-      subject: 'Reset your AI Workspace password',
-      text: `Reset link (valid 2 hours):\n${link}\n`,
-      html: `<p><a href="${link}">Reset password</a></p>`
+      subject: resetBodies.subject,
+      text: resetBodies.text,
+      html: resetBodies.html
     });
     return jsonResponse({
       ok: true,
@@ -1110,7 +1112,7 @@ async function handleResendVerification(request, env) {
     const session = await requireSession(request, env);
     const acc = await readUserAccount(session.email, env);
     if (!acc || acc.emailVerified) {
-      return jsonResponse({ ok: true, alreadyVerified: true }, 200);
+      return jsonResponse({ ok: true, alreadyVerified: true, emailSent: false }, 200);
     }
     const token = randomUrlToken();
     const store = getUserDataStore(env);
@@ -1121,11 +1123,12 @@ async function handleResendVerification(request, env) {
     );
     const appOrigin = String(env.APP_PUBLIC_ORIGIN || 'https://app.saddamalkadi.com').replace(/\/+$/, '');
     const link = `${appOrigin}/#verify-email=${encodeURIComponent(token)}`;
+    const verifyBodies = buildVerificationEmailBodies(link);
     const mail = await sendTransactionalEmail(env, {
       to: session.email,
-      subject: 'Verify your AI Workspace account',
-      text: link,
-      html: `<a href="${link}">Verify</a>`
+      subject: verifyBodies.subject,
+      text: verifyBodies.text,
+      html: verifyBodies.html
     });
     if (!mail?.ok) {
       return jsonResponse({
@@ -1140,7 +1143,8 @@ async function handleResendVerification(request, env) {
     return jsonResponse({
       ok: true,
       emailSent: true,
-      provider: mail?.provider || ''
+      provider: mail?.provider || '',
+      verificationUrl: link
     }, 200);
   } catch (error) {
     return jsonResponse({ error: String(error?.message || error), code: 'AUTH_RESEND_FAILED' }, 400);
@@ -1305,6 +1309,10 @@ async function handleSessionLookup(request, env) {
   try {
     const session = await requireSession(request, env);
     const acc = await readUserAccount(session.email, env);
+    const requireVerify = String(env.REQUIRE_EMAIL_VERIFICATION || 'true').trim().toLowerCase() !== 'false';
+    const emailVerified = acc ? !!acc.emailVerified : true;
+    const hasPassword = !!(acc && acc.passwordHash);
+    const emailVerificationPending = !!(acc && requireVerify && !emailVerified && hasPassword);
     return jsonResponse({
       ok: true,
       email: session.email,
@@ -1313,8 +1321,9 @@ async function handleSessionLookup(request, env) {
       plan: session.plan,
       role: session.role || 'user',
       sessionExp: session.exp * 1000,
-      emailVerified: acc ? !!acc.emailVerified : true,
-      hasPassword: !!(acc && acc.passwordHash),
+      emailVerified,
+      emailVerificationPending,
+      hasPassword,
       providers: acc?.providers || (session.role === 'admin' ? ['admin'] : []),
       disabled: !!(acc && acc.disabled)
     }, 200);
@@ -1464,6 +1473,94 @@ function randomUrlToken() {
   const a = new Uint8Array(24);
   crypto.getRandomValues(a);
   return base64UrlEncode(a);
+}
+
+function escapeHtmlForEmail(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/** Rich HTML + plain text for Resend and MailChannels (verification links). */
+function buildVerificationEmailBodies(link) {
+  const title = 'Verify your AI Workspace email';
+  const intro =
+    'You are receiving this because someone used this address to sign up for AI Workspace. Confirm your email to finish activating your account.';
+  const btnLabel = 'Verify my email';
+  const expiry = 'This verification link expires in 48 hours.';
+  const ignore = 'If you did not create an account, you can safely ignore this email.';
+  const plainLines = [
+    title,
+    '',
+    intro,
+    '',
+    `${btnLabel} (open in browser):`,
+    link,
+    '',
+    expiry,
+    '',
+    ignore
+  ];
+  const text = plainLines.join('\n');
+  const href = escapeHtmlForEmail(link);
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;background:#f4f5fb;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1a1d26;line-height:1.55;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:24px 12px"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:12px;padding:28px 24px;box-shadow:0 2px 10px rgba(0,0,0,.06)">
+<tr><td>
+<h1 style="margin:0 0 14px;font-size:20px;line-height:1.3;color:#111827">${escapeHtmlForEmail(title)}</h1>
+<p style="margin:0 0 20px;font-size:15px;color:#4b5563">${escapeHtmlForEmail(intro)}</p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 22px"><tr><td style="border-radius:8px;background:#1b66ff">
+<a href="${href}" style="display:inline-block;padding:14px 24px;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px">${escapeHtmlForEmail(btnLabel)}</a>
+</td></tr></table>
+<p style="margin:0 0 10px;font-size:13px;color:#6b7280">If the button does not work, copy and paste this link into your browser:</p>
+<p style="margin:0 0 22px;font-size:13px;word-break:break-all"><a href="${href}" style="color:#1b66ff">${href}</a></p>
+<p style="margin:0 0 8px;font-size:13px;color:#6b7280">${escapeHtmlForEmail(expiry)}</p>
+<p style="margin:0;font-size:13px;color:#9ca3af">${escapeHtmlForEmail(ignore)}</p>
+</td></tr></table>
+</td></tr></table></body></html>`;
+  return { subject: 'Verify your AI Workspace account', text, html };
+}
+
+function buildPasswordResetEmailBodies(link) {
+  const title = 'Reset your AI Workspace password';
+  const intro =
+    'We received a request to reset the password for your AI Workspace account. Use the button below to choose a new password.';
+  const btnLabel = 'Reset my password';
+  const expiry = 'This reset link expires in 2 hours.';
+  const ignore = 'If you did not request a password reset, you can ignore this email; your password will stay the same.';
+  const text = [
+    title,
+    '',
+    intro,
+    '',
+    `${btnLabel} (open in browser):`,
+    link,
+    '',
+    expiry,
+    '',
+    ignore
+  ].join('\n');
+  const href = escapeHtmlForEmail(link);
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;background:#f4f5fb;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1a1d26;line-height:1.55;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:24px 12px"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:12px;padding:28px 24px;box-shadow:0 2px 10px rgba(0,0,0,.06)">
+<tr><td>
+<h1 style="margin:0 0 14px;font-size:20px;line-height:1.3;color:#111827">${escapeHtmlForEmail(title)}</h1>
+<p style="margin:0 0 20px;font-size:15px;color:#4b5563">${escapeHtmlForEmail(intro)}</p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 22px"><tr><td style="border-radius:8px;background:#1b66ff">
+<a href="${href}" style="display:inline-block;padding:14px 24px;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px">${escapeHtmlForEmail(btnLabel)}</a>
+</td></tr></table>
+<p style="margin:0 0 10px;font-size:13px;color:#6b7280">If the button does not work, copy and paste this link into your browser:</p>
+<p style="margin:0 0 22px;font-size:13px;word-break:break-all"><a href="${href}" style="color:#1b66ff">${href}</a></p>
+<p style="margin:0 0 8px;font-size:13px;color:#6b7280">${escapeHtmlForEmail(expiry)}</p>
+<p style="margin:0;font-size:13px;color:#9ca3af">${escapeHtmlForEmail(ignore)}</p>
+</td></tr></table>
+</td></tr></table></body></html>`;
+  return { subject: 'Reset your AI Workspace password', text, html };
 }
 
 async function sendTransactionalEmail(env, { to, subject, text, html }) {
