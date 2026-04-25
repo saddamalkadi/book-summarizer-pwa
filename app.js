@@ -50,7 +50,8 @@
     // the "image appears then disappears" regression: saveThreads() hit
     // QuotaExceededError silently and the next renderChat() read back a
     // stale thread without the inline dataUrl).
-    attachmentAssets: 'aistudio_attachment_assets_v1'
+    attachmentAssets: 'aistudio_attachment_assets_v1',
+    upgradeRequestAck: 'aistudio_upgrade_request_ack_v1'
   };
 
   const nowTs = () => Date.now();
@@ -477,7 +478,8 @@
     KEYS.usageState,
     KEYS.modelCache,
     KEYS.authRemember,
-    KEYS.chatReadingMode
+    KEYS.chatReadingMode,
+    KEYS.upgradeRequestAck
   ]);
 
 // ---------------- KB (IndexedDB + RAG) ----------------
@@ -4850,6 +4852,10 @@ function refreshDeepSearchBtn(){
       NATIVE_GOOGLE_RUNTIME.lastDialogMessage = '';
       setAuthGateStatus('تم اختيار حساب Google بنجاح. جارٍ إنشاء الجلسة...', 'busy');
       await handleGoogleCredentialResponse({ credential: result.success.idToken });
+      if (isNativeAndroidPlatform()){
+        try{ await runAuthBridgeSync(); }catch(_){}
+        try{ await getCapacitorBrowserPlugin()?.close?.(); }catch(_){}
+      }
       return true;
     }
     if (!silent){
@@ -5091,6 +5097,7 @@ function refreshDeepSearchBtn(){
             <span class="plan-pill" id="settingsPlanPill">الخطة المجانية</span>
           </div>
           <div class="status" id="settingsPlanBanner" data-tone="info">الخطة المجانية تفعّل نموذجًا مجانيًا فقط وتوقف الميزات الأعلى تكلفة تلقائيًا.</div>
+          <div class="status" id="accountUpgradeRequestAck" data-tone="success" style="display:none;margin-top:10px" role="status" aria-live="polite"></div>
           <div class="status" id="settingsVerifyPendingRow" data-tone="warning" style="display:none;margin-top:10px">البريد غير موثّق بعد. افتح الرابط من رسالة التحقق، أو أعد الإرسال من هنا.</div>
           <div class="account-actions" id="settingsVerifyPendingActions" style="display:none;margin-top:8px;flex-wrap:wrap;gap:6px">
             <button class="btn ghost sm with-label" type="button" id="settingsResendVerifyBtn"><span class="icon">✉️</span><span class="label">إعادة إرسال التحقق</span></button>
@@ -5149,6 +5156,34 @@ function refreshDeepSearchBtn(){
                 <input id="adminGeneratedCode" type="text" placeholder="سيظهر كود الترقية هنا" readonly />
               </div>
               <div class="hint" id="adminUpgradeMeta" style="margin-top:10px">اختر حدًا ماليًا مثل 1$ / 5$ / 10$ ليتم تثبيته مباشرةً على حساب المستخدم عند التفعيل. اتركه فارغًا لاستخدام حد الخطة الافتراضي.</div>
+            </div>
+          </details>
+          <details class="tool-group" id="adminUpgradeRequestsPanel" style="margin-top:12px; display:none">
+            <summary class="workspace-section-toggle">
+              <span class="workspace-section-head">
+                <span class="workspace-section-title">طلبات تفعيل الخطة</span>
+                <span class="workspace-section-summary">قائمة الطلبات المسجّلة على الخادم (لا تعتمد على البريد فقط).</span>
+              </span>
+              <span class="workspace-section-chevron">⌄</span>
+            </summary>
+            <div class="tool-group-body" style="padding-top:14px">
+              <div class="upgrade-inline">
+                <button class="btn ghost sm with-label" type="button" id="adminUpgradeRequestsRefreshBtn"><span class="icon">↻</span><span class="label">تحديث القائمة</span></button>
+              </div>
+              <div class="hint" id="adminUpgradeRequestsMeta" style="margin-top:8px">افتح القسم ثم اضغط تحديث لعرض الطلبات.</div>
+              <div style="max-height:240px; overflow:auto; margin-top:8px; border:1px solid var(--line); border-radius:12px;">
+                <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                  <thead>
+                    <tr>
+                      <th style="text-align:start; padding:8px;">الوقت</th>
+                      <th style="text-align:start; padding:8px;">البريد</th>
+                      <th style="text-align:start; padding:8px;">الخطة</th>
+                      <th style="text-align:start; padding:8px;">رقم الطلب</th>
+                    </tr>
+                  </thead>
+                  <tbody id="adminUpgradeRequestsTableBody"></tbody>
+                </table>
+              </div>
             </div>
           </details>
           <details class="tool-group" id="adminUsersPanel" style="margin-top:12px; display:none">
@@ -5232,6 +5267,41 @@ function refreshDeepSearchBtn(){
             <button class="btn ghost sm with-label" type="button" id="settingsResendVerifyBtn"><span class="icon">✉️</span><span class="label">إعادة إرسال التحقق</span></button>
           </div>`);
     }
+    if ($('settingsPlanBanner') && !$('accountUpgradeRequestAck')){
+      $('settingsPlanBanner').insertAdjacentHTML('afterend', `
+          <div class="status" id="accountUpgradeRequestAck" data-tone="success" style="display:none;margin-top:10px" role="status" aria-live="polite"></div>`);
+    }
+    if ($('adminUsersPanel') && !$('adminUpgradeRequestsPanel')){
+      $('adminUsersPanel').insertAdjacentHTML('beforebegin', `
+          <details class="tool-group" id="adminUpgradeRequestsPanel" style="margin-top:12px; display:none">
+            <summary class="workspace-section-toggle">
+              <span class="workspace-section-head">
+                <span class="workspace-section-title">طلبات تفعيل الخطة</span>
+                <span class="workspace-section-summary">قائمة الطلبات المسجّلة على الخادم (لا تعتمد على البريد فقط).</span>
+              </span>
+              <span class="workspace-section-chevron">⌄</span>
+            </summary>
+            <div class="tool-group-body" style="padding-top:14px">
+              <div class="upgrade-inline">
+                <button class="btn ghost sm with-label" type="button" id="adminUpgradeRequestsRefreshBtn"><span class="icon">↻</span><span class="label">تحديث القائمة</span></button>
+              </div>
+              <div class="hint" id="adminUpgradeRequestsMeta" style="margin-top:8px">افتح القسم ثم اضغط تحديث لعرض الطلبات.</div>
+              <div style="max-height:240px; overflow:auto; margin-top:8px; border:1px solid var(--line); border-radius:12px;">
+                <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                  <thead>
+                    <tr>
+                      <th style="text-align:start; padding:8px;">الوقت</th>
+                      <th style="text-align:start; padding:8px;">البريد</th>
+                      <th style="text-align:start; padding:8px;">الخطة</th>
+                      <th style="text-align:start; padding:8px;">رقم الطلب</th>
+                    </tr>
+                  </thead>
+                  <tbody id="adminUpgradeRequestsTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </details>`);
+    }
     refineAuthGateLayout();
   }
 
@@ -5296,6 +5366,22 @@ function refreshDeepSearchBtn(){
     const verifyPendingUi = signedIn && !!auth.emailVerificationPending;
     if ($('settingsVerifyPendingRow')) $('settingsVerifyPendingRow').style.display = verifyPendingUi ? '' : 'none';
     if ($('settingsVerifyPendingActions')) $('settingsVerifyPendingActions').style.display = verifyPendingUi ? '' : 'none';
+    const ackEl = $('accountUpgradeRequestAck');
+    if (ackEl){
+      let ack = null;
+      try{ ack = JSON.parse(localStorage.getItem(KEYS.upgradeRequestAck) || 'null'); }catch(_){ ack = null; }
+      if (ack?.requestId){
+        ackEl.style.display = 'block';
+        ackEl.hidden = false;
+        ackEl.dataset.tone = 'success';
+        const when = ack.recordedAt ? new Date(Number(ack.recordedAt)).toLocaleString('ar-SA') : '';
+        ackEl.textContent = `تم استلام طلب تفعيل الخطة بنجاح وتم تسجيله على الخادم. رقم المرجع: ${ack.requestId}. وقت التسجيل: ${when}. سيتم مراجعة الطلب وإرسال كود التفعيل عند الجاهزية. يمكن للإدارة متابعة الطلب من لوحة «طلبات تفعيل الخطة» دون الاعتماد على البريد فقط.`;
+      } else {
+        ackEl.textContent = '';
+        ackEl.style.display = 'none';
+        ackEl.hidden = true;
+      }
+    }
     if ($('accountSignInBtn')) $('accountSignInBtn').textContent = signedIn ? 'إعادة المصادقة' : 'تسجيل الدخول';
     if ($('accountUpgradeRequestBtn')){
       $('accountUpgradeRequestBtn').disabled = !signedIn || role === 'admin';
@@ -5310,6 +5396,7 @@ function refreshDeepSearchBtn(){
     if ($('upgradeEmail')) $('upgradeEmail').value = settings.upgradeEmail || '';
     if ($('upgradeEmail')) $('upgradeEmail').closest('.row')?.style.setProperty('display', SHOW_UPGRADE_EMAIL_FIELD ? '' : 'none');
     if ($('adminUpgradePanel')) $('adminUpgradePanel').style.display = signedIn && role === 'admin' ? '' : 'none';
+    if ($('adminUpgradeRequestsPanel')) $('adminUpgradeRequestsPanel').style.display = signedIn && role === 'admin' ? '' : 'none';
     if ($('adminUsersPanel')) $('adminUsersPanel').style.display = signedIn && role === 'admin' ? '' : 'none';
     if ($('adminUpgradeEmail') && signedIn && role === 'admin' && !$('adminUpgradeEmail').value) $('adminUpgradeEmail').value = '';
     if ($('adminGenerateUpgradeBtn')) $('adminGenerateUpgradeBtn').disabled = !(signedIn && role === 'admin');
@@ -5320,6 +5407,10 @@ function refreshDeepSearchBtn(){
     if (signedIn && role === 'admin' && $('adminUsersTableBody') && !$('adminUsersTableBody').dataset.loaded){
       $('adminUsersTableBody').dataset.loaded = '1';
       refreshAdminUsersPanel().catch(()=>{});
+    }
+    if (signedIn && role === 'admin' && $('adminUpgradeRequestsTableBody') && !$('adminUpgradeRequestsTableBody').dataset.loaded){
+      $('adminUpgradeRequestsTableBody').dataset.loaded = '1';
+      refreshAdminUpgradeRequestsPanel().catch(()=>{});
     }
     if ($('authEntryName') && !$('authEntryName').value && signedIn) $('authEntryName').value = auth.name || '';
     if ($('authEntryEmail') && !$('authEntryEmail').value && signedIn) $('authEntryEmail').value = auth.email || '';
@@ -5609,6 +5700,12 @@ function syncUnifiedAuthEntry(){
     }
   }
 
+  async function runAuthBridgeSync(){
+    await consumeAuthRedirectFromLocation().catch(() => {});
+    await consumeAuthBridgeStorage().catch(() => {});
+    await consumeAuthBridgeLaunchUrl().catch(() => {});
+  }
+
   async function consumeAuthRedirectParams(params){
     return consumeAuthPayload(extractAuthPayloadFromParams(params), {
       upgradeCode: getAuthState().upgradeCode || '',
@@ -5639,9 +5736,7 @@ function syncUnifiedAuthEntry(){
       handleAuthActionFromHash().catch(() => {});
     });
     const syncBridgeFromForeground = () => {
-      consumeAuthRedirectFromLocation().catch(() => {});
-      consumeAuthBridgeStorage().catch(() => {});
-      consumeAuthBridgeLaunchUrl().catch(() => {});
+      runAuthBridgeSync().catch(() => {});
     };
     window.addEventListener('focus', syncBridgeFromForeground);
     document.addEventListener('visibilitychange', () => {
@@ -5663,8 +5758,11 @@ function syncUnifiedAuthEntry(){
     const appPlugin = getCapacitorAppPlugin();
     const browserPlugin = getCapacitorBrowserPlugin();
     if (appPlugin?.addListener){
-      appPlugin.addListener('appUrlOpen', ({ url }) => {
-        consumeAuthRedirectFromUrl(url).catch(() => {});
+      appPlugin.addListener('appUrlOpen', async ({ url }) => {
+        try{
+          await consumeAuthRedirectFromUrl(url);
+        }catch(_){}
+        await runAuthBridgeSync().catch(() => {});
       });
       appPlugin.addListener('resume', () => {
         syncBridgeFromForeground();
@@ -6041,6 +6139,44 @@ async function submitUnifiedAuthEntry(){
     return fetchAuthJson(`/admin/users${q ? `?q=${q}` : ''}`, { method: 'GET' });
   }
 
+  async function fetchAdminUpgradeRequestsFromApi(){
+    return fetchAuthJson('/admin/upgrade-requests', { method: 'GET' });
+  }
+
+  function renderAdminUpgradeRequestsTable(rows = []){
+    const body = $('adminUpgradeRequestsTableBody');
+    if (!body) return;
+    body.innerHTML = '';
+    if (!Array.isArray(rows) || !rows.length){
+      body.innerHTML = `<tr><td colspan="4" style="padding:8px; color:var(--muted)">لا توجد طلبات مسجّلة.</td></tr>`;
+      return;
+    }
+    rows.forEach((r) => {
+      const tr = document.createElement('tr');
+      const t = Number(r.createdAt || 0);
+      const when = t ? new Date(t).toLocaleString('ar-SA') : '—';
+      const rid = escapeHtml(String(r.requestId || '').slice(0, 48));
+      tr.innerHTML = `
+        <td style="padding:8px">${escapeHtml(when)}</td>
+        <td style="padding:8px">${escapeHtml(String(r.userEmail || ''))}</td>
+        <td style="padding:8px">${escapeHtml(String(r.plan || ''))}</td>
+        <td style="padding:8px;word-break:break-all;font-size:11px">${rid}</td>`;
+      body.appendChild(tr);
+    });
+  }
+
+  async function refreshAdminUpgradeRequestsPanel(){
+    try{
+      if ($('adminUpgradeRequestsMeta')) $('adminUpgradeRequestsMeta').textContent = 'جارٍ تحميل طلبات التفعيل...';
+      const payload = await fetchAdminUpgradeRequestsFromApi();
+      const rows = Array.isArray(payload?.requests) ? payload.requests : [];
+      renderAdminUpgradeRequestsTable(rows);
+      if ($('adminUpgradeRequestsMeta')) $('adminUpgradeRequestsMeta').textContent = `تم تحميل ${rows.length} طلبًا (الأحدث أولًا).`;
+    }catch(error){
+      if ($('adminUpgradeRequestsMeta')) $('adminUpgradeRequestsMeta').textContent = `تعذر التحميل: ${sanitizeAuthErrorMessage(error?.message || error)}`;
+    }
+  }
+
   function renderAdminUsersTable(users = []){
     const body = $('adminUsersTableBody');
     if (!body) return;
@@ -6128,8 +6264,24 @@ async function submitUnifiedAuthEntry(){
       if (!payload?.ok || payload?.recorded !== true){
         throw new Error(payload?.error || 'تعذر تسجيل الطلب على الخادم.');
       }
-      setAuthGateStatus('تم استلام طلب الترقية. سنراجعه ونرسل كود التفعيل عندما يكون جاهزًا.', 'info');
-      toast('✅ تم إرسال طلب الترقية');
+      try{
+        localStorage.setItem(KEYS.upgradeRequestAck, JSON.stringify({
+          requestId: String(payload.requestId || '').trim(),
+          recordedAt: Number(payload.recordedAt || 0) || Date.now()
+        }));
+      }catch(_){}
+      const ref = String(payload.requestId || '').trim();
+      const when = payload.recordedAt ? new Date(Number(payload.recordedAt)).toLocaleString('ar-SA') : '';
+      const detail = ref
+        ? `تم التسجيل بنجاح. رقم المرجع: ${ref}${when ? ` — ${when}` : ''}. سيتم المراجعة وإرسال كود التفعيل عند الجاهزية.`
+        : 'تم تسجيل طلب الترقية على الخادم بنجاح وسيتم مراجعته.';
+      setAuthGateStatus(detail, 'success');
+      toast(`✅ ${detail}`);
+      syncAccountUi();
+      openWorkspacePage('settings');
+      window.setTimeout(() => {
+        try{ $('accountUpgradeRequestAck')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }catch(_){}
+      }, 120);
     }catch(error){
       const msg = sanitizeAuthErrorMessage(error?.message || error);
       setAuthGateStatus(`تعذر إرسال طلب الترقية: ${msg}`, 'error');
@@ -15196,6 +15348,10 @@ let pinOnly = false;
     $('authEntryMode')?.addEventListener('change', syncUnifiedAuthEntry);
     $('authGoogleBrowserBtn')?.addEventListener('click', openGoogleAuthInBrowser);
     $('adminUsersRefreshBtn')?.addEventListener('click', refreshAdminUsersPanel);
+    if ($('adminUpgradeRequestsRefreshBtn') && !$('adminUpgradeRequestsRefreshBtn').dataset.bound){
+      $('adminUpgradeRequestsRefreshBtn').dataset.bound = '1';
+      $('adminUpgradeRequestsRefreshBtn').addEventListener('click', () => { void refreshAdminUpgradeRequestsPanel(); });
+    }
     $('adminUsersSearch')?.addEventListener('keydown', (event) => {
       if (event.key === 'Enter'){
         event.preventDefault();

@@ -63,6 +63,10 @@ export default {
       if (url.pathname === '/auth/resend-verification' && request.method === 'POST') {
         return withCors(await handleResendVerification(request, env), request);
       }
+      if (url.pathname === '/admin/upgrade-requests' && request.method === 'GET') {
+        return withCors(await handleAdminUpgradeRequestsList(request, env), request);
+      }
+
       if (url.pathname === '/admin/users' && request.method === 'GET') {
         return withCors(await handleAdminUsersList(request, env), request);
       }
@@ -1149,6 +1153,48 @@ async function handleResendVerification(request, env) {
   }
 }
 
+async function handleAdminUpgradeRequestsList(request, env) {
+  try {
+    const session = await requireSession(request, env);
+    if (session.role !== 'admin') {
+      return jsonResponse({ error: 'Admin access required.', code: 'ADMIN_REQUIRED' }, 403);
+    }
+    const store = getUserDataStore(env);
+    const rows = [];
+    if (store && typeof store.list === 'function') {
+      let cursor = undefined;
+      for (let pageIdx = 0; pageIdx < 50; pageIdx += 1) {
+        const page = await store.list({ prefix: UPGRADE_REQ_PREFIX, cursor });
+        for (const entry of page.keys || []) {
+          const name = String(entry.name || '');
+          if (!name.startsWith(UPGRADE_REQ_PREFIX)) continue;
+          try {
+            const raw = await store.get(name, { type: 'json' });
+            if (raw && raw.userEmail) {
+              rows.push({
+                requestId: name.slice(UPGRADE_REQ_PREFIX.length),
+                userEmail: raw.userEmail,
+                userName: raw.userName || '',
+                plan: raw.plan || 'free',
+                role: raw.role || 'user',
+                note: raw.note || '',
+                appVersion: raw.appVersion || '',
+                createdAt: Number(raw.createdAt || 0)
+              });
+            }
+          } catch (_) {}
+        }
+        if (page.list_complete || !page.cursor) break;
+        cursor = page.cursor;
+      }
+    }
+    rows.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+    return jsonResponse({ ok: true, requests: rows.slice(0, 100), total: Math.min(rows.length, 100) }, 200);
+  } catch (error) {
+    return jsonResponse({ error: String(error?.message || error), code: 'ADMIN_UPGRADE_REQUESTS_FAILED' }, 400);
+  }
+}
+
 async function handleAdminUsersList(request, env) {
   try {
     const session = await requireSession(request, env);
@@ -1560,6 +1606,60 @@ function buildPasswordResetEmailBodies(link) {
 </td></tr></table>
 </td></tr></table></body></html>`;
   return { subject: 'Reset your AI Workspace password', text, html };
+}
+
+function buildUpgradeAdminEmailBodies(record, requestId) {
+  const rid = String(requestId || '').trim();
+  const ts = Number(record?.createdAt || 0) || Date.now();
+  const whenIso = new Date(ts).toISOString();
+  const whenLocal = new Date(ts).toLocaleString('en-GB', { timeZone: 'UTC' }) + ' UTC';
+  const title = 'AI Workspace — Premium upgrade request';
+  const subject = `[AI Workspace] Upgrade request ${rid.slice(-24)} — ${String(record?.userEmail || '').trim()}`;
+  const text = [
+    title,
+    '',
+    'Request type: Paid plan / activation (recorded in server queue).',
+    `Request ID: ${rid}`,
+    `Recorded at: ${whenIso} (${whenLocal})`,
+    '',
+    `Requester email: ${record.userEmail || ''}`,
+    `Requester name: ${record.userName || '(not provided)'}`,
+    `Current plan: ${record.plan || 'unknown'}`,
+    `Account role: ${record.role || 'user'}`,
+    `App version (client-reported): ${record.appVersion || 'n/a'}`,
+    '',
+    record.note ? `Optional user message:\n${record.note}` : 'No optional user message.',
+    '',
+    'This message is a secondary notification only. Review and fulfill requests in the admin «طلبات تفعيل الخطة» queue in the app; do not rely on email alone.'
+  ].join('\n');
+  const rows = [
+    ['Request ID', rid],
+    ['Recorded (UTC)', whenIso],
+    ['Requester', `${record.userName || ''} <${record.userEmail || ''}>`.trim()],
+    ['Plan', String(record.plan || '')],
+    ['Role', String(record.role || '')],
+    ['App version', String(record.appVersion || 'n/a')],
+    ['User note', String(record.note || '(none)')]
+  ];
+  const rowHtml = rows
+    .map(
+      ([k, v]) =>
+        `<tr><td style="padding:8px 10px;border:1px solid #e5e7eb;font-weight:700;color:#374151;width:34%">${escapeHtmlForEmail(k)}</td>` +
+        `<td style="padding:8px 10px;border:1px solid #e5e7eb;color:#111827;word-break:break-word">${escapeHtmlForEmail(v)}</td></tr>`
+    )
+    .join('');
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;background:#f4f5fb;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1a1d26;line-height:1.55;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:24px 12px"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;background:#ffffff;border-radius:12px;padding:28px 24px;box-shadow:0 2px 10px rgba(0,0,0,.06)">
+<tr><td>
+<h1 style="margin:0 0 14px;font-size:20px;line-height:1.3;color:#111827">${escapeHtmlForEmail(title)}</h1>
+<p style="margin:0 0 18px;font-size:14px;color:#4b5563">A user requested activation of the paid plan. Details below. <strong>Authoritative record</strong> is stored server-side; use the in-app admin queue.</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px;margin:0 0 18px">${rowHtml}</table>
+<p style="margin:0;font-size:13px;color:#6b7280">${escapeHtmlForEmail('Secondary notification only — check the admin upgrade queue if this message was filtered as spam.')}</p>
+</td></tr></table>
+</td></tr></table></body></html>`;
+  return { subject: subject.slice(0, 180), text, html };
 }
 
 async function sendTransactionalEmail(env, { to, subject, text, html }) {
@@ -2001,28 +2101,21 @@ async function handleUpgradeRequest(request, env) {
 
     const adminInbox = String(env.APP_UPGRADE_EMAIL || env.UPGRADE_EMAIL || '').trim();
     if (adminInbox && isValidEmail(adminInbox)) {
-      const subject = `Upgrade request — ${session.email}`;
-      const text = [
-        'New premium upgrade request (recorded server-side).',
-        '',
-        `User: ${session.name || ''} <${session.email}>`,
-        `Plan: ${session.plan}`,
-        `Role: ${session.role}`,
-        `Request id: ${id}`,
-        `App version: ${record.appVersion || 'n/a'}`,
-        '',
-        record.note ? `User note:\n${record.note}` : '(no user note)'
-      ].join('\n');
-      const safe = text.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+      const mailBodies = buildUpgradeAdminEmailBodies(record, id);
       await sendTransactionalEmail(env, {
         to: adminInbox,
-        subject,
-        text,
-        html: `<pre style="font-family:system-ui,monospace;white-space:pre-wrap">${safe}</pre>`
+        subject: mailBodies.subject,
+        text: mailBodies.text,
+        html: mailBodies.html
       });
     }
 
-    return jsonResponse({ ok: true, recorded: true }, 200);
+    return jsonResponse({
+      ok: true,
+      recorded: true,
+      requestId: id,
+      recordedAt: record.createdAt
+    }, 200);
   } catch (error) {
     return jsonResponse({
       error: String(error?.message || error || 'Authentication required.'),
