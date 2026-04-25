@@ -660,7 +660,7 @@ async function buildKbIndex(rawSettings = getSettings()){
   if (!embedModel) return toast('⚠️ حدّد نموذج التضمين في صفحة المعرفة.');
   if (!hasAuthReady(settings)) return toast(getMissingAuthMessage(settings));
 
-  const files = loadFiles(pid).filter(f => (f.text||'').trim());
+  const files = loadFiles(pid).filter((f) => (f.kbIndexText || f.text || '').trim());
   if (!files.length) return toast('⚠️ لا توجد نصوص مستخرجة من الملفات.');
 
   showStatus('فهرسة KB…', true);
@@ -668,9 +668,17 @@ async function buildKbIndex(rawSettings = getSettings()){
 
   const chunks = [];
   for (const f of files){
-    const chs = chunkText(f.text, kb.chunkSize, kb.overlap);
+    const indexSource = String(f.kbIndexText || f.text || '').trim();
+    const chs = chunkText(indexSource, kb.chunkSize, kb.overlap);
     for (const c of chs){
-      chunks.push({ id: makeId('kb'), projectId: pid, fileName: f.name, chunkIdx: c.idx, text: c.text, embedding: null });
+      chunks.push({
+        id: makeId('kb'),
+        projectId: pid,
+        fileName: f.name,
+        chunkIdx: c.idx,
+        text: c.text,
+        embedding: null
+      });
     }
   }
 
@@ -8457,6 +8465,36 @@ async function fileToText(file){
     return (s.ocrLang || 'ara+eng').trim() || 'ara+eng';
   }
 
+  function detectDominantScriptLang(text){
+    const s = String(text || '');
+    if (!s.trim()) return '';
+    const arabic = (s.match(/[\u0600-\u06FF]/g) || []).length;
+    const latin = (s.match(/[A-Za-z]/g) || []).length;
+    const total = arabic + latin;
+    if (!total) return '';
+    const arabicRatio = arabic / total;
+    if (arabicRatio >= 0.7) return 'ara';
+    if (arabicRatio <= 0.2) return 'eng';
+    return 'ara+eng';
+  }
+
+  function buildSmartOcrLangList(primaryLang, hintText=''){
+    const base = String(primaryLang || getOcrLang() || 'ara+eng').trim() || 'ara+eng';
+    const dominant = detectDominantScriptLang(hintText);
+    const list = [];
+    const pushLang = (v) => {
+      const key = String(v || '').trim().toLowerCase();
+      if (!key || list.includes(key)) return;
+      list.push(key);
+    };
+    pushLang(base);
+    if (dominant && dominant !== base.toLowerCase()) pushLang(dominant);
+    if (!base.toLowerCase().includes('ara')) pushLang('ara');
+    if (!base.toLowerCase().includes('eng')) pushLang('eng');
+    pushLang('ara+eng');
+    return list;
+  }
+
   function isOcrEnabled(){
     const toggle = $('ocrToggle') || $('useOcrToggle');
     return toggle ? !!toggle.checked : true;
@@ -8555,7 +8593,12 @@ async function fileToText(file){
         const r = await fetch(endpoint, {
           method:'POST',
           headers: { 'Content-Type':'application/json', ...buildAuthHeaders(settings) },
-          body: JSON.stringify({ imageBase64: b64, fileName: meta.fileName || 'page.png', page: meta.page || 1, lang: getOcrLang() })
+          body: JSON.stringify({
+            imageBase64: b64,
+            fileName: meta.fileName || 'page.png',
+            page: meta.page || 1,
+            lang: String(meta.lang || getOcrLang() || 'ara+eng')
+          })
         });
         if (!r.ok) continue;
         const ct = (r.headers.get('content-type') || '').toLowerCase();
@@ -8597,32 +8640,91 @@ async function fileToText(file){
     if (!isOcrEnabled()) return '';
     if (!window.Tesseract) throw new Error('Tesseract غير متاح');
     const usedLang = (lang || getOcrLang() || 'ara+eng').trim();
+    const langCandidates = buildSmartOcrLangList(usedLang, meta?.hintText || '');
     const profile = getTranscribeProfileConfig();
     const enhanced = await preprocessImageDataUrl(dataUrl);
-    const psmList = [window.Tesseract?.PSM?.AUTO, window.Tesseract?.PSM?.SINGLE_BLOCK, window.Tesseract?.PSM?.SPARSE_TEXT].filter(v => typeof v !== 'undefined');
+    const psmList = [window.Tesseract?.PSM?.AUTO, window.Tesseract?.PSM?.SINGLE_BLOCK].filter(v => typeof v !== 'undefined');
     const candidates = [];
-    for (const src of [dataUrl, enhanced]){
-      for (const psm of psmList){
-        try{
-          const t = await runTesseract(src, usedLang, psm);
-          if (t) candidates.push(t);
-        }catch(_){ }
+    const sources = [enhanced, dataUrl];
+    for (const src of sources){
+      for (const langCode of langCandidates){
+        for (const psm of psmList){
+          try{
+            const t = await runTesseract(src, langCode, psm);
+            if (t){
+              candidates.push({ text: t, lang: langCode });
+              // Early-stop for good OCR to keep ingest responsive on large PDFs.
+              if (t.length >= 320) break;
+            }
+          }catch(_){ }
+        }
+        if ((candidates[candidates.length - 1]?.text || '').length >= 320) break;
       }
+      if ((candidates[candidates.length - 1]?.text || '').length >= 320) break;
     }
     if (!candidates.length){
       try{
         const fallback = await runTesseract(enhanced, 'eng', window.Tesseract?.PSM?.AUTO);
-        if (fallback) candidates.push(fallback);
+        if (fallback) candidates.push({ text: fallback, lang: 'eng' });
       }catch(_){ }
     }
-    let best = candidates.sort((a,b)=>b.length-a.length)[0] || '';
-    if (profile.useCloudOcr && best.length < 80){
+    let best = (candidates.sort((a,b)=>String(b.text || '').length-String(a.text || '').length)[0]?.text || '').trim();
+    if (profile.useCloudOcr && best.length < 140){
       try{
-        const cloud = await cloudOcrDataUrl(enhanced, meta);
+        const cloud = await cloudOcrDataUrl(enhanced, { ...meta, lang: langCandidates[0] || usedLang });
         if (cloud && cloud.length > best.length) best = cloud;
       }catch(_){ }
     }
     return best.trim();
+  }
+
+  function scoreTextReliability(txt){
+    const s = String(txt || '').trim();
+    if (!s) return 0;
+    const letters = (s.match(/[\p{L}\p{N}]/gu) || []).length;
+    const weird = (s.match(/[�\u0000-\u001f\\|_~`^]/g) || []).length;
+    const lineBreaks = (s.match(/\n/g) || []).length;
+    const avgLineLen = lineBreaks ? (s.length / Math.max(1, lineBreaks)) : s.length;
+    const density = Math.min(1, letters / Math.max(1, s.length));
+    const weirdPenalty = Math.min(0.6, weird / Math.max(1, letters));
+    const linePenalty = avgLineLen > 300 ? 0.12 : 0;
+    return Math.max(0, density - weirdPenalty - linePenalty);
+  }
+
+  function buildPseudoBlocksFromOcrText(text, viewport){
+    const rawLines = String(text || '')
+      .split(/\r?\n/)
+      .map((ln) => ln.replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
+    if (!rawLines.length){
+      return [{ align:'left', marginTop:0, xMin:0, xMax:Number(viewport?.width || 0), lines:[{ text:'', y:Number(viewport?.height || 0), lineHeight:20, xMin:0, xMax:Number(viewport?.width || 0) }] }];
+    }
+    const blocks = [];
+    let current = null;
+    const width = Number(viewport?.width || 1000);
+    rawLines.forEach((line) => {
+      const isHeading = line.length <= 90 && /^[\d\.\-•()\s\p{L}\p{N}]+$/u.test(line) && /[:：]?$/.test(line);
+      const isList = /^(\d+[\.\)]|[-•*])\s+/u.test(line);
+      if (!current || isHeading || (isList && current.kind !== 'list')){
+        current = {
+          align: 'left',
+          kind: isHeading ? 'heading' : (isList ? 'list' : 'paragraph'),
+          marginTop: blocks.length ? 10 : 0,
+          lines: [],
+          xMin: 0,
+          xMax: width
+        };
+        blocks.push(current);
+      }
+      current.lines.push({
+        text: line,
+        y: 0,
+        lineHeight: isHeading ? 24 : 18,
+        xMin: 0,
+        xMax: width
+      });
+    });
+    return blocks;
   }
 
   async function renderPdfPageToDataUrl(page, scale=2){
@@ -8756,7 +8858,8 @@ async function fileToText(file){
         }));
         let pageText = lines.map((l) => l.text).join('\n').trim();
         let method = 'native';
-        const nativeLooksWeak = !pageText || pageText.length < profile.minNativeChars || needsArabicOcrFallback(pageText, getOcrLang());
+        const nativeReliability = scoreTextReliability(pageText);
+        const nativeLooksWeak = !pageText || pageText.length < profile.minNativeChars || nativeReliability < 0.46 || needsArabicOcrFallback(pageText, getOcrLang());
         const shouldRunOcr = isOcrEnabled() && (nativeLooksWeak || profile.runOcrOnDigital);
 
         if (shouldRunOcr){
@@ -8766,9 +8869,10 @@ async function fileToText(file){
             fileName: file?.name || 'document.pdf',
             page: p,
             pages: doc.numPages,
-            sizeMB: Number(((Number(file?.size || 0) || 0) / 1048576).toFixed(2))
+            sizeMB: Number(((Number(file?.size || 0) || 0) / 1048576).toFixed(2)),
+            hintText: pageText
           });
-          if (ocrText && (!pageText || !profile.preferNative || ocrText.length > pageText.length || scoreArabicQuality(ocrText) >= scoreArabicQuality(pageText))){
+          if (ocrText && (!pageText || !profile.preferNative || scoreTextReliability(ocrText) > nativeReliability || ocrText.length > pageText.length || scoreArabicQuality(ocrText) >= scoreArabicQuality(pageText))){
             pageText = ocrText.trim();
             method = 'ocr';
           }
@@ -8785,9 +8889,9 @@ async function fileToText(file){
           lines: method === 'native'
             ? lines
             : [{ y: viewport.height - 20, text: pageText, xMin: 0, xMax: viewport.width, align:'left' }],
-          blocks: groupLinesIntoBlocks(method === 'native'
-            ? lines
-            : [{ y: viewport.height - 20, text: pageText, xMin: 0, xMax: viewport.width, align:'left' }], viewport.height),
+          blocks: method === 'native'
+            ? groupLinesIntoBlocks(lines, viewport.height)
+            : buildPseudoBlocksFromOcrText(pageText, viewport),
           text: pageText
         };
       },
@@ -8796,9 +8900,24 @@ async function fileToText(file){
 
     const sortedPages = pages.sort((a, b) => a.page - b.page);
     const text = sortedPages.map((pg) => `[Page ${pg.page}]\n${pg.text}`.trim()).join('\n\n').trim();
+    const structuredText = sortedPages.map((pg) => {
+      const blockText = (pg.blocks || []).map((block) => {
+        const body = (block.lines || []).map((ln) => ln.text).filter(Boolean).join('\n').trim();
+        if (!body) return '';
+        if (block.kind === 'heading') return `## ${body}`;
+        return body;
+      }).filter(Boolean).join('\n\n');
+      return [`[Page ${pg.page}]`, blockText].filter(Boolean).join('\n');
+    }).join('\n\n').trim();
+    const indexText = sortedPages.map((pg) => {
+      const body = String(pg.text || '').replace(/\s+/g, ' ').trim();
+      return body ? `[Page ${pg.page}] ${body}` : '';
+    }).filter(Boolean).join('\n').trim();
     return {
       pages: sortedPages,
       text,
+      structuredText,
+      indexText,
       totalPages: doc.numPages,
       extractedPages: sortedPages.filter(p => !!p.text).length,
       nativePages: sortedPages.filter(p => p.method === 'native').length,
@@ -14253,6 +14372,9 @@ async function runResearchAgent(topicOverride){
         try{ dataUrl = await fileToDataUrl(file); }catch(_){}
       }
       let text = '';
+      let kbIndexText = '';
+      let kbStructuredText = '';
+      let kbDocRep = null;
       let extractionMethod = 'استخراج نص مباشر';
       let ingestStatus = 'نجاح';
       try{
@@ -14264,16 +14386,39 @@ async function runResearchAgent(topicOverride){
               showStatus(`معالجة ${name} • ${done}/${total} • ${method}`, true);
             }
           });
-          text = String(result?.text || '').trim();
-          extractionMethod = result?.ocrPages ? 'OCR لملف PDF' : 'استخراج PDF مباشر';
-          ingestStatus = text ? (result?.ocrPages ? 'نجاح (OCR)' : 'نجاح (نص مباشر)') : 'فشل الاستخراج';
+          text = String(result?.structuredText || result?.text || '').trim();
+          kbIndexText = String(result?.indexText || result?.text || '').trim();
+          kbStructuredText = String(result?.structuredText || result?.text || '').trim();
+          kbDocRep = {
+            totalPages: Number(result?.totalPages || 0),
+            nativePages: Number(result?.nativePages || 0),
+            ocrPages: Number(result?.ocrPages || 0),
+            quality: String(result?.quality || ''),
+            profile: String(result?.profile || ''),
+            pages: Array.isArray(result?.pages) ? result.pages.map((pg) => ({
+              page: Number(pg?.page || 0),
+              method: String(pg?.method || ''),
+              blocks: Array.isArray(pg?.blocks) ? pg.blocks.map((b) => ({
+                kind: String(b?.kind || ''),
+                align: String(b?.align || 'left'),
+                lines: Array.isArray(b?.lines) ? b.lines.map((ln) => ({ text: String(ln?.text || '') })) : []
+              })) : []
+            })) : []
+          };
+          extractionMethod = result?.ocrPages ? 'KB ingest + doc understanding (OCR انتقائي)' : 'KB ingest + doc understanding (نص مباشر)';
+          ingestStatus = text ? (result?.ocrPages ? 'نجاح (OCR انتقائي)' : 'نجاح (نص مباشر)') : 'فشل الاستخراج';
         } else {
           text = String(await fileToTextSmart(file) || '').trim();
+          kbIndexText = text;
+          kbStructuredText = text;
           extractionMethod = kind === 'image' ? 'OCR صورة' : 'استخراج نص مباشر';
           ingestStatus = text ? (kind === 'image' ? 'نجاح (OCR)' : 'نجاح') : 'فشل الاستخراج';
         }
       }catch(_){
         text = '';
+        kbIndexText = '';
+        kbStructuredText = '';
+        kbDocRep = null;
         extractionMethod = /pdf$/i.test(name) ? 'فشل استخراج PDF/OCR' : 'فشل الاستخراج';
         ingestStatus = 'فشل';
       }
@@ -14283,8 +14428,22 @@ async function runResearchAgent(topicOverride){
         kind,
         size: file.size || 0,
         type: file.type || '',
+        sourceMeta: {
+          name,
+          size: Number(file.size || 0),
+          type: file.type || '',
+          lastModified: Number(file.lastModified || 0)
+        },
         dataUrl,
         text,
+        kbIndexText,
+        kbStructuredText,
+        kbDocRep,
+        kbExtraction: {
+          ingestTextSource: kbIndexText ? 'kbIndexText' : (text ? 'text' : ''),
+          understandingSource: kbStructuredText ? 'kbStructuredText' : (text ? 'text' : ''),
+          keepsOriginalFile: true
+        },
         extractionMethod,
         ingestStatus
       });
@@ -14428,8 +14587,11 @@ async function runResearchAgent(topicOverride){
       const f = imgs[i];
       wfLog(`OCR: ${f.name} (${i+1}/${imgs.length})`);
       try{
-        const res = await window.Tesseract.recognize(f.dataUrl, 'ara+eng');
-        f.text = String(res?.data?.text || '').trim();
+        f.text = await ocrDataUrl(f.dataUrl, undefined, {
+          fileName: f.name || 'image',
+          page: 1,
+          hintText: f.text || ''
+        });
       }catch(e){
         wfLog(`❌ OCR failed: ${e?.message||e}`);
       }
