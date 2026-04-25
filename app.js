@@ -362,7 +362,8 @@
     initialized: false,
     initPromise: null,
     autoAttempted: false,
-    lastDialogMessage: ''
+    lastDialogMessage: '',
+    lastNativeResult: null
   };
 
   const CAPACITOR_PLUGIN_CACHE = Object.create(null);
@@ -4923,6 +4924,35 @@ function refreshDeepSearchBtn(){
     return /activity.*cancelled|cancell?ed by the user|dismissed by the user/i.test(info);
   }
 
+  function formatNativeGoogleDebugText(payload){
+    const data = payload && typeof payload === 'object' ? payload : {};
+    const debugView = {
+      tokenPresent: !!data.tokenPresent,
+      authGoogleCalled: !!data.authGoogleCalled,
+      authGoogleOk: !!data.authGoogleOk,
+      reason: String(data.reason || ''),
+      info: String(data.info || ''),
+      authGoogleError: String(data.authGoogleError || '')
+    };
+    return JSON.stringify(debugView, null, 2);
+  }
+
+  function hideNativeGoogleDebugModal(){
+    const modal = $('nativeGoogleDebugModal');
+    if (!modal) return;
+    modal.classList.remove('show');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+
+  function showNativeGoogleDebugModal(){
+    const modal = $('nativeGoogleDebugModal');
+    if (!modal) return;
+    const box = $('nativeGoogleDebugContent');
+    if (box) box.textContent = formatNativeGoogleDebugText(NATIVE_GOOGLE_RUNTIME.lastNativeResult);
+    modal.classList.add('show');
+    modal.setAttribute('aria-hidden', 'false');
+  }
+
   async function handleNativeGoogleSignInResult(result, { silent = false } = {}){
     const credential = extractNativeGoogleIdToken(result);
     const reason = String(result?.noSuccess?.noSuccessReasonCode || '').trim();
@@ -4964,6 +4994,7 @@ function refreshDeepSearchBtn(){
       }catch(_){}
       setAuthGateStatus(message, tone);
       toast(`${tone === 'info' ? 'ℹ️' : '⚠️'} ${message}`);
+      showNativeGoogleDebugModal();
     }
     return false;
   }
@@ -5163,6 +5194,31 @@ function refreshDeepSearchBtn(){
             </section>
           </div>
         </div>`);
+    }
+    if (!$('nativeGoogleDebugModal')){
+      document.body.insertAdjacentHTML('beforeend', `
+        <div class="modal" id="nativeGoogleDebugModal" aria-hidden="true">
+          <div class="backdrop" data-native-google-debug-close="1"></div>
+          <div class="panel" style="top:10vh; max-width:560px; margin:0 auto; left:0; right:0;">
+            <div class="head">
+              <div style="font-weight:1000">تشخيص فشل Google (مؤقت)</div>
+              <button class="btn ghost sm icon" type="button" data-native-google-debug-close="1" aria-label="إغلاق">✕</button>
+            </div>
+            <div class="body" style="display:grid; gap:10px; direction:ltr;">
+              <div class="hint" style="direction:rtl">انسخ القيم التالية وشاركها للتشخيص:</div>
+              <pre id="nativeGoogleDebugContent" style="margin:0; max-height:45vh; overflow:auto; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px; font-size:12px; white-space:pre-wrap; word-break:break-word;"></pre>
+              <div class="row" style="justify-content:flex-end; margin:0;">
+                <button class="btn dark sm" type="button" data-native-google-debug-close="1">إغلاق</button>
+              </div>
+            </div>
+          </div>
+        </div>`);
+    }
+    if ($('nativeGoogleDebugModal') && !$('nativeGoogleDebugModal').dataset.bound){
+      $('nativeGoogleDebugModal').dataset.bound = '1';
+      $('nativeGoogleDebugModal').querySelectorAll('[data-native-google-debug-close="1"]').forEach((el) => {
+        el.addEventListener('click', () => hideNativeGoogleDebugModal());
+      });
     }
 
     const authGoogleSlot = $('googleSignInSlot');
@@ -6011,6 +6067,9 @@ function syncUnifiedAuthEntry(){
       return true;
     }catch(error){
       const message = explainAuthError(error, { nativeGoogle: isNativeAndroidPlatform() });
+      try{
+        if (NATIVE_GOOGLE_RUNTIME.lastNativeResult) NATIVE_GOOGLE_RUNTIME.lastNativeResult.authGoogleError = message;
+      }catch(_){}
       setAuthGateStatus(`فشل تسجيل الدخول: ${message}`, 'error');
       toast(`⚠️ ${message}`);
       return false;
