@@ -10308,13 +10308,23 @@ async function fileToText(file){
     return raw;
   }
 
+  function isOpenAIGpt5FamilyModel(model){
+    const id = String(model || '').trim().toLowerCase();
+    return /^gpt-5([.-]|$)/.test(id);
+  }
+
   function buildChatCompletionsPayload({ provider, model, messages, maxTokens, stream = false, modalities = [] }){
     const p = String(provider || '').trim().toLowerCase();
+    const normalizedModel = normalizeProviderModelId(p, model);
     const body = {
-      model: normalizeProviderModelId(p, model),
-      messages,
-      temperature: 0.25
+      model: normalizedModel,
+      messages
     };
+    // OpenAI GPT-5 family rejects non-default sampling controls in direct mode.
+    // Keep OpenRouter behavior unchanged.
+    if (!(p === 'openai' && isOpenAIGpt5FamilyModel(normalizedModel))){
+      body.temperature = 0.25;
+    }
     if (p === 'openai'){
       body.max_completion_tokens = maxTokens;
     } else {
