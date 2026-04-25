@@ -14183,8 +14183,11 @@ async function runResearchAgent(topicOverride){
       div.style.marginBottom='10px';
       div.style.background='#fff';
       const kindIcon = f.kind === 'image' ? '🖼️' : '📄';
+      const ingestMethod = String(f.extractionMethod || '').trim();
+      const ingestStatus = String(f.ingestStatus || '').trim();
+      const ingestHint = [ingestMethod, ingestStatus].filter(Boolean).join(' • ');
       div.innerHTML = `<div style="font-weight:1000">${kindIcon} ${escapeHtml(f.name)}</div>
-                       <div class="hint">${escapeHtml(f.kind)} • ${Math.round((f.size||0)/1024)}KB</div>`;
+                       <div class="hint">${escapeHtml(f.kind)} • ${Math.round((f.size||0)/1024)}KB${ingestHint ? ` • ${escapeHtml(ingestHint)}` : ''}</div>`;
       const row = document.createElement('div');
       row.style.display='flex';
       row.style.gap='8px';
@@ -14236,19 +14239,59 @@ async function runResearchAgent(topicOverride){
       return;
     }
     let added = 0;
+    const perFileResults = [];
     for (const file of picked){
       const id = makeId('f');
       const name = file.name || 'file';
+      if ((Number(file.size || 0) || 0) <= 0){
+        perFileResults.push({ name, status:'تم تجاهله', method:'حجم الملف صفر' });
+        continue;
+      }
       const kind = (file.type || '').startsWith('image/') ? 'image' : 'file';
       let dataUrl = '';
       if (kind === 'image'){
         try{ dataUrl = await fileToDataUrl(file); }catch(_){}
       }
       let text = '';
-      try{ text = await fileToText(file); }catch(_){}
-      arr.unshift({ id, name, kind, size: file.size || 0, type: file.type || '', dataUrl, text });
+      let extractionMethod = 'استخراج نص مباشر';
+      let ingestStatus = 'نجاح';
+      try{
+        showStatus(`معالجة ${added + perFileResults.length + 1}/${picked.length}: ${name}`, true);
+        if (/\.pdf$/i.test(name) || String(file.type || '').toLowerCase() === 'application/pdf'){
+          const result = await extractPdfStrategic(file, {
+            onProgress: (done, total, meta = {}) => {
+              const method = meta.method === 'ocr' ? 'OCR' : 'نص مباشر';
+              showStatus(`معالجة ${name} • ${done}/${total} • ${method}`, true);
+            }
+          });
+          text = String(result?.text || '').trim();
+          extractionMethod = result?.ocrPages ? 'OCR لملف PDF' : 'استخراج PDF مباشر';
+          ingestStatus = text ? (result?.ocrPages ? 'نجاح (OCR)' : 'نجاح (نص مباشر)') : 'فشل الاستخراج';
+        } else {
+          text = String(await fileToTextSmart(file) || '').trim();
+          extractionMethod = kind === 'image' ? 'OCR صورة' : 'استخراج نص مباشر';
+          ingestStatus = text ? (kind === 'image' ? 'نجاح (OCR)' : 'نجاح') : 'فشل الاستخراج';
+        }
+      }catch(_){
+        text = '';
+        extractionMethod = /pdf$/i.test(name) ? 'فشل استخراج PDF/OCR' : 'فشل الاستخراج';
+        ingestStatus = 'فشل';
+      }
+      arr.unshift({
+        id,
+        name,
+        kind,
+        size: file.size || 0,
+        type: file.type || '',
+        dataUrl,
+        text,
+        extractionMethod,
+        ingestStatus
+      });
       added += 1;
+      perFileResults.push({ name, status: ingestStatus, method: extractionMethod });
     }
+    showStatus('', false);
     if (!added){
       toast('⚠️ تعذر إضافة الملفات المختارة.');
       return;
@@ -14256,7 +14299,11 @@ async function runResearchAgent(topicOverride){
     saveFiles(pid, arr.slice(0, 80));
     renderFiles();
     refreshNavMeta();
-    toast(added === 1 ? '✅ تم إضافة ملف واحد.' : `✅ تم إضافة ${added} ملفًا.`);
+    const summary = perFileResults
+      .slice(0, 4)
+      .map((r) => `${r.name}: ${r.status}`)
+      .join(' • ');
+    toast((added === 1 ? '✅ تم إضافة ملف واحد.' : `✅ تم إضافة ${added} ملفًا.`) + (summary ? ` ${summary}` : ''));
   }
 
   // ---------------- Downloads page ----------------
@@ -16107,6 +16154,7 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
     const openFilesPicker = () => {
       const picker = $('filePicker');
       if (!picker) return;
+      picker.setAttribute('multiple', 'multiple');
       if (typeof isNativeAndroidPlatform === 'function' && isNativeAndroidPlatform()){
         picker.setAttribute('accept', '.pdf,.doc,.docx,.txt,.md,.csv,.json,.xml,.html,.htm,.ppt,.pptx,.xls,.xlsx,.zip,.png,.jpg,.jpeg,.webp');
       }
