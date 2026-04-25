@@ -4882,11 +4882,74 @@ function refreshDeepSearchBtn(){
     return fallback;
   }
 
+  function extractNativeGoogleIdToken(result){
+    const directCandidates = [
+      result?.success?.idToken,
+      result?.success?.id_token,
+      result?.success?.credential,
+      result?.success?.token,
+      result?.idToken,
+      result?.id_token,
+      result?.credential,
+      result?.token
+    ];
+    for (const value of directCandidates){
+      const token = String(value || '').trim();
+      if (token) return token;
+    }
+    const info = String(result?.noSuccess?.noSuccessAdditionalInfo || '').trim();
+    if (!info) return '';
+    try{
+      const parsed = JSON.parse(info);
+      const parsedCandidates = [
+        parsed?.idToken,
+        parsed?.id_token,
+        parsed?.credential,
+        parsed?.token
+      ];
+      for (const value of parsedCandidates){
+        const token = String(value || '').trim();
+        if (token) return token;
+      }
+    }catch(_){}
+    const kvMatch = info.match(/(?:id[_\s-]?token|credential)\s*[:=]\s*([A-Za-z0-9._-]+)/i);
+    return kvMatch ? String(kvMatch[1] || '').trim() : '';
+  }
+
+  function isNativeGoogleUserCancelled(result){
+    const reason = String(result?.noSuccess?.noSuccessReasonCode || '').trim();
+    if (reason !== 'SIGN_IN_CANCELLED') return false;
+    const info = String(result?.noSuccess?.noSuccessAdditionalInfo || '').trim();
+    return /activity.*cancelled|cancell?ed by the user|dismissed by the user/i.test(info);
+  }
+
   async function handleNativeGoogleSignInResult(result, { silent = false } = {}){
-    if (result?.isSuccess && result?.success?.idToken){
+    const credential = extractNativeGoogleIdToken(result);
+    const reason = String(result?.noSuccess?.noSuccessReasonCode || '').trim();
+    const info = String(result?.noSuccess?.noSuccessAdditionalInfo || '').trim();
+    try{
+      NATIVE_GOOGLE_RUNTIME.lastNativeResult = {
+        at: Date.now(),
+        isSuccess: !!result?.isSuccess,
+        reason,
+        info,
+        tokenPresent: !!credential,
+        authGoogleCalled: false,
+        authGoogleOk: false,
+        authGoogleError: ''
+      };
+    }catch(_){}
+    if (credential){
       NATIVE_GOOGLE_RUNTIME.lastDialogMessage = '';
       setAuthGateStatus('تم اختيار حساب Google بنجاح. جارٍ إنشاء الجلسة...', 'busy');
-      await handleGoogleCredentialResponse({ credential: result.success.idToken });
+      try{
+        if (NATIVE_GOOGLE_RUNTIME.lastNativeResult) NATIVE_GOOGLE_RUNTIME.lastNativeResult.authGoogleCalled = true;
+      }catch(_){}
+      const authOk = await handleGoogleCredentialResponse({ credential });
+      try{
+        if (NATIVE_GOOGLE_RUNTIME.lastNativeResult) NATIVE_GOOGLE_RUNTIME.lastNativeResult.authGoogleOk = !!authOk;
+      }catch(_){}
+      if (!authOk) return false;
       if (isNativeAndroidPlatform()){
         try{ await runAuthBridgeSync(); }catch(_){}
         try{ await getCapacitorBrowserPlugin()?.close?.(); }catch(_){}
@@ -4894,8 +4957,11 @@ function refreshDeepSearchBtn(){
       return true;
     }
     if (!silent){
-      const tone = String(result?.noSuccess?.noSuccessReasonCode || '').trim() === 'SIGN_IN_CANCELLED' ? 'info' : 'error';
+      const tone = isNativeGoogleUserCancelled(result) ? 'info' : 'error';
       const message = getNativeGoogleFailureMessage(result);
+      try{
+        if (NATIVE_GOOGLE_RUNTIME.lastNativeResult) NATIVE_GOOGLE_RUNTIME.lastNativeResult.authGoogleError = message;
+      }catch(_){}
       setAuthGateStatus(message, tone);
       toast(`${tone === 'info' ? 'ℹ️' : '⚠️'} ${message}`);
     }
@@ -5942,10 +6008,12 @@ function syncUnifiedAuthEntry(){
       refreshStrategicWorkspace().catch(()=>{});
       closeAuthGate(true);
       toast('✅ تم تسجيل الدخول بنجاح');
+      return true;
     }catch(error){
       const message = explainAuthError(error, { nativeGoogle: isNativeAndroidPlatform() });
       setAuthGateStatus(`فشل تسجيل الدخول: ${message}`, 'error');
       toast(`⚠️ ${message}`);
+      return false;
     }
   }
 
