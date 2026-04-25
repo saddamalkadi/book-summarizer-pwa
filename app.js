@@ -472,6 +472,41 @@
     };
   }
 
+  function formatUpgradeRequestStatusLabel(status){
+    const s = String(status || 'pending_review').trim();
+    if (s === 'pending_review') return 'قيد المراجعة';
+    return s;
+  }
+
+  function closeUpgradeRequestAckModal(){
+    const modal = $('upgradeRequestAckModal');
+    if (!modal) return;
+    modal.classList.remove('show');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+
+  function showUpgradeRequestAckModal(ack = {}){
+    const modal = $('upgradeRequestAckModal');
+    if (!modal) return;
+    const id = String(ack.requestId || '').trim();
+    const when = ack.recordedAt ? new Date(Number(ack.recordedAt)).toLocaleString('ar-SA') : '—';
+    if ($('upgradeRequestAckId')) $('upgradeRequestAckId').textContent = id || '—';
+    if ($('upgradeRequestAckTime')) $('upgradeRequestAckTime').textContent = when;
+    if ($('upgradeRequestAckStatus')) $('upgradeRequestAckStatus').textContent = formatUpgradeRequestStatusLabel(ack.status);
+    modal.classList.add('show');
+    modal.setAttribute('aria-hidden', 'false');
+  }
+
+  function installUpgradeRequestAckModal(){
+    if (window.__AI_STUDIO_UPGRADE_ACK_MODAL__) return;
+    window.__AI_STUDIO_UPGRADE_ACK_MODAL__ = true;
+    const modal = $('upgradeRequestAckModal');
+    if (!modal) return;
+    modal.querySelectorAll('[data-upgrade-ack-close]').forEach((el) => {
+      el.addEventListener('click', () => closeUpgradeRequestAckModal());
+    });
+  }
+
   const UNSYNCED_STORAGE_KEYS = new Set([
     KEYS.authState,
     KEYS.authConfigCache,
@@ -5178,6 +5213,7 @@ function refreshDeepSearchBtn(){
                       <th style="text-align:start; padding:8px;">الوقت</th>
                       <th style="text-align:start; padding:8px;">البريد</th>
                       <th style="text-align:start; padding:8px;">الخطة</th>
+                      <th style="text-align:start; padding:8px;">الحالة</th>
                       <th style="text-align:start; padding:8px;">رقم الطلب</th>
                     </tr>
                   </thead>
@@ -5293,6 +5329,7 @@ function refreshDeepSearchBtn(){
                       <th style="text-align:start; padding:8px;">الوقت</th>
                       <th style="text-align:start; padding:8px;">البريد</th>
                       <th style="text-align:start; padding:8px;">الخطة</th>
+                      <th style="text-align:start; padding:8px;">الحالة</th>
                       <th style="text-align:start; padding:8px;">رقم الطلب</th>
                     </tr>
                   </thead>
@@ -5375,7 +5412,8 @@ function refreshDeepSearchBtn(){
         ackEl.hidden = false;
         ackEl.dataset.tone = 'success';
         const when = ack.recordedAt ? new Date(Number(ack.recordedAt)).toLocaleString('ar-SA') : '';
-        ackEl.textContent = `تم استلام طلب تفعيل الخطة بنجاح وتم تسجيله على الخادم. رقم المرجع: ${ack.requestId}. وقت التسجيل: ${when}. سيتم مراجعة الطلب وإرسال كود التفعيل عند الجاهزية. يمكن للإدارة متابعة الطلب من لوحة «طلبات تفعيل الخطة» دون الاعتماد على البريد فقط.`;
+        const st = formatUpgradeRequestStatusLabel(ack.status);
+        ackEl.textContent = `تم استلام طلب تفعيل الخطة وتسجيله في النظام. المرجع: ${ack.requestId}. الوقت: ${when}. الحالة: ${st}. تظل لوحة «طلبات تفعيل الخطة» في الإدارة هي مصدر مراجعة الطلبات؛ البريد إشعار ثانٍ فقط.`;
       } else {
         ackEl.textContent = '';
         ackEl.style.display = 'none';
@@ -6148,7 +6186,7 @@ async function submitUnifiedAuthEntry(){
     if (!body) return;
     body.innerHTML = '';
     if (!Array.isArray(rows) || !rows.length){
-      body.innerHTML = `<tr><td colspan="4" style="padding:8px; color:var(--muted)">لا توجد طلبات مسجّلة.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="5" style="padding:8px; color:var(--muted)">لا توجد طلبات مسجّلة.</td></tr>`;
       return;
     }
     rows.forEach((r) => {
@@ -6156,10 +6194,12 @@ async function submitUnifiedAuthEntry(){
       const t = Number(r.createdAt || 0);
       const when = t ? new Date(t).toLocaleString('ar-SA') : '—';
       const rid = escapeHtml(String(r.requestId || '').slice(0, 48));
+      const st = escapeHtml(formatUpgradeRequestStatusLabel(r.status));
       tr.innerHTML = `
         <td style="padding:8px">${escapeHtml(when)}</td>
         <td style="padding:8px">${escapeHtml(String(r.userEmail || ''))}</td>
         <td style="padding:8px">${escapeHtml(String(r.plan || ''))}</td>
+        <td style="padding:8px">${st}</td>
         <td style="padding:8px;word-break:break-all;font-size:11px">${rid}</td>`;
       body.appendChild(tr);
     });
@@ -6255,8 +6295,17 @@ async function submitUnifiedAuthEntry(){
       openAuthGate('سجّل الدخول أولاً ثم أرسل طلب الترقية.', { force: true });
       return;
     }
+    const btn = $('accountUpgradeRequestBtn');
+    let prevLabel = '';
     try{
-      setAuthGateStatus('جارٍ إرسال طلب الترقية إلى الخادم...', 'busy');
+      if (btn){
+        btn.disabled = true;
+        const lab = btn.querySelector('.label');
+        if (lab){
+          prevLabel = lab.textContent;
+          lab.textContent = 'جارٍ التسجيل...';
+        }
+      }
       const payload = await fetchAuthJson('/auth/upgrade/request', {
         method: 'POST',
         body: JSON.stringify(buildSafeUpgradeRequestPayload(account))
@@ -6264,28 +6313,30 @@ async function submitUnifiedAuthEntry(){
       if (!payload?.ok || payload?.recorded !== true){
         throw new Error(payload?.error || 'تعذر تسجيل الطلب على الخادم.');
       }
+      const ack = {
+        requestId: String(payload.requestId || '').trim(),
+        recordedAt: Number(payload.recordedAt || 0) || Date.now(),
+        status: String(payload.status || 'pending_review').trim() || 'pending_review'
+      };
       try{
-        localStorage.setItem(KEYS.upgradeRequestAck, JSON.stringify({
-          requestId: String(payload.requestId || '').trim(),
-          recordedAt: Number(payload.recordedAt || 0) || Date.now()
-        }));
+        localStorage.setItem(KEYS.upgradeRequestAck, JSON.stringify(ack));
       }catch(_){}
-      const ref = String(payload.requestId || '').trim();
-      const when = payload.recordedAt ? new Date(Number(payload.recordedAt)).toLocaleString('ar-SA') : '';
-      const detail = ref
-        ? `تم التسجيل بنجاح. رقم المرجع: ${ref}${when ? ` — ${when}` : ''}. سيتم المراجعة وإرسال كود التفعيل عند الجاهزية.`
-        : 'تم تسجيل طلب الترقية على الخادم بنجاح وسيتم مراجعته.';
-      setAuthGateStatus(detail, 'success');
-      toast(`✅ ${detail}`);
       syncAccountUi();
       openWorkspacePage('settings');
+      showUpgradeRequestAckModal(ack);
       window.setTimeout(() => {
         try{ $('accountUpgradeRequestAck')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }catch(_){}
       }, 120);
     }catch(error){
       const msg = sanitizeAuthErrorMessage(error?.message || error);
-      setAuthGateStatus(`تعذر إرسال طلب الترقية: ${msg}`, 'error');
       toast(`⚠️ ${msg}`);
+    }finally{
+      if (btn){
+        btn.disabled = false;
+        const lab = btn.querySelector('.label');
+        if (lab && prevLabel) lab.textContent = prevLabel;
+      }
+      syncAccountUi();
     }
   }
 
@@ -6433,6 +6484,7 @@ async function submitUnifiedAuthEntry(){
 
   async function initializeAuthExperience(){
     ensureAccountChrome();
+    installUpgradeRequestAckModal();
     installBrowserAuthBridgeListeners();
     if (AUTH_RUNTIME.booting) return;
     AUTH_RUNTIME.booting = true;

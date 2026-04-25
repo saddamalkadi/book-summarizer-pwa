@@ -1179,6 +1179,7 @@ async function handleAdminUpgradeRequestsList(request, env) {
                 role: raw.role || 'user',
                 note: raw.note || '',
                 appVersion: raw.appVersion || '',
+                status: String(raw.status || 'pending_review'),
                 createdAt: Number(raw.createdAt || 0)
               });
             }
@@ -2095,7 +2096,8 @@ async function handleUpgradeRequest(request, env) {
       role: session.role,
       note: String(body?.note || body?.message || '').trim().slice(0, 2000),
       appVersion: String(body?.appVersion || '').trim().slice(0, 64),
-      createdAt: nowMs()
+      createdAt: nowMs(),
+      status: 'pending_review'
     };
     await store.put(`${UPGRADE_REQ_PREFIX}${id}`, JSON.stringify(record), { expirationTtl: 14 * 24 * 60 * 60 });
 
@@ -2114,7 +2116,8 @@ async function handleUpgradeRequest(request, env) {
       ok: true,
       recorded: true,
       requestId: id,
-      recordedAt: record.createdAt
+      recordedAt: record.createdAt,
+      status: record.status
     }, 200);
   } catch (error) {
     return jsonResponse({

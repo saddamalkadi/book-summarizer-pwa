@@ -6241,6 +6241,27 @@ body.dark *::-webkit-scrollbar-thumb:hover{
     </div>
   </div>
 
+  <div class="modal" id="upgradeRequestAckModal" aria-hidden="true">
+    <div class="backdrop" data-upgrade-ack-close="1"></div>
+    <div class="panel" style="top:12vh; max-width:440px; margin:0 auto; left:0; right:0;">
+      <div class="head">
+        <div style="font-weight:1000">تم تسجيل طلب تفعيل الخطة</div>
+        <button class="btn ghost sm icon" type="button" data-upgrade-ack-close="1" aria-label="إغلاق">✕</button>
+      </div>
+      <div class="body" style="display:grid; gap:12px; direction:rtl; text-align:start;">
+        <p class="hint" style="margin:0; line-height:1.75">سُجّل طلبك في النظام. القائمة داخل لوحة الإدارة هي مصدر الحقيقة لمراجعة الطلبات؛ البريد إشعار ثانٍ فقط.</p>
+        <div class="pill" id="upgradeRequestAckPill" style="padding:10px 12px; line-height:1.75; font-size:13px">
+          <div><strong>رقم المرجع:</strong> <span id="upgradeRequestAckId">—</span></div>
+          <div style="margin-top:6px"><strong>وقت التسجيل:</strong> <span id="upgradeRequestAckTime">—</span></div>
+          <div style="margin-top:6px"><strong>الحالة:</strong> <span id="upgradeRequestAckStatus">—</span></div>
+        </div>
+        <div class="row" style="justify-content:flex-end; margin:0; gap:8px;">
+          <button class="btn dark sm" type="button" data-upgrade-ack-close="1">حسنًا</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Model Hub Modal -->
 
   <div class="modal" id="canvasAiModal" aria-hidden="true">
