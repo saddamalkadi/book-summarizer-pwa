@@ -4953,7 +4953,7 @@ function refreshDeepSearchBtn(){
     modal.setAttribute('aria-hidden', 'false');
   }
 
-  async function handleNativeGoogleSignInResult(result, { silent = false } = {}){
+  async function handleNativeGoogleSignInResult(result, { silent = false, allowPluginRetry = true } = {}){
     const credential = extractNativeGoogleIdToken(result);
     const reason = String(result?.noSuccess?.noSuccessReasonCode || '').trim();
     const info = String(result?.noSuccess?.noSuccessAdditionalInfo || '').trim();
@@ -4986,8 +4986,30 @@ function refreshDeepSearchBtn(){
       }
       return true;
     }
+    const isCancelled = reason === 'SIGN_IN_CANCELLED';
+    const isUserCancelled = isNativeGoogleUserCancelled(result);
+    if (allowPluginRetry && isCancelled && !isUserCancelled){
+      try{
+        const plugin = await ensureNativeGoogleAuthReady();
+        if (plugin?.tryAutoSignIn){
+          const retryResult = await plugin.tryAutoSignIn();
+          const retryCredential = extractNativeGoogleIdToken(retryResult);
+          if (retryCredential){
+            return await handleNativeGoogleSignInResult(retryResult, { silent, allowPluginRetry: false });
+          }
+          try{
+            if (NATIVE_GOOGLE_RUNTIME.lastNativeResult){
+              NATIVE_GOOGLE_RUNTIME.lastNativeResult.info = [
+                info,
+                String(retryResult?.noSuccess?.noSuccessAdditionalInfo || '').trim()
+              ].filter(Boolean).join(' | retry: ');
+            }
+          }catch(_){}
+        }
+      }catch(_){}
+    }
     if (!silent){
-      const tone = isNativeGoogleUserCancelled(result) ? 'info' : 'error';
+      const tone = isUserCancelled ? 'info' : 'error';
       const message = getNativeGoogleFailureMessage(result);
       try{
         if (NATIVE_GOOGLE_RUNTIME.lastNativeResult) NATIVE_GOOGLE_RUNTIME.lastNativeResult.authGoogleError = message;
