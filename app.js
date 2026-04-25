@@ -10298,13 +10298,47 @@ async function fileToText(file){
     return text;
   }
 
+  function normalizeProviderModelId(provider, model){
+    const raw = String(model || '').trim();
+    if (!raw) return raw;
+    const p = String(provider || '').trim().toLowerCase();
+    if (p === 'openai'){
+      return raw.replace(/^openrouter\//i, '').trim();
+    }
+    return raw;
+  }
+
+  function buildChatCompletionsPayload({ provider, model, messages, maxTokens, stream = false, modalities = [] }){
+    const p = String(provider || '').trim().toLowerCase();
+    const body = {
+      model: normalizeProviderModelId(p, model),
+      messages,
+      temperature: 0.25
+    };
+    if (p === 'openai'){
+      body.max_completion_tokens = maxTokens;
+    } else {
+      body.max_tokens = maxTokens;
+    }
+    if (stream) body.stream = true;
+    if (Array.isArray(modalities) && modalities.length) body.modalities = modalities;
+    return body;
+  }
+
   async function callOpenAIChatWithMeta({ apiKey, baseUrl, model, messages, max_tokens, signal, extraHeaders={}, modalities=[] }){
     const run = async () => {
       const currentSettings = getSettings();
+      const provider = String(currentSettings?.provider || '').trim().toLowerCase();
       const resolvedBaseUrl = String(baseUrl || effectiveBaseUrl(currentSettings) || '').replace(/\/+$/,'');
       const url = resolvedBaseUrl + '/chat/completions';
-      const body = { model, messages, max_tokens, temperature: 0.25 };
-      if (Array.isArray(modalities) && modalities.length) body.modalities = modalities;
+      const body = buildChatCompletionsPayload({
+        provider,
+        model,
+        messages,
+        maxTokens: max_tokens,
+        stream: false,
+        modalities
+      });
       const r = await fetch(url, {
         method:'POST',
         headers: { 'Content-Type':'application/json', ...extraHeaders, ...buildAuthHeaders(currentSettings) },
@@ -10342,10 +10376,17 @@ async function fileToText(file){
   async function streamChatCompletions({ apiKey, baseUrl, model, messages, max_tokens, signal, onDelta, extraHeaders={}, modalities=[] }){
     const run = async () => {
       const currentSettings = getSettings();
+      const provider = String(currentSettings?.provider || '').trim().toLowerCase();
       const resolvedBaseUrl = String(baseUrl || effectiveBaseUrl(currentSettings) || '').replace(/\/+$/,'');
       const url = resolvedBaseUrl + '/chat/completions';
-      const body = { model, messages, max_tokens, temperature: 0.25, stream: true };
-      if (Array.isArray(modalities) && modalities.length) body.modalities = modalities;
+      const body = buildChatCompletionsPayload({
+        provider,
+        model,
+        messages,
+        maxTokens: max_tokens,
+        stream: true,
+        modalities
+      });
       const r = await fetch(url, {
         method:'POST',
         headers: { 'Content-Type':'application/json', ...extraHeaders, ...buildAuthHeaders(currentSettings) },
