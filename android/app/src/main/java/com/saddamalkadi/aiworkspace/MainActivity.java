@@ -268,7 +268,12 @@ public class MainActivity extends BridgeActivity {
                 baseIntent.setType(collapseMimeTypes(mimeTypes));
             }
 
-            if (params.getMode() == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE) {
+            // Some Android WebView builds report MODE_OPEN even when the input
+            // element has `multiple`. We still enable multi-select for SAF in
+            // non-capture flows so KB multi-upload works reliably.
+            boolean wantsMultiple = params.getMode() == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE;
+            if (!wantsMultiple && !allowCamera) wantsMultiple = true;
+            if (wantsMultiple) {
                 baseIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
             }
 
@@ -294,7 +299,8 @@ public class MainActivity extends BridgeActivity {
             }
 
             fileChooserLauncher.launch(chooser);
-            Log.i(TAG, "chooser_launched camera=" + allowCamera + " capture_intents=" + captureIntents.size());
+            Log.i(TAG, "chooser_launched camera=" + allowCamera + " capture_intents=" + captureIntents.size()
+                    + " allow_multiple=" + wantsMultiple);
             return true;
         } catch (Throwable t) {
             Log.e(TAG, "chooser_launch_failed", t);
@@ -303,6 +309,7 @@ public class MainActivity extends BridgeActivity {
                 Intent fallback = new Intent(Intent.ACTION_GET_CONTENT);
                 fallback.addCategory(Intent.CATEGORY_OPENABLE);
                 fallback.setType("*/*");
+                fallback.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
                 fileChooserLauncher.launch(Intent.createChooser(fallback, "اختيار ملف"));
                 Log.w(TAG, "chooser_launch_fallback_get_content");
                 return true;
@@ -330,6 +337,21 @@ public class MainActivity extends BridgeActivity {
             }
 
             Uri[] results = WebChromeClient.FileChooserParams.parseResult(code, data);
+            // Vendor-specific SAF pickers sometimes skip parseResult() for
+            // ClipData multi-select. Recover it manually before giving up.
+            if ((results == null || results.length == 0) && data != null && data.getClipData() != null) {
+                int n = data.getClipData().getItemCount();
+                List<Uri> uris = new ArrayList<>();
+                for (int i = 0; i < n; i++) {
+                    try {
+                        Uri u = data.getClipData().getItemAt(i).getUri();
+                        if (u != null) uris.add(u);
+                    } catch (Throwable ignored) {}
+                }
+                if (!uris.isEmpty()) {
+                    results = uris.toArray(new Uri[0]);
+                }
+            }
             if ((results == null || results.length == 0) && pendingCaptureUri != null) {
                 // Camera/video/audio capture intents don't return data via
                 // the Intent, they write to the URI we passed in.

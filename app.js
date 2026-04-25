@@ -8580,6 +8580,20 @@ async function fileToText(file){
     return String(res?.data?.text || '').trim();
   }
 
+  async function withTimeout(promise, ms){
+    const timeoutMs = Math.max(1000, Number(ms || 0) || 0);
+    if (!timeoutMs) return await promise;
+    let timer = null;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error('timeout')), timeoutMs);
+    });
+    try{
+      return await Promise.race([promise, timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   async function cloudOcrDataUrl(dataUrl, meta={}){
     const settings = getSettings();
     const policy = canUseCloudFeature('ocr', meta, settings);
@@ -8644,23 +8658,25 @@ async function fileToText(file){
     const profile = getTranscribeProfileConfig();
     const enhanced = await preprocessImageDataUrl(dataUrl);
     const psmList = [window.Tesseract?.PSM?.AUTO, window.Tesseract?.PSM?.SINGLE_BLOCK].filter(v => typeof v !== 'undefined');
+    const ocrTimeoutMs = Number(meta?.ocrTimeoutMs || 17000);
+    const isKbIngest = String(meta?.mode || '').toLowerCase() === 'kb_ingest';
     const candidates = [];
     const sources = [enhanced, dataUrl];
     for (const src of sources){
       for (const langCode of langCandidates){
-        for (const psm of psmList){
+        for (const psm of (isKbIngest ? psmList.slice(0, 1) : psmList)){
           try{
-            const t = await runTesseract(src, langCode, psm);
+            const t = await withTimeout(runTesseract(src, langCode, psm), ocrTimeoutMs);
             if (t){
               candidates.push({ text: t, lang: langCode });
               // Early-stop for good OCR to keep ingest responsive on large PDFs.
-              if (t.length >= 320) break;
+              if (t.length >= (isKbIngest ? 220 : 320)) break;
             }
           }catch(_){ }
         }
-        if ((candidates[candidates.length - 1]?.text || '').length >= 320) break;
+        if ((candidates[candidates.length - 1]?.text || '').length >= (isKbIngest ? 220 : 320)) break;
       }
-      if ((candidates[candidates.length - 1]?.text || '').length >= 320) break;
+      if ((candidates[candidates.length - 1]?.text || '').length >= (isKbIngest ? 220 : 320)) break;
     }
     if (!candidates.length){
       try{
@@ -8840,6 +8856,9 @@ async function fileToText(file){
     const { onProgress } = opts;
     if (!window.pdfjsLib) throw new Error('pdf.js غير متاح');
     const profile = getTranscribeProfileConfig();
+    const mode = String(opts?.mode || '').toLowerCase();
+    const isKbIngest = mode === 'kb_ingest';
+    const fastScale = isKbIngest ? Math.max(1.25, Math.min(1.65, profile.scale || 1.7)) : profile.scale;
     const pdfjsLib = window.pdfjsLib;
     try{ pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }catch(_){ }
 
@@ -8850,7 +8869,7 @@ async function fileToText(file){
       Array.from({ length: doc.numPages }, (_, i) => i + 1),
       async (p) => {
         const page = await doc.getPage(p);
-        const viewport = page.getViewport({ scale: profile.scale });
+        const viewport = page.getViewport({ scale: fastScale });
         const content = await page.getTextContent();
         const lines = buildLinesFromTextItems(content.items || []).map((line) => ({
           ...line,
@@ -8863,14 +8882,16 @@ async function fileToText(file){
         const shouldRunOcr = isOcrEnabled() && (nativeLooksWeak || profile.runOcrOnDigital);
 
         if (shouldRunOcr){
-          const dataUrl = await renderPdfPageToDataUrl(page, Math.max(1.6, profile.scale));
+          const dataUrl = await renderPdfPageToDataUrl(page, Math.max(isKbIngest ? 1.3 : 1.6, fastScale));
           const ocrText = await ocrDataUrl(dataUrl, undefined, {
             file,
             fileName: file?.name || 'document.pdf',
             page: p,
             pages: doc.numPages,
             sizeMB: Number(((Number(file?.size || 0) || 0) / 1048576).toFixed(2)),
-            hintText: pageText
+            hintText: pageText,
+            mode: isKbIngest ? 'kb_ingest' : '',
+            ocrTimeoutMs: isKbIngest ? 12000 : 17000
           });
           if (ocrText && (!pageText || !profile.preferNative || scoreTextReliability(ocrText) > nativeReliability || ocrText.length > pageText.length || scoreArabicQuality(ocrText) >= scoreArabicQuality(pageText))){
             pageText = ocrText.trim();
@@ -8895,7 +8916,7 @@ async function fileToText(file){
           text: pageText
         };
       },
-      profile.parallel
+      isKbIngest ? Math.max(2, profile.parallel || 2) : profile.parallel
     );
 
     const sortedPages = pages.sort((a, b) => a.page - b.page);
@@ -14381,6 +14402,7 @@ async function runResearchAgent(topicOverride){
         showStatus(`معالجة ${added + perFileResults.length + 1}/${picked.length}: ${name}`, true);
         if (/\.pdf$/i.test(name) || String(file.type || '').toLowerCase() === 'application/pdf'){
           const result = await extractPdfStrategic(file, {
+            mode: 'kb_ingest',
             onProgress: (done, total, meta = {}) => {
               const method = meta.method === 'ocr' ? 'OCR' : 'نص مباشر';
               showStatus(`معالجة ${name} • ${done}/${total} • ${method}`, true);
