@@ -8550,12 +8550,24 @@ async function fileToText(file){
     if (!endpoints.length) return '';
     const b64 = String(dataUrl || '').split(',')[1] || '';
     if (!b64) return '';
+    let mimeType = String(meta.mimeType || '').trim();
+    if (!mimeType){
+      const dm = /^data:([^;,]+);base64,/i.exec(String(dataUrl || ''));
+      if (dm) mimeType = String(dm[1] || '').split(';')[0].trim();
+    }
+    if (!mimeType) mimeType = 'image/png';
     for (const endpoint of endpoints){
       try{
         const r = await fetch(endpoint, {
           method:'POST',
           headers: { 'Content-Type':'application/json', ...buildAuthHeaders(settings) },
-          body: JSON.stringify({ imageBase64: b64, fileName: meta.fileName || 'page.png', page: meta.page || 1, lang: getOcrLang() })
+          body: JSON.stringify({
+            imageBase64: b64,
+            mimeType,
+            fileName: meta.fileName || 'page.png',
+            page: meta.page || 1,
+            lang: getOcrLang()
+          })
         });
         if (!r.ok) continue;
         const ct = (r.headers.get('content-type') || '').toLowerCase();
@@ -8580,6 +8592,52 @@ async function fileToText(file){
     const arabic = (s.match(/[\u0600-\u06FF]/g) || []).length;
     const weird = (s.match(/[\\|_~`^]/g) || []).length;
     return (arabic / letters) - (weird / Math.max(letters, 1));
+  }
+
+  /** Letter+digit density — low values often mean noisy OCR garbage. */
+  function ocrLetterDigitRatio(txt){
+    const s = String(txt || '').trim();
+    if (!s.length) return 0;
+    const good = (s.match(/[\p{L}\p{N}]/gu) || []).length;
+    return good / s.length;
+  }
+
+  /**
+   * Heuristic: local Tesseract output is too poor to trust for KB / weak PDFs.
+   * Triggers cloud / vision OCR even when the string is long but mostly junk.
+   */
+  function isWeakOcrOutput(text, langHint){
+    const s = String(text || '').trim();
+    if (!s) return true;
+    if (s.length < 48) return true;
+    if (ocrLetterDigitRatio(s) < 0.38) return true;
+    const junk = (s.match(/[|{}[\]§◆■▪▫◇○●]/g) || []).length;
+    if (junk > Math.min(40, Math.max(12, s.length * 0.06))) return true;
+    const lh = String(langHint || '').toLowerCase();
+    if (lh.includes('ara')){
+      const ar = (s.match(/[\u0600-\u06FF]/g) || []).length;
+      if (ar > 0 && scoreArabicQuality(s) < 0.12) return true;
+    }
+    return false;
+  }
+
+  function pickBetterOcrCandidate(local, cloud, langHint){
+    const L = String(local || '').trim();
+    const C = String(cloud || '').trim();
+    if (!C) return L;
+    if (!L) return C;
+    const wL = isWeakOcrOutput(L, langHint);
+    const wC = isWeakOcrOutput(C, langHint);
+    if (wL && !wC) return C;
+    if (!wL && wC) return L;
+    const score = (t) => {
+      const s = String(t || '').trim();
+      if (!s) return -1;
+      return scoreArabicQuality(s) + ocrLetterDigitRatio(s) * 2 + Math.min(s.length / 6000, 1);
+    };
+    const d = score(C) - score(L);
+    if (Math.abs(d) > 0.02) return d > 0 ? C : L;
+    return C.length >= L.length ? C : L;
   }
 
   function needsArabicOcrFallback(text, lang){
@@ -8615,14 +8673,33 @@ async function fileToText(file){
         if (fallback) candidates.push(fallback);
       }catch(_){ }
     }
-    let best = candidates.sort((a,b)=>b.length-a.length)[0] || '';
-    if (profile.useCloudOcr && best.length < 80){
-      try{
-        const cloud = await cloudOcrDataUrl(enhanced, meta);
-        if (cloud && cloud.length > best.length) best = cloud;
-      }catch(_){ }
+    let localBest = candidates.sort((a,b)=>b.length-a.length)[0] || '';
+    const langHint = usedLang;
+    if (!profile.useCloudOcr){
+      return localBest.trim();
     }
-    return best.trim();
+    let cloudBest = '';
+    const tryCloud = async (src, extraMeta) => {
+      try{
+        const c = await cloudOcrDataUrl(src, { ...meta, ...extraMeta });
+        if (c && (!cloudBest || pickBetterOcrCandidate(cloudBest, c, langHint) === c)){
+          cloudBest = c;
+        }
+      }catch(_){ }
+    };
+    const weakLocal = isWeakOcrOutput(localBest, langHint);
+    // Prefer vision / cloud when local is short OR structurally weak (scanned PDFs).
+    if (weakLocal || localBest.length < 120){
+      await tryCloud(enhanced, { mimeType:'image/png' });
+      // Raw page render sometimes works better for cloud vision than heavy binarization.
+      if (weakLocal || !cloudBest || isWeakOcrOutput(cloudBest, langHint)){
+        await tryCloud(dataUrl, { mimeType:'image/png' });
+      }
+    } else if (localBest.length < 220){
+      await tryCloud(enhanced, { mimeType:'image/png' });
+    }
+    const merged = pickBetterOcrCandidate(localBest, cloudBest, langHint);
+    return merged.trim();
   }
 
   async function renderPdfPageToDataUrl(page, scale=2){

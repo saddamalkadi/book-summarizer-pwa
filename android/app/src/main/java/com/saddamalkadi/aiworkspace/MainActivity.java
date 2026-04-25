@@ -3,6 +3,7 @@ package com.saddamalkadi.aiworkspace;
 import android.Manifest;
 import android.app.DownloadManager;
 import android.content.ActivityNotFoundException;
+import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -75,6 +76,12 @@ public class MainActivity extends BridgeActivity {
     /** The most recent {@link WebChromeClient.FileChooserParams} — kept so
      *  we can re-launch the chooser after the user grants CAMERA. */
     private WebChromeClient.FileChooserParams pendingChooserParams;
+
+    /** Mirrors {@code MODE_OPEN_MULTIPLE} for the active chooser — used when
+     *  merging {@link ClipData} (some OEMs return only one URI from
+     *  {@link WebChromeClient.FileChooserParams#parseResult}) and for
+     *  {@code GET_CONTENT} fallback. */
+    private boolean pendingAllowMultiple;
 
     /** Launcher for the chooser Intent. Registered in {@link #onCreate}. */
     private ActivityResultLauncher<Intent> fileChooserLauncher;
@@ -223,6 +230,8 @@ public class MainActivity extends BridgeActivity {
         }
         pendingFileCallback = filePathCallback;
         pendingChooserParams = params;
+        pendingAllowMultiple = params != null
+                && params.getMode() == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE;
 
         boolean wantsCapture = params != null && params.isCaptureEnabled();
         String[] accept = params != null ? params.getAcceptTypes() : null;
@@ -275,8 +284,11 @@ public class MainActivity extends BridgeActivity {
             // Chooser with optional camera/video/audio capture intents as
             // initial intents so the user can take a photo / record audio
             // directly from the <input capture> element.
+            // Do not mix camera/video initial intents with multi-select: several
+            // OEM WebView stacks drop EXTRA_ALLOW_MULTIPLE or return only one URI
+            // when the chooser merges capture routes with SAF.
             List<Intent> captureIntents = new ArrayList<>();
-            if (allowCamera) {
+            if (allowCamera && !pendingAllowMultiple) {
                 Intent photo = buildCameraCaptureIntent();
                 if (photo != null) captureIntents.add(photo);
                 Intent video = buildVideoCaptureIntent(accept);
@@ -303,6 +315,14 @@ public class MainActivity extends BridgeActivity {
                 Intent fallback = new Intent(Intent.ACTION_GET_CONTENT);
                 fallback.addCategory(Intent.CATEGORY_OPENABLE);
                 fallback.setType("*/*");
+                if (pendingAllowMultiple) {
+                    fallback.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                }
+                String[] mimeTypes = normalizeMimeTypes(params.getAcceptTypes());
+                if (mimeTypes != null && mimeTypes.length > 0) {
+                    fallback.putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes);
+                    fallback.setType(collapseMimeTypes(mimeTypes));
+                }
                 fileChooserLauncher.launch(Intent.createChooser(fallback, "اختيار ملف"));
                 Log.w(TAG, "chooser_launch_fallback_get_content");
                 return true;
@@ -330,6 +350,8 @@ public class MainActivity extends BridgeActivity {
             }
 
             Uri[] results = WebChromeClient.FileChooserParams.parseResult(code, data);
+            results = mergeChooserUris(results, data);
+
             if ((results == null || results.length == 0) && pendingCaptureUri != null) {
                 // Camera/video/audio capture intents don't return data via
                 // the Intent, they write to the URI we passed in.
@@ -356,7 +378,48 @@ public class MainActivity extends BridgeActivity {
             pendingCaptureUri = null;
             pendingChooserParams = null;
             pendingNeedsCamera = false;
+            pendingAllowMultiple = false;
         }
+    }
+
+    private static boolean listContainsUri(List<Uri> list, Uri candidate) {
+        if (candidate == null) return true;
+        for (Uri u : list) {
+            if (u != null && u.equals(candidate)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Combines {@link WebChromeClient.FileChooserParams#parseResult} with
+     * explicit {@link ClipData} iteration. Some Android builds return a single
+     * URI from parseResult even when the user picked several documents; ClipData
+     * then holds the full selection.
+     */
+    private Uri[] mergeChooserUris(Uri[] parsed, Intent data) {
+        List<Uri> out = new ArrayList<>();
+        if (parsed != null) {
+            for (Uri u : parsed) {
+                if (u != null && !listContainsUri(out, u)) out.add(u);
+            }
+        }
+        if (data != null) {
+            ClipData clip = data.getClipData();
+            if (clip != null) {
+                for (int i = 0; i < clip.getItemCount(); i++) {
+                    ClipData.Item item = clip.getItemAt(i);
+                    if (item == null) continue;
+                    Uri u = item.getUri();
+                    if (u != null && !listContainsUri(out, u)) out.add(u);
+                }
+            }
+            Uri single = data.getData();
+            if (single != null && !listContainsUri(out, single)) {
+                out.add(single);
+            }
+        }
+        if (out.isEmpty()) return parsed;
+        return out.toArray(new Uri[0]);
     }
 
     private void deliverChooserResult(Uri[] uris) {
