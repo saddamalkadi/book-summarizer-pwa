@@ -440,8 +440,9 @@
 
   function sanitizePublicAuthConfig(config = {}){
     const next = { ...(config || {}) };
+    next.adminEmail = '';
+    next.upgradeEmail = '';
     if (DISABLE_RUNTIME_ENDPOINT_EDITING_FOR_MANAGED && isManagedLockedRuntime()){
-      next.upgradeEmail = '';
       next.developerName = '';
     }
     return next;
@@ -1175,7 +1176,8 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       merged.googleClientId = String(prev.googleClientId).trim();
       merged.clientIdConfigured = true;
     }
-    if (String(prev.adminEmail || '').trim()) merged.adminEmail = String(prev.adminEmail).trim();
+    merged.adminEmail = '';
+    merged.upgradeEmail = '';
     return merged;
   }
 
@@ -1209,9 +1211,6 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     next.adminPasswordEnabled = true;
     next.adminEnabled = true;
     next.adminLoginMethod = String(prev.adminLoginMethod || 'password_or_google').trim() || 'password_or_google';
-    if (!String(next.adminEmail || '').trim() && String(prev.adminEmail || '').trim()){
-      next.adminEmail = String(prev.adminEmail).trim();
-    }
     return next;
   }
 
@@ -1534,8 +1533,8 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
       const normalized = sanitizePublicAuthConfig({
         ...remote,
         googleClientId: String(remote.googleClientId || '').trim(),
-        upgradeEmail: String(remote.upgradeEmail || local.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail).trim(),
-        adminEmail: String(remote.adminEmail || local.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim(),
+        upgradeEmail: '',
+        adminEmail: '',
         adminEnabled: !!remote.adminEnabled,
         adminPasswordEnabled: typeof remote.adminPasswordEnabled === 'boolean'
           ? remote.adminPasswordEnabled
@@ -4879,10 +4878,14 @@ function refreshDeepSearchBtn(){
   async function startNativeGoogleButtonFlow(){
     try{
       NATIVE_GOOGLE_RUNTIME.lastDialogMessage = '';
-      setAuthGateStatus('جارٍ فتح تسجيل Google عبر المتصفح ثم العودة إلى التطبيق...', 'busy');
-      await openGoogleAuthInBrowser();
+      setAuthGateStatus('جارٍ فتح نافذة اختيار حساب Google على الجهاز...', 'busy');
+      const plugin = await ensureNativeGoogleAuthReady();
+      if (!plugin) throw new Error('إضافة تسجيل Google الأصلية غير متاحة.');
+      const result = await plugin.signInWithGoogleButtonFlowForNativePlatform();
+      await handleNativeGoogleSignInResult(result, { silent: false });
     }catch(error){
-      setAuthGateStatus(`تعذر فتح تسجيل Google على Android: ${error?.message || error}`, 'error');
+      setAuthGateStatus(`تعذر تسجيل الدخول من Google: ${error?.message || error}`, 'error');
+      toast(`⚠️ ${error?.message || error}`);
     }
   }
 
@@ -4891,9 +4894,9 @@ function refreshDeepSearchBtn(){
       <div class="native-google-auth">
         <button class="native-google-btn" type="button" id="nativeGoogleSignInBtn">
           <span class="native-google-mark" aria-hidden="true">G</span>
-          <span>المتابعة باستخدام Google عبر المتصفح</span>
+          <span>المتابعة باستخدام Google</span>
         </button>
-        <div class="hint">سيتم فتح متصفح الجهاز لتسجيل الدخول ثم العودة إلى التطبيق تلقائيًا.</div>
+        <div class="hint">تسجيل دخول أصلي على Android: اختر الحساب ثم يعود التطبيق ويُكمِل الجلسة تلقائيًا دون نافذة متصفح منفصلة.</div>
       </div>`;
     $('nativeGoogleSignInBtn')?.addEventListener('click', startNativeGoogleButtonFlow);
   }
@@ -5018,6 +5021,7 @@ function refreshDeepSearchBtn(){
                   <select id="authEntryMode">
                     <option value="signin">تسجيل الدخول</option>
                     <option value="signup">إنشاء حساب جديد</option>
+                    <option value="admin">دخول الإدارة</option>
                   </select>
                 </div>
                 <div>
@@ -5303,7 +5307,7 @@ function refreshDeepSearchBtn(){
     if ($('upgradeRedeemRow')) $('upgradeRedeemRow').style.display = signedIn && role === 'admin' ? 'none' : '';
     if ($('upgradeCodeInput') && auth.upgradeCode && !$('upgradeCodeInput').value) $('upgradeCodeInput').value = auth.upgradeCode;
 
-    if ($('upgradeEmail')) $('upgradeEmail').value = settings.upgradeEmail || config.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail;
+    if ($('upgradeEmail')) $('upgradeEmail').value = settings.upgradeEmail || '';
     if ($('upgradeEmail')) $('upgradeEmail').closest('.row')?.style.setProperty('display', SHOW_UPGRADE_EMAIL_FIELD ? '' : 'none');
     if ($('adminUpgradePanel')) $('adminUpgradePanel').style.display = signedIn && role === 'admin' ? '' : 'none';
     if ($('adminUsersPanel')) $('adminUsersPanel').style.display = signedIn && role === 'admin' ? '' : 'none';
@@ -5371,19 +5375,28 @@ function refreshDeepSearchBtn(){
 function syncUnifiedAuthEntry(){
     const config = sanitizePublicAuthConfig(getEffectiveAuthConfig());
     const email = String($('authEntryEmail')?.value || '').trim().toLowerCase();
+    const modeSel = $('authEntryMode');
+    if (modeSel && !modeSel.querySelector('option[value="admin"]')){
+      const opt = document.createElement('option');
+      opt.value = 'admin';
+      opt.textContent = 'دخول الإدارة';
+      modeSel.appendChild(opt);
+    }
+    if (modeSel){
+      const adminOpt = modeSel.querySelector('option[value="admin"]');
+      if (adminOpt) adminOpt.hidden = !config.adminEnabled;
+      if (!config.adminEnabled && String(modeSel.value || '') === 'admin') modeSel.value = 'signin';
+    }
     const mode = String($('authEntryMode')?.value || 'signin').trim().toLowerCase();
-    const remoteAdminEmail = String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
-    const isAdminEntry = !!email && !!remoteAdminEmail && email === remoteAdminEmail;
+    const isAdminEntry = mode === 'admin';
     const adminPasswordEnabled = config.adminPasswordEnabled === true;
     const adminLoginMethod = String(config.adminLoginMethod || '').trim().toLowerCase();
     const healthPasswordReady = AUTH_RUNTIME.authHealth?.admin_password_ready === true;
     const adminGoogleReady = !!getAuthGoogleClientId();
     const managedWeb = !isNativePlatform() && isManagedHostedRuntime();
     /**
-     * v8.94 — When the backend has an admin email configured but the client doesn't yet know it
-     * (e.g. older worker that doesn't surface adminEmail, or a transient config fetch failure),
-     * keep the admin password field reachable on the official managed web + native shells so an
-     * admin can always paste their credentials. The worker still rejects wrong emails.
+     * v8.94 — Admin path uses explicit «دخول الإدارة» mode (no admin email in /auth/config).
+     * Managed web + native keep the admin password field when the server reports password support.
      */
     const adminPasswordServerReady = adminPasswordEnabled
       || adminLoginMethod === 'password_or_google'
@@ -5408,7 +5421,7 @@ function syncUnifiedAuthEntry(){
     if (hint) hint.textContent = isAdminEntry
       ? (adminGoogleOnly
         ? 'الخادم يعرض حاليًا "google_only" لحساب الإدارة. استخدم زر Google بالأسفل، أو فعّل APP_ADMIN_PASSWORD على الـ Worker لإعادة مسار كلمة المرور.'
-        : 'هذا الحساب يحتاج كلمة مرور الإدارة أو Google عندما تكون متاحة.')
+        : 'أدخل البريد الإداري وكلمة مرور الإدارة. يتحقق الخادم من البيانات دون عرض البريد الإداري في الإعدادات.')
       : (mode === 'signup'
         ? 'سيتم إنشاء حساب جديد (email/password) مع تخزين آمن للجلسة.'
         : 'تسجيل دخول حساب موجود (email/password).');
@@ -5805,7 +5818,32 @@ async function submitUnifiedAuthEntry(){
     const email = String($('authEntryEmail')?.value || '').trim().toLowerCase();
     const password = String($('authEntryPassword')?.value || '');
     const mode = String($('authEntryMode')?.value || 'signin').trim().toLowerCase();
-    let isAdminEntry = false;
+    const isAdminEntry = mode === 'admin';
+    let config;
+    try{
+      config = sanitizePublicAuthConfig(await loadRemoteAuthConfig(true).catch(() => getEffectiveAuthConfig()));
+    }catch(_){
+      config = sanitizePublicAuthConfig(getEffectiveAuthConfig());
+    }
+    const adminPasswordEnabled = config.adminPasswordEnabled === true;
+    const adminLoginMethod = String(config.adminLoginMethod || '').trim().toLowerCase();
+    const adminAllowsPassword = adminPasswordEnabled
+      || adminLoginMethod === 'password_or_google'
+      || adminLoginMethod === 'password_only';
+    const adminGoogleReady = !!String(config.googleClientId || '').trim();
+    const adminGoogleOnly = isAdminEntry && !adminAllowsPassword && adminGoogleReady;
+
+    if (isAdminEntry && !config.adminEnabled){
+      setAuthGateStatus('مسار دخول الإدارة غير مفعّل على هذا الخادم.', 'error');
+      return;
+    }
+    if (isAdminEntry && adminGoogleOnly){
+      setAuthGateStatus('جارٍ فتح تسجيل Google لحساب الإدارة...', 'busy');
+      if (isNativeAndroidPlatform()) await startNativeGoogleButtonFlow();
+      else await openGoogleAuthInBrowser();
+      return;
+    }
+
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
       setAuthGateStatus('أدخل بريدًا إلكترونيًا صالحًا أولًا.', 'error');
       return;
@@ -5814,25 +5852,15 @@ async function submitUnifiedAuthEntry(){
       setAuthGateStatus('كلمة المرور مطلوبة لتسجيل الدخول/إنشاء الحساب.', 'error');
       return;
     }
+    if (mode === 'signup' && isAdminEntry){
+      setAuthGateStatus('لا يمكن إنشاء حساب من مسار الإدارة. اختر «إنشاء حساب جديد».', 'error');
+      return;
+    }
     if (mode === 'signup' && String(password).length < 8){
       setAuthGateStatus('كلمة المرور يجب أن تكون 8 أحرف على الأقل.', 'error');
       return;
     }
     try{
-      const config = sanitizePublicAuthConfig(await loadRemoteAuthConfig(true).catch(() => getEffectiveAuthConfig()));
-      const adminEmail = String(config.adminEmail || DEFAULT_AUTH_CONFIG.adminEmail).trim().toLowerCase();
-      const adminPasswordEnabled = config.adminPasswordEnabled === true;
-      const adminLoginMethod = String(config.adminLoginMethod || '').trim().toLowerCase();
-      const adminAllowsPassword = adminPasswordEnabled
-        || adminLoginMethod === 'password_or_google'
-        || adminLoginMethod === 'password_only';
-      const adminGoogleReady = !!String(config.googleClientId || '').trim();
-      isAdminEntry = !!adminEmail && email === adminEmail;
-      if (isAdminEntry && !adminAllowsPassword && adminGoogleReady){
-        setAuthGateStatus('جارٍ فتح تسجيل Google لحساب الإدارة...', 'busy');
-        await openGoogleAuthInBrowser();
-        return;
-      }
 
       let payload = null;
       if (mode === 'signup' && !isAdminEntry){
@@ -6085,25 +6113,6 @@ async function submitUnifiedAuthEntry(){
     }
   }
 
-  function buildUpgradeMailto(account = getAuthState(), config = getEffectiveAuthConfig()){
-    const receiver = String(config.upgradeEmail || DEFAULT_AUTH_CONFIG.upgradeEmail || '').trim();
-    if (!receiver) return '';
-    const to = encodeURIComponent(receiver);
-    const subject = encodeURIComponent(`طلب ترقية حساب - ${account.email || 'مستخدم جديد'}`);
-    const body = encodeURIComponent([
-      'مرحبًا،',
-      '',
-      'أرغب في ترقية حسابي إلى الخطة المدفوعة.',
-      `الاسم: ${account.name || ''}`,
-      `البريد: ${account.email || ''}`,
-      `الخطة الحالية: ${getAccountPlanLabel(account.plan)}`,
-      `التاريخ: ${new Date().toLocaleString('ar-SA')}`,
-      '',
-      'يرجى إرسال كود الترقية لهذا الحساب.'
-    ].join('\n'));
-    return `mailto:${to}?subject=${subject}&body=${body}`;
-  }
-
   async function requestUpgradeByEmail(){
     const account = getAuthState();
     if (!hasValidAuthSession(account)){
@@ -6111,18 +6120,20 @@ async function submitUnifiedAuthEntry(){
       return;
     }
     try{
+      setAuthGateStatus('جارٍ إرسال طلب الترقية إلى الخادم...', 'busy');
       const payload = await fetchAuthJson('/auth/upgrade/request', {
         method: 'POST',
         body: JSON.stringify(buildSafeUpgradeRequestPayload(account))
-      }).catch(() => null);
-      const mailto = payload?.mailto || buildUpgradeMailto(account, getEffectiveAuthConfig());
-      if (!mailto) {
-        throw new Error('بريد الترقية غير مضبوط. أضف بريد الترقية من إعدادات الإدارة.');
+      });
+      if (!payload?.ok || payload?.recorded !== true){
+        throw new Error(payload?.error || 'تعذر تسجيل الطلب على الخادم.');
       }
-      window.location.href = mailto;
-      toast('✉️ تم تجهيز رسالة طلب الترقية');
+      setAuthGateStatus('تم استلام طلب الترقية. سنراجعه ونرسل كود التفعيل عندما يكون جاهزًا.', 'info');
+      toast('✅ تم إرسال طلب الترقية');
     }catch(error){
-      toast(`⚠️ تعذر تجهيز طلب الترقية: ${error?.message || error}`);
+      const msg = sanitizeAuthErrorMessage(error?.message || error);
+      setAuthGateStatus(`تعذر إرسال طلب الترقية: ${msg}`, 'error');
+      toast(`⚠️ ${msg}`);
     }
   }
 

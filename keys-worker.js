@@ -417,7 +417,6 @@ async function getPublicAuthConfig(env) {
     premiumEnabled: true,
     brandName: String(env.APP_BRAND_NAME || 'AI Workspace Studio').trim(),
     adminEnabled,
-    adminEmail,
     adminPasswordEnabled,
     adminLoginMethod: adminPasswordEnabled
       ? (adminGoogleEnabled ? 'password_or_google' : 'password_only')
@@ -435,8 +434,7 @@ async function getPublicAuthConfig(env) {
     voicePreferredLanguage: voice.preferredLanguage,
     voicePremiumOnly: false,
     userEmailPasswordEnabled: !!getUserDataStore(env),
-    transactionalEmailConfigured: transactional.configured,
-    upgradeEmail: String(env.APP_UPGRADE_EMAIL || env.UPGRADE_EMAIL || '').trim()
+    transactionalEmailConfigured: transactional.configured
   };
 }
 
@@ -1398,6 +1396,7 @@ function getUserStorageKey(email) {
 const ACCOUNT_KV_PREFIX = 'account:';
 const EMAIL_VERIFY_PREFIX = 'emailverify:';
 const PW_RESET_PREFIX = 'pwreset:';
+const UPGRADE_REQ_PREFIX = 'upgradereq:';
 // Cloudflare Workers WebCrypto currently rejects PBKDF2 iterations above 100000.
 const PBKDF2_ITERATIONS = 100000;
 
@@ -1982,12 +1981,48 @@ async function handleVoiceSynthesis(request, env) {
 async function handleUpgradeRequest(request, env) {
   try {
     const session = await requireSession(request, env);
-    const mailto = buildUpgradeMailto(session, String(env.APP_UPGRADE_EMAIL || ''));
-    return jsonResponse({
-      ok: true,
-      email: session.email,
-      mailto
-    }, 200);
+    const body = await parseJson(request);
+    const store = getUserDataStore(env);
+    if (!store || typeof store.put !== 'function') {
+      return jsonResponse({ error: 'Storage not configured.', code: 'STORAGE_NOT_CONFIGURED' }, 503);
+    }
+    const id = `${nowMs()}_${randomUrlToken().slice(0, 12)}`;
+    const record = {
+      type: 'upgrade_request',
+      userEmail: session.email,
+      userName: session.name,
+      plan: session.plan,
+      role: session.role,
+      note: String(body?.note || body?.message || '').trim().slice(0, 2000),
+      appVersion: String(body?.appVersion || '').trim().slice(0, 64),
+      createdAt: nowMs()
+    };
+    await store.put(`${UPGRADE_REQ_PREFIX}${id}`, JSON.stringify(record), { expirationTtl: 14 * 24 * 60 * 60 });
+
+    const adminInbox = String(env.APP_UPGRADE_EMAIL || env.UPGRADE_EMAIL || '').trim();
+    if (adminInbox && isValidEmail(adminInbox)) {
+      const subject = `Upgrade request — ${session.email}`;
+      const text = [
+        'New premium upgrade request (recorded server-side).',
+        '',
+        `User: ${session.name || ''} <${session.email}>`,
+        `Plan: ${session.plan}`,
+        `Role: ${session.role}`,
+        `Request id: ${id}`,
+        `App version: ${record.appVersion || 'n/a'}`,
+        '',
+        record.note ? `User note:\n${record.note}` : '(no user note)'
+      ].join('\n');
+      const safe = text.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+      await sendTransactionalEmail(env, {
+        to: adminInbox,
+        subject,
+        text,
+        html: `<pre style="font-family:system-ui,monospace;white-space:pre-wrap">${safe}</pre>`
+      });
+    }
+
+    return jsonResponse({ ok: true, recorded: true }, 200);
   } catch (error) {
     return jsonResponse({
       error: String(error?.message || error || 'Authentication required.'),
@@ -2566,25 +2601,6 @@ async function getGoogleVerificationKeys() {
     expiresAt: Date.now() + (maxAge * 1000)
   };
   return googleKeysCache.keys;
-}
-
-function buildUpgradeMailto(session, upgradeEmail) {
-  const receiver = String(upgradeEmail || '').trim();
-  if (!receiver) return '';
-  const to = encodeURIComponent(receiver);
-  const subject = encodeURIComponent(`طلب ترقية حساب - ${session.email}`);
-  const body = encodeURIComponent([
-    'مرحبًا،',
-    '',
-    'أرغب في ترقية حسابي إلى الخطة المدفوعة.',
-    `الاسم: ${session.name || ''}`,
-    `البريد: ${session.email || ''}`,
-    `الخطة الحالية: ${session.plan === 'premium' ? 'مدفوعة' : 'مجانية'}`,
-    `التاريخ: ${new Date().toLocaleString('ar-SA')}`,
-    '',
-    'يرجى إرسال كود الترقية لهذا الحساب.'
-  ].join('\n'));
-  return `mailto:${to}?subject=${subject}&body=${body}`;
 }
 
 async function parseJson(request) {
