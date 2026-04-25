@@ -9127,6 +9127,61 @@ async function fileToText(file){
     return await callOpenAIChat({ apiKey: settings.apiKey, baseUrl, model, messages, max_tokens: clamp(Number(settings.maxOut||2000), 256, 8000) });
   }
 
+  async function cloudDeriveKbDocumentRepresentation(rawStructuredText, meta = {}){
+    const source = String(rawStructuredText || '').trim();
+    if (!source) return { structuredText:'', indexText:'' };
+    const settings = getSettings();
+    if (!hasAuthReady(settings)) throw new Error('المصادقة غير مكتملة (API Key أو Gateway URL)');
+    const policy = canUseCloudFeature('polish', { textLength: source.length }, settings);
+    if (!policy.ok) throw new Error(policy.reason);
+
+    const prompt = [
+      'أعد تنظيم النص المستخرج من PDF ليصبح مناسبًا للفهم والفهرسة في قاعدة معرفة.',
+      'المطلوب:',
+      '- حافظ على ترتيب الصفحات [Page N].',
+      '- استخرج بنية منطقية: عناوين، فقرات، قوائم.',
+      '- حافظ على اللغة الأصلية (عربي/إنجليزي/مختلط) بدون ترجمة.',
+      '- أصلح تشويه OCR قدر الإمكان بدون اختلاق معلومات.',
+      '- أعد JSON فقط بهذه الصيغة:',
+      '{"structuredText":"...","indexText":"..."}',
+      '- structuredText: نص منسق قابل للقراءة.',
+      '- indexText: نص أخف للفهرسة (سطر أو سطرين لكل فقرة) مع الحفاظ على page order.',
+      '',
+      `fileName=${String(meta?.fileName || '')}`,
+      `langHint=${String(meta?.langHint || '')}`,
+      '',
+      source
+    ].join('\n');
+
+    let raw = '';
+    if (settings.provider === 'gemini'){
+      const model = (settings.model || 'gemini-1.5-flash').trim();
+      raw = await callGemini({ apiKey: settings.geminiKey, model, prompt, maxOut: Math.max(2400, Number(settings.maxOut || 2400)) });
+    } else {
+      const baseUrl = effectiveBaseUrl(settings) || (settings.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1');
+      let model = settings.model || 'openai/gpt-4o-mini';
+      if (settings.provider === 'openrouter') model = maybeOnlineModel(model, { ...settings, webMode: 'off' });
+      const messages = [
+        { role: 'system', content: 'أنت محرك فهم مستندات OCR. أعد JSON صالح فقط دون أي نص إضافي.' },
+        { role: 'user', content: prompt }
+      ];
+      raw = await callOpenAIChat({
+        apiKey: settings.apiKey,
+        baseUrl,
+        model,
+        messages,
+        max_tokens: clamp(Number(settings.maxOut || 2800), 600, 10000)
+      });
+    }
+    const parsed = extractLikelyJson(raw) || {};
+    const structuredText = String(parsed?.structuredText || '').trim();
+    const indexText = String(parsed?.indexText || '').trim();
+    return {
+      structuredText: structuredText || source,
+      indexText: indexText || source.replace(/\s+/g, ' ').trim()
+    };
+  }
+
   async function fileToTextSmart(file, opts={}){
     const name = (file?.name || '').toLowerCase();
     const type = (file?.type || '').toLowerCase();
@@ -14408,15 +14463,37 @@ async function runResearchAgent(topicOverride){
               showStatus(`معالجة ${name} • ${done}/${total} • ${method}`, true);
             }
           });
-          text = String(result?.structuredText || result?.text || '').trim();
-          kbIndexText = String(result?.indexText || result?.text || '').trim();
-          kbStructuredText = String(result?.structuredText || result?.text || '').trim();
+          const localStructured = String(result?.structuredText || result?.text || '').trim();
+          const localIndex = String(result?.indexText || result?.text || '').trim();
+          let finalStructured = localStructured;
+          let finalIndex = localIndex;
+          const weakLocalQuality = (
+            String(result?.quality || '') === 'تحتاج مراجعة'
+            || Number(result?.ocrPages || 0) > Number(result?.nativePages || 0)
+            || scoreTextReliability(localStructured) < 0.58
+          );
+          if (weakLocalQuality){
+            try{
+              const cloudRep = await cloudDeriveKbDocumentRepresentation(localStructured, {
+                fileName: name,
+                langHint: detectDominantScriptLang(localStructured) || getOcrLang()
+              });
+              if (scoreTextReliability(cloudRep?.structuredText || '') >= scoreTextReliability(localStructured) || String(cloudRep?.structuredText || '').length > localStructured.length){
+                finalStructured = String(cloudRep?.structuredText || finalStructured).trim();
+                finalIndex = String(cloudRep?.indexText || finalIndex).trim();
+              }
+            }catch(_){}
+          }
+          text = finalStructured;
+          kbIndexText = finalIndex;
+          kbStructuredText = finalStructured;
           kbDocRep = {
             totalPages: Number(result?.totalPages || 0),
             nativePages: Number(result?.nativePages || 0),
             ocrPages: Number(result?.ocrPages || 0),
             quality: String(result?.quality || ''),
             profile: String(result?.profile || ''),
+            derivedBy: weakLocalQuality ? 'cloud_or_local_best' : 'local',
             pages: Array.isArray(result?.pages) ? result.pages.map((pg) => ({
               page: Number(pg?.page || 0),
               method: String(pg?.method || ''),
