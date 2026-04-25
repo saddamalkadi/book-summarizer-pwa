@@ -114,18 +114,18 @@
         <h2>ملف التثبيت المباشر</h2>
         <p>استخدم هذا الملف للتثبيت اليدوي على الهاتف. النسخة مبنية من نفس شفرة الويب المعتمدة في المستودع.</p>
         <ul>
-          <li>الإصدار: <code>v9.6.2 RC</code></li>
-          <li>رقم البناء: <code>versionCode 962</code></li>
+          <li>الإصدار: <code>v9.6.3 RC</code></li>
+          <li>رقم البناء: <code>versionCode 963</code></li>
           <li>الحد الأدنى للنظام: <code>Android 7.0+</code></li>
           <li>نوع البناء: <code>release</code> (R8 + shrinkResources + v2 signature)</li>
-          <li>جديد هذه النسخة (hotfix): <strong>إصلاح Chat image preview persistence regression</strong> — الصورة كانت تظهر لحظة داخل الرسالة ثم تختفي بعد أول rerender. السبب الجذري: <code>saveThreads()</code> كان يُنقل المرفق الكامل (thumbnail inline dataUrl) داخل JSON الثريد الثقيل؛ على الأجهزة التي يكون <code>localStorage</code> فيها مزدحمًا كان <code>setItem</code> يفشل صامتًا بـ <code>QuotaExceededError</code>، فيعود <code>getCurThread()</code> يقرأ نسخة قديمة بلا <code>dataUrl</code>. الإصلاحات: (1) <strong>سجل أصول معاينة مستقل</strong> <code>aistudio_attachment_assets_v1</code> يخزّن dataUrls المرفقات بمعزل عن الثريد، مع حدّ 48 أصلًا و LRU pruning آلي. (2) <strong>ذاكرة تشغيل داخل الجلسة</strong> <code>ATTACHMENT_ASSET_RUNTIME</code> تُبقي الصورة في الذاكرة حتى لو رفض القرص الكتابة. (3) <code>saveThreads</code> أصبح ذكيًا: إذا فشل بالسعة، يُجرّد <code>dataUrl</code> من كل previews (السجل بديل) ويعيد المحاولة، وينطبع في console مع عدد الأصول المُنقولة. (4) <code>renderUserAttachmentPreviewsHtml</code> يحلّ المصدر عبر <code>resolveAttachmentPreviewSrc</code>: inline → runtime cache → asset registry. (5) <code>hydrateAttachmentPreviewsInPlace</code> يعيد بناء <code>preview.dataUrl</code> من السجل عند كل <code>renderChat</code> إذا ضاع قرصيًا، ويسدّ <code>previewStatus</code> الناقصة. (6) إزالة <code>loading="lazy"</code> من IMG معاينة لأن بعض WebView على Android كان يؤخر تحميل data: URLs طويلة. (7) logs منظّمة: <code>image_preview_stored_to_registry</code>, <code>image_preview_persisted_render</code>, <code>image_preview_hydrated_success</code>, <code>image_preview_hydrated_missing_source</code>, <code>image_preview_source_lost</code>, <code>asset_registry_pruned</code>, <code>thread_save_retry_stripped_inline</code>. كل تحسينات v9.6 (thumbnail / hydration / rich cards) وv9.5 (AndroidDownloadBridge / DownloadListener / split STT diag) وv9.4 (file chooser + mic permissions) وv9.3 (voice mutex + artifact engine) محفوظة.</li>
+          <li>جديد هذه النسخة (hotfix): <strong>تحديث فعلي لحزمة Android المنشورة</strong> مع تضمين أحدث إصلاحات التطبيق الحالية (Google APK post-selection finalize + KB PDF OCR fallback + رفع ملفات متعددة مع نتيجة لكل ملف). تم تحديث النسخة المعروضة وربط <code>latest.apk</code> بنفس البناء الحالي لضمان عدم تنزيل حزمة قديمة.</li>
         </ul>
         <div class="actions">
           <a class="btn primary" id="apkPrimary" href="./ai-workspace-studio-latest.apk" download="ai-workspace-studio-latest.apk">تنزيل APK</a>
           <a class="btn ghost" href="https://github.com/saddamalkadi/book-summarizer-pwa/releases/latest/download/AI-Workspace-Studio-latest.apk" target="_blank" rel="noopener noreferrer">رابط احتياطي</a>
           <a class="btn ghost" href="../">فتح نسخة الويب</a>
         </div>
-        <div class="meta">اسم الإصدار المحدد: <code>ai-workspace-studio-v9.6.2-android-release.apk</code></div>
+        <div class="meta">اسم الإصدار المحدد: <code>ai-workspace-studio-v9.6.3-android-release.apk</code></div>
       </article>
     </section>
 
