@@ -410,8 +410,48 @@
     strategicRefreshTimer: 0,
     stableComposerMeta: '',
     stableFilesCount: 0,
-    stableMsgCount: 0
+    stableMsgCount: 0,
+    /* v9.6.12 — opt-in instrumentation. Turn on with `?uiPerf=1` or
+       localStorage.aistudio_ui_perf = '1'. Captures input/render/sync
+       timings to confirm typing latency claims. */
+    instrumentEnabled: false,
+    lastInputAt: 0,
+    lastRenderAt: 0,
+    lastSyncQueuedAt: 0,
+    inputCount: 0,
+    renderCount: 0,
+    syncQueuedCount: 0,
+    syncDeferredCount: 0,
+    inputMaxMs: 0
   };
+  (function initUiPerfFlag(){
+    try{
+      const fromQuery = /[?&]uiPerf=1/i.test(String(location.search || ''));
+      const fromStorage = (() => {
+        try{ return localStorage.getItem('aistudio_ui_perf') === '1'; }catch(_){ return false; }
+      })();
+      if (fromQuery || fromStorage) UI_PERF_RUNTIME.instrumentEnabled = true;
+    }catch(_){ /* noop */ }
+  })();
+  function uiPerfLog(label, payload){
+    if (!UI_PERF_RUNTIME.instrumentEnabled) return;
+    try{
+      const stamp = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      // eslint-disable-next-line no-console
+      console.info('[uiPerf]', label, Object.assign({ t: Math.round(stamp) }, payload || {}));
+    }catch(_){ /* noop */ }
+  }
+  function uiPerfSnapshot(){
+    return {
+      enabled: UI_PERF_RUNTIME.instrumentEnabled,
+      inputCount: UI_PERF_RUNTIME.inputCount,
+      renderCount: UI_PERF_RUNTIME.renderCount,
+      syncQueuedCount: UI_PERF_RUNTIME.syncQueuedCount,
+      syncDeferredCount: UI_PERF_RUNTIME.syncDeferredCount,
+      inputMaxMs: Number(UI_PERF_RUNTIME.inputMaxMs.toFixed ? UI_PERF_RUNTIME.inputMaxMs.toFixed(2) : UI_PERF_RUNTIME.inputMaxMs)
+    };
+  }
+  try{ window.uiPerfSnapshot = uiPerfSnapshot; }catch(_){ /* noop */ }
 
   /** Cloud STT segment end: silence hold + max length; post-STT auto-send is separate (see below). */
   const VOICE_CLOUD_MAX_RECORD_MS_VOICE = 16800;
@@ -443,7 +483,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v9.6.11 TEST';
+  const WEB_RELEASE_LABEL = 'v9.6.12 TEST';
   const AI_STUDIO_DEBUG_LOG = (() => {
     try{ return /[?&]debug=1/i.test(String(location.search||'')) || (localStorage.getItem('aistudio_debug_log') === '1'); }catch(_){ return false; }
   })();
@@ -460,10 +500,16 @@
   function setTypingActive(){
     UI_PERF_RUNTIME.typingActive = true;
     clearTimeout(UI_PERF_RUNTIME.typingTimer);
+    /* v9.6.12 — keep the typing window short so renderChat() and cloud
+       sync resume promptly when the user pauses, but long enough to
+       cover natural inter-keystroke gaps in Arabic and English. */
     UI_PERF_RUNTIME.typingTimer = window.setTimeout(() => {
       UI_PERF_RUNTIME.typingActive = false;
       try{ syncComposerMeta(); }catch(_){ }
-    }, 260);
+      try{
+        if (typeof scheduleCloudSync === 'function') scheduleCloudSync('typing-idle');
+      }catch(_){ }
+    }, 320);
   }
   function isTypingActive(){
     return UI_PERF_RUNTIME.typingActive === true;
@@ -2077,10 +2123,29 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   function scheduleCloudSync(reason = 'change'){
     const auth = getAuthState();
     if (!hasValidAuthSession(auth) || !auth.email || CLOUD_RUNTIME.muted) return;
+    if (UI_PERF_RUNTIME.instrumentEnabled){
+      UI_PERF_RUNTIME.syncQueuedCount += 1;
+      UI_PERF_RUNTIME.lastSyncQueuedAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      uiPerfLog('sync:queued', { reason });
+    }
     clearTimeout(CLOUD_RUNTIME.syncTimer);
+    /* v9.6.12 — when the user is actively typing, defer the cloud sync
+       further so we never hit /storage/state on every keystroke. The
+       keystroke handler (setTypingActive → typing-idle) re-arms this
+       timer once the user pauses. */
+    const delay = UI_PERF_RUNTIME.typingActive ? 5200 : 3200;
+    if (UI_PERF_RUNTIME.typingActive && UI_PERF_RUNTIME.instrumentEnabled){
+      UI_PERF_RUNTIME.syncDeferredCount += 1;
+      uiPerfLog('sync:deferred', { reason, delayMs: delay });
+    }
     CLOUD_RUNTIME.syncTimer = window.setTimeout(() => {
+      if (UI_PERF_RUNTIME.typingActive){
+        // Still typing — push the sync further out without firing.
+        scheduleCloudSync(reason);
+        return;
+      }
       syncCloudNow(reason).catch(() => {});
-    }, 3200);
+    }, delay);
   }
 
   async function hydrateCloudState(force = false){
@@ -13933,6 +13998,19 @@ ${clip}` });
   function renderChat(){
     const log = $('chatLog');
     if (!log) return;
+    const renderStart = UI_PERF_RUNTIME.instrumentEnabled
+      ? ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now())
+      : 0;
+    /* v9.6.12 — quickest possible bail-out when the user is typing.
+       We re-check this here too so any incidental renderChat() call
+       (storage hooks, scroll-dock, attachments, etc.) doesn't rebuild
+       the chat DOM on the keystroke critical path. */
+    if (UI_PERF_RUNTIME.typingActive && !window.__AI_STUDIO_FORCE_CHAT_RENDER__){
+      if (UI_PERF_RUNTIME.instrumentEnabled){
+        uiPerfLog('render:skip-typing', {});
+      }
+      return;
+    }
     const thread = getCurThread();
     const msgs = thread.messages || [];
     // v9.6.1 — hydrate legacy/partial attachmentPreviews so a message
@@ -13953,8 +14031,8 @@ ${clip}` });
     } catch(err) {
       logPreviewError('hydrate_messages_pass', err, { tid: thread?.id || '' });
     }
-    // During active typing, avoid rebuilding long chat DOM trees on every incidental call.
-    if (UI_PERF_RUNTIME.typingActive && !window.__AI_STUDIO_FORCE_CHAT_RENDER__) return;
+    // v9.6.12 — top-of-function bail-out already handled this. Leaving
+    // a defensive second guard removed so we don't double-skip.
     log.innerHTML = '';
 
     if (!msgs.length){
@@ -14090,6 +14168,12 @@ ${clip}` });
     renderThreadHistory();
     scheduleStrategicWorkspaceRefresh(260);
     scheduleChatScrollDockSync();
+    if (UI_PERF_RUNTIME.instrumentEnabled){
+      const renderEnd = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      UI_PERF_RUNTIME.renderCount += 1;
+      UI_PERF_RUNTIME.lastRenderAt = renderEnd;
+      uiPerfLog('render', { ms: Math.round((renderEnd - (renderStart || renderEnd)) * 100) / 100, msgs: msgs.length });
+    }
   }
 
   function updateChatAttachChips(){
@@ -17133,6 +17217,11 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
     }
     let composerResizeRaf = 0;
     function onComposerInputTyping(){
+      const start = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      // v9.6.12 — Mark typing active synchronously so renderChat() and
+      // scheduleCloudSync() bail out before they touch the DOM/storage on
+      // the keystroke critical path.
+      try{ setTypingActive(); }catch(_){ /* noop */ }
       if (!composerResizeRaf){
         composerResizeRaf = requestAnimationFrame(() => {
           composerResizeRaf = 0;
@@ -17140,6 +17229,14 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
         });
       }
       scheduleComposerMetaDebounced();
+      if (UI_PERF_RUNTIME.instrumentEnabled){
+        const end = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        const dur = end - start;
+        UI_PERF_RUNTIME.inputCount += 1;
+        UI_PERF_RUNTIME.lastInputAt = end;
+        if (dur > UI_PERF_RUNTIME.inputMaxMs) UI_PERF_RUNTIME.inputMaxMs = dur;
+        uiPerfLog('input', { ms: Math.round(dur * 100) / 100, len: ($('chatInput')?.value || '').length });
+      }
     }
     $('chatInput').addEventListener('input', onComposerInputTyping);
     window.addEventListener('resize', scheduleShellLayoutRefresh);
