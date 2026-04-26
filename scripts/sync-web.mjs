@@ -7,6 +7,8 @@ const files = [
   'CNAME',
   'index.html',
   'auth-bridge.html',
+  'connectivity.html',
+  'enterprise.html',
   'app.js',
   'sw.js',
   'manifest.webmanifest',

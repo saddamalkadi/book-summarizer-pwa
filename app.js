@@ -430,7 +430,14 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v9.6.8 TEST';
+  const WEB_RELEASE_LABEL = 'v9.6.9 TEST';
+  const AI_STUDIO_DEBUG_LOG = (() => {
+    try{ return /[?&]debug=1/i.test(String(location.search||'')) || (localStorage.getItem('aistudio_debug_log') === '1'); }catch(_){ return false; }
+  })();
+  function devLog(){
+    if (!AI_STUDIO_DEBUG_LOG) return;
+    try{ console.info.apply(console, arguments); }catch(_){ }
+  }
   const RELEASE_CHANNEL = 'rc';
   const HIDE_PUBLIC_AAB = true;
   const DISABLE_RUNTIME_ENDPOINT_EDITING_FOR_MANAGED = true;
@@ -2621,9 +2628,9 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   }
 
   async function readPdfPageCount(file){
-    if (!file || !window.pdfjsLib) return 0;
+    if (!file) return 0;
+    try{ await ensurePdfJs(); }catch(_){ return 0; }
     const pdfjsLib = window.pdfjsLib;
-    try{ pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }catch(_){ }
     const ab = await file.arrayBuffer();
     const doc = await pdfjsLib.getDocument({ data: ab }).promise;
     const pages = Number(doc?.numPages || 0);
@@ -4675,7 +4682,22 @@ function refreshDeepSearchBtn(){
         input.style.height = `${Math.min(maxH, Math.max(minH, input.scrollHeight))}px`;
       }
     }
-    scheduleShellLayoutRefresh();
+    scheduleShellLayoutRefreshFromComposer();
+  }
+
+  let _shellFromComposerTimer = 0;
+  function scheduleShellLayoutRefreshFromComposer(){
+    clearTimeout(_shellFromComposerTimer);
+    _shellFromComposerTimer = window.setTimeout(() => scheduleShellLayoutRefresh(), 120);
+  }
+
+  function debounce(fn, wait){
+    let t = 0;
+    return function(...args){
+      clearTimeout(t);
+      const ctx = this;
+      t = window.setTimeout(() => fn.apply(ctx, args), wait);
+    };
   }
 
   function setComposerMode(mode){
@@ -5857,6 +5879,135 @@ function syncUnifiedAuthEntry(){
     return getCapacitorPluginProxy('App');
   }
 
+  function getCapacitorPreferencesPlugin(){
+    return getCapacitorPluginProxy('Preferences');
+  }
+  function getBiometricAuthPlugin(){
+    return getCapacitorPluginProxy('BiometricAuthNative', { nativeOnly: true });
+  }
+
+  const BIO_PREF_ENABLED = 'aistudio_bio_enabled';
+  const BIO_PREF_SESSION = 'aistudio_bio_session_json';
+
+  async function clearBiometricUnlockStorage(){
+    try{
+      const P = getCapacitorPreferencesPlugin();
+      await P?.remove?.({ key: BIO_PREF_ENABLED });
+      await P?.remove?.({ key: BIO_PREF_SESSION });
+    }catch(_){ }
+    try{ localStorage.removeItem('aistudio_bio_enabled_ui'); }catch(_){ }
+  }
+
+  async function maybeBiometricResumeSession(){
+    if (!isNativeAndroidPlatform()) return;
+    if (hasValidAuthSession()) return;
+    const P = getCapacitorPreferencesPlugin();
+    if (!P?.get) return;
+    let en = '';
+    try{ en = String((await P.get({ key: BIO_PREF_ENABLED }))?.value || ''); }catch(_){ }
+    if (en !== '1') return;
+    let raw = '';
+    try{ raw = String((await P.get({ key: BIO_PREF_SESSION }))?.value || ''); }catch(_){ }
+    if (!raw) return;
+    const bio = getBiometricAuthPlugin();
+    if (!bio?.authenticate) return;
+    try{
+      await bio.authenticate({
+        reason: 'فتح الجلسة المحفوظة',
+        cancelTitle: 'إلغاء',
+        allowDeviceCredential: true,
+        androidTitle: 'AI Workspace Studio'
+      });
+    }catch(_){
+      return;
+    }
+    try{
+      const parsed = JSON.parse(raw);
+      saveAuthState({ ...getAuthState(), ...parsed });
+      await verifyStoredAuthSession(false).catch(() => null);
+      if (hasValidAuthSession()){
+        closeAuthGate(true);
+        syncAccountUi();
+      }
+    }catch(_){ }
+  }
+
+  async function enableBiometricUnlockFromSettings(){
+    if (!isNativeAndroidPlatform()){
+      toast('متاح في تطبيق Android');
+      return;
+    }
+    if (!hasValidAuthSession()){
+      toast('سجّل الدخول أولاً ثم فعّل الخيار');
+      return;
+    }
+    const bio = getBiometricAuthPlugin();
+    const P = getCapacitorPreferencesPlugin();
+    if (!bio?.authenticate || !P?.set) {
+      toast('الوحدة الأصلية غير جاهزة — نفّذ npm run cap:sync وأعد تثبيت التطبيق');
+      return;
+    }
+    let check = { isAvailable: false, deviceIsSecure: false };
+    try{ check = await bio.checkBiometry(); }catch(_){ }
+    if (!check.isAvailable && !check.deviceIsSecure){
+      toast('تعذر العثور على بصمة أو قفل شاشة مهيأ');
+      return;
+    }
+    try{
+      await bio.authenticate({
+        reason: 'تأكيد لتفعيل فتح الجلسة بالبصمة',
+        allowDeviceCredential: true,
+        androidTitle: 'AI Workspace Studio'
+      });
+    }catch(_){
+      toast('ألغيت التحقق');
+      if ($('biometricLoginToggle')) $('biometricLoginToggle').checked = false;
+      return;
+    }
+    const snap = JSON.stringify(getAuthState());
+    await P.set({ key: BIO_PREF_SESSION, value: snap });
+    await P.set({ key: BIO_PREF_ENABLED, value: '1' });
+    try{ localStorage.setItem('aistudio_bio_enabled_ui', '1'); }catch(_){ }
+    if ($('biometricLoginToggle')) $('biometricLoginToggle').checked = true;
+    void syncBiometricSettingsRow();
+    toast('✅ تم تفعيل فتح الجلسة بالبصمة');
+  }
+
+  async function disableBiometricUnlockFromSettings(){
+    await clearBiometricUnlockStorage();
+    if ($('biometricLoginToggle')) $('biometricLoginToggle').checked = false;
+    void syncBiometricSettingsRow();
+    toast('تم إيقاف الدخول بالبصمة');
+  }
+
+  async function syncBiometricSettingsRow(){
+    const row = $('biometricSettingsRow');
+    const hint = $('biometricSettingsHint');
+    const cb = $('biometricLoginToggle');
+    if (!row || !cb) return;
+    const show = isNativeAndroidPlatform();
+    row.style.display = show ? '' : 'none';
+    if (!show){
+      if (hint) hint.textContent = 'على الويب/ـPWA استخدم تسجيل الدخول العادية. البصمة متاحة في تطبيق Android فقط. iOS: قريباً عند بناء Capacitor iOS.';
+      return;
+    }
+    let on = false;
+    try{
+      const P = getCapacitorPreferencesPlugin();
+      if (P?.get){
+        const v = await P.get({ key: BIO_PREF_ENABLED });
+        on = String(v?.value || '') === '1';
+      }
+    }catch(_){ }
+    try{ if (on) localStorage.setItem('aistudio_bio_enabled_ui', '1'); }catch(_){ }
+    cb.checked = on;
+    if (hint){
+      hint.textContent = on
+        ? 'يُعاد مفتاح الجلسة من تخزين آمن للجهاز بعد التحقق — لا تُحفظ كلمات مرور المشرف نصّاً.'
+        : 'بعد تسجيل الدخول، فعّل المفتاح ووافق عند طلب البصمة/قفل الجهاز.';
+    }
+  }
+
   function normalizeAuthPayload(payload){
     const sessionToken = String(payload?.sessionToken || payload?.session_token || '').trim();
     if (!sessionToken) return null;
@@ -6659,6 +6810,7 @@ async function submitUnifiedAuthEntry(){
   }
 
   function logoutCurrentAccount(){
+    void clearBiometricUnlockStorage();
     stopVoicePlayback();
     clearAuthState();
     clearUsageState();
@@ -6709,6 +6861,7 @@ async function submitUnifiedAuthEntry(){
     try{
       await loadRemoteAuthConfig(true).catch(() => null);
       await verifyStoredAuthSession(false).catch(() => null);
+      await maybeBiometricResumeSession();
       syncAccountUi();
       const account = getAccountRuntimeState();
       if (account.authRequired && !hasValidAuthSession()){
@@ -8458,9 +8611,8 @@ function newThread(){
   }
   
 async function extractTextFromPdf(arrayBuffer){
-  if (!window.pdfjsLib) throw new Error('pdf.js غير متاح');
+  await ensurePdfJs();
   const pdfjsLib = window.pdfjsLib;
-  try{ pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }catch(_){}
   const doc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   let all = '';
   for (let p=1; p<=doc.numPages; p++){
@@ -8474,7 +8626,7 @@ async function extractTextFromPdf(arrayBuffer){
 }
 
 async function extractTextFromDocx(arrayBuffer){
-  if (!window.mammoth) throw new Error('mammoth غير متاح');
+  await ensureMammoth();
   const res = await window.mammoth.extractRawText({ arrayBuffer });
   return String(res?.value || '').trim();
 }
@@ -8535,7 +8687,8 @@ async function fileToText(file){
 
   function logDocumentIngestDiagnostics(meta = {}){
     try{
-      console.info('[doc-ingest]', {
+      if (!AI_STUDIO_DEBUG_LOG) return;
+      devLog('[doc-ingest]', {
         fileName: String(meta.fileName || ''),
         fileType: String(meta.fileType || ''),
         fileKind: String(meta.fileKind || ''),
@@ -8810,7 +8963,7 @@ async function fileToText(file){
     if (!dataUrl) return '';
     const force = opts?.force === true || meta?.forceOcr === true;
     if (!force && !isOcrEnabled()) return '';
-    if (!window.Tesseract) throw new Error('Tesseract غير متاح');
+    await ensureTesseract();
     const usedLang = (lang || getOcrLang() || 'ara+eng').trim();
     const profile = getTranscribeProfileConfig();
     const enhanced = await preprocessImageDataUrl(dataUrl);
@@ -8972,10 +9125,9 @@ async function fileToText(file){
     const { onProgress } = opts;
     const forceOcr = opts.forceOcr === true;
     const textOnly = opts.textOnly === true;
-    if (!window.pdfjsLib) throw new Error('pdf.js غير متاح');
+    await ensurePdfJs();
     const profile = getTranscribeProfileConfig();
     const pdfjsLib = window.pdfjsLib;
-    try{ pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }catch(_){ }
 
     const ab = await file.arrayBuffer();
     const doc = await pdfjsLib.getDocument({ data: ab }).promise;
@@ -9287,10 +9439,10 @@ async function fileToText(file){
   }
 
   async function detectPdfEmbeddedTextMeta(file, opts = {}){
-    if (!file || !window.pdfjsLib) return { detected:false, chars:0, pages:0 };
+    if (!file) return { detected:false, chars:0, pages:0 };
+    try{ await ensurePdfJs(); }catch(_){ return { detected:false, chars:0, pages:0 }; }
     const maxPages = clamp(Number(opts.maxPages || 8), 1, 30);
     const pdfjsLib = window.pdfjsLib;
-    try{ pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }catch(_){ }
     const ab = await file.arrayBuffer();
     const doc = await pdfjsLib.getDocument({ data: ab }).promise;
     const pagesToCheck = Math.min(maxPages, Number(doc.numPages || 0));
@@ -9311,11 +9463,11 @@ async function fileToText(file){
   }
 
   async function renderPdfPageImagesForVision(file, opts = {}){
-    if (!file || !window.pdfjsLib) return [];
+    if (!file) return [];
+    try{ await ensurePdfJs(); }catch(_){ return []; }
     const maxPages = clamp(Number(opts.maxPages || 3), 1, 8);
     const scale = Math.max(1.1, Math.min(1.7, Number(opts.scale || 1.3)));
     const pdfjsLib = window.pdfjsLib;
-    try{ pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }catch(_){ }
     const ab = await file.arrayBuffer();
     const doc = await pdfjsLib.getDocument({ data: ab }).promise;
     const pages = Math.min(Number(doc.numPages || 0), maxPages);
@@ -10193,6 +10345,10 @@ async function fileToText(file){
       const entry = resolveDownloadEntry(node.dataset.docxPreviewId);
       if (!entry){
         node.textContent = 'تعذر العثور على المستند المطلوب للمعاينة.';
+        continue;
+      }
+      try{ await ensureMammoth(); }catch(_){
+        node.textContent = 'معاينة Word غير متاحة في هذه الجلسة. يمكنك تنزيل المستند مباشرة.';
         continue;
       }
       if (!window.mammoth?.convertToHtml){
@@ -12350,6 +12506,42 @@ ${clip}` });
     cache.set(href, p);
     return p;
   }
+
+  const PDFJS_LIB_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+  const PDFJS_WORKER_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const TESSERACT_LIB_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+  const MAMMOTH_LIB_URL = 'https://cdn.jsdelivr.net/npm/mammoth@1.9.0/mammoth.browser.min.js';
+  let _pdfJsLoadP = null;
+  let _tesseractLoadP = null;
+  let _mammothLoadP = null;
+
+  async function ensurePdfJs(){
+    if (typeof window !== 'undefined' && window.pdfjsLib) return;
+    if (!_pdfJsLoadP){
+      _pdfJsLoadP = (async() => {
+        await loadScriptOnce(PDFJS_LIB_URL);
+        try{
+          const L = window.pdfjsLib;
+          if (L?.GlobalWorkerOptions) L.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_URL;
+        }catch(_){ }
+      })();
+    }
+    await _pdfJsLoadP;
+    if (!window.pdfjsLib) throw new Error('pdf.js غير متاح');
+  }
+  async function ensureTesseract(){
+    if (typeof window !== 'undefined' && window.Tesseract) return;
+    if (!_tesseractLoadP) _tesseractLoadP = loadScriptOnce(TESSERACT_LIB_URL);
+    await _tesseractLoadP;
+    if (!window.Tesseract) throw new Error('Tesseract غير متاح');
+  }
+  async function ensureMammoth(){
+    if (typeof window !== 'undefined' && window.mammoth) return;
+    if (!_mammothLoadP) _mammothLoadP = loadScriptOnce(MAMMOTH_LIB_URL);
+    await _mammothLoadP;
+    if (!window.mammoth) throw new Error('mammoth غير متاح');
+  }
+
   async function ensureArtifactLib(kind){
     const spec = ARTIFACT_LIBS[kind];
     if (!spec) return true;
@@ -13689,8 +13881,9 @@ ${clip}` });
   // errors with Logcat entries from MainActivity's WebChromeClient.
   function logAttachmentEvent(stage, extra){
     try{
+      if (!AI_STUDIO_DEBUG_LOG) return;
       const platform = isNativePlatform() ? (getCapacitorPlatform() || 'native') : 'web';
-      console.info('[attach]', stage, Object.assign({ platform, ts: Date.now() }, extra || {}));
+      devLog('[attach]', stage, Object.assign({ platform, ts: Date.now() }, extra || {}));
     }catch(_){ /* never throw from logging */ }
   }
   function logAttachmentError(stage, err, extra){
@@ -15476,6 +15669,7 @@ let pinOnly = false;
     refreshModeButtons();
     syncAccountUi();
     refreshStrategicWorkspace().catch(()=>{});
+    void syncBiometricSettingsRow();
   }
 
   function saveSettingsFromUI(){
@@ -16559,7 +16753,8 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
     $('historyDrawerBtn')?.addEventListener('click', openThreadDrawer);
     $('threadDrawerCloseBtn')?.addEventListener('click', closeThreadDrawer);
     $('threadDrawerOverlay')?.addEventListener('click', closeThreadDrawer);
-    $('threadSearchInput')?.addEventListener('input', renderThreadHistory);
+    const renderThreadHistoryDebounced = debounce(() => { try{ renderThreadHistory(); }catch(_){ } }, 200);
+    $('threadSearchInput')?.addEventListener('input', renderThreadHistoryDebounced);
     $('threadExportAllBtn')?.addEventListener('click', exportAllThreads);
     $('pinSideBtn')?.addEventListener('click', () => {
       setSidebarPinned(!getSidebarPinned());
@@ -16603,10 +16798,22 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
       $('chatInput')?.focus();
       toast('ℹ️ تم إلغاء وضع التعديل');
     });
-    $('chatInput').addEventListener('input', () => {
-      resizeComposerInput($('chatInput'));
-      syncComposerMeta();
-    });
+    let composerMetaTimer = 0;
+    function scheduleComposerMetaDebounced(){
+      clearTimeout(composerMetaTimer);
+      composerMetaTimer = window.setTimeout(() => { try{ syncComposerMeta(); }catch(_){ } }, 100);
+    }
+    let composerResizeRaf = 0;
+    function onComposerInputTyping(){
+      if (!composerResizeRaf){
+        composerResizeRaf = requestAnimationFrame(() => {
+          composerResizeRaf = 0;
+          resizeComposerInput($('chatInput'));
+        });
+      }
+      scheduleComposerMetaDebounced();
+    }
+    $('chatInput').addEventListener('input', onComposerInputTyping);
     window.addEventListener('resize', scheduleShellLayoutRefresh);
     document.addEventListener('focusin', syncKeyboardEditingState, true);
     document.addEventListener('focusout', () => {
@@ -16736,7 +16943,8 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
     $('pickModelBtn').addEventListener('click', openModelHub);
     $('modelModalClose').addEventListener('click', () => openModelModal(false));
     $('modelModalBackdrop').addEventListener('click', () => openModelModal(false));
-    $('modelSearch').addEventListener('input', renderModelHub);
+    const renderModelHubDebounced = debounce(() => { try{ renderModelHub(); }catch(_){ } }, 180);
+    $('modelSearch').addEventListener('input', renderModelHubDebounced);
     $('modelProviderFilter').addEventListener('change', renderModelHub);
     $('modelCategoryFilter').addEventListener('change', renderModelHub);
     $('modelSort').addEventListener('change', renderModelHub);
@@ -17219,6 +17427,11 @@ ${e?.message||e}`, false);
 
     // settings
     $('saveSettingsBtn').addEventListener('click', saveSettingsFromUI);
+    $('biometricLoginToggle')?.addEventListener('change', (e) => {
+      if (e.target?.checked) void enableBiometricUnlockFromSettings();
+      else void disableBiometricUnlockFromSettings();
+    });
+    void syncBiometricSettingsRow();
     $('settingsHealthBtn')?.addEventListener('click', runStrategicHealthCheckPro);
     $('settingsDefaultsBtn')?.addEventListener('click', applyStrategicDefaults);
     $('settingsRecommendModelBtn')?.addEventListener('click', recommendStrategicModel);

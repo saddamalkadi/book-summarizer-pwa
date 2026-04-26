@@ -1,8 +1,10 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="9.6.1">
+<html lang="ar" dir="rtl" data-appver="9.6.9">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
+  <meta http-equiv="X-Content-Type-Options" content="nosniff" />
     <title>AI Workspace Studio</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0b1020" />
@@ -15,14 +17,7 @@
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 
 
-  <!-- PDF/DOCX parsing (v3) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.9.0/mammoth.browser.min.js"></script>
-  <!-- OCR (v4) -->
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
-
-
+  <!-- PDF.js, Mammoth, Tesseract: loaded on first use from app.js (ensurePdfJs / ensureMammoth / ensureTesseract) for faster first paint -->
   <!-- DOCX export (Canvas) -->
   <script>
     if (typeof global === 'undefined') window.global = window;
@@ -76,6 +71,20 @@
     }
     @supports (height: 100dvh){
       :root{--app-vh:100dvh;}
+    }
+    @media (prefers-reduced-motion: reduce){
+      *,*::before,*::after{
+        animation-duration:0.01ms !important;
+        animation-iteration-count:1 !important;
+        transition-duration:0.01ms !important;
+        scroll-behavior:auto !important;
+      }
+    }
+    .chatbar textarea#chatInput{
+      padding-bottom:max(10px, env(safe-area-inset-bottom, 0px));
+    }
+    @supports (padding: max(0px)){
+      #page-chat .chatbar{ padding-bottom: max(8px, env(safe-area-inset-bottom)); }
     }
     *{box-sizing:border-box}
     html,body{height:100%}
@@ -6027,6 +6036,16 @@ body.dark *::-webkit-scrollbar-thumb:hover{
                   <input id="gatewayUrl" type="text" placeholder="مثال: https://api.saddamalkadi.com" />
                 </div>
               </div>
+              <div class="row" id="biometricSettingsRow" style="margin-top:10px">
+                <div class="col">
+                  <label class="pill" style="display:flex; align-items:flex-start; gap:10px; cursor:pointer;">
+                    <input type="checkbox" id="biometricLoginToggle" style="margin-top:4px" />
+                    <span><strong>فتح الجلسة بالبصمة / قفل الجهاز</strong> (Android فقط — يخزّن مفتاح الجلسة آمنًا ولا يحفظ كلمة مرور المشرف نصًا)</span>
+                  </label>
+                  <p class="hint" id="biometricSettingsHint" style="margin:8px 0 0; line-height:1.7"></p>
+                </div>
+              </div>
+              <p class="hint" style="margin:8px 0 0"><a href="./connectivity.html" target="_blank" rel="noopener noreferrer">فحص الاتصال والـ API</a> · <a href="./enterprise.html" target="_blank" rel="noopener noreferrer">شبكات المؤسسات</a></p>
 
               <!-- ── مفاتيح API ── -->
               <div class="settings-section-label" style="margin-top:14px">مفاتيح API</div>

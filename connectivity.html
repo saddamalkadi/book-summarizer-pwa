@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>فحص الاتصال — AI Workspace Studio</title>
+  <style>
+    body{font-family:system-ui,sans-serif;max-width:880px;margin:24px auto;padding:0 16px;line-height:1.6;background:#0b1020;color:#e8ecff}
+    h1{font-size:1.25rem}
+    table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13px}
+    td,th{border:1px solid #243046;padding:8px;vertical-align:top;word-break:break-all}
+    th{background:#121a2e;text-align:right}
+    .ok{color:#4ade80}
+    .fail{color:#f87171}
+    .note{font-size:12px;color:#94a3b8;margin-top:16px}
+    a{color:#93c5fd}
+  </style>
+</head>
+<body>
+  <h1>فحص الاتصال والواجهات البرمجية</h1>
+  <p>تُنفَّذ الاختبارات من المتصفح. إذا فشل تحميل صفحة التطبيق من شبكة معيّنة (مثل بعض شبكات الإنترنت في اليمن) المشكلة تكون عادة <strong>DNS/مسار مزود/حظر جغرافي/WAF</strong> وليست من كود الواجهة. اعرض هذه الصفحة لمسؤول الشبكة لإضافة الاستثناءات.</p>
+  <div id="out">جارٍ الفحص…</div>
+  <p class="note">نطاقات موصى بها للسماح: <code>app.saddamalkadi.com</code>، <code>api.saddamalkadi.com</code>، وفي وضع التحويل السحابي <code>convert.saddamalkadi.com</code> عند الاستخدام. عطّل التحديات الزائدة (Challenge) لحركة المستخدمين العاديين في لوحة Cloudflare إذا كانت تمنع WebView.</p>
+  <script>
+  (function(){
+    const W = { ok:'✓', fail:'✗' };
+    const rows = [];
+    async function one(label, url, opt){
+      const started = performance.now();
+      try{
+        const r = await fetch(url, Object.assign({ cache:'no-store', mode:'cors' }, opt||{}));
+        const ms = Math.round(performance.now()-started);
+        return { label, url, status:r.status, ok:r.ok, ms, err:'' };
+      }catch(e){
+        const ms = Math.round(performance.now()-started);
+        return { label, url, status:0, ok:false, ms, err:String(e&&e.message||e) };
+      }
+    }
+    (async function(){
+      const baseApp = 'https://app.saddamalkadi.com';
+      const api = 'https://api.saddamalkadi.com';
+      rows.push(await one('تطبيق — الرئيسية', baseApp + '/index.html'));
+      rows.push(await one('تطبيق — app.js (جزء)', baseApp + '/app.js', { method:'HEAD' }));
+      rows.push(await one('API — health', api + '/health'));
+      rows.push(await one('API — auth config', api + '/auth/config'));
+      rows.push(await one('API — v1 models', api + '/v1/models', { headers:{ 'Authorization':'Bearer test', 'HTTP-Referer': baseApp } } ));
+      const sw = await caches && navigator.serviceWorker ? 'يُدير المتصفح Service Worker' : 'لا يوجد SW (طبيعي خارج التثبيت)';
+      let html = '<table><tr><th>الاختبار</th><th>الحالة</th><th>زمن (ms)</th><th>ملاحظة</th></tr>';
+      for (const r of rows){
+        const ok = r.ok && r.status < 500;
+        html += '<tr><td>'+r.label+'<div style="font-size:11px;opacity:.75">'+r.url+'</div></td><td class="'+(ok?'ok':'fail')+'">'+(ok?W.ok:W.fail)+' '+r.status+'</td><td>'+r.ms+'</td><td>'+(r.err||'')+'</td></tr>';
+      }
+      html += '</table><p class="note">Service worker: '+sw+'</p>';
+      document.getElementById('out').innerHTML = html;
+    })();
+  })();
+  </script>
+</body>
+</html>

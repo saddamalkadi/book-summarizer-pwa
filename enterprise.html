@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>الوصول من الشبكات المُدارة — AI Workspace Studio</title>
+  <style>
+    body{font-family:system-ui,sans-serif;max-width:820px;margin:32px auto;padding:0 18px;line-height:1.75;background:#f6f7fb;color:#0b1020}
+    code{background:#e8ecf7;padding:2px 6px;border-radius:6px;font-size:13px}
+    ul{padding-right:20px}
+  </style>
+</head>
+<body>
+  <h1>الوصول من المؤسسات والمدارس</h1>
+  <p>التطبيق يعمل عبر <strong>HTTPS</strong> فقط. لا يوجد تتبع إعلاني مدمج في الواجهة؛ مفاتيح الـ API تبقى في المتصفح/الجهاز ولا تُرسل إلا إلى المزود الذي تختاره (OpenRouter/Gemini) أو عبر <strong>البوابة</strong> عند تفعيل وضع gateway.</p>
+  <h2>نطاقات يُنصح بسماحها (allowlist)</h2>
+  <ul>
+    <li><code>app.saddamalkadi.com</code> — واجهة الويب وملفات الـ PWA</li>
+    <li><code>api.saddamalkadi.com</code> — البوابة الموحّدة (مصادقة، نماذج عبر البوابة، تحويل مستندات عند الضبط)</li>
+    <li><code>convert.saddamalkadi.com</code> — إن وُجد وتم ضبط التحويل السحابي للمستندات في إعداداتك</li>
+    <li>شبكات توصيل المحتوى: <code>cdn.jsdelivr.net</code>، <code>cdnjs.cloudflare.com</code> — لتحميل مكتبات مثل pdf.js وTesseract عند الحاجة (lazy-load من التطبيق)</li>
+  </ul>
+  <h2>ملاحظات أمنية</h2>
+  <ul>
+    <li>صفحة تنزيل الـ APK مخصّصة للاختبار وتعرض بصمة الملف عند التحديث.</li>
+    <li>يُفضّل عدم تفعيل «تحديات» Cloudflare المفرطة للمستخدمين العاديين لأنها قد تكسر WebView في تطبيق Android.</li>
+    <li>إن منعت الشبكة منطقة معيّنة جغرافياً دون VPN، فهذا خارج سيطرة الكود — يحتاج ضبط DNS/Cloudflare أو مسار بديل.</li>
+  </ul>
+  <p><a href="./">← العودة للتطبيق</a> · <a href="./connectivity.html">فحص الاتصال</a></p>
+</body>
+</html>
