@@ -264,6 +264,7 @@
     cloudRetryMax: 2,
     ocrCloudEndpoint: 'https://api.saddamalkadi.com/ocr',
     ocrLang: 'ara+eng',
+    documentReadMode: 'auto',
     freeMode: false,
     costGuard: 'balanced',
     maxCloudPdfPages: 25,
@@ -428,7 +429,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v9.6.5';
+  const WEB_RELEASE_LABEL = 'v9.6.6 TEST';
   const RELEASE_CHANNEL = 'rc';
   const HIDE_PUBLIC_AAB = true;
   const DISABLE_RUNTIME_ENDPOINT_EDITING_FOR_MANAGED = true;
@@ -660,7 +661,7 @@ async function buildKbIndex(rawSettings = getSettings()){
   if (!embedModel) return toast('⚠️ حدّد نموذج التضمين في صفحة المعرفة.');
   if (!hasAuthReady(settings)) return toast(getMissingAuthMessage(settings));
 
-  const files = loadFiles(pid).filter(f => (f.text||'').trim());
+  const files = loadFiles(pid).filter((f) => (f.kbIndexText || f.text || '').trim());
   if (!files.length) return toast('⚠️ لا توجد نصوص مستخرجة من الملفات.');
 
   showStatus('فهرسة KB…', true);
@@ -668,7 +669,8 @@ async function buildKbIndex(rawSettings = getSettings()){
 
   const chunks = [];
   for (const f of files){
-    const chs = chunkText(f.text, kb.chunkSize, kb.overlap);
+    const source = String(f.kbIndexText || f.text || '').trim();
+    const chs = chunkText(source, kb.chunkSize, kb.overlap);
     for (const c of chs){
       chunks.push({ id: makeId('kb'), projectId: pid, fileName: f.name, chunkIdx: c.idx, text: c.text, embedding: null });
     }
@@ -8457,6 +8459,33 @@ async function fileToText(file){
     return (s.ocrLang || 'ara+eng').trim() || 'ara+eng';
   }
 
+  function getDocumentReadMode(){
+    const s = getSettings();
+    const mode = String(s.documentReadMode || 'auto').trim().toLowerCase();
+    if (mode === 'vision' || mode === 'force_ocr' || mode === 'text_only') return mode;
+    return 'auto';
+  }
+
+  function logDocumentIngestDiagnostics(meta = {}){
+    try{
+      console.info('[doc-ingest]', {
+        fileName: String(meta.fileName || ''),
+        fileType: String(meta.fileType || ''),
+        fileKind: String(meta.fileKind || ''),
+        fileCount: Number(meta.fileCount || 0),
+        embeddedTextDetected: !!meta.embeddedTextDetected,
+        embeddedTextChars: Number(meta.embeddedTextChars || 0),
+        ocrUsed: !!meta.ocrUsed,
+        visionPathUsed: !!meta.visionPathUsed,
+        provider: String(meta.provider || ''),
+        model: String(meta.model || ''),
+        modelVisionCapable: !!meta.modelVisionCapable,
+        mode: String(meta.mode || getDocumentReadMode()),
+        finalContentSource: String(meta.finalContentSource || '')
+      });
+    }catch(_){}
+  }
+
   function isOcrEnabled(){
     const toggle = $('ocrToggle') || $('useOcrToggle');
     return toggle ? !!toggle.checked : true;
@@ -8813,6 +8842,8 @@ async function fileToText(file){
 
   async function extractPdfStrategic(file, opts={}){
     const { onProgress } = opts;
+    const forceOcr = opts.forceOcr === true;
+    const textOnly = opts.textOnly === true;
     if (!window.pdfjsLib) throw new Error('pdf.js غير متاح');
     const profile = getTranscribeProfileConfig();
     const pdfjsLib = window.pdfjsLib;
@@ -8834,7 +8865,7 @@ async function fileToText(file){
         let pageText = lines.map((l) => l.text).join('\n').trim();
         let method = 'native';
         const nativeLooksWeak = !pageText || pageText.length < profile.minNativeChars || needsArabicOcrFallback(pageText, getOcrLang());
-        const shouldRunOcr = isOcrEnabled() && (nativeLooksWeak || profile.runOcrOnDigital);
+        const shouldRunOcr = !textOnly && isOcrEnabled() && (forceOcr || nativeLooksWeak || profile.runOcrOnDigital);
 
         if (shouldRunOcr){
           const dataUrl = await renderPdfPageToDataUrl(page, Math.max(1.6, profile.scale));
@@ -9064,6 +9095,55 @@ async function fileToText(file){
     return await callOpenAIChat({ apiKey: settings.apiKey, baseUrl, model, messages, max_tokens: clamp(Number(settings.maxOut||2000), 256, 8000) });
   }
 
+  async function cloudDeriveKbDocumentRepresentation(rawStructuredText, meta = {}){
+    const source = String(rawStructuredText || '').trim();
+    if (!source) return { structuredText:'', indexText:'' };
+    const settings = getSettings();
+    if (!hasAuthReady(settings)) throw new Error('المصادقة غير مكتملة (API Key أو Gateway URL)');
+    const policy = canUseCloudFeature('polish', { textLength: source.length }, settings);
+    if (!policy.ok) throw new Error(policy.reason);
+
+    const prompt = [
+      'أعد تنظيم النص المستخرج من PDF ليصبح أفضل للفهم والفهرسة في قاعدة المعرفة.',
+      '- حافظ على ترتيب الصفحات [Page N].',
+      '- حافظ على اللغة الأصلية (عربي/إنجليزي/مختلط) بدون ترجمة.',
+      '- أصلح تشويه OCR قدر الإمكان دون اختلاق محتوى.',
+      '- أعد JSON فقط بالصيغتين:',
+      '{"structuredText":"...","indexText":"..."}',
+      `fileName=${String(meta?.fileName || '')}`,
+      `langHint=${String(meta?.langHint || '')}`,
+      '',
+      source
+    ].join('\n');
+
+    let raw = '';
+    if (settings.provider === 'gemini'){
+      const model = (settings.model || 'gemini-1.5-flash').trim();
+      raw = await callGemini({ apiKey: settings.geminiKey, model, prompt, maxOut: Math.max(2400, Number(settings.maxOut || 2400)) });
+    } else {
+      const baseUrl = effectiveBaseUrl(settings) || (settings.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1');
+      let model = settings.model || 'openai/gpt-4o-mini';
+      if (settings.provider === 'openrouter') model = maybeOnlineModel(model, { ...settings, webMode: 'off' });
+      raw = await callOpenAIChat({
+        apiKey: settings.apiKey,
+        baseUrl,
+        model,
+        messages: [
+          { role: 'system', content: 'أنت محرك فهم مستندات OCR. أعد JSON صالح فقط.' },
+          { role: 'user', content: prompt }
+        ],
+        max_tokens: clamp(Number(settings.maxOut || 2800), 600, 10000)
+      });
+    }
+    const parsed = extractLikelyJson(raw) || {};
+    const structuredText = String(parsed?.structuredText || '').trim();
+    const indexText = String(parsed?.indexText || '').trim();
+    return {
+      structuredText: structuredText || source,
+      indexText: indexText || source.replace(/\s+/g, ' ').trim()
+    };
+  }
+
   async function fileToTextSmart(file, opts={}){
     const name = (file?.name || '').toLowerCase();
     const type = (file?.type || '').toLowerCase();
@@ -9076,6 +9156,50 @@ async function fileToText(file){
       return await extractTextFromPdfSmart(file, opts);
     }
     return await fileToText(file);
+  }
+
+  async function detectPdfEmbeddedTextMeta(file, opts = {}){
+    if (!file || !window.pdfjsLib) return { detected:false, chars:0, pages:0 };
+    const maxPages = clamp(Number(opts.maxPages || 8), 1, 30);
+    const pdfjsLib = window.pdfjsLib;
+    try{ pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }catch(_){ }
+    const ab = await file.arrayBuffer();
+    const doc = await pdfjsLib.getDocument({ data: ab }).promise;
+    const pagesToCheck = Math.min(maxPages, Number(doc.numPages || 0));
+    let chars = 0;
+    for (let p = 1; p <= pagesToCheck; p += 1){
+      try{
+        const page = await doc.getPage(p);
+        const content = await page.getTextContent();
+        const text = buildLinesFromTextItems(content.items || []).map((l) => l.text).join(' ').trim();
+        chars += String(text || '').length;
+      }catch(_){}
+    }
+    return {
+      detected: chars >= 160,
+      chars,
+      pages: Number(doc.numPages || 0)
+    };
+  }
+
+  async function renderPdfPageImagesForVision(file, opts = {}){
+    if (!file || !window.pdfjsLib) return [];
+    const maxPages = clamp(Number(opts.maxPages || 3), 1, 8);
+    const scale = Math.max(1.1, Math.min(1.7, Number(opts.scale || 1.3)));
+    const pdfjsLib = window.pdfjsLib;
+    try{ pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }catch(_){ }
+    const ab = await file.arrayBuffer();
+    const doc = await pdfjsLib.getDocument({ data: ab }).promise;
+    const pages = Math.min(Number(doc.numPages || 0), maxPages);
+    const out = [];
+    for (let p = 1; p <= pages; p += 1){
+      try{
+        const page = await doc.getPage(p);
+        const img = await renderPdfPageToDataUrl(page, scale);
+        if (img) out.push(img);
+      }catch(_){}
+    }
+    return out;
   }
 
   async function exportTranscriptionResult({ format='docx', text='', structured=null, fileBaseName='transcription' }){
@@ -10380,9 +10504,14 @@ async function fileToText(file){
     return ['image', 'text'];
   }
 
-  async function callGeminiWithMeta({ apiKey, model, prompt, signal, maxOut=2048 }){
+  async function callGeminiWithMeta({ apiKey, model, prompt, contents = null, signal, maxOut=2048 }){
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-    const body = { contents: [{ role:'user', parts:[{ text: prompt }] }], generationConfig: { temperature: 0.25, maxOutputTokens: maxOut } };
+    const body = {
+      contents: Array.isArray(contents) && contents.length
+        ? contents
+        : [{ role:'user', parts:[{ text: prompt }] }],
+      generationConfig: { temperature: 0.25, maxOutputTokens: maxOut }
+    };
     const r = await fetch(url, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body), signal });
     const t = await r.text();
     let j; try{ j = JSON.parse(t); }catch(_){ j = null; }
@@ -10395,6 +10524,28 @@ async function fileToText(file){
   async function callGemini(opts){
     const { text } = await callGeminiWithMeta(opts);
     return text;
+  }
+
+  function dataUrlToGeminiInline(dataUrl){
+    const raw = String(dataUrl || '').trim();
+    const m = raw.match(/^data:([^;]+);base64,(.+)$/i);
+    if (!m) return null;
+    return { mimeType: String(m[1] || 'image/png'), data: String(m[2] || '') };
+  }
+
+  function buildGeminiContentsFromMessages(messages = []){
+    const list = Array.isArray(messages) ? messages : [];
+    const textPrompt = list.map((m) => `${String(m?.role || 'user').toUpperCase()}: ${textFromPart(m?.content)}`).join('\n\n');
+    const latestUser = [...list].reverse().find((m) => m?.role === 'user');
+    const parts = [{ text: textPrompt }];
+    const contentParts = Array.isArray(latestUser?.content) ? latestUser.content : [];
+    contentParts.forEach((part) => {
+      if (part?.type !== 'image_url') return;
+      const inline = dataUrlToGeminiInline(part?.image_url?.url || '');
+      if (!inline || !inline.data) return;
+      parts.push({ inlineData: inline });
+    });
+    return [{ role:'user', parts }];
   }
 
   function normalizeProviderModelId(provider, model){
@@ -11638,6 +11789,7 @@ async function maybeUpdateThreadSummary(pid, tid){
 
     const textParts = [];
     const vision = modelSupportsVision(settings);
+    const readMode = getDocumentReadMode();
     const content = [{ type:'text', text: String(userText||'') }];
     const totalBudget = clamp(Math.max(Number(settings.fileClip || 12000) * 2, 18000), 18000, 42000);
     let remainingBudget = totalBudget;
@@ -11670,13 +11822,30 @@ async function maybeUpdateThreadSummary(pid, tid){
       if (vision && a.kind === 'image' && a.dataUrl){
         content.push({ type:'image_url', image_url:{ url: a.dataUrl } });
       }
+      if (vision && a.kind === 'pdf' && Array.isArray(a.pageImages) && a.pageImages.length){
+        a.pageImages.slice(0, 4).forEach((img) => {
+          if (img && typeof img === 'string') content.push({ type:'image_url', image_url:{ url: img } });
+        });
+      }
+      logDocumentIngestDiagnostics({
+        fileName: a.name,
+        fileType: a.type,
+        fileKind: a.kind,
+        fileCount: list.length,
+        embeddedTextDetected: !!a.embeddedTextDetected,
+        embeddedTextChars: Number(a.embeddedTextChars || 0),
+        ocrUsed: !!a.ocrUsed,
+        visionPathUsed: !!(vision && ((a.kind === 'image' && a.dataUrl) || (a.kind === 'pdf' && Array.isArray(a.pageImages) && a.pageImages.length))),
+        provider: settings.provider,
+        model: settings.model,
+        modelVisionCapable: !!vision,
+        mode: readMode,
+        finalContentSource: String(a.finalContentSource || '')
+      });
     });
 
     content.push({ type:'text', text: `\n\n[محتوى/وصف المرفقات]\n${textParts.join('\n\n')}` });
 
-    if (settings.provider === 'gemini'){
-      return { role:'user', content: String(userText||'') + "\n\n[محتوى/وصف المرفقات]\n" + textParts.join('\n\n') };
-    }
     return { role:'user', content };
   }
 
@@ -13378,6 +13547,8 @@ ${clip}` });
 
   async function addChatAttachments(fileList){
     const settings = getSettings();
+    const readMode = getDocumentReadMode();
+    const visionCapable = modelSupportsVision(settings);
     const files = Array.from(fileList || []);
     logAttachmentEvent('chooser_result', { count: files.length });
 
@@ -13401,17 +13572,33 @@ ${clip}` });
       let dataUrl = '';
       let extractionMode = kind === 'image' ? 'صورة' : 'استخراج نص';
       let failureReason = '';
+      let pageImages = [];
+      let embeddedTextDetected = false;
+      let embeddedTextChars = 0;
+      let ocrUsed = false;
+      let finalContentSource = '';
 
       try{
         showStatus(`${stepLabel}…`, true);
         if (kind === 'image'){
           dataUrl = await fileToDataUrl(file);
-          extractionMode = 'OCR + صورة مرئية';
-          try{
-            textFull = await ocrDataUrl(dataUrl, getOcrLang(), { fileName: name, page: 1 });
-          }catch(ocrErr){
-            logAttachmentError('ocr', ocrErr, { name, size: file.size });
-            textFull = '';
+          if (readMode === 'vision' && visionCapable){
+            extractionMode = 'صورة مرئية مباشرة';
+            finalContentSource = 'vision_image_data';
+          } else if (readMode === 'text_only'){
+            extractionMode = 'صورة بدون OCR (Text-only)';
+            finalContentSource = 'none';
+          } else {
+            extractionMode = 'OCR + صورة مرئية';
+            try{
+              textFull = await ocrDataUrl(dataUrl, getOcrLang(), { fileName: name, page: 1 });
+              ocrUsed = !!String(textFull || '').trim();
+              finalContentSource = ocrUsed ? 'ocr_text' : 'image_only';
+            }catch(ocrErr){
+              logAttachmentError('ocr', ocrErr, { name, size: file.size });
+              textFull = '';
+              finalContentSource = 'image_only';
+            }
           }
         } else if ((kind === 'video' || kind === 'audio') && file.size <= MAX_CHAT_INLINE_MEDIA_BYTES){
           try{
@@ -13422,16 +13609,66 @@ ${clip}` });
           }
           extractionMode = kind === 'video' ? 'فيديو معاينة' : 'صوت معاينة';
         } else if (kind === 'pdf'){
-          extractionMode = `PDF ${getTranscribeProfileLabel()}`;
-          textFull = await fileToTextSmart(file, {
-            onProgress: (done, total, meta = {}) => {
-              const method = meta.method === 'ocr' ? 'OCR' : 'نص رقمي';
-              showStatus(`${stepLabel} • ${done}/${total} • ${method}`, true);
+          const embedMeta = await detectPdfEmbeddedTextMeta(file, { maxPages: 8 });
+          embeddedTextDetected = !!embedMeta.detected;
+          embeddedTextChars = Number(embedMeta.chars || 0);
+          if (readMode === 'vision' && visionCapable){
+            extractionMode = 'PDF Vision (original pages)';
+            pageImages = await renderPdfPageImagesForVision(file, { maxPages: 4, scale: 1.25 });
+            finalContentSource = pageImages.length ? 'vision_pdf_pages' : 'vision_unavailable';
+          } else if (readMode === 'text_only'){
+            extractionMode = 'PDF نص مضمّن فقط';
+            textFull = await extractTextFromPdf(await file.arrayBuffer());
+            finalContentSource = 'embedded_text';
+          } else if (readMode === 'force_ocr'){
+            extractionMode = 'PDF Force OCR';
+            const forced = await extractPdfStrategic(file, {
+              forceOcr: true,
+              onProgress: (done, total, meta = {}) => {
+                const method = meta.method === 'ocr' ? 'OCR' : 'نص رقمي';
+                showStatus(`${stepLabel} • ${done}/${total} • ${method}`, true);
+              }
+            });
+            textFull = String(forced?.text || '').trim();
+            ocrUsed = Number(forced?.ocrPages || 0) > 0;
+            finalContentSource = ocrUsed ? 'ocr_text' : 'embedded_text';
+          } else {
+            extractionMode = `PDF Auto (${getTranscribeProfileLabel()})`;
+            if (embeddedTextDetected){
+              const nativeOnly = await extractPdfStrategic(file, {
+                textOnly: true,
+                onProgress: (done, total) => showStatus(`${stepLabel} • ${done}/${total} • نص رقمي`, true)
+              });
+              textFull = String(nativeOnly?.text || '').trim();
+              finalContentSource = 'embedded_text';
+            } else if (visionCapable){
+              pageImages = await renderPdfPageImagesForVision(file, { maxPages: 4, scale: 1.25 });
+              extractionMode = 'PDF Vision fallback';
+              finalContentSource = pageImages.length ? 'vision_pdf_pages' : 'ocr_text';
+              if (!pageImages.length){
+                textFull = await fileToTextSmart(file, {
+                  onProgress: (done, total, meta = {}) => {
+                    const method = meta.method === 'ocr' ? 'OCR' : 'نص رقمي';
+                    showStatus(`${stepLabel} • ${done}/${total} • ${method}`, true);
+                  }
+                });
+                ocrUsed = true;
+              }
+            } else {
+              textFull = await fileToTextSmart(file, {
+                onProgress: (done, total, meta = {}) => {
+                  const method = meta.method === 'ocr' ? 'OCR' : 'نص رقمي';
+                  showStatus(`${stepLabel} • ${done}/${total} • ${method}`, true);
+                }
+              });
+              ocrUsed = true;
+              finalContentSource = 'ocr_text';
             }
-          });
+          }
         } else {
           extractionMode = kind === 'docx' ? 'Word قابل للقراءة' : 'تحليل نص مباشر';
           textFull = await fileToTextSmart(file);
+          finalContentSource = 'plain_text';
         }
       }catch(err){
         logAttachmentError('extract', err, { name, size: file.size, kind });
@@ -13439,6 +13676,7 @@ ${clip}` });
         failureReason = describeAttachmentFailure(kind, err);
         extractionMode = failureReason;
         failureSummaries.push(`${name}: ${failureReason}`);
+        finalContentSource = 'failed';
       }
 
       const cleanText = String(textFull || '').trim();
@@ -13449,12 +13687,32 @@ ${clip}` });
         type: file.type || '',
         size: file.size || 0,
         dataUrl,
+        pageImages,
         text: cleanText ? clipText(cleanText, 360) : '',
         textFull: cleanText,
         chars: cleanText.length,
         hasText: !!cleanText,
+        embeddedTextDetected,
+        embeddedTextChars,
+        ocrUsed,
+        finalContentSource,
         extractionMode,
         textWasClippedForPrompt: false
+      });
+      logDocumentIngestDiagnostics({
+        fileName: name,
+        fileType: file.type || '',
+        fileKind: kind,
+        fileCount: files.length,
+        embeddedTextDetected,
+        embeddedTextChars,
+        ocrUsed,
+        visionPathUsed: Array.isArray(pageImages) && pageImages.length > 0,
+        provider: settings.provider,
+        model: settings.model,
+        modelVisionCapable: visionCapable,
+        mode: readMode,
+        finalContentSource
       });
     }
 
@@ -13632,7 +13890,8 @@ function updateChips(){
       }
 
       if (settings.provider === 'gemini'){
-        const prompt0 = messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n');
+        const prompt0 = messages.map(m => `${m.role.toUpperCase()}: ${textFromPart(m.content)}`).join('\n\n');
+        const geminiContents = buildGeminiContentsFromMessages(messages);
         const maxOutGem = Math.min(2048, Number(settings.maxOut||2000));
         let gAcc = '';
         for (let gPass = 0; gPass < 16; gPass += 1){
@@ -13644,6 +13903,7 @@ function updateChips(){
             apiKey: settings.geminiKey,
             model: settings.model,
             prompt: p,
+            contents: gPass === 0 ? geminiContents : null,
             signal: abortCtl.signal,
             maxOut: maxOutGem
           });
@@ -14309,6 +14569,9 @@ async function runResearchAgent(topicOverride){
 
   async function addFiles(fileList){
     const pid = getCurProjectId();
+    const settings = getSettings();
+    const readMode = getDocumentReadMode();
+    const visionCapable = modelSupportsVision(settings);
     const arr = loadFiles(pid);
     const picked = Array.from(fileList || []).filter(Boolean);
     if (!picked.length){
@@ -14330,27 +14593,86 @@ async function runResearchAgent(topicOverride){
         try{ dataUrl = await fileToDataUrl(file); }catch(_){}
       }
       let text = '';
+      let kbIndexText = '';
+      let kbStructuredText = '';
+      let kbDocRep = null;
       let extractionMethod = 'استخراج نص مباشر';
       let ingestStatus = 'نجاح';
       try{
         showStatus(`معالجة ${added + perFileResults.length + 1}/${picked.length}: ${name}`, true);
         if (/\.pdf$/i.test(name) || String(file.type || '').toLowerCase() === 'application/pdf'){
-          const result = await extractPdfStrategic(file, {
-            onProgress: (done, total, meta = {}) => {
-              const method = meta.method === 'ocr' ? 'OCR' : 'نص مباشر';
-              showStatus(`معالجة ${name} • ${done}/${total} • ${method}`, true);
-            }
-          });
-          text = String(result?.text || '').trim();
-          extractionMethod = result?.ocrPages ? 'OCR لملف PDF' : 'استخراج PDF مباشر';
-          ingestStatus = text ? (result?.ocrPages ? 'نجاح (OCR)' : 'نجاح (نص مباشر)') : 'فشل الاستخراج';
+          const embedMeta = await detectPdfEmbeddedTextMeta(file, { maxPages: 8 });
+          let result = null;
+          if (readMode === 'text_only'){
+            result = await extractPdfStrategic(file, {
+              textOnly: true,
+              onProgress: (done, total) => showStatus(`معالجة ${name} • ${done}/${total} • نص مباشر`, true)
+            });
+            extractionMethod = 'PDF نص مضمّن فقط';
+          } else if (readMode === 'force_ocr'){
+            result = await extractPdfStrategic(file, {
+              forceOcr: true,
+              onProgress: (done, total, meta = {}) => {
+                const method = meta.method === 'ocr' ? 'OCR' : 'نص مباشر';
+                showStatus(`معالجة ${name} • ${done}/${total} • ${method}`, true);
+              }
+            });
+            extractionMethod = 'PDF Force OCR';
+          } else {
+            // Auto + Vision modes for KB ingest still produce indexed text first.
+            result = await extractPdfStrategic(file, {
+              textOnly: !!embedMeta.detected,
+              onProgress: (done, total, meta = {}) => {
+                const method = meta.method === 'ocr' ? 'OCR' : 'نص مباشر';
+                showStatus(`معالجة ${name} • ${done}/${total} • ${method}`, true);
+              }
+            });
+            extractionMethod = embedMeta.detected ? 'PDF نص مباشر (Auto)' : 'PDF OCR fallback (Auto)';
+          }
+          const localText = String(result?.text || '').trim();
+          kbIndexText = String(result?.indexText || localText).trim();
+          kbStructuredText = String(result?.structuredText || localText).trim();
+          const weakLocalQuality = (
+            String(result?.quality || '') === 'تحتاج مراجعة'
+            || Number(result?.ocrPages || 0) > Number(result?.nativePages || 0)
+            || scoreTextReliability(kbStructuredText) < 0.58
+          );
+          if (weakLocalQuality && readMode !== 'text_only'){
+            try{
+              const cloudRep = await cloudDeriveKbDocumentRepresentation(kbStructuredText, {
+                fileName: name,
+                langHint: detectDominantScriptLang(kbStructuredText) || getOcrLang()
+              });
+              if (scoreTextReliability(cloudRep?.structuredText || '') >= scoreTextReliability(kbStructuredText)){
+                kbStructuredText = String(cloudRep?.structuredText || kbStructuredText).trim();
+                kbIndexText = String(cloudRep?.indexText || kbIndexText).trim();
+                extractionMethod += ' + Cloud derive';
+              }
+            }catch(_){}
+          }
+          text = kbStructuredText;
+          kbDocRep = {
+            totalPages: Number(result?.totalPages || embedMeta.pages || 0),
+            nativePages: Number(result?.nativePages || 0),
+            ocrPages: Number(result?.ocrPages || 0),
+            quality: String(result?.quality || ''),
+            embeddedTextDetected: !!embedMeta.detected,
+            embeddedTextChars: Number(embedMeta.chars || 0),
+            mode: readMode
+          };
+          ingestStatus = text ? (Number(result?.ocrPages || 0) > 0 ? 'نجاح (OCR)' : 'نجاح (نص مباشر)') : 'فشل الاستخراج';
         } else {
           text = String(await fileToTextSmart(file) || '').trim();
+          kbIndexText = text;
+          kbStructuredText = text;
           extractionMethod = kind === 'image' ? 'OCR صورة' : 'استخراج نص مباشر';
           ingestStatus = text ? (kind === 'image' ? 'نجاح (OCR)' : 'نجاح') : 'فشل الاستخراج';
         }
       }catch(_){
         text = '';
+        kbIndexText = '';
+        kbStructuredText = '';
+        kbDocRep = null;
         extractionMethod = /pdf$/i.test(name) ? 'فشل استخراج PDF/OCR' : 'فشل الاستخراج';
         ingestStatus = 'فشل';
       }
@@ -14362,8 +14684,26 @@ async function runResearchAgent(topicOverride){
         type: file.type || '',
         dataUrl,
         text,
+        kbIndexText,
+        kbStructuredText,
+        kbDocRep,
         extractionMethod,
         ingestStatus
+      });
+      logDocumentIngestDiagnostics({
+        fileName: name,
+        fileType: file.type || '',
+        fileKind: kind,
+        fileCount: picked.length,
+        embeddedTextDetected: !!kbDocRep?.embeddedTextDetected,
+        embeddedTextChars: Number(kbDocRep?.embeddedTextChars || 0),
+        ocrUsed: Number(kbDocRep?.ocrPages || 0) > 0 || /OCR/.test(extractionMethod),
+        visionPathUsed: (readMode === 'vision' && visionCapable),
+        provider: settings.provider,
+        model: settings.model,
+        modelVisionCapable: visionCapable,
+        mode: readMode,
+        finalContentSource: kbIndexText ? 'kb_index_text' : (text ? 'plain_text' : 'failed')
       });
       added += 1;
       perFileResults.push({ name, status: ingestStatus, method: extractionMethod });
@@ -14840,6 +15180,7 @@ let pinOnly = false;
     if ($('cloudConvertFallbackEndpoint')) { $('cloudConvertFallbackEndpoint').value = s.cloudConvertFallbackEndpoint || ''; $('cloudConvertFallbackEndpoint').disabled = lockManagedRuntime; $('cloudConvertFallbackEndpoint').closest('.col')?.style.setProperty('display', lockManagedRuntime ? 'none' : ''); }
     if ($('ocrCloudEndpoint')) { $('ocrCloudEndpoint').value = s.ocrCloudEndpoint || ''; $('ocrCloudEndpoint').disabled = lockManagedRuntime; $('ocrCloudEndpoint').closest('.col')?.style.setProperty('display', lockManagedRuntime ? 'none' : ''); }
     if ($('ocrLang')) ensureSelectHasValue($('ocrLang'), s.ocrLang || 'ara+eng');
+    if ($('documentReadMode')) ensureSelectHasValue($('documentReadMode'), s.documentReadMode || 'auto');
     if ($('cloudRetryMax')) $('cloudRetryMax').value = String(s.cloudRetryMax || 2);
     if ($('freeMode')) $('freeMode').checked = !!s.freeMode;
     if ($('costGuard')) $('costGuard').value = s.costGuard || 'balanced';
@@ -14877,6 +15218,7 @@ let pinOnly = false;
     const cloudConvertFallbackEndpoint = lockManagedRuntime ? '' : ($('cloudConvertFallbackEndpoint') ? normalizeDocxCloudEndpoint($('cloudConvertFallbackEndpoint').value) : '');
     const ocrCloudEndpoint = lockManagedRuntime ? normalizeOcrCloudEndpoint(DEFAULT_SETTINGS.ocrCloudEndpoint) : ($('ocrCloudEndpoint') ? normalizeOcrCloudEndpoint($('ocrCloudEndpoint').value) : '');
     const ocrLang = $('ocrLang') ? $('ocrLang').value.trim() : 'ara+eng';
+    const documentReadMode = $('documentReadMode') ? $('documentReadMode').value.trim() : 'auto';
     const cloudRetryMax = $('cloudRetryMax') ? clamp(Number($('cloudRetryMax').value || 2), 1, 5) : 2;
     const freeMode = $('freeMode') ? !!$('freeMode').checked : false;
     const costGuard = $('costGuard') ? $('costGuard').value : 'balanced';
@@ -14953,6 +15295,7 @@ let pinOnly = false;
       cloudRetryMax,
       ocrCloudEndpoint,
       ocrLang: ocrLang || 'ara+eng',
+      documentReadMode: documentReadMode || 'auto',
       freeMode,
       costGuard,
       googleClientId: '',
