@@ -1,6 +1,7 @@
 {
   "name": "AI Workspace Studio",
   "short_name": "AI Studio",
+  "version": "9.6.7-test",
   "description": "منصة عربية للدردشة والملفات والمعرفة وسير العمل مع خطط مجانية ومدفوعة.",
   "start_url": "./",
   "scope": "./",

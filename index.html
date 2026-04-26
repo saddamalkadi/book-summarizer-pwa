@@ -5348,7 +5348,7 @@ body.dark *::-webkit-scrollbar-thumb:hover{
           </div>
           <div class="side-account-badge free" id="sideAccountBadge">مجاني</div>
         </div>
-        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v9.0</div>
+        <div style="text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.04em; user-select:none;" id="sideVersionLabel">v9.6.7 TEST</div>
       </div>
     </aside>
 
@@ -5568,6 +5568,10 @@ body.dark *::-webkit-scrollbar-thumb:hover{
               <label class="pill" style="display:flex; align-items:center; gap:6px; user-select:none;">
                 <input type="checkbox" id="ragToggle" aria-label="تفعيل الاسترجاع" />
                 استرجاع
+              </label>
+              <label class="pill" style="display:flex; align-items:center; gap:6px; user-select:none;">
+                <input type="checkbox" id="answerOnlyFromKb" aria-label="الإجابة فقط من الملفات" />
+                فقط من الملفات
               </label>
 
               <label class="pill" style="display:flex; align-items:center; gap:6px; user-select:none;">
@@ -6128,6 +6132,17 @@ body.dark *::-webkit-scrollbar-thumb:hover{
                     <div class="col">
                       <label class="hint">رابط OCR سحابي</label>
                       <input id="ocrCloudEndpoint" type="text" placeholder="https://api.saddamalkadi.com/ocr" />
+                    </div>
+                  </div>
+                  <div class="row" style="margin-top:8px">
+                    <div class="col">
+                      <label class="hint">وضع قراءة المستندات</label>
+                      <select id="documentReadMode" aria-label="وضع قراءة المستندات">
+                        <option value="auto" selected>Auto (مستحسن)</option>
+                        <option value="vision">Original file / Vision reading</option>
+                        <option value="force_ocr">Force OCR</option>
+                        <option value="text_only">Text extraction only</option>
+                      </select>
                     </div>
                   </div>
                   <div class="row" style="margin-top:8px">

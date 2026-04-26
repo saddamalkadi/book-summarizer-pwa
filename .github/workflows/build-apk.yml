@@ -63,9 +63,9 @@ jobs:
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
           echo "Version: $VERSION_NAME ($VERSION_CODE)"
 
-      - name: Build release APK and AAB
+      - name: Build debug APK and release AAB
         working-directory: android
-        run: ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
+        run: ./gradlew assembleDebug bundleRelease --no-daemon --stacktrace
 
       - name: Stage release artifacts
         run: |
@@ -76,13 +76,10 @@ jobs:
             exit 1
           fi
           mkdir -p downloads staging
-          SRC_APK="android/app/build/outputs/apk/release/app-release.apk"
+          SRC_APK="android/app/build/outputs/apk/debug/app-debug.apk"
           if [ ! -f "$SRC_APK" ]; then
-            SRC_APK="android/app/build/outputs/apk/release/app-release-unsigned.apk"
-          fi
-          if [ ! -f "$SRC_APK" ]; then
-            echo "Release APK missing under android/app/build/outputs/apk/release/" >&2
-            ls -la android/app/build/outputs/apk/release/ || true
+            echo "Debug APK missing under android/app/build/outputs/apk/debug/" >&2
+            ls -la android/app/build/outputs/apk/debug/ || true
             exit 1
           fi
           SRC_AAB="android/app/build/outputs/bundle/release/app-release.aab"
@@ -121,7 +118,7 @@ jobs:
 
             - **versionCode**: ${{ steps.version.outputs.version_code }}
             - **Platform**: Android 7.0+ (API 24+)
-            - **Build**: `assembleRelease` + `bundleRelease`. عند توفر `keystore.properties` يُستخدم توقيع الإصدار؛ وإلا يُستخدم توقيع debug في CI لضمان قابلية التثبيت للتجربة.
+            - **Build**: `assembleDebug` + `bundleRelease`. ملف APK العام للتجربة يُنشر من مسار debug لتفادي أي تقليص غير مقصود في حزمة الاختبار.
 
             ### التثبيت (APK)
             1. حمّل ملف `AI-Workspace-Studio-latest.apk`

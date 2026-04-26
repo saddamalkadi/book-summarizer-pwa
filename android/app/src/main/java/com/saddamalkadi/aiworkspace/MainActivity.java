@@ -3,6 +3,7 @@ package com.saddamalkadi.aiworkspace;
 import android.Manifest;
 import android.app.DownloadManager;
 import android.content.ActivityNotFoundException;
+import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -34,6 +35,7 @@ import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.BridgeWebChromeClient;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -45,16 +47,18 @@ import java.util.Locale;
  * Main activity for the Capacitor-hosted WebView.
  *
  * Beyond the stock Capacitor bridge we implement:
- *   1. {@link WebChromeClient#onPermissionRequest} — grant mic/video capture
+ *   1. {@link BridgeWebChromeClient} subclass — keep Capacitor's default
+ *      WebChrome behaviors (JS dialogs, geo, Google Sign-In flows) intact.
+ *   2. {@link WebChromeClient#onPermissionRequest} — grant mic/video capture
  *      to our own WebView origin so {@code navigator.mediaDevices.getUserMedia}
  *      resolves even after the OS-level RECORD_AUDIO grant is in place.
- *   2. {@link WebChromeClient#onShowFileChooser} — bridge {@code <input type="file">}
+ *   3. {@link WebChromeClient#onShowFileChooser} — bridge {@code <input type="file">}
  *      (including {@code multiple}, {@code accept=...} and {@code capture})
  *      to Android's Storage Access Framework and, optionally, the camera
  *      or voice-recorder intents so file upload works inside the APK.
- *   3. Runtime CAMERA permission request, fired only when the JS actually
+ *   4. Runtime CAMERA permission request, fired only when the JS actually
  *      triggers a capture-capable file chooser.
- *   4. Structured Logcat logging (tag = "AIWorkspace/Chooser") mirroring the
+ *   5. Structured Logcat logging (tag = "AIWorkspace/Chooser") mirroring the
  *      JS-side voice session logging contract, so production support can
  *      correlate client-side errors with Android events.
  */
@@ -75,6 +79,12 @@ public class MainActivity extends BridgeActivity {
     /** The most recent {@link WebChromeClient.FileChooserParams} — kept so
      *  we can re-launch the chooser after the user grants CAMERA. */
     private WebChromeClient.FileChooserParams pendingChooserParams;
+
+    /** Mirrors {@code MODE_OPEN_MULTIPLE} for the active chooser — used when
+     *  merging {@link ClipData} (some OEMs return only one URI from
+     *  {@link WebChromeClient.FileChooserParams#parseResult}) and for
+     *  {@code GET_CONTENT} fallback. */
+    private boolean pendingAllowMultiple;
 
     /** Launcher for the chooser Intent. Registered in {@link #onCreate}. */
     private ActivityResultLauncher<Intent> fileChooserLauncher;
@@ -144,7 +154,10 @@ public class MainActivity extends BridgeActivity {
                     }
                 });
 
-                webView.setWebChromeClient(new WebChromeClient() {
+                // IMPORTANT: do not replace Capacitor's BridgeWebChromeClient with a
+                // plain WebChromeClient — that drops JS alerts/confirms/prompts and
+                // permission flows required for Google Sign-In and other bridge UX.
+                webView.setWebChromeClient(new BridgeWebChromeClient(this.bridge) {
                     @Override
                     public void onPermissionRequest(final PermissionRequest request) {
                         // Grant mic / camera capture to our own origin after
@@ -163,12 +176,14 @@ public class MainActivity extends BridgeActivity {
                                 Log.i(TAG, "webview_permission grant " + allow);
                                 request.grant(allow.toArray(new String[0]));
                             } else {
-                                Log.w(TAG, "webview_permission deny " + java.util.Arrays.toString(resources));
-                                request.deny();
+                                // Federated login / other WebView features may request other resources;
+                                // keep Capacitor's default handling instead of blanket deny.
+                                Log.i(TAG, "webview_permission delegate " + java.util.Arrays.toString(resources));
+                                super.onPermissionRequest(request);
                             }
                         } catch (Throwable t) {
                             Log.e(TAG, "webview_permission error", t);
-                            try { request.deny(); } catch (Throwable ignored) {}
+                            try { super.onPermissionRequest(request); } catch (Throwable ignored) {}
                         }
                     }
 
@@ -181,10 +196,8 @@ public class MainActivity extends BridgeActivity {
 
                     @Override
                     public boolean onConsoleMessage(ConsoleMessage consoleMessage) {
-                        // Forward WebView console to Logcat so production
-                        // support can read voice/artifact diagnostics from
-                        // adb logcat without needing Chrome devtools.
-                        if (consoleMessage == null) return false;
+                        boolean handled = super.onConsoleMessage(consoleMessage);
+                        if (consoleMessage == null) return handled;
                         String msg = "webview_console [" + consoleMessage.messageLevel() + "] "
                                 + consoleMessage.message()
                                 + " (" + consoleMessage.sourceId() + ":" + consoleMessage.lineNumber() + ")";
@@ -194,7 +207,7 @@ public class MainActivity extends BridgeActivity {
                             case DEBUG: Log.d(TAG, msg); break;
                             default: Log.i(TAG, msg); break;
                         }
-                        return true;
+                        return handled;
                     }
                 });
             }
@@ -223,6 +236,8 @@ public class MainActivity extends BridgeActivity {
         }
         pendingFileCallback = filePathCallback;
         pendingChooserParams = params;
+        pendingAllowMultiple = params != null
+                && params.getMode() == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE;
 
         boolean wantsCapture = params != null && params.isCaptureEnabled();
         String[] accept = params != null ? params.getAcceptTypes() : null;
@@ -268,20 +283,18 @@ public class MainActivity extends BridgeActivity {
                 baseIntent.setType(collapseMimeTypes(mimeTypes));
             }
 
-            // Some Android WebView builds report MODE_OPEN even when the input
-            // element has `multiple`. We still enable multi-select for SAF in
-            // non-capture flows so KB multi-upload works reliably.
-            boolean wantsMultiple = params.getMode() == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE;
-            if (!wantsMultiple && !allowCamera) wantsMultiple = true;
-            if (wantsMultiple) {
+            if (params.getMode() == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE) {
                 baseIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
             }
 
             // Chooser with optional camera/video/audio capture intents as
             // initial intents so the user can take a photo / record audio
             // directly from the <input capture> element.
+            // Do not mix camera/video initial intents with multi-select: several
+            // OEM WebView stacks drop EXTRA_ALLOW_MULTIPLE or return only one URI
+            // when the chooser merges capture routes with SAF.
             List<Intent> captureIntents = new ArrayList<>();
-            if (allowCamera) {
+            if (allowCamera && !pendingAllowMultiple) {
                 Intent photo = buildCameraCaptureIntent();
                 if (photo != null) captureIntents.add(photo);
                 Intent video = buildVideoCaptureIntent(accept);
@@ -299,8 +312,7 @@ public class MainActivity extends BridgeActivity {
             }
 
             fileChooserLauncher.launch(chooser);
-            Log.i(TAG, "chooser_launched camera=" + allowCamera + " capture_intents=" + captureIntents.size()
-                    + " allow_multiple=" + wantsMultiple);
+            Log.i(TAG, "chooser_launched camera=" + allowCamera + " capture_intents=" + captureIntents.size());
             return true;
         } catch (Throwable t) {
             Log.e(TAG, "chooser_launch_failed", t);
@@ -309,7 +321,14 @@ public class MainActivity extends BridgeActivity {
                 Intent fallback = new Intent(Intent.ACTION_GET_CONTENT);
                 fallback.addCategory(Intent.CATEGORY_OPENABLE);
                 fallback.setType("*/*");
-                fallback.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                if (pendingAllowMultiple) {
+                    fallback.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                }
+                String[] mimeTypes = normalizeMimeTypes(params.getAcceptTypes());
+                if (mimeTypes != null && mimeTypes.length > 0) {
+                    fallback.putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes);
+                    fallback.setType(collapseMimeTypes(mimeTypes));
+                }
                 fileChooserLauncher.launch(Intent.createChooser(fallback, "اختيار ملف"));
                 Log.w(TAG, "chooser_launch_fallback_get_content");
                 return true;
@@ -337,21 +356,8 @@ public class MainActivity extends BridgeActivity {
             }
 
             Uri[] results = WebChromeClient.FileChooserParams.parseResult(code, data);
-            // Vendor-specific SAF pickers sometimes skip parseResult() for
-            // ClipData multi-select. Recover it manually before giving up.
-            if ((results == null || results.length == 0) && data != null && data.getClipData() != null) {
-                int n = data.getClipData().getItemCount();
-                List<Uri> uris = new ArrayList<>();
-                for (int i = 0; i < n; i++) {
-                    try {
-                        Uri u = data.getClipData().getItemAt(i).getUri();
-                        if (u != null) uris.add(u);
-                    } catch (Throwable ignored) {}
-                }
-                if (!uris.isEmpty()) {
-                    results = uris.toArray(new Uri[0]);
-                }
-            }
+            results = mergeChooserUris(results, data);
+
             if ((results == null || results.length == 0) && pendingCaptureUri != null) {
                 // Camera/video/audio capture intents don't return data via
                 // the Intent, they write to the URI we passed in.
@@ -378,7 +384,48 @@ public class MainActivity extends BridgeActivity {
             pendingCaptureUri = null;
             pendingChooserParams = null;
             pendingNeedsCamera = false;
+            pendingAllowMultiple = false;
         }
+    }
+
+    private static boolean listContainsUri(List<Uri> list, Uri candidate) {
+        if (candidate == null) return true;
+        for (Uri u : list) {
+            if (u != null && u.equals(candidate)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Combines {@link WebChromeClient.FileChooserParams#parseResult} with
+     * explicit {@link ClipData} iteration. Some Android builds return a single
+     * URI from parseResult even when the user picked several documents; ClipData
+     * then holds the full selection.
+     */
+    private Uri[] mergeChooserUris(Uri[] parsed, Intent data) {
+        List<Uri> out = new ArrayList<>();
+        if (parsed != null) {
+            for (Uri u : parsed) {
+                if (u != null && !listContainsUri(out, u)) out.add(u);
+            }
+        }
+        if (data != null) {
+            ClipData clip = data.getClipData();
+            if (clip != null) {
+                for (int i = 0; i < clip.getItemCount(); i++) {
+                    ClipData.Item item = clip.getItemAt(i);
+                    if (item == null) continue;
+                    Uri u = item.getUri();
+                    if (u != null && !listContainsUri(out, u)) out.add(u);
+                }
+            }
+            Uri single = data.getData();
+            if (single != null && !listContainsUri(out, single)) {
+                out.add(single);
+            }
+        }
+        if (out.isEmpty()) return parsed;
+        return out.toArray(new Uri[0]);
     }
 
     private void deliverChooserResult(Uri[] uris) {
