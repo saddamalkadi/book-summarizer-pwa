@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="9.6.10">
+<html lang="ar" dir="rtl" data-appver="9.6.11">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5" />
@@ -6042,8 +6042,11 @@ body.dark *::-webkit-scrollbar-thumb:hover{
                     <input type="checkbox" id="biometricLoginToggle" style="margin-top:4px" />
                     <span><strong>فتح الجلسة بالبصمة / قفل الجهاز</strong> (Android فقط — يخزّن مفتاح الجلسة آمنًا ولا يحفظ كلمة مرور المشرف نصًا)</span>
                   </label>
+                  <p class="hint" id="biometricStatus" style="margin:8px 0 0; line-height:1.7"></p>
                   <p class="hint" id="biometricSettingsHint" style="margin:8px 0 0; line-height:1.7"></p>
                   <div style="margin-top:10px">
+                    <button type="button" class="btn ghost sm" id="biometricTestBtn">اختبار البصمة الآن</button>
+                    <button type="button" class="btn ghost sm" id="biometricResetBtn">إعادة ضبط البصمة</button>
                     <button type="button" class="btn ghost sm" id="biometricDiagBtn">تشخيص البصمة (سجل/قائمة الإضافات)</button>
                     <pre id="biometricDiagOut" style="display:none;margin-top:8px;padding:10px;border-radius:10px;background:var(--panel, #f0f1f4);font-size:11px;white-space:pre-wrap;max-height:200px;overflow:auto;border:1px solid var(--line, #ddd)"></pre>
                   </div>
