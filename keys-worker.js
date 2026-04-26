@@ -66,9 +66,42 @@ export default {
       if (url.pathname === '/admin/upgrade-requests' && request.method === 'GET') {
         return withCors(await handleAdminUpgradeRequestsList(request, env), request);
       }
+      if (url.pathname.match(/^\/admin\/upgrade-requests\/[^/]+\/approve$/) && request.method === 'POST') {
+        return withCors(await handleAdminUpgradeRequestAction(request, env, 'approved'), request);
+      }
+      if (url.pathname.match(/^\/admin\/upgrade-requests\/[^/]+\/reject$/) && request.method === 'POST') {
+        return withCors(await handleAdminUpgradeRequestAction(request, env, 'rejected'), request);
+      }
+      if (url.pathname.match(/^\/admin\/upgrade-requests\/[^/]+\/complete$/) && request.method === 'POST') {
+        return withCors(await handleAdminUpgradeRequestAction(request, env, 'completed'), request);
+      }
+      if (url.pathname.match(/^\/admin\/upgrade-requests\/[^/]+\/archive$/) && request.method === 'POST') {
+        return withCors(await handleAdminUpgradeRequestAction(request, env, 'archived'), request);
+      }
+      if (url.pathname.match(/^\/admin\/upgrade-requests\/[^/]+$/) && request.method === 'DELETE') {
+        return withCors(await handleAdminUpgradeRequestDelete(request, env), request);
+      }
 
       if (url.pathname === '/admin/users' && request.method === 'GET') {
         return withCors(await handleAdminUsersList(request, env), request);
+      }
+      if (url.pathname.match(/^\/admin\/users\/[^/]+$/) && request.method === 'GET') {
+        return withCors(await handleAdminUserGet(request, env), request);
+      }
+      if (url.pathname.match(/^\/admin\/users\/[^/]+\/activate$/) && request.method === 'POST') {
+        return withCors(await handleAdminUserActivate(request, env), request);
+      }
+      if (url.pathname.match(/^\/admin\/users\/[^/]+\/suspend$/) && request.method === 'POST') {
+        return withCors(await handleAdminUserSuspend(request, env), request);
+      }
+      if (url.pathname.match(/^\/admin\/users\/[^/]+\/plan$/) && request.method === 'POST') {
+        return withCors(await handleAdminUserPlan(request, env), request);
+      }
+      if (url.pathname.match(/^\/admin\/users\/[^/]+\/credits$/) && request.method === 'POST') {
+        return withCors(await handleAdminUserCredits(request, env), request);
+      }
+      if (url.pathname.match(/^\/admin\/users\/[^/]+\/notify$/) && request.method === 'POST') {
+        return withCors(await handleAdminUserNotify(request, env), request);
       }
       if (url.pathname === '/admin/users/patch' && request.method === 'POST') {
         return withCors(await handleAdminUserPatch(request, env), request);
@@ -415,6 +448,11 @@ async function getPublicAuthConfig(env) {
   const allowAabDownloads = String(env.ALLOW_PUBLIC_AAB_DOWNLOADS || '').trim().toLowerCase() === 'true';
   const voice = getVoiceApiConfig(env);
   const transactional = getTransactionalEmailConfig(env);
+  const supportWhatsAppNumber = String(env.SUPPORT_WHATSAPP_NUMBER || '00967739249321').trim() || '00967739249321';
+  const supportWhatsAppMessage = String(env.SUPPORT_WHATSAPP_MESSAGE || 'مرحباً، أحتاج مساعدة في AI Workspace Studio').trim() || 'مرحباً، أحتاج مساعدة في AI Workspace Studio';
+  const supportLabel = String(env.SUPPORT_LABEL || 'دعم واتساب').trim() || 'دعم واتساب';
+  const supportEmail = String(env.SUPPORT_EMAIL || env.APP_UPGRADE_EMAIL || env.UPGRADE_EMAIL || '').trim();
+  const supportWhatsAppEnabled = String(env.SUPPORT_WHATSAPP_ENABLED || 'true').trim().toLowerCase() !== 'false';
   return {
     ok: true,
     authRequired,
@@ -438,7 +476,15 @@ async function getPublicAuthConfig(env) {
     voicePreferredLanguage: voice.preferredLanguage,
     voicePremiumOnly: false,
     userEmailPasswordEnabled: !!getUserDataStore(env),
-    transactionalEmailConfigured: transactional.configured
+    transactionalEmailConfigured: transactional.configured,
+    supportWhatsAppEnabled,
+    supportWhatsAppNumber,
+    supportWhatsAppMessage,
+    supportEmail,
+    supportLabel,
+    emailFromName: String(env.EMAIL_FROM_NAME || 'AI Workspace Studio').trim() || 'AI Workspace Studio',
+    emailFromAddress: bareEmailFromFromHeader(transactional.from) || '',
+    appLoginLink: String(env.APP_PUBLIC_ORIGIN || 'https://app.saddamalkadi.com').replace(/\/+$/, '')
   };
 }
 
@@ -1190,7 +1236,11 @@ async function handleAdminUpgradeRequestsList(request, env) {
       }
     }
     rows.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
-    return jsonResponse({ ok: true, requests: rows.slice(0, 100), total: Math.min(rows.length, 100) }, 200);
+    const statusFilter = String(new URL(request.url).searchParams.get('status') || '').trim().toLowerCase();
+    const filtered = statusFilter
+      ? rows.filter((r) => String(r.status || '').trim().toLowerCase() === statusFilter)
+      : rows;
+    return jsonResponse({ ok: true, requests: filtered.slice(0, 100), total: Math.min(filtered.length, 100) }, 200);
   } catch (error) {
     return jsonResponse({ error: String(error?.message || error), code: 'ADMIN_UPGRADE_REQUESTS_FAILED' }, 400);
   }
@@ -1236,12 +1286,16 @@ async function handleAdminUsersList(request, env) {
       const acc = await readUserAccount(email, env);
       const quota = await readQuotaFromKv(email, env);
       if (acc) {
+        const status = quota && Number(quota.periodEnd || 0) > 0 && Number(quota.periodEnd || 0) < nowMs()
+          ? 'expired'
+          : (acc.disabled ? 'suspended' : 'active');
         users.push({
           email: acc.email,
           name: acc.name,
           providers: acc.providers || [],
           emailVerified: !!acc.emailVerified,
           disabled: !!acc.disabled,
+          status,
           googleSub: acc.googleSub ? 'linked' : '',
           createdAt: acc.createdAt || 0,
           lastLoginAt: acc.lastLoginAt || 0,
@@ -1347,6 +1401,243 @@ async function handleAdminUserPatch(request, env) {
     }, 200);
   } catch (error) {
     return jsonResponse({ error: String(error?.message || error), code: 'ADMIN_USER_PATCH_FAILED' }, 400);
+  }
+}
+
+function decodeAdminPathEmail(url, prefix, suffix = '') {
+  const path = String(url.pathname || '');
+  if (!path.startsWith(prefix)) return '';
+  const tail = suffix ? path.slice(prefix.length, -suffix.length) : path.slice(prefix.length);
+  try {
+    return decodeURIComponent(String(tail || '').trim()).toLowerCase();
+  } catch (_) {
+    return String(tail || '').trim().toLowerCase();
+  }
+}
+
+function decodeAdminRequestId(url) {
+  const match = String(url.pathname || '').match(/^\/admin\/upgrade-requests\/([^/]+)(?:\/[a-z-]+)?$/);
+  if (!match) return '';
+  try { return decodeURIComponent(match[1]); } catch (_) { return String(match[1] || ''); }
+}
+
+async function requireAdminSession(request, env) {
+  const session = await requireSession(request, env);
+  if (session.role !== 'admin') throw new Error('ADMIN_REQUIRED');
+  return session;
+}
+
+async function handleAdminUpgradeRequestAction(request, env, nextStatus) {
+  try {
+    const admin = await requireAdminSession(request, env);
+    const requestId = decodeAdminRequestId(new URL(request.url));
+    if (!requestId) return jsonResponse({ error: 'Request ID is required.', code: 'REQUEST_ID_REQUIRED' }, 400);
+    const store = getUserDataStore(env);
+    if (!store || typeof store.get !== 'function' || typeof store.put !== 'function') {
+      return jsonResponse({ error: 'Storage not configured.', code: 'STORAGE_NOT_CONFIGURED' }, 503);
+    }
+    const key = `${UPGRADE_REQ_PREFIX}${requestId}`;
+    const row = await store.get(key, { type: 'json' });
+    if (!row || !row.userEmail) return jsonResponse({ error: 'Upgrade request not found.', code: 'UPGRADE_REQUEST_NOT_FOUND' }, 404);
+    const body = await parseJson(request);
+    row.status = String(nextStatus || '').trim() || 'pending_review';
+    row.actionAt = nowMs();
+    row.actionBy = String(admin.email || '').trim().toLowerCase();
+    row.adminNote = String(body?.adminNote || body?.note || '').trim().slice(0, 2000);
+    await store.put(key, JSON.stringify(row), { expirationTtl: 30 * 24 * 60 * 60 });
+    return jsonResponse({ ok: true, requestId, status: row.status, actionAt: row.actionAt, actionBy: row.actionBy }, 200);
+  } catch (error) {
+    const msg = String(error?.message || error || '');
+    if (msg === 'ADMIN_REQUIRED') return jsonResponse({ error: 'Admin access required.', code: 'ADMIN_REQUIRED' }, 403);
+    return jsonResponse({ error: msg || 'Upgrade request action failed.', code: 'ADMIN_UPGRADE_REQUEST_ACTION_FAILED' }, 400);
+  }
+}
+
+async function handleAdminUpgradeRequestDelete(request, env) {
+  try {
+    await requireAdminSession(request, env);
+    const requestId = decodeAdminRequestId(new URL(request.url));
+    if (!requestId) return jsonResponse({ error: 'Request ID is required.', code: 'REQUEST_ID_REQUIRED' }, 400);
+    const store = getUserDataStore(env);
+    if (!store || typeof store.delete !== 'function') {
+      return jsonResponse({ error: 'Storage not configured.', code: 'STORAGE_NOT_CONFIGURED' }, 503);
+    }
+    await store.delete(`${UPGRADE_REQ_PREFIX}${requestId}`);
+    return jsonResponse({ ok: true, requestId, deleted: true }, 200);
+  } catch (error) {
+    const msg = String(error?.message || error || '');
+    if (msg === 'ADMIN_REQUIRED') return jsonResponse({ error: 'Admin access required.', code: 'ADMIN_REQUIRED' }, 403);
+    return jsonResponse({ error: msg || 'Upgrade request delete failed.', code: 'ADMIN_UPGRADE_REQUEST_DELETE_FAILED' }, 400);
+  }
+}
+
+async function handleAdminUserGet(request, env) {
+  try {
+    await requireAdminSession(request, env);
+    const email = decodeAdminPathEmail(new URL(request.url), '/admin/users/');
+    if (!isValidEmail(email)) return jsonResponse({ error: 'Valid email required.', code: 'EMAIL_REQUIRED' }, 400);
+    const acc = await readUserAccount(email, env);
+    const quota = await readQuotaFromKv(email, env);
+    if (!acc && !quota) return jsonResponse({ error: 'User not found.', code: 'USER_NOT_FOUND' }, 404);
+    return jsonResponse({
+      ok: true,
+      user: acc ? {
+        email: acc.email, name: acc.name, role: acc.role || 'user', providers: acc.providers || [],
+        emailVerified: !!acc.emailVerified, disabled: !!acc.disabled, createdAt: acc.createdAt || 0, lastLoginAt: acc.lastLoginAt || 0
+      } : { email, name: deriveDisplayName(email), role: 'user', providers: [], emailVerified: true, disabled: false, createdAt: 0, lastLoginAt: 0 },
+      quota: quota ? quotaPublicView(quota) : null
+    }, 200);
+  } catch (error) {
+    const msg = String(error?.message || error || '');
+    if (msg === 'ADMIN_REQUIRED') return jsonResponse({ error: 'Admin access required.', code: 'ADMIN_REQUIRED' }, 403);
+    return jsonResponse({ error: msg || 'Admin user get failed.', code: 'ADMIN_USER_GET_FAILED' }, 400);
+  }
+}
+
+async function handleAdminUserActivate(request, env) {
+  const email = decodeAdminPathEmail(new URL(request.url), '/admin/users/', '/activate');
+  if (!isValidEmail(email)) return jsonResponse({ error: 'Valid email required.', code: 'EMAIL_REQUIRED' }, 400);
+  const body = await parseJson(request);
+  return handleAdminUserPatch(new Request(request.url, {
+    method: 'POST',
+    headers: request.headers,
+    body: JSON.stringify({
+      email, disabled: false,
+      plan: body?.plan || 'premium',
+      limit: body?.limit,
+      validityDays: body?.validityDays,
+      validUntil: body?.validUntil,
+      adminNote: body?.adminNote || ''
+    })
+  }), env);
+}
+
+async function handleAdminUserSuspend(request, env) {
+  const email = decodeAdminPathEmail(new URL(request.url), '/admin/users/', '/suspend');
+  if (!isValidEmail(email)) return jsonResponse({ error: 'Valid email required.', code: 'EMAIL_REQUIRED' }, 400);
+  const body = await parseJson(request);
+  return handleAdminUserPatch(new Request(request.url, {
+    method: 'POST',
+    headers: request.headers,
+    body: JSON.stringify({ email, disabled: true, adminNote: body?.adminNote || '' })
+  }), env);
+}
+
+async function handleAdminUserPlan(request, env) {
+  const email = decodeAdminPathEmail(new URL(request.url), '/admin/users/', '/plan');
+  if (!isValidEmail(email)) return jsonResponse({ error: 'Valid email required.', code: 'EMAIL_REQUIRED' }, 400);
+  const body = await parseJson(request);
+  return handleAdminUserPatch(new Request(request.url, {
+    method: 'POST',
+    headers: request.headers,
+    body: JSON.stringify({
+      email,
+      plan: body?.plan || 'free',
+      limit: body?.limit,
+      used: body?.used,
+      validityDays: body?.validityDays,
+      validUntil: body?.validUntil,
+      adminNote: body?.adminNote || ''
+    })
+  }), env);
+}
+
+async function handleAdminUserCredits(request, env) {
+  const email = decodeAdminPathEmail(new URL(request.url), '/admin/users/', '/credits');
+  if (!isValidEmail(email)) return jsonResponse({ error: 'Valid email required.', code: 'EMAIL_REQUIRED' }, 400);
+  const body = await parseJson(request);
+  return handleAdminUserPatch(new Request(request.url, {
+    method: 'POST',
+    headers: request.headers,
+    body: JSON.stringify({
+      email,
+      limit: body?.limit,
+      used: body?.used,
+      topup: body?.topup,
+      resetUsed: body?.resetUsed === true,
+      adminNote: body?.adminNote || ''
+    })
+  }), env);
+}
+
+function buildActivationArabicEmail({
+  name = '', plan = '', quota = null, loginLink = '', supportEmail = '', supportWhatsApp = '', note = ''
+}) {
+  const quotaLine = quota
+    ? `الرصيد/الحصة: ${Number(quota.remaining || 0).toFixed(2)} من ${Number(quota.limit || 0).toFixed(2)}`
+    : 'الرصيد/الحصة: حسب إعداد الخطة المطبقة.';
+  const validUntil = quota?.periodEnd ? new Date(Number(quota.periodEnd)).toLocaleDateString('ar-SA') : '—';
+  const cleanName = String(name || '').trim() || 'عميلنا الكريم';
+  const supportLine = [supportEmail ? `البريد: ${supportEmail}` : '', supportWhatsApp ? `واتساب: ${supportWhatsApp}` : ''].filter(Boolean).join(' • ');
+  const text = [
+    `مرحباً ${cleanName}،`,
+    '',
+    'تم تفعيل حسابك على منصة AI Workspace Studio بنجاح.',
+    `الخطة الحالية: ${plan || 'free'}`,
+    quotaLine,
+    `تاريخ انتهاء الصلاحية: ${validUntil}`,
+    '',
+    `رابط تسجيل الدخول: ${loginLink || 'https://app.saddamalkadi.com/'}`,
+    'تعليمات سريعة: سجّل الدخول ثم افتح صفحة الملفات لرفع ملفاتك، وبعدها فعّل وضع المعرفة/RAG عند الحاجة.',
+    supportLine ? `الدعم: ${supportLine}` : '',
+    note ? `ملاحظة: ${note}` : '',
+    '',
+    'مع خالص التحية،',
+    'فريق AI Workspace Studio'
+  ].filter(Boolean).join('\n');
+  const html = `<div dir="rtl" style="font-family:Tahoma,Arial,sans-serif;line-height:1.9;color:#1b1b1b">
+<p>مرحباً ${escapeHtmlForEmail(cleanName)}،</p>
+<p>تم تفعيل حسابك على منصة <strong>AI Workspace Studio</strong> بنجاح.</p>
+<ul>
+<li><strong>الخطة الحالية:</strong> ${escapeHtmlForEmail(plan || 'free')}</li>
+<li><strong>${escapeHtmlForEmail(quotaLine)}</strong></li>
+<li><strong>تاريخ انتهاء الصلاحية:</strong> ${escapeHtmlForEmail(validUntil)}</li>
+</ul>
+<p><a href="${escapeHtmlForEmail(loginLink || 'https://app.saddamalkadi.com/')}" target="_blank" rel="noopener">تسجيل الدخول إلى المنصة</a></p>
+<p>تعليمات سريعة: سجّل الدخول ثم ارفع ملفاتك من صفحة الملفات، وفَعِّل المعرفة/RAG حسب الحاجة.</p>
+${supportLine ? `<p><strong>الدعم:</strong> ${escapeHtmlForEmail(supportLine)}</p>` : ''}
+${note ? `<p><strong>ملاحظة:</strong> ${escapeHtmlForEmail(note)}</p>` : ''}
+<p>مع خالص التحية،<br/>فريق AI Workspace Studio</p></div>`;
+  return { subject: 'تم تفعيل حسابك في AI Workspace Studio', text, html };
+}
+
+async function handleAdminUserNotify(request, env) {
+  try {
+    await requireAdminSession(request, env);
+    const email = decodeAdminPathEmail(new URL(request.url), '/admin/users/', '/notify');
+    if (!isValidEmail(email)) return jsonResponse({ error: 'Valid email required.', code: 'EMAIL_REQUIRED' }, 400);
+    const body = await parseJson(request);
+    const acc = await readUserAccount(email, env);
+    const quota = await readQuotaFromKv(email, env);
+    const supportEmail = String(env.SUPPORT_EMAIL || env.APP_UPGRADE_EMAIL || env.UPGRADE_EMAIL || '').trim();
+    const supportWhatsApp = String(env.SUPPORT_WHATSAPP_NUMBER || '00967739249321').trim();
+    const template = buildActivationArabicEmail({
+      name: body?.name || acc?.name || deriveDisplayName(email),
+      plan: body?.plan || quota?.plan || 'free',
+      quota: quota || null,
+      loginLink: String(env.APP_PUBLIC_ORIGIN || 'https://app.saddamalkadi.com').replace(/\/+$/, '') + '/',
+      supportEmail,
+      supportWhatsApp,
+      note: String(body?.note || '').trim()
+    });
+    const previewOnly = body?.preview === true;
+    if (previewOnly) return jsonResponse({ ok: true, preview: true, email, subject: template.subject, text: template.text, html: template.html }, 200);
+    const sent = await sendTransactionalEmail(env, { to: email, subject: template.subject, text: template.text, html: template.html });
+    if (!sent?.ok) {
+      const notConfigured = sent?.reason === 'NO_PROVIDER_CONFIGURED';
+      return jsonResponse({
+        ok: false,
+        emailSent: false,
+        warning: notConfigured ? 'لم يتم إرسال البريد لأن خدمة البريد غير مهيأة' : 'فشل إرسال البريد الإلكتروني.',
+        reason: sent?.reason || 'EMAIL_SEND_FAILED',
+        provider: sent?.provider || ''
+      }, notConfigured ? 200 : 502);
+    }
+    return jsonResponse({ ok: true, emailSent: true, provider: sent.provider || 'unknown' }, 200);
+  } catch (error) {
+    const msg = String(error?.message || error || '');
+    if (msg === 'ADMIN_REQUIRED') return jsonResponse({ error: 'Admin access required.', code: 'ADMIN_REQUIRED' }, 403);
+    return jsonResponse({ error: msg || 'Admin notify failed.', code: 'ADMIN_USER_NOTIFY_FAILED' }, 400);
   }
 }
 

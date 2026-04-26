@@ -318,7 +318,12 @@
     voicePreferredLanguage: 'ar-SA',
     voicePremiumOnly: false,
     userEmailPasswordEnabled: false,
-    transactionalEmailConfigured: false
+    transactionalEmailConfigured: false,
+    supportWhatsAppEnabled: true,
+    supportWhatsAppNumber: '00967739249321',
+    supportWhatsAppMessage: 'مرحباً، أحتاج مساعدة في AI Workspace Studio',
+    supportEmail: '',
+    supportLabel: 'دعم واتساب'
   };
 
   const DEFAULT_USAGE_STATE = {
@@ -399,6 +404,14 @@
     /* Last Capacitor native TTS locale that succeeded isLanguageSupported — avoids N bridge calls per utterance */
     nativeTtsLangCached: ''
   };
+  const UI_PERF_RUNTIME = {
+    typingActive: false,
+    typingTimer: 0,
+    strategicRefreshTimer: 0,
+    stableComposerMeta: '',
+    stableFilesCount: 0,
+    stableMsgCount: 0
+  };
 
   /** Cloud STT segment end: silence hold + max length; post-STT auto-send is separate (see below). */
   const VOICE_CLOUD_MAX_RECORD_MS_VOICE = 16800;
@@ -430,13 +443,75 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v9.6.10 TEST';
+  const WEB_RELEASE_LABEL = 'v9.6.11 TEST';
   const AI_STUDIO_DEBUG_LOG = (() => {
     try{ return /[?&]debug=1/i.test(String(location.search||'')) || (localStorage.getItem('aistudio_debug_log') === '1'); }catch(_){ return false; }
   })();
   function devLog(){
     if (!AI_STUDIO_DEBUG_LOG) return;
     try{ console.info.apply(console, arguments); }catch(_){ }
+  }
+  function scheduleStrategicWorkspaceRefresh(delay = 220){
+    clearTimeout(UI_PERF_RUNTIME.strategicRefreshTimer);
+    UI_PERF_RUNTIME.strategicRefreshTimer = window.setTimeout(() => {
+      refreshStrategicWorkspace().catch(() => {});
+    }, clamp(Number(delay) || 220, 60, 1200));
+  }
+  function setTypingActive(){
+    UI_PERF_RUNTIME.typingActive = true;
+    clearTimeout(UI_PERF_RUNTIME.typingTimer);
+    UI_PERF_RUNTIME.typingTimer = window.setTimeout(() => {
+      UI_PERF_RUNTIME.typingActive = false;
+      try{ syncComposerMeta(); }catch(_){ }
+    }, 260);
+  }
+  function isTypingActive(){
+    return UI_PERF_RUNTIME.typingActive === true;
+  }
+  function normalizeWhatsAppNumber(value){
+    const raw = String(value || '').replace(/[^\d+]/g, '').trim();
+    if (!raw) return '967739249321';
+    let n = raw.replace(/^\+/, '');
+    if (n.startsWith('00')) n = n.slice(2);
+    return n || '967739249321';
+  }
+  function getSupportConfig(){
+    const c = getEffectiveAuthConfig(getSettings());
+    const enabled = c.supportWhatsAppEnabled !== false;
+    const number = normalizeWhatsAppNumber(c.supportWhatsAppNumber || '00967739249321');
+    const message = String(c.supportWhatsAppMessage || 'مرحباً، أحتاج مساعدة في AI Workspace Studio').trim();
+    const label = String(c.supportLabel || 'دعم واتساب').trim() || 'دعم واتساب';
+    const email = String(c.supportEmail || '').trim();
+    return { enabled, number, message, label, email };
+  }
+  function getSupportWhatsAppUrl(){
+    const support = getSupportConfig();
+    const text = encodeURIComponent(support.message || 'مرحباً، أحتاج مساعدة في AI Workspace Studio');
+    return `https://wa.me/${support.number}?text=${text}`;
+  }
+  function openWhatsAppSupport(){
+    const support = getSupportConfig();
+    if (!support.enabled) return toast('خيار دعم واتساب غير مفعّل حالياً.');
+    const link = getSupportWhatsAppUrl();
+    try{
+      window.open(link, '_blank', 'noopener');
+    }catch(_){
+      location.href = link;
+    }
+  }
+  function answerPlatformAssistantLocal(question = ''){
+    const q = String(question || '').trim().toLowerCase();
+    if (!q) return 'اكتب سؤالك عن المنصة (الملفات، OCR، RAG، البصمة، الإعدادات، النماذج، التحميلات، الإدارة).';
+    if (/ocr|استخراج|صورة|pdf/.test(q)) return 'في صفحة الملفات/مختبر الوثائق: اختر documentReadMode (Auto / Vision / Force OCR / Text only). عند الملفات المصوّرة استخدم Force OCR. أثناء المعالجة سيظهر التقدّم ويمكنك المتابعة بالكتابة دون انتظار.';
+    if (/rag|استرجاع|files only|من الملفات فقط/.test(q)) return 'RAG = استرجاع مقاطع ذات صلة من قاعدة المعرفة المفهرسة. "من الملفات فقط" يقيد الإجابة بسياق الملفات الحالية دون معرفة خارجية. فعّل RAG عند الحاجة للإجابات من أرشيف كبير.';
+    if (/بصمة|biometric|finger/.test(q)) return 'تفعيل البصمة: سجّل دخولاً أولاً ثم فعّل الخيار من الإعدادات. في التشغيل القادم تظهر المطالبة إذا كانت هناك جلسة محفوظة صالحة. عند الإلغاء أو الفشل يعود التطبيق لشاشة الدخول العادية.';
+    if (/نموذج|model|موديل/.test(q)) return 'اختر النموذج حسب المهمة: السريع للمهام اليومية، الأقوى للتحليل الطويل، والرؤية عند صور/PDF. في الخطة المجانية تُستخدم النماذج الاقتصادية تلقائياً.';
+    if (/ملف|upload|رفع/.test(q)) return 'من صفحة الملفات ارفع ملفاتك ثم افتحها/فهرسها للمعرفة. للـ OCR اختر الوضع المناسب. إذا لم يرَ النموذج ملفاتك تأكد أن الملف ضمن المشروع الحالي وتمت فهرسته.';
+    if (/admin|إدارة|مستخدم/.test(q)) return 'لوحة الإدارة تتيح: إدارة الطلبات (مراجعة/قبول/رفض/أرشفة) وإدارة المستخدمين (تفعيل، خطة، رصيد، صلاحية، تعليق).';
+    return 'يمكنني مساعدتك في: رفع الملفات، OCR، KB/RAG، إعدادات النماذج، البصمة، التحميلات، والإدارة. جرّب سؤالاً محدداً مثل: "كيف أفعّل OCR؟"';
+  }
+  function isDebugLoggingEnabled(){
+    return AI_STUDIO_DEBUG_LOG === true;
   }
   const RELEASE_CHANNEL = 'rc';
   const HIDE_PUBLIC_AAB = true;
@@ -1715,7 +1790,12 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
         voicePreferredLanguage: String(remote.voicePreferredLanguage || local.voicePreferredLanguage || DEFAULT_AUTH_CONFIG.voicePreferredLanguage).trim(),
         voicePremiumOnly: remote.voicePremiumOnly !== false,
         userEmailPasswordEnabled: remote.userEmailPasswordEnabled === true,
-        transactionalEmailConfigured: remote.transactionalEmailConfigured === true
+        transactionalEmailConfigured: remote.transactionalEmailConfigured === true,
+        supportWhatsAppEnabled: remote.supportWhatsAppEnabled !== false,
+        supportWhatsAppNumber: String(remote.supportWhatsAppNumber || DEFAULT_AUTH_CONFIG.supportWhatsAppNumber || '00967739249321').trim(),
+        supportWhatsAppMessage: String(remote.supportWhatsAppMessage || DEFAULT_AUTH_CONFIG.supportWhatsAppMessage || 'مرحباً، أحتاج مساعدة في AI Workspace Studio').trim(),
+        supportEmail: String(remote.supportEmail || '').trim(),
+        supportLabel: String(remote.supportLabel || DEFAULT_AUTH_CONFIG.supportLabel || 'دعم واتساب').trim()
       });
       const stabilized = preserveAdminPasswordCapability(normalized, previous, healthPayload);
       return setAuthConfigCached(stabilized);
@@ -6413,7 +6493,7 @@ function syncUnifiedAuthEntry(){
       refreshModeButtons();
       renderSettings();
       await hydrateCloudState(true).catch(() => null);
-      refreshStrategicWorkspace().catch(()=>{});
+      scheduleStrategicWorkspaceRefresh(260);
       closeAuthGate(true);
       toast('✅ تم تسجيل الدخول بنجاح');
       return true;
@@ -6671,15 +6751,72 @@ async function submitUnifiedAuthEntry(){
     rows.forEach((r) => {
       const tr = document.createElement('tr');
       const t = Number(r.createdAt || 0);
+      const acted = Number(r.actionAt || 0);
       const when = t ? new Date(t).toLocaleString('ar-SA') : '—';
+      const actedWhen = acted ? new Date(acted).toLocaleString('ar-SA') : '—';
       const rid = escapeHtml(String(r.requestId || '').slice(0, 48));
       const st = escapeHtml(formatUpgradeRequestStatusLabel(r.status));
       tr.innerHTML = `
         <td style="padding:8px">${escapeHtml(when)}</td>
         <td style="padding:8px">${escapeHtml(String(r.userEmail || ''))}</td>
         <td style="padding:8px">${escapeHtml(String(r.plan || ''))}</td>
-        <td style="padding:8px">${st}</td>
+        <td style="padding:8px">${st}<div class="hint">إجراء: ${escapeHtml(actedWhen)} ${escapeHtml(String(r.actionBy || ''))}</div></td>
         <td style="padding:8px;word-break:break-all;font-size:11px">${rid}</td>`;
+      const actions = document.createElement('div');
+      actions.style.display = 'flex';
+      actions.style.gap = '6px';
+      actions.style.marginTop = '6px';
+      const addActionBtn = (label, run) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn ghost sm';
+        b.textContent = label;
+        b.addEventListener('click', (evt) => {
+          evt.preventDefault();
+          evt.stopPropagation();
+          run();
+        });
+        actions.appendChild(b);
+      };
+      addActionBtn('قبول', async () => {
+        try{
+          await fetchAuthJson(`/admin/upgrade-requests/${encodeURIComponent(String(r.requestId || ''))}/approve`, { method:'POST', body: JSON.stringify({ adminNote: '' }) });
+          toast('✅ تم قبول الطلب');
+          refreshAdminUpgradeRequestsPanel().catch(()=>{});
+        }catch(error){ toast(`⚠️ ${sanitizeAuthErrorMessage(error?.message || error)}`); }
+      });
+      addActionBtn('رفض', async () => {
+        try{
+          await fetchAuthJson(`/admin/upgrade-requests/${encodeURIComponent(String(r.requestId || ''))}/reject`, { method:'POST', body: JSON.stringify({ adminNote: '' }) });
+          toast('✅ تم رفض الطلب');
+          refreshAdminUpgradeRequestsPanel().catch(()=>{});
+        }catch(error){ toast(`⚠️ ${sanitizeAuthErrorMessage(error?.message || error)}`); }
+      });
+      addActionBtn('إنهاء', async () => {
+        try{
+          await fetchAuthJson(`/admin/upgrade-requests/${encodeURIComponent(String(r.requestId || ''))}/complete`, { method:'POST', body: JSON.stringify({ adminNote: '' }) });
+          toast('✅ تم وضع الطلب كمكتمل');
+          refreshAdminUpgradeRequestsPanel().catch(()=>{});
+        }catch(error){ toast(`⚠️ ${sanitizeAuthErrorMessage(error?.message || error)}`); }
+      });
+      addActionBtn('أرشفة', async () => {
+        try{
+          await fetchAuthJson(`/admin/upgrade-requests/${encodeURIComponent(String(r.requestId || ''))}/archive`, { method:'POST', body: JSON.stringify({ adminNote: '' }) });
+          toast('✅ تمت الأرشفة');
+          refreshAdminUpgradeRequestsPanel().catch(()=>{});
+        }catch(error){ toast(`⚠️ ${sanitizeAuthErrorMessage(error?.message || error)}`); }
+      });
+      addActionBtn('حذف', async () => {
+        try{
+          await fetchAuthJson(`/admin/upgrade-requests/${encodeURIComponent(String(r.requestId || ''))}`, { method:'DELETE' });
+          toast('✅ تم حذف الطلب');
+          refreshAdminUpgradeRequestsPanel().catch(()=>{});
+        }catch(error){ toast(`⚠️ ${sanitizeAuthErrorMessage(error?.message || error)}`); }
+      });
+      const td = document.createElement('td');
+      td.style.padding = '8px';
+      td.appendChild(actions);
+      tr.appendChild(td);
       body.appendChild(tr);
     });
   }
@@ -6934,7 +7071,7 @@ async function submitUnifiedAuthEntry(){
     }catch(_){}
     syncAccountUi();
     refreshModeButtons();
-    refreshStrategicWorkspace().catch(()=>{});
+    scheduleStrategicWorkspaceRefresh(260);
     openAuthGate('تم تسجيل الخروج. سجّل الدخول مرة أخرى ببريدك الشخصي للمتابعة.', { force: true });
   }
 
@@ -13816,6 +13953,8 @@ ${clip}` });
     } catch(err) {
       logPreviewError('hydrate_messages_pass', err, { tid: thread?.id || '' });
     }
+    // During active typing, avoid rebuilding long chat DOM trees on every incidental call.
+    if (UI_PERF_RUNTIME.typingActive && !window.__AI_STUDIO_FORCE_CHAT_RENDER__) return;
     log.innerHTML = '';
 
     if (!msgs.length){
@@ -13824,7 +13963,7 @@ ${clip}` });
       log.scrollTop = 0;
       refreshNavMeta();
       renderDownloads();
-      refreshStrategicWorkspace().catch(()=>{});
+      scheduleStrategicWorkspaceRefresh(260);
       scheduleChatScrollDockSync();
       return;
     }
@@ -13949,7 +14088,7 @@ ${clip}` });
     refreshNavMeta();
     renderDownloads();
     renderThreadHistory();
-    refreshStrategicWorkspace().catch(()=>{});
+    scheduleStrategicWorkspaceRefresh(260);
     scheduleChatScrollDockSync();
   }
 
@@ -13981,9 +14120,18 @@ ${clip}` });
     if (!meta) return;
     const wrap = meta.closest('.composer-meta');
     const pid = getCurProjectId();
-    const files = loadFiles(pid);
-    const thread = getCurThread();
+    // When typing rapidly, reuse recent counts to avoid storage/JSON churn per keystroke.
+    const files = UI_PERF_RUNTIME.typingActive
+      ? Array(UI_PERF_RUNTIME.stableFilesCount).fill(0)
+      : loadFiles(pid);
+    const thread = UI_PERF_RUNTIME.typingActive
+      ? { messages: Array(UI_PERF_RUNTIME.stableMsgCount).fill(0) }
+      : getCurThread();
     const msgCount = (thread.messages || []).length;
+    if (!UI_PERF_RUNTIME.typingActive){
+      UI_PERF_RUNTIME.stableFilesCount = files.length;
+      UI_PERF_RUNTIME.stableMsgCount = msgCount;
+    }
     const flags = [];
     if (hasProjectBrief(getProjectBrief(pid))) flags.push('ذاكرة المشروع');
     if (getStudyMode()) flags.push('دراسي');
@@ -14025,8 +14173,11 @@ ${clip}` });
       parts.push('🧩 Prompt Engineering ON');
     }
     if (flags.length) parts.push(...flags);
-    meta.textContent = parts.join(' · ');
-    resizeComposerInput();
+    const nextMeta = parts.join(' · ');
+    if (nextMeta === UI_PERF_RUNTIME.stableComposerMeta && UI_PERF_RUNTIME.typingActive) return;
+    UI_PERF_RUNTIME.stableComposerMeta = nextMeta;
+    meta.textContent = nextMeta;
+    if (!UI_PERF_RUNTIME.typingActive) resizeComposerInput();
   }
 
   function inferAttachmentKind(file){
