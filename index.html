@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="9.6.9">
+<html lang="ar" dir="rtl" data-appver="9.6.10">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5" />
@@ -5764,9 +5764,9 @@ body.dark *::-webkit-scrollbar-thumb:hover{
                     <label class="hint">أعلى النتائج Top‑K</label>
                     <select id="kbTopK" aria-label="أعلى النتائج">
                       <option value="4">4</option>
-                      <option value="6" selected>6 (افتراضي)</option>
+                      <option value="6">6</option>
                       <option value="8">8</option>
-                      <option value="10">10</option>
+                      <option value="10" selected>10 (افتراضي)</option>
                       <option value="12">12</option>
                     </select>
                   </div>
@@ -6043,6 +6043,10 @@ body.dark *::-webkit-scrollbar-thumb:hover{
                     <span><strong>فتح الجلسة بالبصمة / قفل الجهاز</strong> (Android فقط — يخزّن مفتاح الجلسة آمنًا ولا يحفظ كلمة مرور المشرف نصًا)</span>
                   </label>
                   <p class="hint" id="biometricSettingsHint" style="margin:8px 0 0; line-height:1.7"></p>
+                  <div style="margin-top:10px">
+                    <button type="button" class="btn ghost sm" id="biometricDiagBtn">تشخيص البصمة (سجل/قائمة الإضافات)</button>
+                    <pre id="biometricDiagOut" style="display:none;margin-top:8px;padding:10px;border-radius:10px;background:var(--panel, #f0f1f4);font-size:11px;white-space:pre-wrap;max-height:200px;overflow:auto;border:1px solid var(--line, #ddd)"></pre>
+                  </div>
                 </div>
               </div>
               <p class="hint" style="margin:8px 0 0"><a href="./connectivity.html" target="_blank" rel="noopener noreferrer">فحص الاتصال والـ API</a> · <a href="./enterprise.html" target="_blank" rel="noopener noreferrer">شبكات المؤسسات</a></p>
@@ -6446,7 +6450,7 @@ body.dark *::-webkit-scrollbar-thumb:hover{
   <p class="lv-hint">اتكلم وسأستمع لحظيًا، ثم سأرد بجُمل قصيرة. تكلّم فوق صوتي لمقاطعتي.</p>
 </div>
 
-<script src="app.js?v=961"></script>
+<script src="app.js?v=970"></script>
   <script>
     const isNativeCapacitorApp = (() => {
       try{
@@ -6460,7 +6464,7 @@ body.dark *::-webkit-scrollbar-thumb:hover{
       // Force-clear any stale SW caches from old versions
       (async () => {
         try {
-          const CURRENT_CACHE = "aistudio-cache-v892";
+          const CURRENT_CACHE = "aistudio-cache-v970";
           const keys = await caches.keys();
           for (const key of keys) {
             if (key !== CURRENT_CACHE) { await caches.delete(key); }
@@ -6469,7 +6473,7 @@ body.dark *::-webkit-scrollbar-thumb:hover{
       })();
 
       window.addEventListener("load", () => {
-  navigator.serviceWorker.register("./sw.js?v=961").then((registration) => {
+  navigator.serviceWorker.register("./sw.js?v=970").then((registration) => {
           registration.update().catch(() => {});
 
           if (registration.waiting) {

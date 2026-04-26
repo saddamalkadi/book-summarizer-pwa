@@ -430,7 +430,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v9.6.9 TEST';
+  const WEB_RELEASE_LABEL = 'v9.6.10 TEST';
   const AI_STUDIO_DEBUG_LOG = (() => {
     try{ return /[?&]debug=1/i.test(String(location.search||'')) || (localStorage.getItem('aistudio_debug_log') === '1'); }catch(_){ return false; }
   })();
@@ -533,7 +533,7 @@ const KB_DB_VER = 1;
 
 const DEFAULT_KB = {
   embedModel: '',
-  topK: 6,
+  topK: 10,
   chunkSize: 900,
   overlap: 120,
   ragHint: 'استخدم المقاطع التالية من قاعدة المعرفة فقط. ضع الاقتباسات بصيغة [KB:filename#chunk]. إذا لم تجد معلومة قل: غير موجود في الملفات.'
@@ -732,32 +732,94 @@ function lexicalScore(query, candidate){
   return score / uniq;
 }
 
+function countUniqueChunkFiles(chunks){
+  const s = new Set();
+  for (const c of chunks || []){
+    const n = String(c?.fileName || '').trim();
+    if (n) s.add(n);
+  }
+  return s.size;
+}
+
+/**
+ * Merge ranked chunks with per-file coverage: take the best chunk from each
+ * file first (when possible), then fill remaining budget by global score.
+ * Prevents the common "only ~5 files matter" effect when many files exist
+ * but topK is small, or when lexical/embedding top scores cluster in a subset
+ * of files.
+ */
+function pickDiverseByFileChunks(scoredRows, k){
+  const list = (Array.isArray(scoredRows) ? scoredRows : []).filter((x) => x && (x.id || x.text));
+  if (!list.length) return [];
+  const cap = Math.max(1, Math.min(24, k));
+  const byFile = new Map();
+  for (const c of list){
+    const key = String(c.fileName || '—');
+    if (!byFile.has(key)) byFile.set(key, []);
+    byFile.get(key).push(c);
+  }
+  for (const arr of byFile.values()){
+    arr.sort((a, b) => (Number(b.score || 0) - Number(a.score || 0)));
+  }
+  const perFile = Array.from(byFile.values())
+    .map((arr) => arr[0])
+    .filter(Boolean)
+    .sort((a, b) => (Number(b.score || 0) - Number(a.score || 0)));
+  const out = [];
+  const seen = new Set();
+  const idOf = (c) => String(c.id || `row_${c.fileName}#${c.chunkIdx || ''}`);
+
+  for (const c of perFile){
+    if (out.length >= cap) break;
+    const id = idOf(c);
+    if (seen.has(id)) continue;
+    out.push(c);
+    seen.add(id);
+  }
+  const rest = list
+    .slice()
+    .sort((a, b) => (Number(b.score || 0) - Number(a.score || 0)));
+  for (const c of rest){
+    if (out.length >= cap) break;
+    const id = idOf(c);
+    if (seen.has(id)) continue;
+    out.push(c);
+    seen.add(id);
+  }
+  return out.sort((a, b) => (Number(b.score || 0) - Number(a.score || 0)));
+}
+
 async function searchKb(query, rawSettings = getSettings()){
   const pid = getCurProjectId();
   const kb = getKbSettings(pid);
   const policy = getAppRuntimePolicy(rawSettings);
   const settings = policy.runtime;
   const embedModel = (kb.embedModel || '').trim();
-  const topK = clamp(Number(kb.topK||6), 1, 20);
+  const topK = clamp(Number(kb.topK||10), 1, 20);
   const canUseEmbeddings = policy.allowEmbeddings && !!embedModel && hasAuthReady(settings);
 
   const chunks = await kbGetAllByProject(pid);
   if (!chunks.length) return [];
+  const nFiles = countUniqueChunkFiles(chunks);
+  const effectiveK = Math.min(24, Math.max(topK, nFiles, 1));
+
+  const toBasicRows = (all) => {
+    const base = (all || []).map((c) => ({ ...c, score: lexicalScore(query, c.text), retrievalMode: 'basic' }));
+    const anyHit = base.some((c) => Number(c.score || 0) > 0);
+    const keep = anyHit
+      ? base.filter((c) => Number(c.score || 0) > 0)
+      : base;
+    if (!keep.length) return [];
+    return pickDiverseByFileChunks(keep, effectiveK);
+  };
+
   if (!canUseEmbeddings){
-    return chunks
-      .map((c) => ({ ...c, score: lexicalScore(query, c.text), retrievalMode: 'basic' }))
-      .filter((c) => c.score > 0)
-      .sort((a,b)=> b.score - a.score)
-      .slice(0, topK);
+    return toBasicRows(chunks);
   }
 
   const withEmb = chunks.filter(c => c.embedding);
   if (!withEmb.length){
-    return chunks
-      .map((c) => ({ ...c, score: lexicalScore(query, c.text), retrievalMode: 'basic' }))
-      .filter((c) => c.score > 0)
-      .sort((a,b)=> b.score - a.score)
-      .slice(0, topK);
+    return toBasicRows(chunks);
   }
 
   const baseUrl = effectiveBaseUrl(settings) || (settings.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1');
@@ -771,9 +833,9 @@ async function searchKb(query, rawSettings = getSettings()){
   const scored = withEmb.map(c => {
     const cv = new Float32Array(c.embedding);
     return { ...c, score: cosineSim(qv, cv) };
-  }).sort((a,b)=> b.score - a.score).slice(0, topK);
-
-  return scored.map((row) => ({ ...row, retrievalMode: 'embedding' }));
+  });
+  return pickDiverseByFileChunks(scored, effectiveK)
+    .map((row) => ({ ...row, retrievalMode: 'embedding' }));
 }
 
 function formatKbResults(results){
@@ -801,7 +863,7 @@ async function renderKbUI(){
   } else if ($('embedModel')){
     $('embedModel').value = kb.embedModel || '';
   }
-  if ($('kbTopK')) ensureSelectHasValue($('kbTopK'), String(kb.topK || 6));
+  if ($('kbTopK')) ensureSelectHasValue($('kbTopK'), String(kb.topK || 10));
   if ($('kbChunkSize')) ensureSelectHasValue($('kbChunkSize'), String(kb.chunkSize || 900));
   if ($('kbOverlap')) ensureSelectHasValue($('kbOverlap'), String(kb.overlap || 120));
   if ($('kbRagHint')) $('kbRagHint').value = kb.ragHint || DEFAULT_KB.ragHint;
@@ -824,6 +886,9 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   const modes = getEffectiveModeState(rawSettings, policy);
   if (!policy.allowRag || !modes.rag) return { ctx:'', results:[] };
   const strictKbOnly = !!rawSettings.answerOnlyFromKb;
+  const pid0 = getCurProjectId();
+  const projFiles0 = (loadFiles(pid0) || []).filter((f) => String(f.kbIndexText || f.text || '').trim());
+  const indexedChunks0 = (await kbCountProject(pid0).catch(() => 0)) || 0;
   try{
     const results = await searchKb(userText, rawSettings);
     if (!results.length){
@@ -834,14 +899,17 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     }
     const kb = getKbSettings(getCurProjectId());
     const hint = (kb.ragHint || DEFAULT_KB.ragHint).trim();
-    const excerpts = results.map(r => {
+    const filesInResult = new Set(results.map((r) => r.fileName).filter(Boolean));
+    const lines = results.map(r => {
       const cite = `[KB:${r.fileName}#${r.chunkIdx}]`;
       return `${cite}\n${r.text}`;
-    }).join('\n\n');
+    });
+    const statsLine = `[KB: إحصاء] ملفات المشروع (نص/فهرس): ${projFiles0.length} | مقاطع مفهرَسة: ${indexedChunks0} | ملفات ممثّلة في النتائج: ${filesInResult.size} | المقاطع المُرسلة للنموذج: ${results.length} | (قد يتجاوز إعداد topK الافتراضي تلقائيًا ليشمل الملفات جميعها عند الاقتضاء).`;
+    const excerpts = lines.join('\n\n');
     const strictRule = strictKbOnly
       ? '\n\nتعليمات إلزامية: أجب فقط من المقاطع المذكورة. إذا لم تجد معلومة مطابقة قل: غير موجود في الملفات المرفوعة.'
       : '';
-    return { ctx: `${hint}${strictRule}\n\nمقاطع من قاعدة المعرفة:\n\n${excerpts}`, results };
+    return { ctx: `${statsLine}\n\n${hint}${strictRule}\n\nمقاطع من قاعدة المعرفة:\n\n${excerpts}`, results };
   }catch(_){
     if (strictKbOnly){
       return { ctx: 'وضع مقيّد بالمرفقات/KB: تعذّر الاسترجاع الآن. قل: غير موجود في الملفات المرفوعة.', results:[] };
@@ -5886,6 +5954,20 @@ function syncUnifiedAuthEntry(){
     return getCapacitorPluginProxy('BiometricAuthNative', { nativeOnly: true });
   }
 
+  /** Aparajita's JS registers `authenticate` on the class; the raw Capacitor proxy only exposes `internalAuthenticate` from Java. */
+  function hasBiometricAuthMethod(){
+    const bio = getBiometricAuthPlugin();
+    if (!bio) return false;
+    return typeof bio.authenticate === 'function' || typeof bio.internalAuthenticate === 'function';
+  }
+  async function callBiometricAuthenticate(options){
+    const bio = getBiometricAuthPlugin();
+    if (!bio) return Promise.reject(new Error('biometric_unavailable'));
+    if (typeof bio.authenticate === 'function') return bio.authenticate(options);
+    if (typeof bio.internalAuthenticate === 'function') return bio.internalAuthenticate(options);
+    return Promise.reject(new Error('وحدة البصمة غير مدمجة في هذا البناء'));
+  }
+
   const BIO_PREF_ENABLED = 'aistudio_bio_enabled';
   const BIO_PREF_SESSION = 'aistudio_bio_session_json';
 
@@ -5909,10 +5991,9 @@ function syncUnifiedAuthEntry(){
     let raw = '';
     try{ raw = String((await P.get({ key: BIO_PREF_SESSION }))?.value || ''); }catch(_){ }
     if (!raw) return;
-    const bio = getBiometricAuthPlugin();
-    if (!bio?.authenticate) return;
+    if (!hasBiometricAuthMethod()) return;
     try{
-      await bio.authenticate({
+      await callBiometricAuthenticate({
         reason: 'فتح الجلسة المحفوظة',
         cancelTitle: 'إلغاء',
         allowDeviceCredential: true,
@@ -5943,18 +6024,18 @@ function syncUnifiedAuthEntry(){
     }
     const bio = getBiometricAuthPlugin();
     const P = getCapacitorPreferencesPlugin();
-    if (!bio?.authenticate || !P?.set) {
-      toast('الوحدة الأصلية غير جاهزة — نفّذ npm run cap:sync وأعد تثبيت التطبيق');
+    if (!hasBiometricAuthMethod() || !P?.set) {
+      toast('وحدة البصمة غير مدمجة في هذا البناء. نفّذ npm run cap:sync ثم أعد تثبيت التطبيق.');
       return;
     }
     let check = { isAvailable: false, deviceIsSecure: false };
     try{ check = await bio.checkBiometry(); }catch(_){ }
     if (!check.isAvailable && !check.deviceIsSecure){
-      toast('تعذر العثور على بصمة أو قفل شاشة مهيأ');
+      toast('فعّل بصمة أو قفل شاشة (رمز/نمط/كلمة) من إعدادات الهاتف أولًا.');
       return;
     }
     try{
-      await bio.authenticate({
+      await callBiometricAuthenticate({
         reason: 'تأكيد لتفعيل فتح الجلسة بالبصمة',
         allowDeviceCredential: true,
         androidTitle: 'AI Workspace Studio'
@@ -6006,6 +6087,35 @@ function syncUnifiedAuthEntry(){
         ? 'يُعاد مفتاح الجلسة من تخزين آمن للجهاز بعد التحقق — لا تُحفظ كلمات مرور المشرف نصّاً.'
         : 'بعد تسجيل الدخول، فعّل المفتاح ووافق عند طلب البصمة/قفل الجهاز.';
     }
+  }
+
+  async function runBiometricDiagnosticsToPanel(){
+    const out = $('biometricDiagOut');
+    const lines = [];
+    const push = (s) => { lines.push(String(s)); };
+    try{
+      push(`platform: ${(typeof getCapacitorPlatform === 'function' && getCapacitorPlatform()) || 'n/a'}`);
+      push(`isNativeAndroidPlatform: ${typeof isNativeAndroidPlatform === 'function' && isNativeAndroidPlatform()}`);
+      let keys = [];
+      try{ keys = Object.keys(window.Capacitor?.Plugins || {}); }catch(_){}
+      push(`Capacitor plugin keys (${keys.length}): ${keys.join(', ') || '—'}`);
+      const bio = getBiometricAuthPlugin();
+      push(`BiometricAuthNative object: ${bio ? 'yes' : 'no'}`);
+      if (bio){
+        push(`authenticate: ${typeof bio.authenticate} | internalAuthenticate: ${typeof bio.internalAuthenticate} | checkBiometry: ${typeof bio.checkBiometry}`);
+      }
+      push(`hasBiometricAuthMethod: ${hasBiometricAuthMethod()}`);
+      if (bio && typeof bio.checkBiometry === 'function'){
+        const c = await bio.checkBiometry();
+        push('checkBiometry: ' + JSON.stringify(c));
+      }
+      push('— لم يُستدعَ authenticate() هنا (تجربة بلا حوار) —');
+    }catch(e){
+      push('Error: ' + (e?.message || e));
+    }
+    const text = lines.join('\n');
+    if (out) out.textContent = text;
+    if (out) out.style.display = '';
   }
 
   function normalizeAuthPayload(payload){
@@ -11497,11 +11607,11 @@ ${tail}`;
     const name = tool.name;
     const args = tool.args || {};
     if (name === 'kb_search'){
-      if (!policy.allowEmbeddings) throw new Error(getPolicyFeatureReason('embeddings', policy));
+      if (!policy.allowRag) throw new Error('kb_search: فعّل RAG / غير مسمَح');
       const q = String(args.query || '').trim();
       if (!q) throw new Error('kb_search: query مطلوب');
       const hits = await searchKb(q, settings);
-      return String(hits || '').trim();
+      return formatKbResults(hits);
     }
     if (name === 'web_search'){
       if (!policy.allowWeb) throw new Error(getPolicyFeatureReason('web', policy));
@@ -11724,6 +11834,45 @@ async function maybeUpdateThreadSummary(pid, tid){
   function buildAutoFilesContext(settings){
     const explicit = String($('filesText')?.value || '');
     return explicit.trim() ? explicit : '';
+  }
+
+  /**
+   * When RAG is off, project files in the library are not in the request unless
+   * the user pastes "filesText" or chat-attaches. Stitch fair excerpts from all
+   * indexed files on disk (kbIndexText or text) so 6–10+ files are not "silent."
+   */
+  function buildProjectFilesStitchedContext(settings, pid, { ragOn } = { ragOn: false }){
+    if (ragOn) return { text: '', hadClipping: false, fileCount: 0, partChars: 0 };
+    const files = (loadFiles(pid) || []).filter((f) => String(f.kbIndexText || f.text || '').trim());
+    if (!files.length) return { text: '', hadClipping: false, fileCount: 0, partChars: 0 };
+    const projectClip = Math.min(56000, Math.max(24000, Number(settings.fileClip || 12000) * 4));
+    let left = projectClip;
+    const blocks = [];
+    let anyClip = false;
+    const n = files.length;
+    for (let i = 0; i < n; i++){
+      const f = files[i];
+      const full = String(f.kbIndexText || f.text || '').trim();
+      const leftAfter = n - i;
+      const budget = Math.max(400, Math.floor(left / leftAfter));
+      const part = full.length <= budget ? full : clipText(full, budget);
+      if (part.length < full.length) anyClip = true;
+      left = Math.max(0, left - part.length);
+      blocks.push(
+        `--- [مكتبة: ${f.name}] (${String(f.kind || 'file')}) — ${formatCompactChars(part.length)}/${formatCompactChars(full.length)} حرف ---\n${part}`
+      );
+      if (left <= 0) break;
+    }
+    if (!blocks.length) return { text: '', hadClipping: false, fileCount: 0, partChars: 0 };
+    const header = '[سياق ملفات المشروع] تمت قراءة الملفات المخزّنة في المساحة (ليس RAG). إن كان الحجم كبيرًا فقد يُلخص — فعّل فهرسة KB وRAG لاسترجاع دقيق من كل الملفات.\n\n';
+    const note = 'تمت معالجة جميع الملفات، لكن تم إرسال أفضل المقاطع ذات الصلة (أو الافتتاحية عند الازدحام) فقط للنموذج داخل حدود السياق.\n\n';
+    const body = (header + (anyClip ? note : '')) + blocks.join('\n\n');
+    return {
+      text: body,
+      hadClipping: anyClip,
+      fileCount: files.length,
+      partChars: body.length
+    };
   }
 
   const MAX_CHAT_INLINE_MEDIA_BYTES = 4 * 1024 * 1024;
@@ -12132,6 +12281,9 @@ async function maybeUpdateThreadSummary(pid, tid){
     const content = [{ type:'text', text: String(userText||'') }];
     const totalBudget = clamp(Math.max(Number(settings.fileClip || 12000) * 2, 18000), 18000, 42000);
     let remainingBudget = totalBudget;
+    const MAX_VISION_IMAGE_PARTS = 20;
+    let visionPartsUsed = 0;
+    let visionSkipped = false;
 
     list.forEach((a, idx) => {
       const fullText = String(a.textFull || a.text || '').trim();
@@ -12159,11 +12311,23 @@ async function maybeUpdateThreadSummary(pid, tid){
       }
 
       if (vision && a.kind === 'image' && a.dataUrl){
-        content.push({ type:'image_url', image_url:{ url: a.dataUrl } });
+        if (visionPartsUsed < MAX_VISION_IMAGE_PARTS){
+          content.push({ type:'image_url', image_url:{ url: a.dataUrl } });
+          visionPartsUsed += 1;
+        } else {
+          visionSkipped = true;
+        }
       }
       if (vision && a.kind === 'pdf' && Array.isArray(a.pageImages) && a.pageImages.length){
         a.pageImages.slice(0, 4).forEach((img) => {
-          if (img && typeof img === 'string') content.push({ type:'image_url', image_url:{ url: img } });
+          if (img && typeof img === 'string'){
+            if (visionPartsUsed < MAX_VISION_IMAGE_PARTS){
+              content.push({ type:'image_url', image_url:{ url: img } });
+              visionPartsUsed += 1;
+            } else {
+              visionSkipped = true;
+            }
+          }
         });
       }
       logDocumentIngestDiagnostics({
@@ -12182,6 +12346,10 @@ async function maybeUpdateThreadSummary(pid, tid){
         finalContentSource: String(a.finalContentSource || '')
       });
     });
+
+    if (visionSkipped){
+      textParts.push(`[تنبيه] تم اقتصار الأجزاء المرئية (صور/صفحات) عند ${MAX_VISION_IMAGE_PARTS} بسبب حدود مزوّد الرؤية. النصوص المستخرجة أعلاه تبقى مضمّنة.`);
+    }
 
     content.push({ type:'text', text: `\n\n[محتوى/وصف المرفقات]\n${textParts.join('\n\n')}` });
 
@@ -14234,7 +14402,16 @@ function updateChips(){
       return;
     }
 
-    const filesText = buildAutoFilesContext(settings);
+    const modes = getEffectiveModeState(rawSettings, policy);
+    let filesText = buildAutoFilesContext(settings);
+    if (!modes.rag){
+      const st = buildProjectFilesStitchedContext(settings, pid, { ragOn: false });
+      if (st.text){
+        const sep = filesText.trim() ? '\n\n' : '';
+        filesText = (filesText || '') + sep + st.text;
+        if (st.hadClipping) toast('تمت معالجة جميع الملفات، لكن تم إرسال مقاطع ضمن حد السياق — فعّل فهرسة KB وRAG لاسترجاع أدق عند العدد الكبير.');
+      }
+    }
     const rag = await buildRagContextIfEnabled(originalText, rawSettings);
     const messages = buildMessagesForChat({
       userText: modelInputText,
@@ -16992,7 +17169,7 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
       const pid = getCurProjectId();
       setKbSettings(pid, {
         embedModel: getKbEmbedModelFromUi(),
-        topK: Number($('kbTopK')?.value || 6),
+        topK: Number($('kbTopK')?.value || 10),
         chunkSize: Number($('kbChunkSize')?.value || 900),
         overlap: Number($('kbOverlap')?.value || 120),
         ragHint: $('kbRagHint')?.value || DEFAULT_KB.ragHint
@@ -17431,6 +17608,7 @@ ${e?.message||e}`, false);
       if (e.target?.checked) void enableBiometricUnlockFromSettings();
       else void disableBiometricUnlockFromSettings();
     });
+    $('biometricDiagBtn')?.addEventListener('click', () => { void runBiometricDiagnosticsToPanel(); });
     void syncBiometricSettingsRow();
     $('settingsHealthBtn')?.addEventListener('click', runStrategicHealthCheckPro);
     $('settingsDefaultsBtn')?.addEventListener('click', applyStrategicDefaults);
