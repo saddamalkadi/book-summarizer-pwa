@@ -254,6 +254,7 @@
     fileClip: 12000,
     streaming: true,
     rag: false,
+    answerOnlyFromKb: false,
     toolsEnabled: false,
 
     authMode: 'gateway',          // browser | gateway
@@ -429,7 +430,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v9.6.6 TEST';
+  const WEB_RELEASE_LABEL = 'v9.6.7 TEST';
   const RELEASE_CHANNEL = 'rc';
   const HIDE_PUBLIC_AAB = true;
   const DISABLE_RUNTIME_ENDPOINT_EDITING_FOR_MANAGED = true;
@@ -655,11 +656,9 @@ async function buildKbIndex(rawSettings = getSettings()){
   const pid = getCurProjectId();
   const kb = getKbSettings(pid);
   const policy = getAppRuntimePolicy(rawSettings);
-  if (!policy.allowEmbeddings) return toast(getPolicyFeatureReason('embeddings', policy));
   const settings = policy.runtime;
   const embedModel = (kb.embedModel || '').trim();
-  if (!embedModel) return toast('⚠️ حدّد نموذج التضمين في صفحة المعرفة.');
-  if (!hasAuthReady(settings)) return toast(getMissingAuthMessage(settings));
+  const canUseEmbeddings = policy.allowEmbeddings && !!embedModel && hasAuthReady(settings);
 
   const files = loadFiles(pid).filter((f) => (f.kbIndexText || f.text || '').trim());
   if (!files.length) return toast('⚠️ لا توجد نصوص مستخرجة من الملفات.');
@@ -676,45 +675,83 @@ async function buildKbIndex(rawSettings = getSettings()){
     }
   }
 
-  const baseUrl = effectiveBaseUrl(settings) || (settings.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1');
-  const extraHeaders = buildProviderHeaders(settings);
-
-  const abort = new AbortController();
-  const batchSize = 64;
-  for (let i=0;i<chunks.length;i+=batchSize){
-    const batch = chunks.slice(i, i+batchSize);
-    const inputs = batch.map(x => x.text);
-    const embs = await callEmbeddings({ settings, apiKey: settings.apiKey, baseUrl, model: embedModel, inputs, signal: abort.signal, extraHeaders });
-    for (let k=0;k<batch.length;k++){
-      const vec = embs[k];
-      if (!vec) continue;
-      const fa = new Float32Array(vec.length);
-      for (let j=0;j<vec.length;j++) fa[j] = vec[j];
-      batch[k].embedding = fa.buffer;
+  if (canUseEmbeddings){
+    const baseUrl = effectiveBaseUrl(settings) || (settings.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1');
+    const extraHeaders = buildProviderHeaders(settings);
+    const abort = new AbortController();
+    const batchSize = 64;
+    for (let i=0;i<chunks.length;i+=batchSize){
+      const batch = chunks.slice(i, i+batchSize);
+      const inputs = batch.map(x => x.text);
+      const embs = await callEmbeddings({ settings, apiKey: settings.apiKey, baseUrl, model: embedModel, inputs, signal: abort.signal, extraHeaders });
+      for (let k=0;k<batch.length;k++){
+        const vec = embs[k];
+        if (!vec) continue;
+        const fa = new Float32Array(vec.length);
+        for (let j=0;j<vec.length;j++) fa[j] = vec[j];
+        batch[k].embedding = fa.buffer;
+      }
+      await kbPutMany(batch);
+      showStatus(`فهرسة KB… ${Math.min(i+batchSize, chunks.length)}/${chunks.length}`, true);
     }
-    await kbPutMany(batch);
-    showStatus(`فهرسة KB… ${Math.min(i+batchSize, chunks.length)}/${chunks.length}`, true);
+  } else {
+    await kbPutMany(chunks);
+    showStatus(`فهرسة KB… ${chunks.length}/${chunks.length}`, true);
   }
 
   showStatus('', false);
-  toast('✅ تم فهرسة KB');
+  toast(canUseEmbeddings ? '✅ تم فهرسة KB' : '✅ تم فهرسة KB (Basic mode بدون Embeddings)');
   await ensureKbStats();
+}
+
+function tokenizeArabicEnglish(text){
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 2);
+}
+
+function lexicalScore(query, candidate){
+  const qTokens = tokenizeArabicEnglish(query);
+  if (!qTokens.length) return 0;
+  const cText = String(candidate || '').toLowerCase();
+  let score = 0;
+  for (const q of qTokens){
+    if (cText.includes(q)) score += Math.min(4, q.length / 2);
+  }
+  const uniq = new Set(qTokens).size || 1;
+  return score / uniq;
 }
 
 async function searchKb(query, rawSettings = getSettings()){
   const pid = getCurProjectId();
   const kb = getKbSettings(pid);
   const policy = getAppRuntimePolicy(rawSettings);
-  if (!policy.allowEmbeddings) throw new Error(getPolicyFeatureReason('embeddings', policy));
   const settings = policy.runtime;
   const embedModel = (kb.embedModel || '').trim();
   const topK = clamp(Number(kb.topK||6), 1, 20);
-  if (!embedModel) throw new Error('نموذج التضمين غير محدد');
-  if (!hasAuthReady(settings)) throw new Error('المصادقة غير مكتملة (مفتاح API أو رابط البوابة)');
+  const canUseEmbeddings = policy.allowEmbeddings && !!embedModel && hasAuthReady(settings);
 
   const chunks = await kbGetAllByProject(pid);
+  if (!chunks.length) return [];
+  if (!canUseEmbeddings){
+    return chunks
+      .map((c) => ({ ...c, score: lexicalScore(query, c.text), retrievalMode: 'basic' }))
+      .filter((c) => c.score > 0)
+      .sort((a,b)=> b.score - a.score)
+      .slice(0, topK);
+  }
+
   const withEmb = chunks.filter(c => c.embedding);
-  if (!withEmb.length) return [];
+  if (!withEmb.length){
+    return chunks
+      .map((c) => ({ ...c, score: lexicalScore(query, c.text), retrievalMode: 'basic' }))
+      .filter((c) => c.score > 0)
+      .sort((a,b)=> b.score - a.score)
+      .slice(0, topK);
+  }
 
   const baseUrl = effectiveBaseUrl(settings) || (settings.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1');
   const extraHeaders = buildProviderHeaders(settings);
@@ -729,7 +766,7 @@ async function searchKb(query, rawSettings = getSettings()){
     return { ...c, score: cosineSim(qv, cv) };
   }).sort((a,b)=> b.score - a.score).slice(0, topK);
 
-  return scored;
+  return scored.map((row) => ({ ...row, retrievalMode: 'embedding' }));
 }
 
 function formatKbResults(results){
@@ -779,17 +816,29 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   const policy = getAppRuntimePolicy(rawSettings);
   const modes = getEffectiveModeState(rawSettings, policy);
   if (!policy.allowRag || !modes.rag) return { ctx:'', results:[] };
+  const strictKbOnly = !!rawSettings.answerOnlyFromKb;
   try{
     const results = await searchKb(userText, rawSettings);
-    if (!results.length) return { ctx:'', results:[] };
+    if (!results.length){
+      if (strictKbOnly){
+        return { ctx: 'وضع مقيّد بالمرفقات/KB: إذا لم تجد الإجابة داخل الملفات المرفوعة قل حرفيًا: غير موجود في الملفات المرفوعة.', results:[] };
+      }
+      return { ctx:'', results:[] };
+    }
     const kb = getKbSettings(getCurProjectId());
     const hint = (kb.ragHint || DEFAULT_KB.ragHint).trim();
     const excerpts = results.map(r => {
       const cite = `[KB:${r.fileName}#${r.chunkIdx}]`;
       return `${cite}\n${r.text}`;
     }).join('\n\n');
-    return { ctx: `${hint}\n\nمقاطع من قاعدة المعرفة:\n\n${excerpts}`, results };
+    const strictRule = strictKbOnly
+      ? '\n\nتعليمات إلزامية: أجب فقط من المقاطع المذكورة. إذا لم تجد معلومة مطابقة قل: غير موجود في الملفات المرفوعة.'
+      : '';
+    return { ctx: `${hint}${strictRule}\n\nمقاطع من قاعدة المعرفة:\n\n${excerpts}`, results };
   }catch(_){
+    if (strictKbOnly){
+      return { ctx: 'وضع مقيّد بالمرفقات/KB: تعذّر الاسترجاع الآن. قل: غير موجود في الملفات المرفوعة.', results:[] };
+    }
     return { ctx:'', results:[] };
   }
 }
@@ -4495,6 +4544,10 @@ function refreshDeepSearchBtn(){
       $('ragToggle').checked = modes.rag;
       setControlAvailability($('ragToggle'), policy.allowRag, getPolicyFeatureReason('rag', policy));
     }
+    if ($('answerOnlyFromKb')){
+      $('answerOnlyFromKb').checked = !!raw.answerOnlyFromKb;
+      setControlAvailability($('answerOnlyFromKb'), policy.allowRag, getPolicyFeatureReason('rag', policy));
+    }
     if ($('toolsToggle')){
       $('toolsToggle').checked = !!policy.runtime.toolsEnabled;
       setControlAvailability($('toolsToggle'), policy.allowTools, getPolicyFeatureReason('tools', policy));
@@ -4504,8 +4557,8 @@ function refreshDeepSearchBtn(){
       setControlAvailability($('toolsDefault'), policy.allowTools, getPolicyFeatureReason('tools', policy));
     }
     if ($('researchBtn')) setControlAvailability($('researchBtn'), policy.allowResearch, getPolicyFeatureReason('research', policy));
-    if ($('kbBuildBtn')) setControlAvailability($('kbBuildBtn'), policy.allowEmbeddings, getPolicyFeatureReason('embeddings', policy));
-    if ($('kbSearchBtn')) setControlAvailability($('kbSearchBtn'), policy.allowEmbeddings, getPolicyFeatureReason('embeddings', policy));
+    if ($('kbBuildBtn')) setControlAvailability($('kbBuildBtn'), true, '');
+    if ($('kbSearchBtn')) setControlAvailability($('kbSearchBtn'), true, '');
     refreshDeepSearchBtn();
     refreshStrategicWorkspace().catch(()=>{});
   }
@@ -8679,9 +8732,10 @@ async function fileToText(file){
     return scoreArabicQuality(s) < 0.2;
   }
 
-  async function ocrDataUrl(dataUrl, lang, meta={}){
+  async function ocrDataUrl(dataUrl, lang, meta={}, opts = {}){
     if (!dataUrl) return '';
-    if (!isOcrEnabled()) return '';
+    const force = opts?.force === true || meta?.forceOcr === true;
+    if (!force && !isOcrEnabled()) return '';
     if (!window.Tesseract) throw new Error('Tesseract غير متاح');
     const usedLang = (lang || getOcrLang() || 'ara+eng').trim();
     const profile = getTranscribeProfileConfig();
@@ -8865,7 +8919,7 @@ async function fileToText(file){
         let pageText = lines.map((l) => l.text).join('\n').trim();
         let method = 'native';
         const nativeLooksWeak = !pageText || pageText.length < profile.minNativeChars || needsArabicOcrFallback(pageText, getOcrLang());
-        const shouldRunOcr = !textOnly && isOcrEnabled() && (forceOcr || nativeLooksWeak || profile.runOcrOnDigital);
+        const shouldRunOcr = !textOnly && (forceOcr || isOcrEnabled()) && (forceOcr || nativeLooksWeak || profile.runOcrOnDigital);
 
         if (shouldRunOcr){
           const dataUrl = await renderPdfPageToDataUrl(page, Math.max(1.6, profile.scale));
@@ -8875,7 +8929,7 @@ async function fileToText(file){
             page: p,
             pages: doc.numPages,
             sizeMB: Number(((Number(file?.size || 0) || 0) / 1048576).toFixed(2))
-          });
+          }, { force: forceOcr });
           if (ocrText && (!pageText || !profile.preferNative || ocrText.length > pageText.length || scoreArabicQuality(ocrText) >= scoreArabicQuality(pageText))){
             pageText = ocrText.trim();
             method = 'ocr';
@@ -9200,6 +9254,61 @@ async function fileToText(file){
       }catch(_){}
     }
     return out;
+  }
+
+  async function deriveVisionTextFromImages(images = [], meta = {}){
+    const usable = (Array.isArray(images) ? images : []).filter((x) => typeof x === 'string' && /^data:image\//i.test(x)).slice(0, 4);
+    if (!usable.length) return '';
+    const settings = getSettings();
+    const visionCapable = modelSupportsVision(settings);
+    const prompt = [
+      'استخرج النص من الصور بدقة عالية مع الحفاظ على ترتيب الصفحات.',
+      'أعد النص فقط بدون شرح إضافي.',
+      'إذا لم يوجد نص قابل للقراءة أعد سطرًا فارغًا.'
+    ].join('\n');
+    if (visionCapable && hasAuthReady(settings)){
+      try{
+        const messages = [{
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            ...usable.map((url) => ({ type: 'image_url', image_url: { url } }))
+          ]
+        }];
+        if (settings.provider === 'gemini'){
+          const payload = buildGeminiContentsFromMessages(messages);
+          const { text } = await callGeminiWithMeta({
+            apiKey: settings.geminiKey,
+            model: settings.model,
+            prompt,
+            contents: payload,
+            maxOut: 1800
+          });
+          return String(text || '').trim();
+        }
+        const baseUrl = effectiveBaseUrl(settings) || (settings.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1');
+        const extraHeaders = buildProviderHeaders(settings);
+        const { text } = await callOpenAIChatWithMeta({
+          apiKey: settings.apiKey,
+          baseUrl,
+          model: maybeOnlineModel(settings.model, settings),
+          messages,
+          max_tokens: 1800,
+          extraHeaders
+        });
+        return String(text || '').trim();
+      }catch(err){
+        console.warn('[doc-ingest] vision_derive_failed', meta?.fileName || '', err?.message || err);
+      }
+    }
+    let fallback = '';
+    for (let i = 0; i < usable.length; i += 1){
+      try{
+        const line = await cloudOcrDataUrl(usable[i], { fileName: meta?.fileName || 'image', page: i + 1, pages: usable.length });
+        if (line) fallback += `${fallback ? '\n\n' : ''}[Page ${i + 1}]\n${line}`;
+      }catch(_){}
+    }
+    return fallback.trim();
   }
 
   async function exportTranscriptionResult({ format='docx', text='', structured=null, fileBaseName='transcription' }){
@@ -11883,6 +11992,12 @@ ${clip}` });
     if (ragCtx && ragCtx.trim()){
       msgs.push({ role:'system', content: ragCtx });
     }
+    if (settings.answerOnlyFromKb){
+      msgs.push({
+        role: 'system',
+        content: 'وضع تقييد KB مفعّل: يجب أن تعتمد الإجابة فقط على الملفات المرفوعة/مقاطع KB. إذا لم توجد المعلومة داخل السياق المرفق فقل نصًا: غير موجود في الملفات المرفوعة.'
+      });
+    }
     msgs.push(buildUserMessageWithAttachments(userText, settings, attachments));
     return msgs;
   }
@@ -13591,7 +13706,7 @@ ${clip}` });
           } else {
             extractionMode = 'OCR + صورة مرئية';
             try{
-              textFull = await ocrDataUrl(dataUrl, getOcrLang(), { fileName: name, page: 1 });
+              textFull = await ocrDataUrl(dataUrl, getOcrLang(), { fileName: name, page: 1, forceOcr: readMode === 'force_ocr' }, { force: readMode === 'force_ocr' });
               ocrUsed = !!String(textFull || '').trim();
               finalContentSource = ocrUsed ? 'ocr_text' : 'image_only';
             }catch(ocrErr){
@@ -13615,7 +13730,10 @@ ${clip}` });
           if (readMode === 'vision' && visionCapable){
             extractionMode = 'PDF Vision (original pages)';
             pageImages = await renderPdfPageImagesForVision(file, { maxPages: 4, scale: 1.25 });
-            finalContentSource = pageImages.length ? 'vision_pdf_pages' : 'vision_unavailable';
+            if (pageImages.length){
+              textFull = await deriveVisionTextFromImages(pageImages, { fileName: name });
+            }
+            finalContentSource = textFull ? 'vision_pdf_pages_text' : (pageImages.length ? 'vision_pdf_pages' : 'vision_unavailable');
           } else if (readMode === 'text_only'){
             extractionMode = 'PDF نص مضمّن فقط';
             textFull = await extractTextFromPdf(await file.arrayBuffer());
@@ -13695,8 +13813,21 @@ ${clip}` });
         embeddedTextDetected,
         embeddedTextChars,
         ocrUsed,
+        visionUsed: Array.isArray(pageImages) && pageImages.length > 0,
         finalContentSource,
         extractionMode,
+        extractionResult: {
+          name,
+          type: file.type || '',
+          mode: readMode,
+          embeddedTextDetected,
+          ocrUsed: !!ocrUsed,
+          visionUsed: Array.isArray(pageImages) && pageImages.length > 0,
+          finalContentSource,
+          textLength: cleanText.length,
+          kbIndexTextLength: 0,
+          error: failureReason || ''
+        },
         textWasClippedForPrompt: false
       });
       logDocumentIngestDiagnostics({
@@ -14523,8 +14654,20 @@ async function runResearchAgent(topicOverride){
       const ingestMethod = String(f.extractionMethod || '').trim();
       const ingestStatus = String(f.ingestStatus || '').trim();
       const ingestHint = [ingestMethod, ingestStatus].filter(Boolean).join(' • ');
+      const diag = f.extractionResult || {};
+      const diagLines = [
+        `OCR: ${diag.ocrUsed ? 'نعم' : 'لا'}`,
+        `Vision: ${diag.visionUsed ? 'نعم' : 'لا'}`,
+        `Embedded: ${diag.embeddedTextDetected ? 'نعم' : 'لا'}`,
+        `Text chars: ${Number(diag.textLength || 0)}`,
+        `KB chars: ${Number(diag.kbIndexTextLength || 0)}`,
+        `Chunks: ${Number(diag.indexedChunksCount || 0)}`,
+        `Source: ${String(diag.finalContentSource || f.finalContentSource || '') || '—'}`,
+        `Indexing: ${String(diag.indexingStatus || '—')}`
+      ].join(' • ');
       div.innerHTML = `<div style="font-weight:1000">${kindIcon} ${escapeHtml(f.name)}</div>
-                       <div class="hint">${escapeHtml(f.kind)} • ${Math.round((f.size||0)/1024)}KB${ingestHint ? ` • ${escapeHtml(ingestHint)}` : ''}</div>`;
+                       <div class="hint">${escapeHtml(f.kind)} • ${Math.round((f.size||0)/1024)}KB${ingestHint ? ` • ${escapeHtml(ingestHint)}` : ''}</div>
+                       <div class="hint" style="margin-top:6px">${escapeHtml(diagLines)}</div>${diag.error ? `<div class="hint" style="margin-top:4px;color:#c0392b">سبب الفشل: ${escapeHtml(String(diag.error || ''))}</div>` : ''}`;
       const row = document.createElement('div');
       row.style.display='flex';
       row.style.gap='8px';
@@ -14598,6 +14741,11 @@ async function runResearchAgent(topicOverride){
       let kbDocRep = null;
       let extractionMethod = 'استخراج نص مباشر';
       let ingestStatus = 'نجاح';
+      let finalContentSource = '';
+      let extractionError = '';
+      let visionUsed = false;
+      let ocrUsed = false;
+      let indexedChunksCount = 0;
       try{
         showStatus(`معالجة ${added + perFileResults.length + 1}/${picked.length}: ${name}`, true);
         if (/\.pdf$/i.test(name) || String(file.type || '').toLowerCase() === 'application/pdf'){
@@ -14609,6 +14757,7 @@ async function runResearchAgent(topicOverride){
               onProgress: (done, total) => showStatus(`معالجة ${name} • ${done}/${total} • نص مباشر`, true)
             });
             extractionMethod = 'PDF نص مضمّن فقط';
+            finalContentSource = 'embedded_text';
           } else if (readMode === 'force_ocr'){
             result = await extractPdfStrategic(file, {
               forceOcr: true,
@@ -14618,6 +14767,7 @@ async function runResearchAgent(topicOverride){
               }
             });
             extractionMethod = 'PDF Force OCR';
+            finalContentSource = 'ocr_text';
           } else {
             // Auto + Vision modes for KB ingest still produce indexed text first.
             result = await extractPdfStrategic(file, {
@@ -14628,10 +14778,24 @@ async function runResearchAgent(topicOverride){
               }
             });
             extractionMethod = embedMeta.detected ? 'PDF نص مباشر (Auto)' : 'PDF OCR fallback (Auto)';
+            finalContentSource = embedMeta.detected ? 'embedded_text' : 'ocr_text';
           }
           const localText = String(result?.text || '').trim();
           kbIndexText = String(result?.indexText || localText).trim();
           kbStructuredText = String(result?.structuredText || localText).trim();
+          ocrUsed = Number(result?.ocrPages || 0) > 0 || /OCR/.test(extractionMethod);
+          visionUsed = readMode === 'vision';
+          if (!kbStructuredText && (readMode === 'vision' || !embedMeta.detected)){
+            const pageImages = await renderPdfPageImagesForVision(file, { maxPages: 4, scale: 1.25 });
+            const visionText = await deriveVisionTextFromImages(pageImages, { fileName: name });
+            if (visionText){
+              kbStructuredText = visionText;
+              kbIndexText = visionText;
+              extractionMethod += ' + Vision text derive';
+              finalContentSource = 'vision_derived_text';
+              visionUsed = pageImages.length > 0;
+            }
+          }
           const weakLocalQuality = (
             String(result?.quality || '') === 'تحتاج مراجعة'
             || Number(result?.ocrPages || 0) > Number(result?.nativePages || 0)
@@ -14647,6 +14811,7 @@ async function runResearchAgent(topicOverride){
                 kbStructuredText = String(cloudRep?.structuredText || kbStructuredText).trim();
                 kbIndexText = String(cloudRep?.indexText || kbIndexText).trim();
                 extractionMethod += ' + Cloud derive';
+                finalContentSource = 'cloud_derived_text';
               }
             }catch(_){}
           }
@@ -14660,22 +14825,53 @@ async function runResearchAgent(topicOverride){
             embeddedTextChars: Number(embedMeta.chars || 0),
             mode: readMode
           };
+          if (!finalContentSource){
+            finalContentSource = kbIndexText ? 'kb_index_text' : (text ? 'plain_text' : 'failed');
+          }
           ingestStatus = text ? (Number(result?.ocrPages || 0) > 0 ? 'نجاح (OCR)' : 'نجاح (نص مباشر)') : 'فشل الاستخراج';
         } else {
           text = String(await fileToTextSmart(file) || '').trim();
+          if (!text && dataUrl){
+            const visionText = await deriveVisionTextFromImages([dataUrl], { fileName: name });
+            if (visionText){
+              text = visionText;
+              extractionMethod += ' + Vision text derive';
+              visionUsed = true;
+              finalContentSource = 'vision_derived_text';
+            }
+          }
           kbIndexText = text;
           kbStructuredText = text;
           extractionMethod = kind === 'image' ? 'OCR صورة' : 'استخراج نص مباشر';
+          ocrUsed = kind === 'image' && !!text;
+          if (!finalContentSource) finalContentSource = text ? 'plain_text' : 'failed';
           ingestStatus = text ? (kind === 'image' ? 'نجاح (OCR)' : 'نجاح') : 'فشل الاستخراج';
         }
-      }catch(_){
+        indexedChunksCount = kbIndexText ? chunkText(kbIndexText, getKbSettings(pid).chunkSize, getKbSettings(pid).overlap).length : 0;
+      }catch(err){
         text = '';
         kbIndexText = '';
         kbStructuredText = '';
         kbDocRep = null;
         extractionMethod = /pdf$/i.test(name) ? 'فشل استخراج PDF/OCR' : 'فشل الاستخراج';
         ingestStatus = 'فشل';
+        finalContentSource = 'failed';
+        extractionError = String(err?.message || 'EXTRACTION_FAILED');
       }
+      const extractionResult = {
+        name,
+        type: file.type || '',
+        mode: readMode,
+        embeddedTextDetected: !!kbDocRep?.embeddedTextDetected,
+        ocrUsed: !!ocrUsed,
+        visionUsed: !!visionUsed,
+        finalContentSource,
+        textLength: String(text || '').length,
+        kbIndexTextLength: String(kbIndexText || '').length,
+        indexedChunksCount,
+        indexingStatus: String(kbIndexText || '').trim() ? 'ready_for_index' : 'failed',
+        error: extractionError
+      };
       arr.unshift({
         id,
         name,
@@ -14688,7 +14884,9 @@ async function runResearchAgent(topicOverride){
         kbStructuredText,
         kbDocRep,
         extractionMethod,
-        ingestStatus
+        ingestStatus,
+        finalContentSource,
+        extractionResult
       });
       logDocumentIngestDiagnostics({
         fileName: name,
@@ -14697,13 +14895,13 @@ async function runResearchAgent(topicOverride){
         fileCount: picked.length,
         embeddedTextDetected: !!kbDocRep?.embeddedTextDetected,
         embeddedTextChars: Number(kbDocRep?.embeddedTextChars || 0),
-        ocrUsed: Number(kbDocRep?.ocrPages || 0) > 0 || /OCR/.test(extractionMethod),
-        visionPathUsed: (readMode === 'vision' && visionCapable),
+        ocrUsed: !!ocrUsed,
+        visionPathUsed: !!visionUsed,
         provider: settings.provider,
         model: settings.model,
         modelVisionCapable: visionCapable,
         mode: readMode,
-        finalContentSource: kbIndexText ? 'kb_index_text' : (text ? 'plain_text' : 'failed')
+        finalContentSource
       });
       added += 1;
       perFileResults.push({ name, status: ingestStatus, method: extractionMethod });
@@ -15199,6 +15397,7 @@ let pinOnly = false;
     // keep RAG toggle persisted
     setRagToggle(!!s.rag);
     $('ragToggle').checked = !!s.rag;
+    if ($('answerOnlyFromKb')) $('answerOnlyFromKb').checked = !!s.answerOnlyFromKb;
 
     refreshModeButtons();
     syncAccountUi();
@@ -15284,6 +15483,7 @@ let pinOnly = false;
 
       streaming: !!$('streamDefault').checked,
       rag: !!$('ragToggle').checked,
+      answerOnlyFromKb: !!($('answerOnlyFromKb') && $('answerOnlyFromKb').checked),
 
       toolsEnabled,
 
@@ -15313,6 +15513,7 @@ let pinOnly = false;
     $('streamToggle').checked = !!s.streaming;
     setRagToggle(!!s.rag);
     $('ragToggle').checked = !!s.rag;
+    if ($('answerOnlyFromKb')) $('answerOnlyFromKb').checked = !!s.answerOnlyFromKb;
     if ($('toolsToggle')) $('toolsToggle').checked = !!s.toolsEnabled;
 
     toast('✅ تم حفظ الإعدادات');

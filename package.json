@@ -1,6 +1,6 @@
 {
   "name": "book-summarizer-pwa",
-  "version": "9.6.6",
+  "version": "9.6.7",
   "private": true,
   "description": "AI Workspace Studio - static Arabic AI workspace with Capacitor wrappers for Android and iPhone.",
   "scripts": {
