@@ -35,6 +35,7 @@ import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.BridgeWebChromeClient;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -46,16 +47,18 @@ import java.util.Locale;
  * Main activity for the Capacitor-hosted WebView.
  *
  * Beyond the stock Capacitor bridge we implement:
- *   1. {@link WebChromeClient#onPermissionRequest} — grant mic/video capture
+ *   1. {@link BridgeWebChromeClient} subclass — keep Capacitor's default
+ *      WebChrome behaviors (JS dialogs, geo, Google Sign-In flows) intact.
+ *   2. {@link WebChromeClient#onPermissionRequest} — grant mic/video capture
  *      to our own WebView origin so {@code navigator.mediaDevices.getUserMedia}
  *      resolves even after the OS-level RECORD_AUDIO grant is in place.
- *   2. {@link WebChromeClient#onShowFileChooser} — bridge {@code <input type="file">}
+ *   3. {@link WebChromeClient#onShowFileChooser} — bridge {@code <input type="file">}
  *      (including {@code multiple}, {@code accept=...} and {@code capture})
  *      to Android's Storage Access Framework and, optionally, the camera
  *      or voice-recorder intents so file upload works inside the APK.
- *   3. Runtime CAMERA permission request, fired only when the JS actually
+ *   4. Runtime CAMERA permission request, fired only when the JS actually
  *      triggers a capture-capable file chooser.
- *   4. Structured Logcat logging (tag = "AIWorkspace/Chooser") mirroring the
+ *   5. Structured Logcat logging (tag = "AIWorkspace/Chooser") mirroring the
  *      JS-side voice session logging contract, so production support can
  *      correlate client-side errors with Android events.
  */
@@ -151,7 +154,10 @@ public class MainActivity extends BridgeActivity {
                     }
                 });
 
-                webView.setWebChromeClient(new WebChromeClient() {
+                // IMPORTANT: do not replace Capacitor's BridgeWebChromeClient with a
+                // plain WebChromeClient — that drops JS alerts/confirms/prompts and
+                // permission flows required for Google Sign-In and other bridge UX.
+                webView.setWebChromeClient(new BridgeWebChromeClient(this.bridge) {
                     @Override
                     public void onPermissionRequest(final PermissionRequest request) {
                         // Grant mic / camera capture to our own origin after
@@ -170,12 +176,14 @@ public class MainActivity extends BridgeActivity {
                                 Log.i(TAG, "webview_permission grant " + allow);
                                 request.grant(allow.toArray(new String[0]));
                             } else {
-                                Log.w(TAG, "webview_permission deny " + java.util.Arrays.toString(resources));
-                                request.deny();
+                                // Federated login / other WebView features may request other resources;
+                                // keep Capacitor's default handling instead of blanket deny.
+                                Log.i(TAG, "webview_permission delegate " + java.util.Arrays.toString(resources));
+                                super.onPermissionRequest(request);
                             }
                         } catch (Throwable t) {
                             Log.e(TAG, "webview_permission error", t);
-                            try { request.deny(); } catch (Throwable ignored) {}
+                            try { super.onPermissionRequest(request); } catch (Throwable ignored) {}
                         }
                     }
 
@@ -188,10 +196,8 @@ public class MainActivity extends BridgeActivity {
 
                     @Override
                     public boolean onConsoleMessage(ConsoleMessage consoleMessage) {
-                        // Forward WebView console to Logcat so production
-                        // support can read voice/artifact diagnostics from
-                        // adb logcat without needing Chrome devtools.
-                        if (consoleMessage == null) return false;
+                        boolean handled = super.onConsoleMessage(consoleMessage);
+                        if (consoleMessage == null) return handled;
                         String msg = "webview_console [" + consoleMessage.messageLevel() + "] "
                                 + consoleMessage.message()
                                 + " (" + consoleMessage.sourceId() + ":" + consoleMessage.lineNumber() + ")";
@@ -201,7 +207,7 @@ public class MainActivity extends BridgeActivity {
                             case DEBUG: Log.d(TAG, msg); break;
                             default: Log.i(TAG, msg); break;
                         }
-                        return true;
+                        return handled;
                     }
                 });
             }
