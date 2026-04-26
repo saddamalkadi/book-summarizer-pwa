@@ -1,9 +1,10 @@
 {
   "name": "book-summarizer-pwa",
-  "version": "9.6.7",
+  "version": "9.6.8",
   "private": true,
   "description": "AI Workspace Studio - static Arabic AI workspace with Capacitor wrappers for Android and iPhone.",
   "scripts": {
+    "check:app": "node --check app.js && node scripts/verify-app-js-symbols.mjs",
     "sync:web": "node scripts/sync-web.mjs",
     "cap:copy": "npm run sync:web && npx cap copy",
     "cap:sync": "npm run sync:web && npx cap sync",
@@ -23,6 +24,11 @@
     "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^7.4.3",
     "@capacitor/ios": "^7.4.3",
+    "acorn": "^8.16.0",
+    "acorn-walk": "^8.3.5",
+    "eslint-scope": "^9.1.2",
+    "espree": "^11.2.0",
+    "globals": "^17.5.0",
     "playwright": "^1.59.1"
   }
 }

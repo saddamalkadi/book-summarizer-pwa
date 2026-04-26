@@ -430,7 +430,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v9.6.7 TEST';
+  const WEB_RELEASE_LABEL = 'v9.6.8 TEST';
   const RELEASE_CHANNEL = 'rc';
   const HIDE_PUBLIC_AAB = true;
   const DISABLE_RUNTIME_ENDPOINT_EDITING_FOR_MANAGED = true;
@@ -1879,7 +1879,7 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     renderDownloads();
     renderThreadHistory();
     renderProjects();
-    renderCanvas();
+    renderCanvasList();
     renderSettings();
     syncAccountUi();
     await renderKbUI().catch(() => {});
@@ -5883,6 +5883,20 @@ function syncUnifiedAuthEntry(){
     });
   }
 
+  /** Map auth redirect + bridge hints to a valid `openWorkspacePage` id, or empty if unknown. */
+  function normalizeTargetPage(raw){
+    const s0 = String(raw ?? '').trim();
+    if (!s0) return '';
+    const s = s0.toLowerCase();
+    const allowed = new Set(['home', 'downloads', 'workflows', 'projects', 'guide', 'settings', 'files', 'canvas', 'knowledge', 'transcription', 'chat']);
+    if (allowed.has(s)) return s;
+    const slug = s.replace(/[^a-z0-9_-]/g, '');
+    if (allowed.has(slug)) return slug;
+    const a = s.replace(/[^a-z0-9]/g, '');
+    if (a === 'knowledge' || a === 'kb' || a === 'rag' || a === 'files' || a === 'filespage') return a === 'files' || a === 'filespage' ? 'files' : 'knowledge';
+    return '';
+  }
+
   async function consumeAuthPayload(payload, extra = {}){
     const normalized = normalizeAuthPayload(payload);
     if (!normalized) return false;
@@ -8676,12 +8690,72 @@ async function fileToText(file){
     return (arabic / letters) - (weird / Math.max(letters, 1));
   }
 
+  function detectDominantScriptLang(txt){
+    try {
+      const s = String(txt || '').trim();
+      if (s.length < 8) return '';
+      const ar = (s.match(/[\u0600-\u06FF]/g) || []).length;
+      const lat = (s.match(/[A-Za-z]/g) || []).length;
+      if (ar + lat < 4) return '';
+      if (ar >= lat * 1.05) return 'ara+eng';
+      if (lat > ar) return 'eng+ara';
+      return 'ara+eng';
+    } catch (_){
+      return '';
+    }
+  }
+
   /** Letter+digit density — low values often mean noisy OCR garbage. */
   function ocrLetterDigitRatio(txt){
     const s = String(txt || '').trim();
     if (!s.length) return 0;
     const good = (s.match(/[\p{L}\p{N}]/gu) || []).length;
     return good / s.length;
+  }
+
+  /**
+   * 0–1 readability score for extracted/OCR text (Arabic, English, digits, mixed).
+   * Rewards letter+digit share, word-like spacing, length; penalizes FFFD, controls, junk symbols.
+   */
+  function scoreTextReliability(txt){
+    try {
+      const t = String(txt ?? '');
+      const s = t.trim();
+      if (!s) return 0;
+      const n = s.length;
+      const ldR = ocrLetterDigitRatio(s);
+      if (ldR < 0.01) return 0;
+      const uLetter = (s.match(/[\p{L}]/gu) || []).length;
+      if (uLetter < 1) return Math.min(0.06, n / 3000);
+      const uDigit = (s.match(/[\p{N}]/gu) || []).length;
+      const spaces = (s.match(/\s/g) || []).length;
+      const spaceR = spaces / n;
+      const spaceOK = 1 - Math.min(1, Math.abs(spaceR - 0.2) / 0.5);
+      const fffd = (s.match(/\uFFFD/g) || []).length;
+      const junk = (s.match(/[|{}[\]§◆■▪▫◇○●`~^*]/g) || []).length;
+      const badCtrl = (s.match(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g) || []).length;
+      const mojiPad = (s.match(/[\u00C2\u00C3][\u00A0-\u00FF]|\u201A\u20AC|\u00A2\u00A3/g) || []).length;
+      const noise = (fffd * 0.2 + junk * 0.06 + badCtrl * 0.1 + mojiPad * 0.05) / Math.max(40, n);
+      const garbleDamp = Math.max(0.08, 1 - Math.min(0.9, noise * 6));
+      const ar = (s.match(/[\u0600-\u06FF]/g) || []).length;
+      const lat = (s.match(/[A-Za-z]/g) || []).length;
+      const scriptPart = (ar + lat) / Math.max(uLetter, 1);
+      let v = 0.5 * ldR + 0.16 * spaceOK + 0.1 * (uLetter / n) + 0.1 * (uDigit / n);
+      v += 0.06 * scriptPart;
+      v += 0.08 * Math.min(1, n / 2000);
+      v *= garbleDamp;
+      if (ar > 8){
+        const aqs = Math.max(0, Math.min(1, (scoreArabicQuality(s) + 0.35) * 0.6));
+        v += 0.04 * aqs;
+      }
+      return Math.max(0, Math.min(1, v));
+    } catch (_){
+      return 0;
+    }
+  }
+
+  function safeScoreTextReliability(t){
+    try { return scoreTextReliability(t); } catch (_){ return 0; }
   }
 
   /**
@@ -14799,7 +14873,7 @@ async function runResearchAgent(topicOverride){
           const weakLocalQuality = (
             String(result?.quality || '') === 'تحتاج مراجعة'
             || Number(result?.ocrPages || 0) > Number(result?.nativePages || 0)
-            || scoreTextReliability(kbStructuredText) < 0.58
+            || safeScoreTextReliability(kbStructuredText) < 0.58
           );
           if (weakLocalQuality && readMode !== 'text_only'){
             try{
@@ -14807,7 +14881,7 @@ async function runResearchAgent(topicOverride){
                 fileName: name,
                 langHint: detectDominantScriptLang(kbStructuredText) || getOcrLang()
               });
-              if (scoreTextReliability(cloudRep?.structuredText || '') >= scoreTextReliability(kbStructuredText)){
+              if (safeScoreTextReliability(cloudRep?.structuredText || '') >= safeScoreTextReliability(kbStructuredText)){
                 kbStructuredText = String(cloudRep?.structuredText || kbStructuredText).trim();
                 kbIndexText = String(cloudRep?.indexText || kbIndexText).trim();
                 extractionMethod += ' + Cloud derive';
@@ -15083,7 +15157,7 @@ async function runResearchAgent(topicOverride){
         await ocrAllImages();
       } else if (st.step === 'kb_index'){
         wfLog('… إعادة فهرسة KB');
-        await buildKb();
+        await buildKbIndex();
         wfLog('✅ اكتملت فهرسة قاعدة المعرفة');
       } else if (st.step === 'chat'){
         const prompt = String(st.prompt || '').trim();
