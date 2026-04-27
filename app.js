@@ -411,47 +411,26 @@
     stableComposerMeta: '',
     stableFilesCount: 0,
     stableMsgCount: 0,
-    /* v9.6.12 — opt-in instrumentation. Turn on with `?uiPerf=1` or
-       localStorage.aistudio_ui_perf = '1'. Captures input/render/sync
-       timings to confirm typing latency claims. */
-    instrumentEnabled: false,
-    lastInputAt: 0,
-    lastRenderAt: 0,
-    lastSyncQueuedAt: 0,
-    inputCount: 0,
-    renderCount: 0,
-    syncQueuedCount: 0,
-    syncDeferredCount: 0,
-    inputMaxMs: 0
+    /** Re-seed once per thread/project; avoids re-parsing storage on every keystroke while typing. */
+    stableCountsSeeded: false
   };
-  (function initUiPerfFlag(){
+  const UI_PERF_DEBUG = (() => {
     try{
-      const fromQuery = /[?&]uiPerf=1/i.test(String(location.search || ''));
-      const fromStorage = (() => {
-        try{ return localStorage.getItem('aistudio_ui_perf') === '1'; }catch(_){ return false; }
-      })();
-      if (fromQuery || fromStorage) UI_PERF_RUNTIME.instrumentEnabled = true;
-    }catch(_){ /* noop */ }
+      const on = /[?&]uiPerf=1/i.test(String(location.search || '')) || (localStorage.getItem('aistudio_ui_perf_hud') === '1');
+      return {
+        on,
+        lastInputHandlerMs: 0,
+        lastResizeMs: 0,
+        lastSyncMetaMs: 0,
+        lastRenderChatMs: 0,
+        lastRenderThreadHistoryMs: 0,
+        lastSaveThreadsMs: 0,
+        lastStrategicMs: 0
+      };
+    }catch(_){
+      return { on:false };
+    }
   })();
-  function uiPerfLog(label, payload){
-    if (!UI_PERF_RUNTIME.instrumentEnabled) return;
-    try{
-      const stamp = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-      // eslint-disable-next-line no-console
-      console.info('[uiPerf]', label, Object.assign({ t: Math.round(stamp) }, payload || {}));
-    }catch(_){ /* noop */ }
-  }
-  function uiPerfSnapshot(){
-    return {
-      enabled: UI_PERF_RUNTIME.instrumentEnabled,
-      inputCount: UI_PERF_RUNTIME.inputCount,
-      renderCount: UI_PERF_RUNTIME.renderCount,
-      syncQueuedCount: UI_PERF_RUNTIME.syncQueuedCount,
-      syncDeferredCount: UI_PERF_RUNTIME.syncDeferredCount,
-      inputMaxMs: Number(UI_PERF_RUNTIME.inputMaxMs.toFixed ? UI_PERF_RUNTIME.inputMaxMs.toFixed(2) : UI_PERF_RUNTIME.inputMaxMs)
-    };
-  }
-  try{ window.uiPerfSnapshot = uiPerfSnapshot; }catch(_){ /* noop */ }
 
   /** Cloud STT segment end: silence hold + max length; post-STT auto-send is separate (see below). */
   const VOICE_CLOUD_MAX_RECORD_MS_VOICE = 16800;
@@ -483,7 +462,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v9.6.12 TEST';
+  const WEB_RELEASE_LABEL = 'v9.6.13 TEST';
   const AI_STUDIO_DEBUG_LOG = (() => {
     try{ return /[?&]debug=1/i.test(String(location.search||'')) || (localStorage.getItem('aistudio_debug_log') === '1'); }catch(_){ return false; }
   })();
@@ -493,26 +472,72 @@
   }
   function scheduleStrategicWorkspaceRefresh(delay = 220){
     clearTimeout(UI_PERF_RUNTIME.strategicRefreshTimer);
-    UI_PERF_RUNTIME.strategicRefreshTimer = window.setTimeout(() => {
-      refreshStrategicWorkspace().catch(() => {});
-    }, clamp(Number(delay) || 220, 60, 1200));
+    const ms = clamp(Number(delay) || 220, 60, 1200);
+    const fire = () => {
+      if (isTypingActive()){
+        UI_PERF_RUNTIME.strategicRefreshTimer = window.setTimeout(fire, 180);
+        return;
+      }
+      const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+      refreshStrategicWorkspace().then(() => {
+        if (UI_PERF_DEBUG.on) UI_PERF_DEBUG.lastStrategicMs = Math.max(0, (performance?.now?.() || 0) - t0);
+      }).catch(() => {});
+    };
+    UI_PERF_RUNTIME.strategicRefreshTimer = window.setTimeout(fire, ms);
   }
-  function setTypingActive(){
+  function markComposerTypingFromInput(){
     UI_PERF_RUNTIME.typingActive = true;
+    if (!UI_PERF_RUNTIME.stableCountsSeeded){
+      try{
+        const pid = getCurProjectId();
+        UI_PERF_RUNTIME.stableFilesCount = loadFiles(pid).length;
+        UI_PERF_RUNTIME.stableMsgCount = (getCurThread().messages || []).length;
+        UI_PERF_RUNTIME.stableCountsSeeded = true;
+      }catch(_){ }
+    }
     clearTimeout(UI_PERF_RUNTIME.typingTimer);
-    /* v9.6.12 — keep the typing window short so renderChat() and cloud
-       sync resume promptly when the user pauses, but long enough to
-       cover natural inter-keystroke gaps in Arabic and English. */
     UI_PERF_RUNTIME.typingTimer = window.setTimeout(() => {
       UI_PERF_RUNTIME.typingActive = false;
+      const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
       try{ syncComposerMeta(); }catch(_){ }
-      try{
-        if (typeof scheduleCloudSync === 'function') scheduleCloudSync('typing-idle');
-      }catch(_){ }
-    }, 320);
+      if (UI_PERF_DEBUG.on) UI_PERF_DEBUG.lastSyncMetaMs = Math.max(0, (performance?.now?.() || 0) - t0);
+      try{ resizeComposerInput($('chatInput'), { skipShellLayout: false }); }catch(_){ }
+      try{ tickUiPerfHud(); }catch(_){ }
+    }, 420);
+  }
+  /** @deprecated v9.6.10 — was never wired; use markComposerTypingFromInput */
+  function setTypingActive(){
+    markComposerTypingFromInput();
   }
   function isTypingActive(){
     return UI_PERF_RUNTIME.typingActive === true;
+  }
+  function tickUiPerfHud(){
+    if (!UI_PERF_DEBUG.on) return;
+    let el = $('uiPerfDebugHud');
+    if (!el){
+      el = document.createElement('div');
+      el.id = 'uiPerfDebugHud';
+      el.setAttribute('dir', 'ltr');
+      el.style.cssText = 'position:fixed;inset-inline-start:8px;bottom:8px;z-index:99999;max-width:min(420px,92vw);background:rgba(15,20,40,.92);color:#e8eeff;padding:10px 12px;border-radius:12px;font:11px/1.45 ui-monospace,monospace;box-shadow:0 8px 30px rgba(0,0,0,.4);pointer-events:none;white-space:pre-wrap;word-break:break-word;';
+      document.body.appendChild(el);
+    }
+    let filesN = 0;
+    let msgN = 0;
+    try{
+      const pid = getCurProjectId();
+      filesN = loadFiles(pid).length;
+      msgN = (getCurThread().messages || []).length;
+    }catch(_){ }
+    const d = UI_PERF_DEBUG;
+    el.textContent = [
+      'typingActive=' + String(!!UI_PERF_RUNTIME.typingActive),
+      'input=' + (d.lastInputHandlerMs|0) + 'ms  resize=' + (d.lastResizeMs|0) + 'ms',
+      'syncMeta=' + (d.lastSyncMetaMs|0) + 'ms  renderChat=' + (d.lastRenderChatMs|0) + 'ms',
+      'threadHist=' + (d.lastRenderThreadHistoryMs|0) + 'ms  saveThreads=' + (d.lastSaveThreadsMs|0) + 'ms',
+      'strategic=' + (d.lastStrategicMs|0) + 'ms',
+      'files=' + filesN + '  msgs=' + msgN
+    ].join('\n');
   }
   function normalizeWhatsAppNumber(value){
     const raw = String(value || '').replace(/[^\d+]/g, '').trim();
@@ -545,16 +570,119 @@
       location.href = link;
     }
   }
+  function openPlatformAssistantModal(){
+    try{ ensureAccountChrome(); }catch(_){ }
+    const modal = $('platformAssistantModal');
+    const log = $('platformAssistantLog');
+    if (!modal || !log) return;
+    if (!log.dataset.seeded){
+      log.dataset.seeded = '1';
+      log.innerHTML = '';
+      appendPlatformAssistantLine('assistant', 'مرحباً — أنا مساعد استخدام المنصة (ولست نموذج محادثة الملفات). اختر سؤالاً سريعاً أو اكتب سؤالك.');
+    }
+    const chips = $('platformAssistantChips');
+    if (chips && !chips.dataset.built){
+      chips.dataset.built = '1';
+      const items = [
+        'كيف أرفع ملفات؟',
+        'ما الفرق بين RAG ومن الملفات فقط؟',
+        'كيف أستخدم OCR؟',
+        'كيف أفعّل البصمة؟',
+        'لماذا لا يرى النموذج ملفاتي؟',
+        'كيف أستخدم الإدارة؟',
+        'كيف أتواصل مع الدعم؟'
+      ];
+      items.forEach((text) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn ghost sm';
+        b.style.margin = '0';
+        b.textContent = text;
+        b.addEventListener('click', () => {
+          const inp = $('platformAssistantInput');
+          if (inp) inp.value = text;
+          void submitPlatformAssistantQuestion();
+        });
+        chips.appendChild(b);
+      });
+    }
+    modal.classList.add('show');
+    modal.setAttribute('aria-hidden', 'false');
+    setTimeout(() => $('platformAssistantInput')?.focus(), 60);
+  }
+  function appendPlatformAssistantLine(role, text){
+    const log = $('platformAssistantLog');
+    if (!log) return;
+    const row = document.createElement('div');
+    row.className = 'platform-assistant-line';
+    row.style.marginBottom = '10px';
+    row.style.lineHeight = '1.75';
+    row.style.textAlign = 'right';
+    row.textContent = (role === 'user' ? 'أنت: ' : 'المساعد: ') + text;
+    log.appendChild(row);
+    log.scrollTop = log.scrollHeight;
+  }
+  async function submitPlatformAssistantQuestion(){
+    const input = $('platformAssistantInput');
+    const q = String(input?.value || '').trim();
+    if (!q) return;
+    if (input) input.value = '';
+    appendPlatformAssistantLine('user', q);
+    const log = $('platformAssistantLog');
+    const thinking = document.createElement('div');
+    thinking.className = 'hint';
+    thinking.style.marginBottom = '8px';
+    thinking.id = 'platformAssistantThinking';
+    thinking.textContent = '…';
+    log?.appendChild(thinking);
+    try{
+      const answer = await runPlatformAssistantTurn(q);
+      thinking.remove();
+      appendPlatformAssistantLine('assistant', answer);
+    }catch(_){
+      thinking.remove();
+      appendPlatformAssistantLine('assistant', answerPlatformAssistantLocal(q));
+    }
+  }
+  function applySupportActionVisibility(){
+    const sup = getSupportConfig();
+    const showW = sup.enabled;
+    const label = sup.label || 'دعم واتساب';
+    if ($('authWhatsAppLabel')) $('authWhatsAppLabel').textContent = label;
+    if ($('settingsWhatsAppLabel')) $('settingsWhatsAppLabel').textContent = label;
+    const waBtns = ['authWhatsAppBtn', 'settingsWhatsAppBtn', 'fabWhatsAppBtn'];
+    waBtns.forEach((id) => {
+      const b = $(id);
+      if (b) b.style.display = showW ? 'inline-flex' : 'none';
+    });
+    if ($('authPlatformAssistantBtn')) $('authPlatformAssistantBtn').style.display = 'inline-flex';
+    if ($('settingsPlatformAssistantBtn')) $('settingsPlatformAssistantBtn').style.display = 'inline-flex';
+    if ($('fabPlatformAssistantBtn')) $('fabPlatformAssistantBtn').style.display = 'inline-flex';
+    const gateOpen = !!$('authGate')?.classList.contains('show');
+    if ($('appSupportDock')) $('appSupportDock').style.display = gateOpen ? 'none' : 'flex';
+  }
   function answerPlatformAssistantLocal(question = ''){
-    const q = String(question || '').trim().toLowerCase();
+    const raw = String(question || '').trim();
+    const q = raw.toLowerCase();
     if (!q) return 'اكتب سؤالك عن المنصة (الملفات، OCR، RAG، البصمة، الإعدادات، النماذج، التحميلات، الإدارة).';
-    if (/ocr|استخراج|صورة|pdf/.test(q)) return 'في صفحة الملفات/مختبر الوثائق: اختر documentReadMode (Auto / Vision / Force OCR / Text only). عند الملفات المصوّرة استخدم Force OCR. أثناء المعالجة سيظهر التقدّم ويمكنك المتابعة بالكتابة دون انتظار.';
-    if (/rag|استرجاع|files only|من الملفات فقط/.test(q)) return 'RAG = استرجاع مقاطع ذات صلة من قاعدة المعرفة المفهرسة. "من الملفات فقط" يقيد الإجابة بسياق الملفات الحالية دون معرفة خارجية. فعّل RAG عند الحاجة للإجابات من أرشيف كبير.';
+    if (/^كيف أرفع ملفات/.test(raw) || /رفع ملف|رفع الملفات|ارفع ملف/.test(q)){
+      return 'افتح تبويب «الملفات» داخل نفس المشروع، اضغط إضافة/رفع واختر الملفات. بعد الرفع يمكنك فهرستها لقاعدة المعرفة من تبويب المعرفة، أو إرفاقها من الدردشة بزر المرفقات. الملفات مرتبطة بالمشروع الحالي الظاهر في الشريط العلوي.';
+    }
+    if (/rag.*الملفات فقط|من الملفات فقط|الفرق بين.*rag/i.test(raw)){
+      return 'RAG يسترجع مقاطعاً ذات صلة من قاعدة المعرفة المفهرسة (قد تشمل وثائق قديمة بغض النظر عما فتحته اليوم). خيار «من الملفات فقط» يحدّ الرد بما رفعته/أرفقته في سياق الجلسة الحالية دون الاعتماد على الاسترجاع الواسع. استخدم RAG عند سؤال يعتمد على أرشيف المشروع بالكامل، و«من الملفات فقط» عند تمرير مرفقات محددة فقط.';
+    }
+    if (/ocr|استخراج|صورة|pdf|مستند مصور/.test(q)) return 'في صفحة الملفات/مختبر الوثائق: اختر documentReadMode (Auto / Vision / Force OCR / Text only). عند الملفات المصوّرة استخدم Force OCR. أثناء المعالجة سيظهر التقدّم ويمكنك المتابعة بالكتابة دون انتظار.';
     if (/بصمة|biometric|finger/.test(q)) return 'تفعيل البصمة: سجّل دخولاً أولاً ثم فعّل الخيار من الإعدادات. في التشغيل القادم تظهر المطالبة إذا كانت هناك جلسة محفوظة صالحة. عند الإلغاء أو الفشل يعود التطبيق لشاشة الدخول العادية.';
     if (/نموذج|model|موديل/.test(q)) return 'اختر النموذج حسب المهمة: السريع للمهام اليومية، الأقوى للتحليل الطويل، والرؤية عند صور/PDF. في الخطة المجانية تُستخدم النماذج الاقتصادية تلقائياً.';
-    if (/ملف|upload|رفع/.test(q)) return 'من صفحة الملفات ارفع ملفاتك ثم افتحها/فهرسها للمعرفة. للـ OCR اختر الوضع المناسب. إذا لم يرَ النموذج ملفاتك تأكد أن الملف ضمن المشروع الحالي وتمت فهرسته.';
-    if (/admin|إدارة|مستخدم/.test(q)) return 'لوحة الإدارة تتيح: إدارة الطلبات (مراجعة/قبول/رفض/أرشفة) وإدارة المستخدمين (تفعيل، خطة، رصيد، صلاحية، تعليق).';
-    return 'يمكنني مساعدتك في: رفع الملفات، OCR، KB/RAG، إعدادات النماذج، البصمة، التحميلات، والإدارة. جرّب سؤالاً محدداً مثل: "كيف أفعّل OCR؟"';
+    if (/لا يرى|لا يرى النموذج|ملفاتي؟$|ملفاتي\?/.test(q) || /يرى.*ملف/.test(q)){
+      return 'تأكد أنك في المشروع نفسه الذي رفعت فيه الملف (اسم المشروع في الأعلى). فعّل RAG إذا تريد الإجابة من أرشيف المشروع. للرد من المرفقات الحالية فقط، استخدم «من الملفات فقط» بعد إرفاق الملف. يجب اكتمال الفهرسة لبعض الاستعلامات من المعرفة.';
+    }
+    if (/rag|استرجاع|استرجاع.*معرفة/.test(q)) return 'RAG = استرجاع مقاطع ذات صلة من قاعدة المعرفة المفهرسة. "من الملفات فقط" يقيد الإجابة بسياق الملفات الحالية دون معرفة خارجية. فعّل RAG عند الحاجة للإجابات من أرشيف كبير.';
+    if (/كيف أستخدم الإدارة|إدارة المستخدم|لوحة الإدارة|admin/.test(q)) return 'للمشرف: من «الإعدادات» وصل لأقسام طلبات تفعيل الخطة وإدارة المستخدمين (عند تفعيل الصلاحية على الخادم). تتغيّر الحالات من الخادم — استخدم «تحديث» بعد كل إجراء. المستخدم يرى خطته/رصيده في بطاقة الحساب بعد تسجيل الدخول.';
+    if (/دعم|واتساب|تواصل|support|whatsapp/.test(q)) return 'للدعم: استخدم زر «دعم واتساب» (شاشة الدخول/الإعدادات/الزر العائم). يفتح واتساب برقم معدّل من إعدادات الخادم ورسالة مبدئية. يمكنك من الإعدادات أيضاً الاطلاع على البريد إن وُجد.';
+    if (/upload|ارفع|file/.test(q)) return 'من صفحة الملفات ارفع ملفاتك ثم افتحها/فهرسها للمعرفة. للـ OCR اختر الوضع المناسب. إذا لم يرَ النموذج ملفاتك تأكد أن الملف ضمن المشروع الحالي وتمت فهرسته.';
+    if (/مستخدم|تفعيل حساب|خطة|رصيد/.test(q)) return 'للمسؤول: من لوحة «إدارة المستخدمين» يمكنك تفعيل/تعليق/خطة/رصيد. للمستخدم: ترى خطتك في الإعدادات وبطاقة الحساب بعد مزامنة الجلسة.';
+    return 'يمكنني مساعدتك في: رفع الملفات، OCR، KB/RAG، إعدادات النماذج، البصمة، التحميلات، والإدارة. جرّب سؤالاً محدداً مثل: "كيف أفعّل OCR؟" أو استخدم الأزرار السريعة أعلاه.';
   }
   function isDebugLoggingEnabled(){
     return AI_STUDIO_DEBUG_LOG === true;
@@ -2123,29 +2251,15 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
   function scheduleCloudSync(reason = 'change'){
     const auth = getAuthState();
     if (!hasValidAuthSession(auth) || !auth.email || CLOUD_RUNTIME.muted) return;
-    if (UI_PERF_RUNTIME.instrumentEnabled){
-      UI_PERF_RUNTIME.syncQueuedCount += 1;
-      UI_PERF_RUNTIME.lastSyncQueuedAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-      uiPerfLog('sync:queued', { reason });
-    }
     clearTimeout(CLOUD_RUNTIME.syncTimer);
-    /* v9.6.12 — when the user is actively typing, defer the cloud sync
-       further so we never hit /storage/state on every keystroke. The
-       keystroke handler (setTypingActive → typing-idle) re-arms this
-       timer once the user pauses. */
-    const delay = UI_PERF_RUNTIME.typingActive ? 5200 : 3200;
-    if (UI_PERF_RUNTIME.typingActive && UI_PERF_RUNTIME.instrumentEnabled){
-      UI_PERF_RUNTIME.syncDeferredCount += 1;
-      uiPerfLog('sync:deferred', { reason, delayMs: delay });
-    }
-    CLOUD_RUNTIME.syncTimer = window.setTimeout(() => {
-      if (UI_PERF_RUNTIME.typingActive){
-        // Still typing — push the sync further out without firing.
-        scheduleCloudSync(reason);
+    const run = () => {
+      if (isTypingActive()){
+        CLOUD_RUNTIME.syncTimer = window.setTimeout(run, 400);
         return;
       }
       syncCloudNow(reason).catch(() => {});
-    }, delay);
+    };
+    CLOUD_RUNTIME.syncTimer = window.setTimeout(run, 3200);
   }
 
   async function hydrateCloudState(force = false){
@@ -4630,8 +4744,8 @@ function applyShellLayout(){
         }
         const dictation = parts.join(' ').trim();
         input.value = [composerDictationBase, dictation].filter(Boolean).join(composerDictationBase ? '\n' : '');
-        resizeComposerInput(input);
-        syncComposerMeta();
+        markComposerTypingFromInput();
+        resizeComposerInput(input, { skipShellLayout: true });
       };
 
       composerRecognition.onerror = (event) => {
@@ -4878,24 +4992,52 @@ function refreshDeepSearchBtn(){
     return { text: engineered, transformed: engineered !== raw };
   }
 
-  function resizeComposerInput(input = $('chatInput')){
+  /* v9.6.13 — cached so we don't re-evaluate matchMedia on every keystroke. */
+  let _composerCompactCache = null;
+  function getComposerCompact(){
+    if (_composerCompactCache !== null) return _composerCompactCache;
+    try{
+      const mql = typeof window.matchMedia === 'function'
+        ? window.matchMedia('(max-width: 980px), (pointer: coarse)')
+        : null;
+      _composerCompactCache = !!(mql && mql.matches);
+      if (mql && typeof mql.addEventListener === 'function'){
+        mql.addEventListener('change', (e) => { _composerCompactCache = !!e.matches; });
+      } else if (mql && typeof mql.addListener === 'function'){
+        mql.addListener((e) => { _composerCompactCache = !!e.matches; });
+      }
+    }catch(_){ _composerCompactCache = false; }
+    return _composerCompactCache;
+  }
+  /* Track the last height we wrote so identical writes are skipped, avoiding
+     a forced reflow per keystroke on Android WebView. */
+  let _composerLastHeightPx = 0;
+  function resizeComposerInput(input = $('chatInput'), opts = {}){
     if (!input) return;
+    const skipShell = !!opts.skipShellLayout;
     if (input.tagName === 'TEXTAREA'){
-      const compact = typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 980px), (pointer: coarse)').matches;
+      const compact = getComposerCompact();
       const minH = compact ? 38 : 42;
       const expandedByUi = composerExpandedByFocus || input.dataset.expanded === 'true' || document.activeElement === input;
       const value = String(input.value || '');
       const shortSingleLine = !value.trim() || (!value.includes('\n') && value.length < 120);
       const shouldStayCompact = !expandedByUi && shortSingleLine;
-      input.style.height = 'auto';
       const maxH = compact ? 200 : 260;
+      let nextH;
       if (shouldStayCompact){
-        input.style.height = `${minH}px`;
+        nextH = minH;
       } else {
-        input.style.height = `${Math.min(maxH, Math.max(minH, input.scrollHeight))}px`;
+        /* Only the slow path actually reads scrollHeight — that triggers the
+           layout the keystroke critical path needs to avoid. */
+        input.style.height = 'auto';
+        nextH = Math.min(maxH, Math.max(minH, input.scrollHeight));
+      }
+      if (nextH !== _composerLastHeightPx){
+        input.style.height = `${nextH}px`;
+        _composerLastHeightPx = nextH;
       }
     }
-    scheduleShellLayoutRefreshFromComposer();
+    if (!skipShell) scheduleShellLayoutRefreshFromComposer();
   }
 
   let _shellFromComposerTimer = 0;
@@ -5464,6 +5606,14 @@ function refreshDeepSearchBtn(){
                 <span class="auth-path-pill">إدارة (عند الحاجة)</span>
               </div>
               <div class="auth-status status" id="authGateStatus" data-tone="info">جاهز للدخول.</div>
+              <div class="account-actions" id="authSupportRow" style="margin-top:8px; flex-wrap:wrap; gap:8px">
+                <button class="btn ghost sm with-label" type="button" id="authWhatsAppBtn" style="display:none">
+                  <span class="icon">💬</span><span class="label" id="authWhatsAppLabel">دعم واتساب</span>
+                </button>
+                <button class="btn ghost sm with-label" type="button" id="authPlatformAssistantBtn">
+                  <span class="icon">🧭</span><span class="label">مساعد المنصة</span>
+                </button>
+              </div>
               <form id="authEntryForm" autocomplete="on" onsubmit="return false" style="margin-top:12px">
               <div class="auth-config-grid">
                 <div>
@@ -5506,6 +5656,19 @@ function refreshDeepSearchBtn(){
             </section>
           </div>
         </div>`);
+    }
+    if ($('authGate') && !$('authSupportRow') && $('authGateStatus')){
+      $('authGateStatus').insertAdjacentHTML('afterend', `
+        <div class="account-actions" id="authSupportRow" style="margin-top:8px; flex-wrap:wrap; gap:8px">
+          <button class="btn ghost sm with-label" type="button" id="authWhatsAppBtn" style="display:none">
+            <span class="icon">💬</span><span class="label" id="authWhatsAppLabel">دعم واتساب</span>
+          </button>
+          <button class="btn ghost sm with-label" type="button" id="authPlatformAssistantBtn">
+            <span class="icon">🧭</span><span class="label">مساعد المنصة</span>
+          </button>
+        </div>`);
+      $('authWhatsAppBtn')?.addEventListener('click', (e) => { e.preventDefault(); openWhatsAppSupport(); });
+      $('authPlatformAssistantBtn')?.addEventListener('click', (e) => { e.preventDefault(); openPlatformAssistantModal(); });
     }
     if (!$('nativeGoogleDebugModal')){
       document.body.insertAdjacentHTML('beforeend', `
@@ -5773,6 +5936,62 @@ function refreshDeepSearchBtn(){
             </div>
           </details>`);
     }
+    if ($('settingsAccountCard') && !$('settingsSupportRow')){
+      $('settingsAccountCard').insertAdjacentHTML('beforeend', `
+        <div class="account-actions" id="settingsSupportRow" style="margin-top:12px; flex-wrap:wrap; gap:8px">
+          <button class="btn ghost sm with-label" type="button" id="settingsWhatsAppBtn" style="display:none">
+            <span class="icon">💬</span><span class="label" id="settingsWhatsAppLabel">دعم واتساب</span>
+          </button>
+          <button class="btn dark sm with-label" type="button" id="settingsPlatformAssistantBtn">
+            <span class="icon">🧭</span><span class="label">مساعد المنصة</span>
+          </button>
+        </div>`);
+    }
+    if (!document.getElementById('appSupportDock')){
+      document.body.insertAdjacentHTML('beforeend', `
+        <div id="appSupportDock" class="app-support-dock" aria-label="دعم سريع">
+          <button type="button" class="app-support-fab" id="fabPlatformAssistantBtn" title="مساعد المنصة">🧭</button>
+          <button type="button" class="app-support-fab app-support-fab--wa" id="fabWhatsAppBtn" style="display:none" title="دعم واتساب">💬</button>
+        </div>`);
+    }
+    if (!document.getElementById('platformAssistantModal')){
+      document.body.insertAdjacentHTML('beforeend', `
+        <div class="modal" id="platformAssistantModal" aria-hidden="true">
+          <div class="backdrop" id="platformAssistantBackdrop"></div>
+          <div class="panel platform-assistant-panel" style="top:6vh; max-width:520px; margin:0 auto; left:0; right:0; max-height:86vh; display:flex; flex-direction:column; overflow:hidden">
+            <div class="head" style="flex-shrink:0">
+              <div style="font-weight:1000">مساعد المنصة</div>
+              <button class="btn ghost sm icon" type="button" id="platformAssistantCloseBtn" title="إغلاق" aria-label="إغلاق">✕</button>
+            </div>
+            <div class="body" style="display:flex; flex-direction:column; gap:10px; flex:1; min-height:0; padding-top:0">
+              <p class="hint" style="margin:0; line-height:1.6">اسأل عن استخدام AI Workspace Studio (الملفات، OCR، RAG، البصمة، الإعدادات، الإدارة). يعمل حتى دون إنترنت عبر إجابات محلية؛ ويُفضّل الاتصال عند توفر البوابة.</p>
+              <div class="platform-assistant-chips" id="platformAssistantChips" style="display:flex; flex-wrap:wrap; gap:6px"></div>
+              <div id="platformAssistantLog" class="platform-assistant-log" style="flex:1; min-height:180px; overflow:auto; border:1px solid var(--line); border-radius:12px; padding:10px; background:var(--surface2)"></div>
+              <div class="upgrade-inline" style="margin:0; align-items:stretch">
+                <textarea id="platformAssistantInput" rows="2" placeholder="سؤالك عن المنصة…" style="flex:1; min-height:48px; resize:vertical"></textarea>
+                <button class="btn dark sm with-label" type="button" id="platformAssistantSendBtn"><span class="icon">➤</span><span class="label">إرسال</span></button>
+              </div>
+            </div>
+          </div>
+        </div>`);
+    }
+    if (!window.__AI_STUDIO_SUPPORT_UI_BOUND__){
+      window.__AI_STUDIO_SUPPORT_UI_BOUND__ = true;
+      const bind = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', (e) => { e.preventDefault(); fn(); }); };
+      bind('authWhatsAppBtn', openWhatsAppSupport);
+      bind('authPlatformAssistantBtn', openPlatformAssistantModal);
+      bind('settingsWhatsAppBtn', openWhatsAppSupport);
+      bind('settingsPlatformAssistantBtn', openPlatformAssistantModal);
+      bind('fabWhatsAppBtn', openWhatsAppSupport);
+      bind('fabPlatformAssistantBtn', openPlatformAssistantModal);
+      const closePa = () => { const m = $('platformAssistantModal'); if (m){ m.classList.remove('show'); m.setAttribute('aria-hidden', 'true'); } };
+      bind('platformAssistantCloseBtn', closePa);
+      $('platformAssistantBackdrop')?.addEventListener('click', closePa);
+      $('platformAssistantSendBtn')?.addEventListener('click', () => void submitPlatformAssistantQuestion());
+      $('platformAssistantInput')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); void submitPlatformAssistantQuestion(); }
+      });
+    }
     refineAuthGateLayout();
   }
 
@@ -5933,6 +6152,7 @@ function refreshDeepSearchBtn(){
     if ($('authEntryPassword') && remembered.remember && !String($('authEntryPassword').value || '').trim()) $('authEntryPassword').value = remembered.password || '';
     syncUnifiedAuthEntry();
     syncAccountPlanControls();
+    applySupportActionVisibility();
   }
 
 function syncUnifiedAuthEntry(){
@@ -7896,6 +8116,8 @@ async function submitUnifiedAuthEntry(){
   }
 
   function renderThreadHistory(){
+    if (UI_PERF_RUNTIME.typingActive && !window.__AI_STUDIO_FORCE_THREAD_HISTORY__) return;
+    const t0 = (UI_PERF_DEBUG.on && performance.now) ? performance.now() : 0;
     const box = $('threadDrawerList');
     if (!box) return;
     const pid = getCurProjectId();
@@ -7965,6 +8187,7 @@ async function submitUnifiedAuthEntry(){
       [openBtn, renameBtn, exportBtn, deleteBtn].forEach((btn) => actions.appendChild(btn));
       box.appendChild(card);
     });
+    if (UI_PERF_DEBUG.on && t0) UI_PERF_DEBUG.lastRenderThreadHistoryMs = (performance?.now?.() || 0) - t0;
   }
 
   function buildGuideSections(){
@@ -8613,7 +8836,10 @@ async function submitUnifiedAuthEntry(){
   }
   function saveProjects(arr){ saveJSON(KEYS.projects, arr); }
   function getCurProjectId(){ return localStorage.getItem(KEYS.curProject) || 'default'; }
-  function setCurProjectId(pid){ localStorage.setItem(KEYS.curProject, pid); }
+  function setCurProjectId(pid){
+    localStorage.setItem(KEYS.curProject, pid);
+    try{ UI_PERF_RUNTIME.stableCountsSeeded = false; }catch(_){ }
+  }
   function getCurProject(){
     const pid = getCurProjectId();
     return loadProjects().find(p => p.id === pid) || loadProjects()[0];
@@ -8628,6 +8854,11 @@ async function submitUnifiedAuthEntry(){
     return t;
   }
   function saveThreads(pid, arr){
+    const t0 = (UI_PERF_DEBUG.on && performance.now) ? performance.now() : 0;
+    const done = (v) => {
+      if (UI_PERF_DEBUG.on && t0) UI_PERF_DEBUG.lastSaveThreadsMs = (performance?.now?.() || 0) - t0;
+      return v;
+    };
     // v9.6.1 — belt-and-suspenders save: if the fat thread JSON hits
     // QuotaExceededError, strip the inline dataUrls off of attachment
     // previews (they already live in the asset registry) and retry. The
@@ -8635,7 +8866,7 @@ async function submitUnifiedAuthEntry(){
     // renderChat() pass, so the user never sees an image disappear just
     // because the thread JSON got too big.
     const ok = saveJSON(KEYS.threads(pid), arr);
-    if (ok) return true;
+    if (ok) return done(true);
     try{
       let stripped = 0;
       const slimmed = (Array.isArray(arr) ? arr : []).map((thread) => {
@@ -8700,7 +8931,7 @@ async function submitUnifiedAuthEntry(){
               msg.content = slimMsg.content;
             });
           });
-          return true;
+          return done(true);
         }
       }
       // Also mirror the slim copy in-place so the caller's in-memory
@@ -8723,14 +8954,17 @@ async function submitUnifiedAuthEntry(){
           });
         });
       }
-      return retryOk;
+      return done(retryOk);
     }catch(err){
       logPreviewError('thread_save_strip_failed', err, { pid });
-      return false;
+      return done(false);
     }
   }
   function getCurThreadId(pid){ return localStorage.getItem(KEYS.curThread(pid)) || loadThreads(pid)[0]?.id; }
-  function setCurThreadId(pid, tid){ localStorage.setItem(KEYS.curThread(pid), tid); }
+  function setCurThreadId(pid, tid){
+    localStorage.setItem(KEYS.curThread(pid), tid);
+    try{ UI_PERF_RUNTIME.stableCountsSeeded = false; }catch(_){ }
+  }
   function getCurThread(){
     const pid = getCurProjectId();
     const tid = getCurThreadId(pid);
@@ -11282,6 +11516,26 @@ async function fileToText(file){
   async function callOpenAIChat(opts){
     const { text } = await callOpenAIChatWithMeta(opts);
     return text;
+  }
+
+  async function runPlatformAssistantTurn(question = ''){
+    const q = String(question || '').trim();
+    if (!q) return 'اكتب سؤالك عن استخدام المنصة.';
+    const settings = getSettings();
+    if (String(settings.authMode || '') === 'gateway' && hasValidAuthSession(getAuthState())){
+      try{
+        const { text } = await callOpenAIChatWithMeta({
+          model: settings.model,
+          max_tokens: 800,
+          messages: [
+            { role:'system', content: 'You are the in-app "platform assistant" for AI Workspace Studio. Reply only in Arabic. Answer only questions about using the app: uploads, files, OCR, RAG, biometric login, models, downloads, admin, support/WhatsApp, settings. If the question is not about the platform, briefly say you only help with app usage and suggest contacting WhatsApp support.' },
+            { role:'user', content: q }
+          ]
+        });
+        if (String(text || '').trim()) return String(text).trim();
+      }catch(_){ }
+    }
+    return answerPlatformAssistantLocal(q);
   }
 
   async function streamChatCompletions({ apiKey, baseUrl, model, messages, max_tokens, signal, onDelta, extraHeaders={}, modalities=[] }){
@@ -13998,19 +14252,10 @@ ${clip}` });
   function renderChat(){
     const log = $('chatLog');
     if (!log) return;
-    const renderStart = UI_PERF_RUNTIME.instrumentEnabled
-      ? ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now())
-      : 0;
-    /* v9.6.12 — quickest possible bail-out when the user is typing.
-       We re-check this here too so any incidental renderChat() call
-       (storage hooks, scroll-dock, attachments, etc.) doesn't rebuild
-       the chat DOM on the keystroke critical path. */
     if (UI_PERF_RUNTIME.typingActive && !window.__AI_STUDIO_FORCE_CHAT_RENDER__){
-      if (UI_PERF_RUNTIME.instrumentEnabled){
-        uiPerfLog('render:skip-typing', {});
-      }
       return;
     }
+    const t0 = (UI_PERF_DEBUG.on && performance.now) ? performance.now() : 0;
     const thread = getCurThread();
     const msgs = thread.messages || [];
     // v9.6.1 — hydrate legacy/partial attachmentPreviews so a message
@@ -14031,8 +14276,6 @@ ${clip}` });
     } catch(err) {
       logPreviewError('hydrate_messages_pass', err, { tid: thread?.id || '' });
     }
-    // v9.6.12 — top-of-function bail-out already handled this. Leaving
-    // a defensive second guard removed so we don't double-skip.
     log.innerHTML = '';
 
     if (!msgs.length){
@@ -14168,12 +14411,8 @@ ${clip}` });
     renderThreadHistory();
     scheduleStrategicWorkspaceRefresh(260);
     scheduleChatScrollDockSync();
-    if (UI_PERF_RUNTIME.instrumentEnabled){
-      const renderEnd = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-      UI_PERF_RUNTIME.renderCount += 1;
-      UI_PERF_RUNTIME.lastRenderAt = renderEnd;
-      uiPerfLog('render', { ms: Math.round((renderEnd - (renderStart || renderEnd)) * 100) / 100, msgs: msgs.length });
-    }
+    if (UI_PERF_DEBUG.on && t0) UI_PERF_DEBUG.lastRenderChatMs = (performance?.now?.() || 0) - t0;
+    try{ tickUiPerfHud(); }catch(_){ }
   }
 
   function updateChatAttachChips(){
@@ -14228,6 +14467,7 @@ ${clip}` });
     const showComposerDetails = pendingChatAttachments.length > 0 || composerEditState.active || promptEngineeringOn;
     if (wrap) wrap.classList.toggle('composer-meta--idle', chatUi && !showComposerDetails);
     if (chatUi && !showComposerDetails){
+      if (UI_PERF_RUNTIME.typingActive) return;
       meta.textContent = '';
       resizeComposerInput();
       scheduleShellLayoutRefresh();
@@ -17210,32 +17450,26 @@ $('chatToolbarPinBtn')?.addEventListener('click', () => {
       $('chatInput')?.focus();
       toast('ℹ️ تم إلغاء وضع التعديل');
     });
-    let composerMetaTimer = 0;
-    function scheduleComposerMetaDebounced(){
-      clearTimeout(composerMetaTimer);
-      composerMetaTimer = window.setTimeout(() => { try{ syncComposerMeta(); }catch(_){ } }, 100);
-    }
     let composerResizeRaf = 0;
     function onComposerInputTyping(){
-      const start = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-      // v9.6.12 — Mark typing active synchronously so renderChat() and
-      // scheduleCloudSync() bail out before they touch the DOM/storage on
-      // the keystroke critical path.
-      try{ setTypingActive(); }catch(_){ /* noop */ }
+      const t0 = (UI_PERF_DEBUG.on && performance.now) ? performance.now() : 0;
+      markComposerTypingFromInput();
       if (!composerResizeRaf){
         composerResizeRaf = requestAnimationFrame(() => {
           composerResizeRaf = 0;
-          resizeComposerInput($('chatInput'));
+          const t1 = (UI_PERF_DEBUG.on && performance.now) ? performance.now() : 0;
+          resizeComposerInput($('chatInput'), { skipShellLayout: true });
+          if (UI_PERF_DEBUG.on){
+            UI_PERF_DEBUG.lastResizeMs = (performance?.now?.() || 0) - t1;
+            tickUiPerfHud();
+          }
         });
+      } else if (UI_PERF_DEBUG.on){
+        tickUiPerfHud();
       }
-      scheduleComposerMetaDebounced();
-      if (UI_PERF_RUNTIME.instrumentEnabled){
-        const end = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-        const dur = end - start;
-        UI_PERF_RUNTIME.inputCount += 1;
-        UI_PERF_RUNTIME.lastInputAt = end;
-        if (dur > UI_PERF_RUNTIME.inputMaxMs) UI_PERF_RUNTIME.inputMaxMs = dur;
-        uiPerfLog('input', { ms: Math.round(dur * 100) / 100, len: ($('chatInput')?.value || '').length });
+      if (UI_PERF_DEBUG.on){
+        UI_PERF_DEBUG.lastInputHandlerMs = (performance?.now?.() || 0) - t0;
+        tickUiPerfHud();
       }
     }
     $('chatInput').addEventListener('input', onComposerInputTyping);

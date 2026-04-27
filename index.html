@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="9.6.12">
+<html lang="ar" dir="rtl" data-appver="9.6.13">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5" />
@@ -5302,6 +5302,38 @@ body.dark *::-webkit-scrollbar-thumb:hover{
 /* Respect reduced motion — no decorative animation beyond CSS transitions. */
 @media (prefers-reduced-motion: reduce){
   #liveVoiceOpenBtn{ transition: none; }
+}
+/* v9.6.12 — floating support / platform assistant */
+.app-support-dock{
+  position: fixed;
+  inset-inline-start: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  z-index: 55;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  pointer-events: auto;
+}
+.app-support-fab{
+  width: 50px;
+  height: 50px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  box-shadow: var(--shadow);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.app-support-fab--wa{
+  background: #25d366;
+  color: #fff;
+  border-color: rgba(0,0,0,.12);
 }
 </style>
 </head>
