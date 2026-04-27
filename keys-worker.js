@@ -111,6 +111,10 @@ export default {
         return withCors(await handleMeQuota(request, env), request);
       }
 
+      if (url.pathname === '/me/plan' && request.method === 'GET') {
+        return withCors(await handleMePlan(request, env), request);
+      }
+
       if (url.pathname === '/admin/usage' && request.method === 'GET') {
         return withCors(await handleAdminUsage(request, env), request);
       }
@@ -3396,6 +3400,80 @@ async function handleMeQuota(request, env) {
       ok: true,
       role: session.role === 'admin' ? 'admin' : 'user',
       quota: quotaPublicView(quota)
+    }, 200);
+  } catch (error) {
+    return jsonResponse({
+      error: String(error?.message || error || 'Authentication required.'),
+      code: 'AUTH_SESSION_REQUIRED'
+    }, 401);
+  }
+}
+
+// v9.6.15 — Scoped plan/usage summary for the current authenticated user only.
+// Returns a stable `plan` payload that the in-app account card consumes; never
+// exposes other users' data, never trusts client-supplied email — the email is
+// taken strictly from the verified session token.
+function planNameLabel(plan, role) {
+  if (role === 'admin') return 'admin';
+  if (plan === 'premium') return 'premium';
+  return 'free';
+}
+
+function planSummaryStatus(quota, account) {
+  const now = nowMs();
+  const periodEnd = Number(quota?.periodEnd || 0);
+  const limit = Number(quota?.limit || 0);
+  const used = Number(quota?.used || 0);
+  const remaining = Math.max(0, roundUsd(limit - used));
+  if (account && account.disabled === true) return 'suspended';
+  if (!quota) return 'inactive';
+  if (periodEnd > 0 && periodEnd < now) return 'expired';
+  if (limit > 0 && remaining <= 0) return 'depleted';
+  return 'active';
+}
+
+async function handleMePlan(request, env) {
+  try {
+    const session = await requireSession(request, env);
+    const email = String(session.email || '').trim().toLowerCase();
+    let account = null;
+    try { account = await readUserAccount(email, env); } catch (_) { account = null; }
+    // Read existing quota; fall back to init only if absent so we never invent
+    // a fake plan window for a freshly-disabled or never-initialized account.
+    let quota = await readQuotaFromKv(email, env);
+    if (!quota) {
+      try { quota = await getOrInitUserQuota(session, env); } catch (_) { quota = null; }
+    }
+    const view = quota ? quotaPublicView(quota) : null;
+    const plan = view
+      ? planNameLabel(view.plan, session.role === 'admin' ? 'admin' : (account?.role === 'admin' ? 'admin' : 'user'))
+      : planNameLabel(session.plan === 'premium' ? 'premium' : 'free', session.role === 'admin' ? 'admin' : 'user');
+    const status = planSummaryStatus(view, account);
+    const creditTotal = view ? view.limit : 0;
+    const creditUsed = view ? view.used : 0;
+    const creditRemaining = view ? view.remaining : 0;
+    const validFrom = view?.periodStart || 0;
+    const validUntil = view?.periodEnd || 0;
+    const updatedAt = view?.updatedAt || account?.updatedAt || 0;
+    return jsonResponse({
+      ok: true,
+      role: session.role === 'admin' ? 'admin' : 'user',
+      email,
+      plan: {
+        planName: plan,
+        status,
+        creditTotal,
+        creditUsed,
+        creditRemaining,
+        validFrom,
+        validUntil,
+        quotaPeriod: 'monthly',
+        updatedAt,
+        limitSource: view?.limitSource || '',
+        currency: 'USD'
+      },
+      // Convenience aliases for older clients that already consumed quotaPublicView shape.
+      quota: view
     }, 200);
   } catch (error) {
     return jsonResponse({
