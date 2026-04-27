@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="9.6.14">
+<html lang="ar" dir="rtl" data-appver="9.6.15">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5" />
@@ -1398,6 +1398,85 @@ body.chatToolbarCollapsed #chatMiniToolbar{display:flex !important;}
     }
     .settings-kpi span{display:block; font-size:12px; color:var(--muted); font-weight:900; margin-bottom:6px;}
     .settings-kpi strong{display:block; line-height:1.55;}
+    /* v9.6.15 — Plan/usage card inside the settings account block. */
+    .plan-card{
+      margin-top:14px; border-radius:18px; padding:16px;
+      background:linear-gradient(180deg,#f7faff,#ffffff);
+      border:1px solid rgba(10,20,60,.10);
+      box-shadow:0 10px 24px rgba(15,23,42,.05);
+      display:grid; gap:12px;
+    }
+    .plan-card[data-state="expired"]{
+      border-color:rgba(220,38,38,.35);
+      background:linear-gradient(180deg,#fff5f5,#fff);
+    }
+    .plan-card[data-state="depleted"]{
+      border-color:rgba(202,138,4,.45);
+      background:linear-gradient(180deg,#fff8e6,#fff);
+    }
+    .plan-card[data-state="suspended"]{
+      border-color:rgba(220,38,38,.45);
+      background:linear-gradient(180deg,#fff0f0,#fff);
+    }
+    .plan-card-head{display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;}
+    .plan-card-title{margin:0; font-size:16px; font-weight:1000;}
+    .plan-card-actions{display:flex; gap:6px; align-items:center; flex-wrap:wrap;}
+    .plan-card-grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px;}
+    .plan-card-row{
+      display:grid; gap:2px; padding:10px 12px;
+      border-radius:12px;
+      background:rgba(10,20,60,.04);
+      border:1px solid rgba(10,20,60,.06);
+    }
+    .plan-card-row .plan-card-label{font-size:11px; font-weight:900; color:var(--muted);}
+    .plan-card-row .plan-card-value{font-size:14px; font-weight:900; color:var(--text);}
+    .plan-card-row[data-tone="warning"]{ background:rgba(202,138,4,.10); border-color:rgba(202,138,4,.30); }
+    .plan-card-row[data-tone="danger"]{ background:rgba(220,38,38,.10); border-color:rgba(220,38,38,.35); }
+    .plan-card-row[data-tone="success"]{ background:rgba(22,163,74,.10); border-color:rgba(22,163,74,.30); }
+    .plan-card-empty{
+      padding:14px; border-radius:12px; background:rgba(10,20,60,.04);
+      color:var(--muted); font-weight:800; text-align:center;
+    }
+    .plan-card-error{
+      padding:14px; border-radius:12px; background:rgba(220,38,38,.10);
+      border:1px solid rgba(220,38,38,.30); color:#7f1d1d; font-weight:800;
+    }
+    .plan-card-warning{
+      padding:10px 12px; border-radius:12px;
+      background:rgba(220,38,38,.10);
+      border:1px solid rgba(220,38,38,.35);
+      color:#7f1d1d; font-weight:900; line-height:1.7;
+    }
+    .plan-card-warning[data-tone="warning"]{
+      background:rgba(202,138,4,.12); border-color:rgba(202,138,4,.45); color:#7c2d12;
+    }
+    .plan-card-meta{font-size:11px; color:var(--muted);}
+    .plan-card-progress{
+      position:relative; height:10px; border-radius:999px;
+      background:rgba(10,20,60,.08); overflow:hidden;
+    }
+    .plan-card-progress span{
+      display:block; height:100%;
+      background:linear-gradient(90deg,#2563eb,#22c55e);
+      transition:width .25s ease;
+    }
+    .plan-card[data-state="depleted"] .plan-card-progress span,
+    .plan-card[data-state="expired"] .plan-card-progress span,
+    .plan-card[data-state="suspended"] .plan-card-progress span{
+      background:linear-gradient(90deg,#dc2626,#f97316);
+    }
+    body.dark .plan-card{
+      background:linear-gradient(180deg,#15213a,#0f1a2f) !important;
+      border-color:rgba(255,255,255,.10) !important;
+    }
+    body.dark .plan-card-row{
+      background:rgba(255,255,255,.04) !important;
+      border-color:rgba(255,255,255,.08) !important;
+    }
+    body.dark .plan-card-row .plan-card-value{color:var(--text) !important;}
+    @media (max-width:560px){
+      .plan-card-grid{grid-template-columns:1fr;}
+    }
     .settings-health-output{
       margin-top:14px; min-height:54px; border-radius:16px; padding:12px 14px; white-space:pre-wrap;
       background:#f8fafc; border:1px solid rgba(10,20,60,.08); color:#334155; line-height:1.8;

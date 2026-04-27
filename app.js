@@ -462,7 +462,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v9.6.14 TEST';
+  const WEB_RELEASE_LABEL = 'v9.6.15 TEST';
   const AI_STUDIO_DEBUG_LOG = (() => {
     try{ return /[?&]debug=1/i.test(String(location.search||'')) || (localStorage.getItem('aistudio_debug_log') === '1'); }catch(_){ return false; }
   })();
@@ -2416,6 +2416,225 @@ async function buildRagContextIfEnabled(userText, rawSettings = getSettings()){
     if ($('settingsBalanceState')) $('settingsBalanceState').textContent = balanceLabel;
     if ($('settingsSpentState')) $('settingsSpentState').textContent = spentLabel;
     if ($('settingsLastUsageState')) $('settingsLastUsageState').textContent = lastLabel;
+  }
+
+  /* v9.6.15 — User plan/usage card. Reads /me/plan from the authenticated worker
+     session. Never invents values; if the backend doesn't expose plan data the
+     UI surfaces a clear message. Expired / depleted / suspended states display
+     unambiguous warnings in Arabic. The card always refreshes after admin-issued
+     plan/quota/expiry changes (manual refresh button + post-login + tab focus). */
+  const PLAN_RUNTIME = { fetchPromise: null, lastState: null, lastError: '' };
+
+  function escapePlanHtml(value){
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function formatPlanDate(ms){
+    const n = Number(ms || 0);
+    if (!Number.isFinite(n) || n <= 0) return '';
+    try{ return new Date(n).toLocaleString('ar-SA', { dateStyle:'medium', timeStyle:'short' }); }
+    catch(_){ try{ return new Date(n).toISOString(); }catch(__){ return ''; } }
+  }
+
+  function planNameLabel(name){
+    const p = String(name || '').trim().toLowerCase();
+    if (p === 'premium') return 'الخطة المدفوعة';
+    if (p === 'admin') return 'صلاحيات إدارية';
+    if (p === 'free') return 'الخطة المجانية';
+    return p ? p : 'غير محددة';
+  }
+
+  function planStatusLabel(status){
+    const s = String(status || '').trim().toLowerCase();
+    if (s === 'active') return 'نشطة';
+    if (s === 'expired') return 'منتهية';
+    if (s === 'depleted') return 'استنفد الرصيد';
+    if (s === 'suspended') return 'معلّقة';
+    if (s === 'inactive') return 'غير مفعّلة';
+    return s || '—';
+  }
+
+  function planCardTone(plan){
+    if (!plan) return 'loading';
+    const s = String(plan.status || '').trim().toLowerCase();
+    if (s === 'expired' || s === 'suspended') return s;
+    if (s === 'depleted') return 'depleted';
+    return 'active';
+  }
+
+  async function fetchUserPlanSummary({ force = false } = {}){
+    if (!hasValidAuthSession()){
+      PLAN_RUNTIME.lastState = { signedIn:false };
+      PLAN_RUNTIME.lastError = '';
+      return PLAN_RUNTIME.lastState;
+    }
+    if (PLAN_RUNTIME.fetchPromise && !force) return PLAN_RUNTIME.fetchPromise;
+    PLAN_RUNTIME.fetchPromise = (async () => {
+      try{
+        const payload = await fetchAuthJson('/me/plan', { method:'GET' });
+        const plan = payload?.plan && typeof payload.plan === 'object' ? payload.plan : null;
+        const state = {
+          signedIn: true,
+          ok: !!payload?.ok,
+          email: payload?.email || getAuthState().email || '',
+          role: payload?.role === 'admin' ? 'admin' : 'user',
+          plan,
+          fetchedAt: Date.now(),
+          error: ''
+        };
+        PLAN_RUNTIME.lastState = state;
+        PLAN_RUNTIME.lastError = '';
+        return state;
+      }catch(err){
+        const msg = String(err?.message || err || 'تعذر تحميل بيانات الخطة');
+        const state = {
+          signedIn: true,
+          ok: false,
+          plan: null,
+          error: msg,
+          fetchedAt: Date.now()
+        };
+        PLAN_RUNTIME.lastState = state;
+        PLAN_RUNTIME.lastError = msg;
+        return state;
+      }finally{
+        PLAN_RUNTIME.fetchPromise = null;
+      }
+    })();
+    return PLAN_RUNTIME.fetchPromise;
+  }
+
+  function renderUserPlanCard(state){
+    const card = $('settingsPlanCard');
+    if (!card) return;
+    const body = $('settingsPlanCardBody');
+    const updatedSlot = $('settingsPlanCardUpdated');
+    if (!body) return;
+
+    if (!state || state.signedIn === false){
+      card.dataset.state = 'inactive';
+      body.innerHTML = `<div class="plan-card-empty">سجّل الدخول لعرض بيانات الخطة الخاصة بك.</div>`;
+      if (updatedSlot) updatedSlot.textContent = '';
+      return;
+    }
+
+    if (state.ok === false && !state.plan){
+      card.dataset.state = 'error';
+      const safe = escapePlanHtml(state.error || 'تعذر تحميل بيانات الخطة');
+      body.innerHTML = `<div class="plan-card-error">تعذر تحميل بيانات الخطة<br><span class="plan-card-meta" style="font-weight:700">${safe}</span></div>`;
+      if (updatedSlot) updatedSlot.textContent = state.fetchedAt ? `حاولنا في ${formatPlanDate(state.fetchedAt)}` : '';
+      return;
+    }
+
+    const plan = state.plan;
+    if (!plan){
+      card.dataset.state = 'inactive';
+      body.innerHTML = `<div class="plan-card-empty">لا توجد خطة مفعلة حالياً</div>`;
+      if (updatedSlot) updatedSlot.textContent = state.fetchedAt ? `آخر تحديث ${formatPlanDate(state.fetchedAt)}` : '';
+      return;
+    }
+
+    const planName = planNameLabel(plan.planName);
+    const status = String(plan.status || '').trim().toLowerCase();
+    const statusLabel = planStatusLabel(status);
+    const total = formatUsd(plan.creditTotal);
+    const used = formatUsd(plan.creditUsed);
+    const remaining = formatUsd(plan.creditRemaining);
+    const validFrom = formatPlanDate(plan.validFrom);
+    const validUntil = formatPlanDate(plan.validUntil);
+    const updatedAt = formatPlanDate(plan.updatedAt);
+    const periodLabel = (() => {
+      const p = String(plan.quotaPeriod || '').trim().toLowerCase();
+      if (p === 'monthly') return 'شهرية (30 يومًا)';
+      if (p === 'weekly') return 'أسبوعية';
+      if (p === 'daily') return 'يومية';
+      if (p === 'yearly') return 'سنوية';
+      return p ? p : '—';
+    })();
+
+    const totalNum = Number(plan.creditTotal || 0);
+    const remainingNum = Number(plan.creditRemaining || 0);
+    const isLow = totalNum > 0 && remainingNum > 0 && (remainingNum / totalNum) <= 0.10;
+    const isZero = totalNum > 0 && remainingNum <= 0;
+    const remainingTone = isZero ? 'danger' : (isLow ? 'warning' : '');
+
+    const tone = planCardTone(plan);
+    card.dataset.state = tone;
+
+    const warnings = [];
+    if (status === 'expired'){
+      warnings.push(`<div class="plan-card-warning">انتهت صلاحية الخطة</div>`);
+    } else if (status === 'suspended'){
+      warnings.push(`<div class="plan-card-warning">حساب معلّق — تواصل مع الإدارة لإعادة التفعيل.</div>`);
+    } else if (status === 'depleted' || isZero){
+      warnings.push(`<div class="plan-card-warning">الرصيد المتبقي صفر — يلزم تجديد الخطة أو طلب رصيد جديد.</div>`);
+    } else if (isLow){
+      warnings.push(`<div class="plan-card-warning" data-tone="warning">الرصيد المتبقي منخفض (أقل من 10%).</div>`);
+    }
+
+    const progressPct = totalNum > 0
+      ? Math.max(0, Math.min(100, Math.round((Math.max(0, totalNum - Math.max(0, Number(plan.creditUsed || 0))) / totalNum) * 100)))
+      : 0;
+
+    const rows = [
+      { label: 'الخطة الحالية', value: planName, tone: '' },
+      { label: 'حالة الاشتراك', value: statusLabel, tone: status === 'active' ? 'success' : (status === 'expired' || status === 'suspended' ? 'danger' : 'warning') },
+      { label: 'إجمالي الرصيد', value: total, tone: '' },
+      { label: 'المستخدم', value: used, tone: '' },
+      { label: 'المتبقي', value: remaining, tone: remainingTone },
+      { label: 'فترة الصلاحية', value: periodLabel, tone: '' }
+    ];
+    if (validFrom) rows.push({ label: 'تاريخ بداية الصلاحية', value: validFrom, tone: '' });
+    rows.push({ label: 'تاريخ الانتهاء', value: validUntil || '—', tone: status === 'expired' ? 'danger' : '' });
+    if (updatedAt) rows.push({ label: 'آخر تحديث', value: updatedAt, tone: '' });
+
+    const rowHtml = rows.map(r => `
+      <div class="plan-card-row"${r.tone ? ` data-tone="${escapePlanHtml(r.tone)}"` : ''}>
+        <span class="plan-card-label">${escapePlanHtml(r.label)}</span>
+        <span class="plan-card-value">${escapePlanHtml(r.value)}</span>
+      </div>`).join('');
+
+    body.innerHTML = `
+      ${warnings.join('')}
+      <div class="plan-card-grid">${rowHtml}</div>
+      ${totalNum > 0 ? `<div class="plan-card-progress" aria-label="نسبة المتبقي"><span style="width:${progressPct}%"></span></div>` : ''}
+    `;
+
+    if (updatedSlot){
+      updatedSlot.textContent = state.fetchedAt
+        ? `آخر مزامنة ${formatPlanDate(state.fetchedAt)}`
+        : '';
+    }
+  }
+
+  async function refreshUserPlanCard({ force = true } = {}){
+    if (!$('settingsPlanCard')) return;
+    if (!hasValidAuthSession()){
+      renderUserPlanCard({ signedIn:false });
+      return;
+    }
+    const btn = $('settingsPlanCardRefreshBtn');
+    if (btn) btn.disabled = true;
+    try{
+      const state = await fetchUserPlanSummary({ force });
+      renderUserPlanCard(state);
+    }finally{
+      if (btn) btn.disabled = false;
+    }
+  }
+  try{ window.refreshUserPlanCard = refreshUserPlanCard; }catch(_){ /* noop */ }
+
+  function bindUserPlanCardOnce(){
+    const btn = $('settingsPlanCardRefreshBtn');
+    if (btn && !btn.dataset.bound){
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', () => { refreshUserPlanCard({ force: true }); });
+    }
   }
 
   function extractUsageMeta(payload){
@@ -5742,6 +5961,20 @@ function refreshDeepSearchBtn(){
             <span class="plan-pill" id="settingsPlanPill">الخطة المجانية</span>
           </div>
           <div class="status" id="settingsPlanBanner" data-tone="info">الخطة المجانية تفعّل نموذجًا مجانيًا فقط وتوقف الميزات الأعلى تكلفة تلقائيًا.</div>
+          <section class="plan-card" id="settingsPlanCard" data-state="loading" aria-live="polite" aria-label="بطاقة الخطة والاستهلاك">
+            <header class="plan-card-head">
+              <h3 class="plan-card-title">الخطة والاستهلاك</h3>
+              <div class="plan-card-actions">
+                <span class="plan-card-meta" id="settingsPlanCardUpdated">—</span>
+                <button class="btn ghost sm with-label" type="button" id="settingsPlanCardRefreshBtn" title="تحديث بيانات الخطة" aria-label="تحديث بيانات الخطة">
+                  <span class="icon">↻</span><span class="label">تحديث</span>
+                </button>
+              </div>
+            </header>
+            <div id="settingsPlanCardBody">
+              <div class="plan-card-empty" id="settingsPlanCardEmpty">جارٍ تحميل بيانات الخطة…</div>
+            </div>
+          </section>
           <div class="status" id="accountUpgradeRequestAck" data-tone="success" style="display:none;margin-top:10px" role="status" aria-live="polite"></div>
           <div class="status" id="settingsVerifyPendingRow" data-tone="warning" style="display:none;margin-top:10px">البريد غير موثّق بعد. افتح الرابط من رسالة التحقق، أو أعد الإرسال من هنا.</div>
           <div class="account-actions" id="settingsVerifyPendingActions" style="display:none;margin-top:8px;flex-wrap:wrap;gap:6px">
@@ -6229,6 +6462,18 @@ function refreshDeepSearchBtn(){
     }
 
     renderUsageIndicators(settings);
+    bindUserPlanCardOnce();
+    if ($('settingsPlanCard')){
+      if (signedIn){
+        if (PLAN_RUNTIME.lastState && (Date.now() - Number(PLAN_RUNTIME.lastState.fetchedAt || 0)) < 60 * 1000){
+          renderUserPlanCard(PLAN_RUNTIME.lastState);
+        } else {
+          refreshUserPlanCard({ force: false }).catch(() => {});
+        }
+      } else {
+        renderUserPlanCard({ signedIn:false });
+      }
+    }
     const remembered = getRememberedAuthEntry();
     if ($('authRememberToggle')) $('authRememberToggle').checked = remembered.remember;
     if ($('authBrowserActions')) $('authBrowserActions').style.display = isNativePlatform() ? 'none' : 'flex';
@@ -6971,6 +7216,7 @@ async function submitUnifiedAuthEntry(){
       renderSettings();
       await hydrateCloudState(true).catch(() => null);
       refreshStrategicWorkspace().catch(()=>{});
+      try { refreshUserPlanCard({ force: true }).catch(() => {}); } catch (_) {}
       closeAuthGate(true);
       if ($('authEntryPassword')) $('authEntryPassword').value = '';
       toast(mode === 'signup' ? '✅ تم إنشاء الحساب وتسجيل الدخول' : (isAdminEntry ? '✅ تم تسجيل الدخول الإداري' : '✅ تم تسجيل الدخول'));
@@ -7350,6 +7596,7 @@ async function submitUnifiedAuthEntry(){
       // Refresh the per-user quota snapshot so the balance widget immediately reflects
       // the amount baked into the activated upgrade code (e.g. $1/$5/$10).
       try { await refreshUsageState({ force: true }); } catch (_) {}
+      try { await refreshUserPlanCard({ force: true }); } catch (_) {}
       const upgradeInfo = payload?.upgrade;
       if (upgradeInfo && upgradeInfo.limitUsd != null){
         toast(`✅ تم تفعيل الترقية (رصيد ${Number(upgradeInfo.limitUsd).toFixed(2)}$)`);
@@ -7469,6 +7716,7 @@ async function submitUnifiedAuthEntry(){
     openWorkspacePage('settings');
     window.setTimeout(() => {
       $('settingsAccountCard')?.scrollIntoView({ behavior:'smooth', block:'start' });
+      try { refreshUserPlanCard({ force: true }).catch(() => {}); } catch (_) {}
     }, 60);
   }
 
