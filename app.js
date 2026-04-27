@@ -462,7 +462,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v9.6.13 TEST';
+  const WEB_RELEASE_LABEL = 'v9.6.14 TEST';
   const AI_STUDIO_DEBUG_LOG = (() => {
     try{ return /[?&]debug=1/i.test(String(location.search||'')) || (localStorage.getItem('aistudio_debug_log') === '1'); }catch(_){ return false; }
   })();
@@ -658,8 +658,20 @@
     if ($('authPlatformAssistantBtn')) $('authPlatformAssistantBtn').style.display = 'inline-flex';
     if ($('settingsPlatformAssistantBtn')) $('settingsPlatformAssistantBtn').style.display = 'inline-flex';
     if ($('fabPlatformAssistantBtn')) $('fabPlatformAssistantBtn').style.display = 'inline-flex';
-    const gateOpen = !!$('authGate')?.classList.contains('show');
-    if ($('appSupportDock')) $('appSupportDock').style.display = gateOpen ? 'none' : 'flex';
+    /* Visibility of the dock itself is governed by:
+     *  - the auth gate (hide while it's open so support is reached via the
+     *    visible "دعم واتساب" / "مساعد المنصة" buttons inside the gate),
+     *  - body.keyboardEditing / body.app-live-voice-active via CSS,
+     *  - the data-collapsed attribute (compact chip vs expanded row).
+     * We toggle a hidden attribute instead of inline display so the CSS
+     * class-based show/hide rules above continue to work. */
+    const dock = $('appSupportDock');
+    if (dock){
+      const gateOpen = !!$('authGate')?.classList.contains('show');
+      if (gateOpen){ dock.setAttribute('hidden', ''); dock.style.display = 'none'; }
+      else { dock.removeAttribute('hidden'); dock.style.display = ''; }
+    }
+    try{ syncSupportDockAutoState(); }catch(_){ /* noop */ }
   }
   function answerPlatformAssistantLocal(question = ''){
     const raw = String(question || '').trim();
@@ -5201,6 +5213,7 @@ function refreshDeepSearchBtn(){
 
   function syncKeyboardEditingState(){
     document.body.classList.toggle('keyboardEditing', isAndroidKeyboardEditing());
+    try{ if (typeof syncSupportDockAutoState === 'function') syncSupportDockAutoState(); }catch(_){ /* noop */ }
   }
 
   function getCapacitorPlatform(){
@@ -5949,9 +5962,13 @@ function refreshDeepSearchBtn(){
     }
     if (!document.getElementById('appSupportDock')){
       document.body.insertAdjacentHTML('beforeend', `
-        <div id="appSupportDock" class="app-support-dock" aria-label="دعم سريع">
-          <button type="button" class="app-support-fab" id="fabPlatformAssistantBtn" title="مساعد المنصة">🧭</button>
-          <button type="button" class="app-support-fab app-support-fab--wa" id="fabWhatsAppBtn" style="display:none" title="دعم واتساب">💬</button>
+        <div id="appSupportDock" class="app-support-dock" data-collapsed="true" aria-label="دعم سريع">
+          <button type="button" class="app-support-chip" id="supportDockChip" title="دعم ومساعدة" aria-expanded="false" aria-controls="appSupportDockRow"><span aria-hidden="true">🆘</span><span class="app-support-chip-label">دعم</span></button>
+          <div class="app-support-dock-row" id="appSupportDockRow" role="group" aria-label="إجراءات الدعم">
+            <button type="button" class="app-support-fab" id="fabPlatformAssistantBtn" title="مساعد المنصة" aria-label="مساعد المنصة">🧭</button>
+            <button type="button" class="app-support-fab app-support-fab--wa" id="fabWhatsAppBtn" style="display:none" title="دعم واتساب" aria-label="دعم واتساب">💬</button>
+            <button type="button" class="app-support-fab app-support-fab--close" id="supportDockCollapseBtn" title="إغلاق" aria-label="إغلاق دعم سريع">✕</button>
+          </div>
         </div>`);
     }
     if (!document.getElementById('platformAssistantModal')){
@@ -5991,9 +6008,80 @@ function refreshDeepSearchBtn(){
       $('platformAssistantInput')?.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); void submitPlatformAssistantQuestion(); }
       });
+      $('supportDockChip')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        setSupportDockCollapsed(false, { user: true });
+      });
+      $('supportDockCollapseBtn')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        setSupportDockCollapsed(true, { user: true });
+      });
+      const onChatInputFocus = () => syncSupportDockAutoState({ reason: 'composer-focus' });
+      const onChatInputBlur = () => window.setTimeout(() => syncSupportDockAutoState({ reason: 'composer-blur' }), 80);
+      $('chatInput')?.addEventListener('focus', onChatInputFocus);
+      $('chatInput')?.addEventListener('blur', onChatInputBlur);
+      document.addEventListener('focusin', (e) => {
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')){
+          syncSupportDockAutoState({ reason: 'focusin' });
+        }
+      }, true);
+      document.addEventListener('focusout', () => {
+        window.setTimeout(() => syncSupportDockAutoState({ reason: 'focusout' }), 80);
+      }, true);
+      try{
+        if (window.visualViewport && typeof window.visualViewport.addEventListener === 'function'){
+          window.visualViewport.addEventListener('resize', () => syncSupportDockAutoState({ reason: 'viewport' }));
+        }
+      }catch(_){ /* noop */ }
     }
+    syncSupportDockAutoState({ reason: 'ensure' });
     refineAuthGateLayout();
   }
+  /* v9.6.14 — collapsible support dock state. */
+  const SUPPORT_DOCK_COLLAPSED_KEY = 'aistudio_support_dock_collapsed_v1';
+  function getSupportDockCollapsedPref(){
+    try{
+      const raw = localStorage.getItem(SUPPORT_DOCK_COLLAPSED_KEY);
+      if (raw === 'true') return true;
+      if (raw === 'false') return false;
+    }catch(_){ /* noop */ }
+    /* Default collapsed (small chip) so we never overlap composer/voice on first run. */
+    return true;
+  }
+  function setSupportDockCollapsed(collapsed, opts = {}){
+    const next = !!collapsed;
+    if (opts.user){
+      try{ localStorage.setItem(SUPPORT_DOCK_COLLAPSED_KEY, next ? 'true' : 'false'); }catch(_){ /* noop */ }
+    }
+    const dock = document.getElementById('appSupportDock');
+    if (!dock) return;
+    dock.setAttribute('data-collapsed', next ? 'true' : 'false');
+    const chip = document.getElementById('supportDockChip');
+    if (chip) chip.setAttribute('aria-expanded', next ? 'false' : 'true');
+  }
+  function shouldForceSupportDockCollapsed(){
+    try{
+      if (document.body.classList.contains('keyboardEditing')) return true;
+      if (document.body.classList.contains('app-live-voice-active')) return true;
+      if (document.body.classList.contains('chat-page-active')){
+        const ae = document.activeElement;
+        if (ae && (ae.id === 'chatInput' || (typeof ae.closest === 'function' && ae.closest('.chatbar')))) return true;
+      }
+      if (typeof LIVE_VOICE !== 'undefined' && LIVE_VOICE && LIVE_VOICE.active === true) return true;
+    }catch(_){ /* noop */ }
+    return false;
+  }
+  function syncSupportDockAutoState(){
+    const dock = document.getElementById('appSupportDock');
+    if (!dock) return;
+    const force = shouldForceSupportDockCollapsed();
+    if (force){
+      setSupportDockCollapsed(true, { user: false });
+    } else {
+      setSupportDockCollapsed(getSupportDockCollapsedPref(), { user: false });
+    }
+  }
+  try{ window.syncSupportDockAutoState = syncSupportDockAutoState; }catch(_){ /* noop */ }
 
   function refineAuthGateLayout(){
     const gate = $('authGate');
@@ -16594,6 +16682,7 @@ let pinOnly = false;
     if (page === 'transcription') renderTranscribeOperationalState();
     if (page === 'chat') { renderChat(); updateChips(); refreshStrategicWorkspace().catch(()=>{}); }
     if (options.closeSidebar) closeSide();
+    try{ syncSupportDockAutoState(); }catch(_){ /* noop */ }
   }
 
   function expandNavGroup(groupId){
@@ -18636,6 +18725,8 @@ ${e?.message||e}`, false);
     LIVE_VOICE.stream = stream;
     LIVE_VOICE.turnGuardUntil = 0;
     LIVE_VOICE.turnHasUserSpeech = false;
+    try{ document.body.classList.add('app-live-voice-active'); }catch(_){ /* noop */ }
+    try{ syncSupportDockAutoState(); }catch(_){ /* noop */ }
     try {
       if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(LIVE_VOICE.micSessionPrimedStorageKey, '1');
     } catch (_) {}
@@ -19571,6 +19662,8 @@ ${e?.message||e}`, false);
     hardResetLiveVoiceCapture({ keepOverlay: false, source: 'stop' }).catch(() => {});
     LIVE_VOICE.stage = 'idle';
     setLiveVoiceStatus('');
+    try{ document.body.classList.remove('app-live-voice-active'); }catch(_){ /* noop */ }
+    try{ syncSupportDockAutoState(); }catch(_){ /* noop */ }
   }
 
   try { window.stopLiveVoiceMode = stopLiveVoiceMode; } catch (_) {}
