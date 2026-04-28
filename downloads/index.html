@@ -114,27 +114,22 @@
         <h2>ملف التثبيت المباشر</h2>
         <p>استخدم هذا الملف للتثبيت اليدوي على الهاتف. النسخة مبنية من نفس شفرة الويب المعتمدة في المستودع.</p>
         <ul>
-          <li>الإصدار: <code>v9.6.16 TEST</code></li>
-          <li>رقم البناء: <code>versionCode 976</code></li>
+          <li>الإصدار: <code>v9.6.17 TEST</code></li>
+          <li>رقم البناء: <code>versionCode 977</code></li>
           <li>الحد الأدنى للنظام: <code>Android 7.0+</code></li>
-          <li>نوع البناء: <code>debug test</code> (نفس مفتاح التوقيع المستقر — Google Sign‑In يعمل)</li>
-          <li>توقيع APK SHA‑1 الجديد المستقر: <code>AB:8D:EE:0C:FC:FB:09:C8:E9:56:62:63:E4:1D:00:72:0B:6B:7B:5D</code> (يجب تسجيله في إعدادات Google OAuth Android client مرة واحدة)</li>
+          <li>نوع البناء: <code>debug test</code> (نفس مفتاح التوقيع المستقر منذ v9.6.16)</li>
+          <li>توقيع APK SHA‑1 المستقر: <code>AB:8D:EE:0C:FC:FB:09:C8:E9:56:62:63:E4:1D:00:72:0B:6B:7B:5D</code></li>
           <li>توقيع APK SHA‑256: <code>A0:37:42:5A:32:8E:A8:F1:F6:24:6F:45:0B:99:09:9A:6A:54:4F:C3:54:57:F9:81:56:9D:69:43:A3:D3:3A:8F</code></li>
-          <li>بصمة SHA256 (APK): <code id="apkSha256">6DFD9CB972C33B25D587A43ACC5D6D8F96D8002EC6BA22E40D86627B6647A429</code></li>
-          <li>حجم الملف: <code id="apkSize">9.36 MB</code> (9,819,334 بايت)</li>
-          <li>إصلاحات v9.6.16:
-            <ul>
-              <li>توافق <strong>تسجيل الدخول بـ Google</strong> — تم تثبيت توقيع APK على نفس مفتاح التطوير المسجَّل في Google OAuth (CI runner debug.keystore، SHA-1 المعروف <code>4B:38:17:53:…:CB:4C:01</code>) — يحل خطأ <code>DEVELOPER_ERROR</code> الذي ظهر في v9.6.15 بعد بناء غير-CI.</li>
-              <li>إصلاح <strong>خلفية المحادثة السوداء</strong> — تثبيت ثيمة <code>AppTheme.NoActionBar</code> على <code>Theme.AppCompat.Light.NoActionBar</code> بدلاً من <code>DayNight</code>، وتعطيل تعتيم WebView التلقائي عبر <code>WebSettingsCompat.setAlgorithmicDarkeningAllowed(false)</code>، مع <code>color-scheme: light</code> داخل CSS الجذر. هذا يضمن بقاء الخلفية مريحة في الوضع الافتراضي/الفاتح حتى لو كان نظام الجهاز في الوضع الداكن. الوضع الداكن داخل التطبيق ما زال يعمل عبر مفتاح <code>body.dark</code>.</li>
-            </ul>
-          </li>
+          <li>بصمة SHA256 (APK): <code id="apkSha256">ABB547B706A39B6D395705FB866B9B6FBF27D50CC22A791E4C2E689ADA52DB6C</code></li>
+          <li>حجم الملف: <code id="apkSize">9.37 MB</code> (9,822,798 بايت)</li>
+          <li>جديد v9.6.17: <strong>قسم إداري «خطط واستهلاك المستخدمين»</strong> داخل صفحة الإعدادات للحساب الإداري فقط — يعرض جدولاً بكل المستخدمين مع: البريد، الاسم، الدور، الخطة، حالة الاشتراك، إجمالي الرصيد، المستخدم، المتبقي، بداية/نهاية الصلاحية، آخر تحديث، ومصدر الرصيد (<code>plan_default</code> / <code>upgrade_code</code> / <code>admin_patch</code>). يتضمن بحثاً وفلاتر للحالة والخطة، وملخصاً علوياً لإجماليات الرصيد. مدعوم بمسار جديد على الـ Worker: <code>GET /admin/users/plans</code> محمي بصلاحية الإدارة فقط (يُرجع <code>403</code> لغير المشرفين). بطاقة الخطة الشخصية للمستخدم (<code>/me/plan</code>) لم تتغير.</li>
         </ul>
         <div class="actions">
           <a class="btn primary" id="apkPrimary" href="./ai-workspace-studio-latest.apk" download="ai-workspace-studio-latest.apk">تنزيل APK</a>
-          <a class="btn ghost" href="./ai-workspace-studio-v9.6.16-android-release.apk" download="ai-workspace-studio-v9.6.16-android-release.apk">رابط الإصدار الثابت v9.6.16</a>
+          <a class="btn ghost" href="./ai-workspace-studio-v9.6.17-android-release.apk" download="ai-workspace-studio-v9.6.17-android-release.apk">رابط الإصدار الثابت v9.6.17</a>
           <a class="btn ghost" href="../">فتح نسخة الويب</a>
         </div>
-        <div class="meta">اسم الإصدار المحدد: <code>ai-workspace-studio-v9.6.16-android-release.apk</code></div>
+        <div class="meta">اسم الإصدار المحدد: <code>ai-workspace-studio-v9.6.17-android-release.apk</code></div>
       </article>
     </section>
 
