@@ -154,10 +154,18 @@ jobs:
             git commit -m "chore: sync Android release APK to downloads [skip ci]"
             BRANCH="${GITHUB_REF_NAME:-main}"
             for i in 1 2 3 4 5; do
+              # v9.6.16 — stash any leftover unstaged build artifacts (e.g. the
+              # repo-root AI-Workspace-Studio-latest.apk that `cp` modifies in
+              # place) before rebasing, otherwise `git pull --rebase` aborts
+              # with "cannot pull with rebase: You have unstaged changes" and
+              # the public APK is never published.
+              git stash push -u -m "ci-pull-rebase-stash" || true
               git fetch origin "$BRANCH"
               if git pull --rebase origin "$BRANCH" && git push origin "HEAD:${BRANCH}"; then
+                git stash drop || true
                 break
               fi
+              git stash pop || true
               echo "[downloads-commit] push failed (attempt $i), retrying..."
               sleep $((i * 4))
             done
