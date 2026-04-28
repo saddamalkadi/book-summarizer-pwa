@@ -115,6 +115,10 @@ export default {
         return withCors(await handleMePlan(request, env), request);
       }
 
+      if (url.pathname === '/admin/users/plans' && request.method === 'GET') {
+        return withCors(await handleAdminUsersPlans(request, env), request);
+      }
+
       if (url.pathname === '/admin/usage' && request.method === 'GET') {
         return withCors(await handleAdminUsage(request, env), request);
       }
@@ -3480,6 +3484,150 @@ async function handleMePlan(request, env) {
       error: String(error?.message || error || 'Authentication required.'),
       code: 'AUTH_SESSION_REQUIRED'
     }, 401);
+  }
+}
+
+// v9.6.17 — Admin-only roster of every user's plan + usage + remaining credit.
+// Mirrors handleMePlan's shape but per-user, gated behind requireAdminSession
+// so non-admins always get a 403 (never a leaked roster). The per-user plan
+// card endpoint /me/plan is unchanged.
+async function handleAdminUsersPlans(request, env) {
+  // Authenticate first; surface 401/403 distinctly so the UI can branch.
+  let admin;
+  try {
+    admin = await requireSession(request, env);
+  } catch (error) {
+    return jsonResponse({
+      error: String(error?.message || error || 'Authentication required.'),
+      code: 'AUTH_SESSION_REQUIRED'
+    }, 401);
+  }
+  if (admin.role !== 'admin') {
+    return jsonResponse({ error: 'Admin access required.', code: 'ADMIN_REQUIRED' }, 403);
+  }
+
+  try {
+    const u = new URL(request.url);
+    const q = String(u.searchParams.get('q') || '').trim().toLowerCase();
+    const planFilter = String(u.searchParams.get('plan') || '').trim().toLowerCase();
+    const statusFilter = String(u.searchParams.get('status') || '').trim().toLowerCase();
+    const store = getUserDataStore(env);
+    const emails = new Set();
+    // Pull from both the per-user account index and the quota index so users
+    // with quota docs but no full account record (legacy/Google-only sessions)
+    // still appear in the roster.
+    try {
+      const idxRaw = await store.get('_account:index', { type: 'json' });
+      if (Array.isArray(idxRaw?.users)) {
+        for (const e of idxRaw.users) emails.add(String(e).trim().toLowerCase());
+      }
+    } catch (_) {}
+    try {
+      const more = await listAllQuotaEmails(env);
+      for (const e of more) emails.add(String(e).trim().toLowerCase());
+    } catch (_) {}
+    try {
+      if (typeof store.list === 'function') {
+        let cursor;
+        for (let i = 0; i < 25; i += 1) {
+          const page = await store.list({ prefix: ACCOUNT_KV_PREFIX, cursor });
+          for (const entry of page.keys || []) {
+            const name = String(entry.name || '');
+            if (name.startsWith(ACCOUNT_KV_PREFIX)) {
+              try {
+                emails.add(decodeURIComponent(name.slice(ACCOUNT_KV_PREFIX.length)).toLowerCase());
+              } catch (_) {}
+            }
+          }
+          if (page.list_complete || !page.cursor) break;
+          cursor = page.cursor;
+        }
+      }
+    } catch (_) {}
+
+    const list = Array.from(emails)
+      .filter((e) => !q || e.includes(q))
+      .sort();
+
+    const users = [];
+    let totalCreditTotal = 0;
+    let totalCreditUsed = 0;
+    let totalCreditRemaining = 0;
+    let countActive = 0;
+    let countExpiredOrDepleted = 0;
+
+    // Cap at 500 to keep responses bounded; the index/list_complete guards
+    // already cap KV scans at 25 pages.
+    for (const email of list.slice(0, 500)) {
+      const acc = await readUserAccount(email, env);
+      const quota = await readQuotaFromKv(email, env);
+      if (!acc && !quota) continue;
+      const view = quota ? quotaPublicView(quota) : null;
+      const role = (acc?.role === 'admin' || (view?.plan === 'admin'))
+        ? 'admin'
+        : 'user';
+      const planName = view
+        ? planNameLabel(view.plan, role)
+        : planNameLabel((acc?.plan === 'premium' ? 'premium' : 'free'), role);
+      const status = planSummaryStatus(view, acc);
+      const creditTotal = view ? Number(view.limit) || 0 : 0;
+      const creditUsed = view ? Number(view.used) || 0 : 0;
+      const creditRemaining = view
+        ? Math.max(0, roundUsd(creditTotal - creditUsed))
+        : 0;
+      const validFrom = view?.periodStart || 0;
+      const validUntil = view?.periodEnd || 0;
+      const updatedAt = view?.updatedAt || acc?.updatedAt || 0;
+
+      // Server-side filtering so the client doesn't have to refetch on every
+      // filter change AND so the totals row reflects the filtered view.
+      if (planFilter && planName !== planFilter) continue;
+      if (statusFilter && status !== statusFilter) continue;
+
+      users.push({
+        email: email,
+        name: acc?.name || '',
+        role,
+        planName,
+        status,
+        creditTotal,
+        creditUsed,
+        creditRemaining,
+        validFrom,
+        validUntil,
+        quotaPeriod: 'monthly',
+        updatedAt,
+        limitSource: view?.limitSource || '',
+        currency: 'USD',
+        disabled: !!acc?.disabled,
+        emailVerified: !!acc?.emailVerified
+      });
+
+      totalCreditTotal += creditTotal;
+      totalCreditUsed += creditUsed;
+      totalCreditRemaining += creditRemaining;
+      if (status === 'active') countActive += 1;
+      if (status === 'expired' || status === 'depleted') countExpiredOrDepleted += 1;
+    }
+
+    return jsonResponse({
+      ok: true,
+      users,
+      total: users.length,
+      totals: {
+        users: users.length,
+        creditTotal: roundUsd(totalCreditTotal),
+        creditUsed: roundUsd(totalCreditUsed),
+        creditRemaining: roundUsd(totalCreditRemaining),
+        active: countActive,
+        expiredOrDepleted: countExpiredOrDepleted
+      }
+    }, 200);
+  } catch (error) {
+    return jsonResponse({
+      error: String(error?.message || error || 'Failed to load users plans.'),
+      code: 'ADMIN_USERS_PLANS_FAILED'
+    }, 400);
   }
 }
 
