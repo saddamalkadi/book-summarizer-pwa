@@ -7,6 +7,11 @@ android/keystore.properties
 android/release-keystore.jks
 android/*.jks
 android/RELEASE_SIGNING_INFO.local.txt
+# v9.6.16 — explicitly allow the in-repo CI signing keystore so APKs published
+# to downloads/ keep a stable SHA-1 across runner-image rotations. This is a
+# pre-store debug-style key (not a Play upload key) used only to keep
+# Google Sign-In working on the user-distributed test APK.
+!android/aistudio-cicd.keystore
 android/.gradle-user-home/
 android/.gradle-user/
 .gradle-user/

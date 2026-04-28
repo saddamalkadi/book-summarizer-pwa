@@ -20,8 +20,8 @@ android {
         applicationId "com.saddamalkadi.aiworkspace"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 975
-        versionName "9.6.15"
+        versionCode 976
+        versionName "9.6.16"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -29,7 +29,30 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    /**
+     * v9.6.16 — Use an in-repo deterministic signing keystore for both
+     * `debug` and `release` builds so the published APK keeps the SAME
+     * SHA-1 fingerprint across CI runs and across CI runner-image rotations.
+     *
+     * Background: previous releases (v9.6.10 … v9.6.14) coincidentally shared
+     * SHA-1 4B:38:17:53:…:CB:4C:01 because GitHub's hosted runner image kept
+     * the same auto-generated `~/.android/debug.keystore` during that window.
+     * When the runner image rotated (post-2026-04-26), every fresh runner
+     * generated a new debug keystore → APK SHA-1 drifted → Google Sign-In
+     * registered against the old SHA-1 returned DEVELOPER_ERROR.
+     *
+     * The `aistudio-cicd.keystore` checked into android/ is a deterministic
+     * debug-style key, NOT a Play upload key. It only protects the public
+     * test APK distributed via /downloads. The matching SHA-1 must be
+     * registered with the Google OAuth Android client.
+     */
     signingConfigs {
+        cicd {
+            storeFile rootProject.file('aistudio-cicd.keystore')
+            storePassword 'aistudio'
+            keyAlias 'aistudio'
+            keyPassword 'aistudio'
+        }
         release {
             if (hasReleaseKeystore) {
                 storeFile rootProject.file(String.valueOf(keystoreProperties['storeFile']))
@@ -40,6 +63,12 @@ android {
         }
     }
     buildTypes {
+        debug {
+            // Pin debug builds to the deterministic CI keystore too, so the
+            // public `assembleDebug` artifact published to /downloads always
+            // carries the same signing certificate.
+            signingConfig signingConfigs.cicd
+        }
         release {
             minifyEnabled true
             shrinkResources true
@@ -48,9 +77,10 @@ android {
             if (hasReleaseKeystore) {
                 signingConfig signingConfigs.release
             } else {
-                // Unsigned `release` APKs often fail to install ("App not installed"). Sign with
-                // the standard debug keystore when no release keystore is configured (CI / OSS).
-                signingConfig signingConfigs.debug
+                // No Play upload key configured → still use the deterministic
+                // CI keystore so the test AAB/APK are installable AND
+                // signature-stable across runs.
+                signingConfig signingConfigs.cicd
             }
         }
     }
@@ -79,6 +109,11 @@ dependencies {
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    // v9.6.16 — Required for WebSettingsCompat.setAlgorithmicDarkeningAllowed(...)
+    // so we can opt the WebView out of Android 13+ auto-darkening, which on
+    // some devices was painting the chat background black even though the
+    // CSS pins a light theme. The version is already declared in variables.gradle.
+    implementation "androidx.webkit:webkit:$androidxWebkitVersion"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
