@@ -462,7 +462,7 @@
     storageKey: 'aistudio_auth_bridge_result_v1',
     publicBaseUrl: 'https://app.saddamalkadi.com/'
   };
-  const WEB_RELEASE_LABEL = 'v9.6.16 TEST';
+  const WEB_RELEASE_LABEL = 'v9.6.17 TEST';
   const AI_STUDIO_DEBUG_LOG = (() => {
     try{ return /[?&]debug=1/i.test(String(location.search||'')) || (localStorage.getItem('aistudio_debug_log') === '1'); }catch(_){ return false; }
   })();
@@ -6131,6 +6131,74 @@ function refreshDeepSearchBtn(){
               <div class="hint" id="adminUserPatchMeta" style="margin-top:8px"></div>
             </div>
           </details>
+          <details class="tool-group" id="adminUsersPlansPanel" style="margin-top:12px; display:none">
+            <summary class="workspace-section-toggle">
+              <span class="workspace-section-head">
+                <span class="workspace-section-title">خطط واستهلاك المستخدمين</span>
+                <span class="workspace-section-summary">رؤية إدارية لخطط جميع المستخدمين، الرصيد، المستهلَك، المتبقي، والصلاحية.</span>
+              </span>
+              <span class="workspace-section-chevron">⌄</span>
+            </summary>
+            <div class="tool-group-body" style="padding-top:14px">
+              <div class="admin-plans-controls" style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end;">
+                <div style="flex:1; min-width:180px;">
+                  <label class="hint" for="adminUsersPlansSearch">بحث بالبريد أو الاسم</label>
+                  <input id="adminUsersPlansSearch" type="text" placeholder="مثال: user@example.com" />
+                </div>
+                <div style="min-width:140px;">
+                  <label class="hint" for="adminUsersPlansStatus">فلتر الحالة</label>
+                  <select id="adminUsersPlansStatus">
+                    <option value="">الكل</option>
+                    <option value="active">نشطة</option>
+                    <option value="expired">منتهية</option>
+                    <option value="depleted">مستنفدة</option>
+                    <option value="suspended">معلقة</option>
+                    <option value="inactive">غير مفعّلة</option>
+                  </select>
+                </div>
+                <div style="min-width:140px;">
+                  <label class="hint" for="adminUsersPlansPlan">فلتر الخطة</label>
+                  <select id="adminUsersPlansPlan">
+                    <option value="">الكل</option>
+                    <option value="free">free</option>
+                    <option value="premium">premium</option>
+                    <option value="admin">admin</option>
+                  </select>
+                </div>
+                <button class="btn ghost sm with-label" type="button" id="adminUsersPlansRefreshBtn" title="تحديث"><span class="icon">↻</span><span class="label">تحديث</span></button>
+              </div>
+              <div class="admin-plans-totals" id="adminUsersPlansTotals" aria-live="polite" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; margin-top:12px;">
+                <div class="settings-kpi"><span>عدد المستخدمين</span><strong data-totals-key="users">—</strong></div>
+                <div class="settings-kpi"><span>إجمالي الرصيد</span><strong data-totals-key="creditTotal">—</strong></div>
+                <div class="settings-kpi"><span>إجمالي المستخدم</span><strong data-totals-key="creditUsed">—</strong></div>
+                <div class="settings-kpi"><span>إجمالي المتبقي</span><strong data-totals-key="creditRemaining">—</strong></div>
+                <div class="settings-kpi"><span>الخطط النشطة</span><strong data-totals-key="active">—</strong></div>
+                <div class="settings-kpi"><span>منتهية / مستنفدة</span><strong data-totals-key="expiredOrDepleted">—</strong></div>
+              </div>
+              <div class="hint" id="adminUsersPlansMeta" style="margin-top:10px">اضغط «تحديث» لجلب أحدث بيانات الخطط.</div>
+              <div style="max-height:360px; overflow:auto; margin-top:8px; border:1px solid var(--line); border-radius:12px;">
+                <table style="width:100%; border-collapse:collapse; font-size:12px; min-width:1100px;">
+                  <thead>
+                    <tr>
+                      <th style="text-align:start; padding:8px;">البريد / المستخدم</th>
+                      <th style="text-align:start; padding:8px;">الاسم</th>
+                      <th style="text-align:start; padding:8px;">الدور</th>
+                      <th style="text-align:start; padding:8px;">الخطة</th>
+                      <th style="text-align:start; padding:8px;">حالة الاشتراك</th>
+                      <th style="text-align:start; padding:8px;">إجمالي الرصيد</th>
+                      <th style="text-align:start; padding:8px;">المستخدم</th>
+                      <th style="text-align:start; padding:8px;">المتبقي</th>
+                      <th style="text-align:start; padding:8px;">بداية الصلاحية</th>
+                      <th style="text-align:start; padding:8px;">تاريخ الانتهاء</th>
+                      <th style="text-align:start; padding:8px;">آخر تحديث</th>
+                      <th style="text-align:start; padding:8px;">مصدر الرصيد</th>
+                    </tr>
+                  </thead>
+                  <tbody id="adminUsersPlansTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </details>
           <div class="row" style="margin-top:10px">
             <div class="col" style="grid-column:1/-1">
               <label class="hint">بريد طلب الترقية</label>
@@ -6410,6 +6478,10 @@ function refreshDeepSearchBtn(){
     if ($('adminUpgradePanel')) $('adminUpgradePanel').style.display = signedIn && role === 'admin' ? '' : 'none';
     if ($('adminUpgradeRequestsPanel')) $('adminUpgradeRequestsPanel').style.display = signedIn && role === 'admin' ? '' : 'none';
     if ($('adminUsersPanel')) $('adminUsersPanel').style.display = signedIn && role === 'admin' ? '' : 'none';
+    if ($('adminUsersPlansPanel')){
+      $('adminUsersPlansPanel').style.display = signedIn && role === 'admin' ? '' : 'none';
+      bindAdminUsersPlansPanelOnce();
+    }
     if ($('adminUpgradeEmail') && signedIn && role === 'admin' && !$('adminUpgradeEmail').value) $('adminUpgradeEmail').value = '';
     if ($('adminGenerateUpgradeBtn')) $('adminGenerateUpgradeBtn').disabled = !(signedIn && role === 'admin');
     if ($('adminCopyUpgradeBtn')) $('adminCopyUpgradeBtn').disabled = !String($('adminGeneratedCode')?.value || '').trim();
@@ -7494,6 +7566,191 @@ async function submitUnifiedAuthEntry(){
       if ($('adminUsersMeta')) $('adminUsersMeta').textContent = `تم تحميل ${users.length} مستخدم.`;
     }catch(error){
       if ($('adminUsersMeta')) $('adminUsersMeta').textContent = `تعذر التحميل: ${sanitizeAuthErrorMessage(error?.message || error)}`;
+    }
+  }
+
+  /* v9.6.17 — Admin-only roster of plan/usage/credit per user. Reads from
+     /admin/users/plans (worker enforces admin role; non-admin → 403).
+     Filters/search are applied server-side for accurate totals. */
+  const ADMIN_PLANS_RUNTIME = { fetchPromise: null, lastSig: '' };
+
+  function adminPlanStatusLabel(status){
+    const s = String(status || '').trim().toLowerCase();
+    if (s === 'active') return 'نشطة';
+    if (s === 'expired') return 'منتهية';
+    if (s === 'depleted') return 'مستنفدة';
+    if (s === 'suspended') return 'معلّقة';
+    if (s === 'inactive') return 'غير مفعّلة';
+    return s || '—';
+  }
+
+  function adminPlanLimitSourceLabel(src){
+    const s = String(src || '').trim().toLowerCase();
+    if (s === 'plan_default') return 'plan_default (افتراضي الخطة)';
+    if (s === 'upgrade_code') return 'upgrade_code (كود ترقية)';
+    if (s === 'admin_patch') return 'admin_patch (تعديل إداري)';
+    return s || '—';
+  }
+
+  function adminPlanFormatDate(ms){
+    const n = Number(ms || 0);
+    if (!Number.isFinite(n) || n <= 0) return '—';
+    try{ return new Date(n).toLocaleString('ar-SA', { dateStyle:'short', timeStyle:'short' }); }
+    catch(_){ try{ return new Date(n).toISOString(); }catch(__){ return '—'; } }
+  }
+
+  function adminPlanFormatUsd(value){
+    return formatUsd(value) || '—';
+  }
+
+  async function fetchAdminUsersPlansFromApi({ q = '', status = '', plan = '' } = {}){
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (status) params.set('status', status);
+    if (plan) params.set('plan', plan);
+    const qs = params.toString();
+    return fetchAuthJson(`/admin/users/plans${qs ? `?${qs}` : ''}`, { method: 'GET' });
+  }
+
+  function renderAdminUsersPlansTotals(totals){
+    const el = $('adminUsersPlansTotals');
+    if (!el) return;
+    const slots = el.querySelectorAll('strong[data-totals-key]');
+    slots.forEach((slot) => {
+      const key = slot.getAttribute('data-totals-key');
+      if (!key) return;
+      if (key === 'creditTotal' || key === 'creditUsed' || key === 'creditRemaining'){
+        slot.textContent = adminPlanFormatUsd(totals?.[key]);
+      } else {
+        const v = Number(totals?.[key] || 0);
+        slot.textContent = Number.isFinite(v) ? v.toLocaleString('ar-SA') : '—';
+      }
+    });
+  }
+
+  function adminPlanRowTone(row){
+    const s = String(row?.status || '').toLowerCase();
+    if (s === 'active') return 'background:rgba(22,163,74,.06);';
+    if (s === 'expired') return 'background:rgba(220,38,38,.08);';
+    if (s === 'depleted') return 'background:rgba(202,138,4,.10);';
+    if (s === 'suspended') return 'background:rgba(220,38,38,.10);';
+    return '';
+  }
+
+  function renderAdminUsersPlansTable(users){
+    const body = $('adminUsersPlansTableBody');
+    if (!body) return;
+    if (!Array.isArray(users) || users.length === 0){
+      body.innerHTML = `<tr><td colspan="12" style="padding:14px; text-align:center; color:var(--muted)">لا توجد بيانات خطط مستخدمين حالياً</td></tr>`;
+      return;
+    }
+    body.innerHTML = users.map((u) => {
+      const tone = adminPlanRowTone(u);
+      const safeEmail = escapeHtml(u.email || '');
+      const safeName = escapeHtml(u.name || '—');
+      const role = escapeHtml(u.role === 'admin' ? 'admin' : 'user');
+      const plan = escapeHtml(u.planName || '—');
+      const status = escapeHtml(adminPlanStatusLabel(u.status));
+      const total = adminPlanFormatUsd(u.creditTotal);
+      const used = adminPlanFormatUsd(u.creditUsed);
+      const remaining = adminPlanFormatUsd(u.creditRemaining);
+      const validFrom = adminPlanFormatDate(u.validFrom);
+      const validUntil = adminPlanFormatDate(u.validUntil);
+      const updatedAt = adminPlanFormatDate(u.updatedAt);
+      const src = escapeHtml(adminPlanLimitSourceLabel(u.limitSource));
+      return `<tr style="${tone}">
+        <td style="padding:8px;">${safeEmail}</td>
+        <td style="padding:8px;">${safeName}</td>
+        <td style="padding:8px;">${role}</td>
+        <td style="padding:8px;">${plan}</td>
+        <td style="padding:8px;">${status}</td>
+        <td style="padding:8px;">${total}</td>
+        <td style="padding:8px;">${used}</td>
+        <td style="padding:8px;">${remaining}</td>
+        <td style="padding:8px;">${validFrom}</td>
+        <td style="padding:8px;">${validUntil}</td>
+        <td style="padding:8px;">${updatedAt}</td>
+        <td style="padding:8px;">${src}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function refreshAdminUsersPlansPanel(){
+    if (!$('adminUsersPlansPanel')) return;
+    if (!hasValidAuthSession() || getAuthState().role !== 'admin') return;
+    const meta = $('adminUsersPlansMeta');
+    const btn = $('adminUsersPlansRefreshBtn');
+    const q = String($('adminUsersPlansSearch')?.value || '').trim();
+    const status = String($('adminUsersPlansStatus')?.value || '').trim();
+    const plan = String($('adminUsersPlansPlan')?.value || '').trim();
+    if (btn) btn.disabled = true;
+    if (meta) meta.textContent = 'جارٍ تحميل بيانات الخطط...';
+    try{
+      const payload = await fetchAdminUsersPlansFromApi({ q, status, plan });
+      const users = Array.isArray(payload?.users) ? payload.users : [];
+      renderAdminUsersPlansTable(users);
+      renderAdminUsersPlansTotals(payload?.totals || { users: users.length });
+      if (meta){
+        if (users.length === 0){
+          meta.textContent = 'لا توجد بيانات خطط مستخدمين حالياً';
+        } else {
+          meta.textContent = `تم تحميل ${users.length} مستخدم. آخر مزامنة ${adminPlanFormatDate(Date.now())}.`;
+        }
+      }
+    }catch(error){
+      const msg = sanitizeAuthErrorMessage(error?.message || error);
+      const code = String(error?.code || '').toUpperCase();
+      if (meta){
+        if (/ADMIN_REQUIRED/i.test(msg) || code === 'ADMIN_REQUIRED'){
+          meta.textContent = 'هذه البيانات تتطلب صلاحية الإدارة فقط.';
+        } else {
+          meta.textContent = `تعذر تحميل بيانات خطط المستخدمين${msg ? ` — ${msg}` : ''}`;
+        }
+      }
+      renderAdminUsersPlansTable([]);
+      renderAdminUsersPlansTotals({});
+    }finally{
+      if (btn) btn.disabled = false;
+    }
+  }
+  try{ window.refreshAdminUsersPlansPanel = refreshAdminUsersPlansPanel; }catch(_){ /* noop */ }
+
+  function bindAdminUsersPlansPanelOnce(){
+    const btn = $('adminUsersPlansRefreshBtn');
+    if (btn && !btn.dataset.bound){
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', () => { refreshAdminUsersPlansPanel(); });
+    }
+    const search = $('adminUsersPlansSearch');
+    if (search && !search.dataset.bound){
+      search.dataset.bound = '1';
+      let t;
+      search.addEventListener('input', () => {
+        clearTimeout(t);
+        t = setTimeout(() => { refreshAdminUsersPlansPanel(); }, 300);
+      });
+    }
+    const statusSel = $('adminUsersPlansStatus');
+    if (statusSel && !statusSel.dataset.bound){
+      statusSel.dataset.bound = '1';
+      statusSel.addEventListener('change', () => { refreshAdminUsersPlansPanel(); });
+    }
+    const planSel = $('adminUsersPlansPlan');
+    if (planSel && !planSel.dataset.bound){
+      planSel.dataset.bound = '1';
+      planSel.addEventListener('change', () => { refreshAdminUsersPlansPanel(); });
+    }
+    const panel = $('adminUsersPlansPanel');
+    if (panel && !panel.dataset.bound){
+      panel.dataset.bound = '1';
+      // Lazy-load on first expand so admins don't pay the fetch unless they
+      // actually open the section.
+      panel.addEventListener('toggle', () => {
+        if (panel.open && !panel.dataset.loaded){
+          panel.dataset.loaded = '1';
+          refreshAdminUsersPlansPanel();
+        }
+      });
     }
   }
 
