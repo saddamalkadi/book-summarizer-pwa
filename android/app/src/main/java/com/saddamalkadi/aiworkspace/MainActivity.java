@@ -33,6 +33,8 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
+import androidx.webkit.WebSettingsCompat;
+import androidx.webkit.WebViewFeature;
 
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebChromeClient;
@@ -132,6 +134,23 @@ public class MainActivity extends BridgeActivity {
                 settings.setDomStorageEnabled(true);
                 settings.setAllowFileAccess(true);
                 settings.setAllowContentAccess(true);
+
+                // v9.6.16 — Disable Android 13+ "algorithmic darkening" / legacy
+                // FORCE_DARK on the WebView so the chat background follows our
+                // CSS theme (light by default) even when the device is in
+                // system dark mode. Without this, some Android versions
+                // auto-invert the page colors and the chat surface turns black
+                // regardless of the CSS variables.
+                try {
+                    if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+                        WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, false);
+                    } else if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
+                        //noinspection deprecation
+                        WebSettingsCompat.setForceDark(settings, WebSettingsCompat.FORCE_DARK_OFF);
+                    }
+                } catch (Throwable t) {
+                    Log.w(TAG, "force_dark_off_failed", t);
+                }
 
                 // v9.5 — Native download bridge. Android WebView silently
                 // drops <a href="blob:..."> / <a href="data:..."> downloads,

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-appver="9.6.15">
+<html lang="ar" dir="rtl" data-appver="9.6.16">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5" />
@@ -52,6 +52,12 @@
   </script>
 
   <style>
+    /* v9.6.16 — Pin the document color-scheme to "light" so the system/UA
+       stylesheet never decides to invert form controls or backgrounds when
+       the device is in system dark mode. The in-app body.dark toggle is
+       still authoritative for users who explicitly opt into dark mode. */
+    :root{ color-scheme: light; }
+    body.dark{ color-scheme: dark; }
     :root{
       --bg:#f6f7fb; --card:#ffffff; --text:#0b1020; --muted:#5c6782;
       --pri:#1b66ff; --pri2:#0b1020; --line:#d7dbea;

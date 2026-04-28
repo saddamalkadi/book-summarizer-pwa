@@ -9,7 +9,15 @@
         <item name="colorAccent">@color/colorAccent</item>
     </style>
 
-    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <!--
+      v9.6.16: Pin a non-DayNight Light parent so the activity window/WebView
+      never inherit a black background when the device is in system dark mode.
+      Combined with WebSettingsCompat.setAlgorithmicDarkeningAllowed(false) in
+      MainActivity, this guarantees the chat/page background stays the CSS
+      light theme (var bg = #f6f7fb) regardless of the system theme.
+      Users still get explicit dark mode via the in-app body.dark toggle.
+    -->
+    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.Light.NoActionBar">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
