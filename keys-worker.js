@@ -85,6 +85,13 @@ export default {
       if (url.pathname === '/admin/users' && request.method === 'GET') {
         return withCors(await handleAdminUsersList(request, env), request);
       }
+      // v9.6.17 — must precede the generic /^\/admin\/users\/[^/]+$/ catch-all
+      // below; otherwise `/admin/users/plans` is interpreted as
+      // `/admin/users/<email='plans'>` and routed to handleAdminUserGet which
+      // can never authenticate (and shadows the new admin-only roster endpoint).
+      if (url.pathname === '/admin/users/plans' && request.method === 'GET') {
+        return withCors(await handleAdminUsersPlans(request, env), request);
+      }
       if (url.pathname.match(/^\/admin\/users\/[^/]+$/) && request.method === 'GET') {
         return withCors(await handleAdminUserGet(request, env), request);
       }
@@ -113,10 +120,6 @@ export default {
 
       if (url.pathname === '/me/plan' && request.method === 'GET') {
         return withCors(await handleMePlan(request, env), request);
-      }
-
-      if (url.pathname === '/admin/users/plans' && request.method === 'GET') {
-        return withCors(await handleAdminUsersPlans(request, env), request);
       }
 
       if (url.pathname === '/admin/usage' && request.method === 'GET') {
